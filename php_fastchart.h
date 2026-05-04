@@ -14,7 +14,7 @@
 #ifndef PHP_FASTCHART_H
 #define PHP_FASTCHART_H
 
-#define PHP_FASTCHART_VERSION "0.1.0-dev"
+#define PHP_FASTCHART_VERSION "0.1.0"
 
 extern zend_module_entry fastchart_module_entry;
 #define phpext_fastchart_ptr &fastchart_module_entry

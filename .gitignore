@@ -62,8 +62,8 @@ tests/**/*.php.out
 /tmp.*
 
 # local AI tooling: per-developer scaffolding, not checked in
-.claude/
-.codex
-AGENTS.md
-CLAUDE.md
-.review/
+/.claude/
+/.codex
+/AGENTS.md
+/CLAUDE.md
+/.review/
