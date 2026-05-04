@@ -1,0 +1,34 @@
+{
+    "name": "iliaal/fastchart",
+    "type": "php-ext",
+    "description": "Native C PHP extension for fast chart generation (line, bar, pie, scatter, candlestick) drawn onto ext/gd \\GdImage canvases via libgd primitives.",
+    "keywords": ["chart", "graph", "gd", "candlestick", "ohlcv", "visualization", "php-extension", "pie"],
+    "license": "PHP-3.01",
+    "homepage": "https://github.com/iliaal/fastchart",
+    "authors": [
+        {
+            "name": "Ilia Alshanetsky",
+            "email": "ilia@ilia.ws"
+        }
+    ],
+    "require": {
+        "php": ">=8.3"
+    },
+    "php-ext": {
+        "extension-name": "fastchart",
+        "configure-options": [
+            {
+                "name": "enable-fastchart",
+                "description": "Enable fastchart support",
+                "needs-value": false
+            },
+            {
+                "name": "enable-fastchart-dev",
+                "description": "Enable -Wall -Wextra -Werror for wrapper code (development builds)",
+                "needs-value": false
+            }
+        ],
+        "support-zts": true,
+        "support-nts": true
+    }
+}

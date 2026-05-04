@@ -1,0 +1,69 @@
+# build artifacts
+*.la
+*.lo
+*.lai
+*.o
+*.so
+*.dll
+*.pdb
+*.dep
+.libs/
+modules/
+build/
+autom4te.cache/
+config.cache
+config.log
+config.nice
+config.status
+configure
+configure.ac
+libtool
+ltmain.sh
+Makefile
+Makefile.fragments
+Makefile.global
+Makefile.objects
+acinclude.m4
+aclocal.m4
+install-sh
+missing
+mkinstalldirs
+run-tests.php
+tmp-php.ini
+
+# phpize-generated top-level headers
+/config.h
+/config.h.in
+
+# phpize-generated PHP source mirror (when building against php-src tree)
+/main/
+/include/
+
+# phpize/autotools junk
+include/
+main/php_version.h
+modules/
+run-tests-warnings.log
+tests/**/*.diff
+tests/**/*.out
+tests/**/*.exp
+tests/**/*.log
+tests/**/*.sh
+tests/**/*.php.out
+
+# editors
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# scratch
+/tmp.*
+
+# local AI tooling: per-developer scaffolding, not checked in
+.claude/
+.codex
+AGENTS.md
+CLAUDE.md
+.review/

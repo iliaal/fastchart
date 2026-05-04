@@ -1,0 +1,13 @@
+# Read by /release-ext. Schema documented in ~/.claude/commands/release-ext.md.
+
+extension: fastchart
+version_macro: PHP_FASTCHART_VERSION
+version_file: php_fastchart.h
+repo: iliaal/fastchart
+build_matrix:
+  - PHP-8.3
+  - PHP-8.4
+  - PHP-8.5
+configure_base: "--enable-fastchart --enable-fastchart-dev"
+windows_ci: false
+linux_prebuilt: false

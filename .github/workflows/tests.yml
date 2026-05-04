@@ -1,0 +1,129 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  validate:
+    name: Validate composer.json
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer
+          coverage: none
+      - run: composer validate --strict
+
+  pie-smoke:
+    name: PIE install smoke
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: gd
+          tools: phpize, php-config
+          coverage: none
+      - name: Install PIE build prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bison libtool-bin libgd-dev
+      - name: Download PIE
+        run: |
+          curl -fsSL -o /tmp/pie.phar https://github.com/php/pie/releases/latest/download/pie.phar
+          chmod +x /tmp/pie.phar
+      - name: PIE build smoke
+        run: |
+          php /tmp/pie.phar repository:add path .
+          php /tmp/pie.phar build iliaal/fastchart:*@dev --enable-fastchart
+
+  linux:
+    name: PHP ${{ matrix.php }} - Linux
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4', '8.5']
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install libgd
+        run: sudo apt-get update -qq && sudo apt-get install -y libgd-dev
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: gd
+          tools: phpize, php-config
+
+      - name: Build extension
+        run: |
+          phpize
+          ./configure --enable-fastchart --enable-fastchart-dev
+          WARNINGS=$(make -j$(nproc) 2>&1 | tee /dev/stderr | grep -c 'warning:' || true)
+          if [ "$WARNINGS" -gt 0 ]; then
+            echo "::error::Build produced $WARNINGS warning(s)"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: |
+          export TEST_PHP_EXECUTABLE=$(which php)
+          export TEST_PHP_ARGS="-d extension=gd -d extension=$(pwd)/modules/fastchart.so"
+          export NO_INTERACTION=1
+          RESULT=$(php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1)
+          echo "$RESULT"
+          FAILED=$(echo "$RESULT" | grep 'Tests failed' | grep -oP '\d+' | head -1)
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED test(s) failed"
+            exit 1
+          fi
+
+  macos:
+    name: PHP ${{ matrix.php }} - macOS
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4']
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install libgd
+        run: brew install gd
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: gd
+          tools: phpize, php-config
+
+      - name: Build extension
+        run: |
+          phpize
+          ./configure --enable-fastchart
+          make -j$(sysctl -n hw.ncpu)
+
+      - name: Run tests
+        run: |
+          export TEST_PHP_EXECUTABLE=$(which php)
+          export TEST_PHP_ARGS="-d extension=gd -d extension=$(pwd)/modules/fastchart.so"
+          export NO_INTERACTION=1
+          RESULT=$(php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1)
+          echo "$RESULT"
+          FAILED=$(echo "$RESULT" | grep 'Tests failed' | grep -oP '\d+' | head -1)
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED test(s) failed"
+            exit 1
+          fi
