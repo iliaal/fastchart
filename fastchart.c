@@ -3411,10 +3411,87 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
 /* Classes still on parse-at-draw-time keep using FASTCHART_SETTER_ARRAY
  * to stash the raw input on self->data. Their typed migration lands
  * in subsequent phases. */
-FASTCHART_SETTER_ARRAY(FastChart_RadarChart,   setSeries, data)
 FASTCHART_SETTER_ARRAY(FastChart_SurfaceChart, setGrid,   data)
 FASTCHART_SETTER_ARRAY(FastChart_GanttChart,   setTasks,  data)
 FASTCHART_SETTER_ARRAY(FastChart_ContourChart, setGrid,   data)
+
+ZEND_METHOD(FastChart_RadarChart, setSeries)
+{
+    zval *arr;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(arr)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_radar_obj *self = Z_FASTCHART_RADAR_OBJ_P(ZEND_THIS);
+    for (int i = 0; i < self->n_series; i++) {
+        fc_efree_opt(self->series[i].values);
+        fc_efree_opt(self->series[i].label);
+        self->series[i].values = NULL;
+        self->series[i].label = NULL;
+        self->series[i].len = 0;
+    }
+    self->n_series = 0;
+
+    HashTable *ht = Z_ARRVAL_P(arr);
+    if (zend_hash_num_elements(ht) == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+
+    zval *first = zend_hash_index_find(ht, 0);
+    bool is_multi = false;
+    if (first && Z_TYPE_P(first) == IS_ARRAY) {
+        zval *d = zend_hash_str_find(Z_ARRVAL_P(first), "data", sizeof("data") - 1);
+        if (d && Z_TYPE_P(d) == IS_ARRAY) is_multi = true;
+    }
+
+#define RADAR_PARSE_VALUES(slot_, ht_) do {                                  \
+        HashTable *_dh = (ht_);                                              \
+        int _np = (int)zend_hash_num_elements(_dh);                          \
+        if (_np > 0) {                                                       \
+            (slot_)->values = emalloc((size_t)_np * sizeof(double));         \
+            int _k = 0;                                                      \
+            zval *_v;                                                        \
+            ZEND_HASH_FOREACH_VAL(_dh, _v) {                                 \
+                if (_k >= _np) break;                                        \
+                double _d;                                                   \
+                if (fastchart_zval_to_double(_v, &_d) == 0) {                \
+                    if (_d < 0) _d = 0;                                      \
+                    (slot_)->values[_k++] = _d;                              \
+                } else {                                                     \
+                    (slot_)->values[_k++] = 0;                               \
+                }                                                            \
+            } ZEND_HASH_FOREACH_END();                                       \
+            (slot_)->len = _k;                                               \
+        }                                                                    \
+    } while (0)
+
+    if (is_multi) {
+        zval *s_zv;
+        ZEND_HASH_FOREACH_VAL(ht, s_zv) {
+            if (self->n_series >= FASTCHART_MAX_RADAR_SERIES) break;
+            if (Z_TYPE_P(s_zv) != IS_ARRAY) continue;
+            zval *d = zend_hash_str_find(Z_ARRVAL_P(s_zv), "data", sizeof("data") - 1);
+            if (!d || Z_TYPE_P(d) != IS_ARRAY) continue;
+            fastchart_radar_series *slot = &self->series[self->n_series];
+            RADAR_PARSE_VALUES(slot, Z_ARRVAL_P(d));
+            zval *l = zend_hash_str_find(Z_ARRVAL_P(s_zv), "label", sizeof("label") - 1);
+            slot->label = fc_strdup_opt(fastchart_label_or_null(l));
+            zval *c = zend_hash_str_find(Z_ARRVAL_P(s_zv), "color", sizeof("color") - 1);
+            slot->color_rgb = -1;
+            if (c && Z_TYPE_P(c) == IS_LONG) {
+                zend_long cc = Z_LVAL_P(c);
+                if (cc >= 0 && cc <= 0xFFFFFF) slot->color_rgb = (int)cc;
+            }
+            self->n_series++;
+        } ZEND_HASH_FOREACH_END();
+    } else {
+        fastchart_radar_series *slot = &self->series[0];
+        RADAR_PARSE_VALUES(slot, ht);
+        slot->label = NULL;
+        slot->color_rgb = -1;
+        self->n_series = 1;
+    }
+#undef RADAR_PARSE_VALUES
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
 ZEND_METHOD(FastChart_PolarChart, setSeries)
 {
