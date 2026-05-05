@@ -581,7 +581,7 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
      * configured; pane name in the top-left corner. */
     if (n_indicator_panes > 0) {
         double size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-        const char *font = self->font_path ? ZSTR_VAL(self->font_path) : NULL;
+        const char *font = fastchart_resolve_font(self, FC_FONT_LABEL);
 
         int slot = 0;
         zval *pane_zv;
@@ -628,7 +628,7 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
             int color;
             opt = zend_hash_str_find(Z_ARRVAL_P(pane_zv), "color", 5);
             if (opt && Z_TYPE_P(opt) == IS_LONG) {
-                long c = Z_LVAL_P(opt);
+                zend_long c = Z_LVAL_P(opt);
                 color = gdImageColorAllocate(im,
                     (int)((c >> 16) & 0xFF),
                     (int)((c >>  8) & 0xFF),

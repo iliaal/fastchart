@@ -306,13 +306,23 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
     int left = MARGIN_LEFT_PAD;
     int right = MARGIN_RIGHT_PAD;
 
-    const char *font = chart->font_path ? ZSTR_VAL(chart->font_path) : NULL;
+    /* Each role is resolved through fastchart_resolve_font so the
+     * draw-time open_basedir re-check fires before the path reaches
+     * FreeType. Layout runs once per draw(), so the per-role
+     * resolution cost is bounded. */
+    const char *title_font = fastchart_resolve_font(chart, FC_FONT_TITLE);
+    const char *axis_font  = fastchart_resolve_font(chart, FC_FONT_AXIS);
     double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
 
-    /* Title: measure ascender height + a bit of padding. */
-    if (chart->title && ZSTR_LEN(chart->title) > 0 && font) {
+    /* Title: measure ascender height + a bit of padding. The "999999"
+     * probe used for axis labels is cached once below. */
+    int probe_w = 0, probe_h = 0;
+    int probe_ok = (axis_font && fastchart_text_measure(axis_font, size, "999999",
+                                                        &probe_w, &probe_h, NULL, 0) == 0);
+
+    if (chart->title && ZSTR_LEN(chart->title) > 0 && title_font) {
         int th;
-        if (fastchart_text_measure(font, size * 1.4, ZSTR_VAL(chart->title),
+        if (fastchart_text_measure(title_font, size * 1.4, ZSTR_VAL(chart->title),
                                    NULL, &th, NULL, 0) == 0) {
             top += th + TITLE_PADDING_BELOW;
         }
@@ -321,61 +331,47 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
     /* Y-axis: reserve enough room for a 6-char numeric label. The
      * actual label width is data-dependent; we pick a conservative
      * "999999" sample so layout is stable across data ranges. */
-    if (has_y_axis && font) {
-        int lw;
-        if (fastchart_text_measure(font, size, "999999",
-                                   &lw, NULL, NULL, 0) == 0) {
-            left += lw + TICK_MARK_LEN + Y_LABEL_PADDING;
-        }
+    if (has_y_axis && probe_ok) {
+        left += probe_w + TICK_MARK_LEN + Y_LABEL_PADDING;
     }
 
     /* Y-axis title: rotated 90deg on the left of the y-axis labels.
      * The title's height becomes its visible width after rotation. */
-    if (has_y_axis && chart->y_axis_title && font) {
+    if (has_y_axis && chart->y_axis_title && axis_font) {
         int th;
-        if (fastchart_text_measure(font, size * 1.1, ZSTR_VAL(chart->y_axis_title),
+        if (fastchart_text_measure(axis_font, size * 1.1, ZSTR_VAL(chart->y_axis_title),
                                    NULL, &th, NULL, 0) == 0) {
             left += th + 8;
         }
     }
 
     /* Secondary Y axis: mirror the left-side reservation on the
-     * right edge. */
-    if (has_y_axis && chart->secondary_y && font) {
-        int lw;
-        if (fastchart_text_measure(font, size, "999999",
-                                   &lw, NULL, NULL, 0) == 0) {
-            right += lw + TICK_MARK_LEN + Y_LABEL_PADDING;
-        }
+     * right edge using the cached probe. */
+    if (has_y_axis && chart->secondary_y && probe_ok) {
+        right += probe_w + TICK_MARK_LEN + Y_LABEL_PADDING;
     }
 
     /* X-axis labels. Horizontal labels reserve one line; rotated
      * labels reserve roughly the label width as height. The
      * rotated reservation is conservative for 45deg (true height
      * is width / sqrt(2) but layout-wise we don't need a tight fit). */
-    if (has_x_axis && font) {
-        int lw, lh;
-        const char *probe = "999999"; /* same probe as y-axis */
-        if (fastchart_text_measure(font, size, probe,
-                                   &lw, &lh, NULL, 0) == 0) {
-            int needed;
-            if (chart->x_axis_label_angle == 90) {
-                needed = lw + TICK_MARK_LEN + X_LABEL_PADDING;
-            } else if (chart->x_axis_label_angle == 45) {
-                needed = (int)((double)lw * 0.75) + TICK_MARK_LEN + X_LABEL_PADDING;
-            } else {
-                needed = lh + TICK_MARK_LEN + X_LABEL_PADDING;
-            }
-            bottom += needed;
+    if (has_x_axis && probe_ok) {
+        int needed;
+        if (chart->x_axis_label_angle == 90) {
+            needed = probe_w + TICK_MARK_LEN + X_LABEL_PADDING;
+        } else if (chart->x_axis_label_angle == 45) {
+            needed = (int)((double)probe_w * 0.75) + TICK_MARK_LEN + X_LABEL_PADDING;
+        } else {
+            needed = probe_h + TICK_MARK_LEN + X_LABEL_PADDING;
         }
+        bottom += needed;
     }
 
     /* X-axis title: an extra line below the labels. */
-    if (has_x_axis && chart->x_axis_title && font) {
-        int tw, th;
-        if (fastchart_text_measure(font, size * 1.1, ZSTR_VAL(chart->x_axis_title),
-                                   &tw, &th, NULL, 0) == 0) {
-            (void)tw;
+    if (has_x_axis && chart->x_axis_title && axis_font) {
+        int th;
+        if (fastchart_text_measure(axis_font, size * 1.1, ZSTR_VAL(chart->x_axis_title),
+                                   NULL, &th, NULL, 0) == 0) {
             bottom += th + 6;
         }
     }
@@ -928,7 +924,7 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
 int fastchart_x_time_to_pixel(const fastchart_rect *plot,
                               zend_long ts, zend_long t_min, zend_long t_max)
 {
-    long span = t_max - t_min;
+    zend_long span = t_max - t_min;
     if (span <= 0) return plot->x0;
     double frac = (double)(ts - t_min) / (double)span;
     if (frac < 0) frac = 0;
@@ -951,7 +947,8 @@ void fastchart_draw_legend(gdImagePtr im, fastchart_obj *chart,
     if (chart->legend_position == FASTCHART_LEGEND_NONE) return;
 
     double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    const char *font = ZSTR_VAL(chart->font_path);
+    const char *font = fastchart_resolve_font(chart, FC_FONT_LABEL);
+    if (!font) return;
 
     int swatch_w  = 14;
     int swatch_h  = 10;
@@ -1065,7 +1062,7 @@ static int overlay_color(gdImagePtr im, const fastchart_palette *pal,
 {
     zval *c = zend_hash_str_find(Z_ARRVAL_P(entry), "color", sizeof("color") - 1);
     if (c && Z_TYPE_P(c) == IS_LONG) {
-        long v = Z_LVAL_P(c);
+        zend_long v = Z_LVAL_P(c);
         if (v >= 0 && v <= 0xFFFFFF) {
             return gdImageColorAllocate(im,
                 (int)((v >> 16) & 0xFF),
@@ -1080,7 +1077,7 @@ static int overlay_thickness(zval *entry)
 {
     zval *t = zend_hash_str_find(Z_ARRVAL_P(entry), "thickness", sizeof("thickness") - 1);
     if (t && Z_TYPE_P(t) == IS_LONG) {
-        long v = Z_LVAL_P(t);
+        zend_long v = Z_LVAL_P(t);
         if (v >= 1 && v <= 16) return (int)v;
     }
     return 2;
@@ -1224,7 +1221,7 @@ static int annotation_color(const fastchart_palette *pal, gdImagePtr im,
                             zval *color_zv)
 {
     if (color_zv && Z_TYPE_P(color_zv) == IS_LONG) {
-        long c = (long)Z_LVAL_P(color_zv);
+        zend_long c = Z_LVAL_P(color_zv);
         if (c >= 0 && c <= 0xFFFFFF) {
             return gdImageColorAllocate(im,
                 (int)((c >> 16) & 0xFF),
@@ -1252,7 +1249,7 @@ void fastchart_draw_h_annotations(gdImagePtr im, fastchart_obj *chart,
     if (!list) return;
 
     double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    const char *font = chart->font_path ? ZSTR_VAL(chart->font_path) : NULL;
+    const char *font = fastchart_resolve_font(chart, FC_FONT_ANNOTATION);
 
     zval *entry;
     ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(list), entry) {
@@ -1313,6 +1310,10 @@ typedef struct { zend_long t_min; zend_long t_max; } v_time_ctx;
 static int v_pos_time(const fastchart_rect *plot, double position, void *ctx)
 {
     v_time_ctx *c = (v_time_ctx *)ctx;
+    if (!isfinite(position) ||
+        position < (double)ZEND_LONG_MIN || position > (double)ZEND_LONG_MAX) {
+        return -1;
+    }
     zend_long ts = (zend_long)position;
     if (ts < c->t_min || ts > c->t_max) return -1;
     return fastchart_x_time_to_pixel(plot, ts, c->t_min, c->t_max);
@@ -1327,7 +1328,7 @@ static void draw_v_annotations_with_mapper(gdImagePtr im, fastchart_obj *chart,
     if (!list) return;
 
     double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    const char *font = chart->font_path ? ZSTR_VAL(chart->font_path) : NULL;
+    const char *font = fastchart_resolve_font(chart, FC_FONT_ANNOTATION);
 
     zval *entry;
     ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(list), entry) {
@@ -1454,7 +1455,7 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
      * starts, month starts, etc.) instead of evenly-spaced dividers
      * across the range. Reverts to auto-density when every == 0. */
     if (chart->date_axis_every > 0) {
-        long every = chart->date_axis_every;
+        zend_long every = chart->date_axis_every;
         struct tm tm_buf;
         time_t tt = (time_t)t_min;
         fc_gmtime(tt, &tm_buf);
@@ -1539,7 +1540,7 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
                 }
             }
             /* Advance by `every` units. */
-            for (long e = 0; e < every; e++) {
+            for (zend_long e = 0; e < every; e++) {
                 switch (chart->date_axis_unit) {
                     case FASTCHART_DATE_DAY:     tm_buf.tm_mday += 1; break;
                     case FASTCHART_DATE_WEEK:    tm_buf.tm_mday += 7; break;

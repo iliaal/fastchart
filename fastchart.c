@@ -643,6 +643,10 @@ ZEND_METHOD(FastChart_Chart, addHorizontalLine)
         zend_value_error("FastChart\\Chart::addHorizontalLine() color out of range; expected 0..0xFFFFFF");
         RETURN_THROWS();
     }
+    if (label && memchr(ZSTR_VAL(label), 0, ZSTR_LEN(label)) != NULL) {
+        zend_value_error("FastChart\\Chart::addHorizontalLine() label contains an embedded NUL");
+        RETURN_THROWS();
+    }
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     push_annotation(self, "h", value, label, !color_is_null, color);
@@ -667,11 +671,13 @@ ZEND_METHOD(FastChart_Chart, addVerticalLine)
         zend_value_error("FastChart\\Chart::addVerticalLine() color out of range; expected 0..0xFFFFFF");
         RETURN_THROWS();
     }
+    if (label && memchr(ZSTR_VAL(label), 0, ZSTR_LEN(label)) != NULL) {
+        zend_value_error("FastChart\\Chart::addVerticalLine() label contains an embedded NUL");
+        RETURN_THROWS();
+    }
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    push_annotation(self, "v", position,
-                    label == NULL ? NULL : label,
-                    !color_is_null, color);
+    push_annotation(self, "v", position, label, !color_is_null, color);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -939,14 +945,16 @@ ZEND_METHOD(FastChart_Chart, setPlotRect)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    /* Negative width or height reverts to auto-layout. */
-    if (x1 - x0 < 1 || y1 - y0 < 1) {
-        self->has_plot_rect = false;
-        RETURN_ZVAL(ZEND_THIS, 1, 0);
-    }
+    /* Validate ranges before any subtraction so PHP_INT_MIN /
+     * PHP_INT_MAX inputs can't trip signed-overflow UB on x1 - x0. */
     if (x0 < 0 || y0 < 0 || x1 > 65535 || y1 > 65535) {
         zend_value_error("FastChart\\Chart::setPlotRect() coordinates must fit within a 16-bit canvas");
         RETURN_THROWS();
+    }
+    /* Negative width or height (post-validation) reverts to auto-layout. */
+    if (x1 <= x0 || y1 <= y0) {
+        self->has_plot_rect = false;
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
     }
     self->has_plot_rect = true;
     self->plot_x0 = (int)x0;
@@ -1156,6 +1164,10 @@ ZEND_METHOD(FastChart_Chart, addTextAnnotation)
 
     if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
         zend_value_error("FastChart\\Chart::addTextAnnotation() color must be 0..0xFFFFFF or null");
+        RETURN_THROWS();
+    }
+    if (memchr(ZSTR_VAL(text), 0, ZSTR_LEN(text)) != NULL) {
+        zend_value_error("FastChart\\Chart::addTextAnnotation() text contains an embedded NUL");
         RETURN_THROWS();
     }
 
@@ -1626,7 +1638,9 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
         int n = snprintf(buf, sizeof(buf),
             "<area shape=\"circle\" coords=\"" ZEND_LONG_FMT "," ZEND_LONG_FMT "," ZEND_LONG_FMT "\" href=\"",
             Z_LVAL_P(zx), Z_LVAL_P(zy), Z_LVAL_P(zr));
-        smart_str_appendl(&out, buf, n);
+        if (n < 0) n = 0;
+        if ((size_t)n > sizeof(buf)) n = (int)sizeof(buf);
+        smart_str_appendl(&out, buf, (size_t)n);
 
         /* HTML-escape the href value: &, <, >, " each become their
          * entity form. Single quotes don't need escaping inside a
@@ -2489,6 +2503,10 @@ ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
 
     if (ZSTR_LEN(name) == 0) {
         zend_value_error("FastChart\\StockChart::addIndicatorPane() requires a non-empty name");
+        RETURN_THROWS();
+    }
+    if (memchr(ZSTR_VAL(name), 0, ZSTR_LEN(name)) != NULL) {
+        zend_value_error("FastChart\\StockChart::addIndicatorPane() name contains an embedded NUL");
         RETURN_THROWS();
     }
 

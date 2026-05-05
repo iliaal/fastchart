@@ -352,7 +352,7 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
             if (series[s].colors) {
                 zval *cv = zend_hash_index_find(series[s].colors, i);
                 if (cv && Z_TYPE_P(cv) == IS_LONG) {
-                    long c = Z_LVAL_P(cv);
+                    zend_long c = Z_LVAL_P(cv);
                     if (c >= 0 && c <= 0xFFFFFF) {
                         marker_color = gdImageColorAllocate(im,
                             (int)((c >> 16) & 0xFF),

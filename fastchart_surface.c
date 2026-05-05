@@ -51,7 +51,14 @@ int fastchart_surface_render_to_image(fastchart_obj *self, gdImagePtr im)
 
     /* Materialize once into a flat double[rows*cols] (NAN for missing
      * cells). The render loop indexes by arithmetic and the min/max
-     * scan and per-cell color lookup both read from the same buffer. */
+     * scan and per-cell color lookup both read from the same buffer.
+     * Guard the size_t multiplication on 32-bit builds. */
+    if ((size_t)cols > SIZE_MAX / sizeof(double) ||
+        (size_t)rows > (SIZE_MAX / sizeof(double)) / (size_t)cols) {
+        zend_throw_error(NULL,
+            "FastChart\\SurfaceChart::draw() grid dimensions overflow allocation");
+        return -1;
+    }
     double *grid = emalloc((size_t)rows * (size_t)cols * sizeof(double));
     int ri = 0;
     ZEND_HASH_FOREACH_VAL(grid_ht, row) {

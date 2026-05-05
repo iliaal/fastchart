@@ -128,7 +128,7 @@ static int collect_pie_slices(zval *data_zv,
             zval *color_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
                                                 "color", sizeof("color") - 1);
             if (color_zv && Z_TYPE_P(color_zv) == IS_LONG) {
-                long c = (long)Z_LVAL_P(color_zv);
+                zend_long c = Z_LVAL_P(color_zv);
                 if (c >= 0 && c <= 0xFFFFFF) {
                     out[*out_count].color_rgb = (int)c;
                 }
@@ -252,7 +252,7 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
         if (explode_ht) {
             zval *off_zv = zend_hash_index_find(explode_ht, i);
             if (off_zv) {
-                long off = 0;
+                zend_long off = 0;
                 if (Z_TYPE_P(off_zv) == IS_LONG) off = Z_LVAL_P(off_zv);
                 else if (Z_TYPE_P(off_zv) == IS_DOUBLE) off = (long)Z_DVAL_P(off_zv);
                 if (off > 0) {
@@ -290,12 +290,13 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
      * mode picks INSIDE (default), OUTSIDE (with leader line), or
      * NONE. Format string defaults to "%.0f%%"; the user-supplied
      * format receives the percentage as the sole sprintf argument. */
-    if (self->font_path && self->slice_label_position != FASTCHART_LABEL_NONE) {
+    const char *font = (self->slice_label_position != FASTCHART_LABEL_NONE)
+        ? fastchart_resolve_font(self, FC_FONT_LABEL) : NULL;
+    if (font) {
         const char *fmt = self->slice_label_format
             ? ZSTR_VAL(self->slice_label_format)
             : "%.0f%%";
         double size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-        const char *font = ZSTR_VAL(self->font_path);
 
         double inside_frac = donut > 0 ? (donut + 1.0) / 2.0 : 0.7;
         double inside_r = (diameter / 2.0) * inside_frac;

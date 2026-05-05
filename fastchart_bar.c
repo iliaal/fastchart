@@ -101,7 +101,7 @@ static int per_point_color(HashTable *colors_ht, int idx, int fallback,
     if (!colors_ht) return fallback;
     zval *cv = zend_hash_index_find(colors_ht, idx);
     if (!cv || Z_TYPE_P(cv) != IS_LONG) return fallback;
-    long c = Z_LVAL_P(cv);
+    zend_long c = Z_LVAL_P(cv);
     if (c < 0 || c > 0xFFFFFF) return fallback;
     return gdImageColorAllocate(im,
         (int)((c >> 16) & 0xFF),

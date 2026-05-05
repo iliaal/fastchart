@@ -50,7 +50,14 @@ static double *materialize_grid(zval *grid_zv, int *rows_out, int *cols_out)
         if (n > cols) cols = n;
     } ZEND_HASH_FOREACH_END();
     if (rows < 2 || cols < 2) return NULL;
-
+    /* Guard the size_t multiplication on 32-bit builds: HashTable lets
+     * users push to 2^31 elements per dimension. memory_limit blocks
+     * before reaching this on 64-bit, but a 32-bit deployment with
+     * a generous memory_limit could wrap. */
+    if ((size_t)cols > SIZE_MAX / sizeof(double) ||
+        (size_t)rows > (SIZE_MAX / sizeof(double)) / (size_t)cols) {
+        return NULL;
+    }
     double *flat = emalloc((size_t)rows * (size_t)cols * sizeof(double));
     int i = 0;
     ZEND_HASH_FOREACH_VAL(grid, r) {

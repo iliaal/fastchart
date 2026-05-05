@@ -180,9 +180,10 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
      * categorical axis line + tick infrastructure by drawing the line
      * and emitting ticks at xrange values. */
     gdImageLine(im, plot.x0, plot.y1, plot.x1, plot.y1, pal.axis);
-    if (self->font_path && xrange.n_ticks > 0) {
+    const char *font = xrange.n_ticks > 0
+        ? fastchart_resolve_font(self, FC_FONT_XAXIS) : NULL;
+    if (font) {
         double size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-        const char *font = ZSTR_VAL(self->font_path);
         int label_y = plot.y1 + 4 + (int)(size * 1.2);
         for (int t = 0; t < xrange.n_ticks; t++) {
             double v = xrange.ticks[t];

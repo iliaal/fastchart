@@ -81,7 +81,7 @@ int fastchart_gauge_render_to_image(fastchart_obj *self, gdImagePtr im)
             int color = default_color;
             if (zc && Z_TYPE_P(zc) == IS_LONG &&
                 Z_LVAL_P(zc) >= 0 && Z_LVAL_P(zc) <= 0xFFFFFF) {
-                long c = Z_LVAL_P(zc);
+                zend_long c = Z_LVAL_P(zc);
                 color = gdImageColorAllocate(im,
                     (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
             }

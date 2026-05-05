@@ -54,10 +54,9 @@ static int collect_tasks(zval *data_zv, fastchart_gantt_task *out, int max_tasks
         zval *zs = zend_hash_str_find(ht, "start", sizeof("start") - 1);
         zval *ze = zend_hash_str_find(ht, "end",   sizeof("end") - 1);
         if (!zs || !ze) continue;
-        double ds, de;
-        if (fastchart_zval_to_double(zs, &ds) != 0) continue;
-        if (fastchart_zval_to_double(ze, &de) != 0) continue;
-        zend_long s = (zend_long)ds, e = (zend_long)de;
+        zend_long s, e;
+        if (fastchart_zval_to_long(zs, &s) != 0) continue;
+        if (fastchart_zval_to_long(ze, &e) != 0) continue;
         if (e < s) { zend_long tmp = s; s = e; e = tmp; }
 
         out[*out_count].start = s;
