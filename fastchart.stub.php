@@ -34,6 +34,18 @@ abstract class Chart
     public const int STYLE_DIAMOND = 2;
     public const int STYLE_I_CAP   = 3;
 
+    /** Border-side bitmask for setBorderSides(). OR them together. */
+    public const int BORDER_NONE   = 0;
+    public const int BORDER_LEFT   = 1;
+    public const int BORDER_RIGHT  = 2;
+    public const int BORDER_TOP    = 4;
+    public const int BORDER_BOTTOM = 8;
+    public const int BORDER_ALL    = 15;
+
+    /** Line interpolation modes for setLineInterpolation(). */
+    public const int INTERP_LINEAR = 0;
+    public const int INTERP_SMOOTH = 1;
+
     /**
      * Optionally pass canvas dimensions at construction so callers
      * can skip the `imagecreatetruecolor()` step entirely when they
@@ -95,6 +107,94 @@ abstract class Chart
 
     public function addHorizontalLine(float $value, ?string $label = null, ?int $color = null): static {}
     public function addVerticalLine(float $position, ?string $label = null, ?int $color = null): static {}
+
+    /**
+     * Per-element color overrides. Each takes a 24-bit RGB int or
+     * -1 to revert to the theme palette default.
+     */
+    public function setAxisColor(int $rgb): static {}
+    public function setGridColor(int $rgb): static {}
+    public function setBorderColor(int $rgb): static {}
+    public function setTextColor(int $rgb): static {}
+
+    /**
+     * Per-element font overrides. `setTitleFont` is used for the
+     * chart title; `setAxisFont` for axis tick labels and axis
+     * titles; `setLabelFont` for category labels, value labels,
+     * and pie slice labels. Pass null path to keep using the
+     * global setFontPath() font; pass 0.0 size to keep the
+     * computed default. The two arguments are independent.
+     */
+    public function setTitleFont(?string $path = null, ?float $size = null): static {}
+    public function setAxisFont(?string $path = null, ?float $size = null): static {}
+    public function setLabelFont(?string $path = null, ?float $size = null): static {}
+
+    /**
+     * Show numeric value labels next to each data point. For line
+     * and scatter, labels appear above each marker; for bar, above
+     * each bar. The optional sprintf format applies to each value
+     * (default "%g"). No-op for pie (use setSliceLabelFormat).
+     */
+    public function setShowValues(bool $show, string $format = '%g'): static {}
+
+    /**
+     * Render the canvas with a transparent background. The PNG /
+     * WebP / AVIF outputs preserve the alpha channel; JPEG and GIF
+     * collapse to white. Default: false.
+     */
+    public function setTransparentBackground(bool $enabled): static {}
+
+    /**
+     * Composite a background image onto the canvas before drawing
+     * any chart elements. Path is resolved through PHP's filesystem
+     * policy (`open_basedir`). Supported source formats: PNG, JPEG,
+     * WebP, GIF. The image is scaled to fill the entire canvas.
+     */
+    public function setBackgroundImage(string $path): static {}
+
+    /**
+     * Line interpolation mode. `INTERP_LINEAR` (default) connects
+     * data points with straight segments. `INTERP_SMOOTH` uses
+     * Catmull-Rom spline interpolation for a curved through-the-
+     * points appearance. Affects LineChart series, AreaChart top
+     * edges, and StockChart SMA overlays.
+     */
+    public function setLineInterpolation(int $mode): static {}
+
+    /**
+     * Force the plot rectangle to specific canvas coordinates,
+     * bypassing the auto-layout that reserves space for title /
+     * axes / labels. Useful for pixel-perfect chart placement
+     * inside a larger composition. Coordinates are inclusive.
+     * Pass any negative width / height to revert to auto-layout.
+     */
+    public function setPlotRect(int $x0, int $y0, int $x1, int $y1): static {}
+
+    /**
+     * Which sides of the plot border to draw. Bitwise OR of
+     * `BORDER_LEFT` / `BORDER_RIGHT` / `BORDER_TOP` / `BORDER_BOTTOM`,
+     * or `BORDER_ALL` (default) / `BORDER_NONE`. The Y-axis line
+     * is drawn separately and is not affected by this setting.
+     */
+    public function setBorderSides(int $sides): static {}
+
+    /**
+     * Add a series that draws on top of the primary chart's data,
+     * using the same X axis and (by default) the same Y axis.
+     * Lets a `BarChart` carry a trend line, an `AreaChart` carry
+     * a target band, etc. -- the v0.x equivalent of GDChart's
+     * `COMBO_*` chart types.
+     *
+     * `$type` is `'line'` or `'area'`. `$values` is a list of
+     * numeric values parallel to the primary's categories (or
+     * matching the candle count for `StockChart`). `$opts` keys:
+     *   - `'color'`     => int 0xRRGGBB
+     *   - `'label'`     => string (legend label)
+     *   - `'thickness'` => int (line width, default 2)
+     *   - `'axis'`      => `'left'` (default) or `'right'` for
+     *                      secondary Y axis
+     */
+    public function addOverlaySeries(string $type, array $values, ?array $opts = null): static {}
 
     abstract public function draw(\GdImage $canvas): \GdImage;
 
@@ -191,6 +291,14 @@ final class PieChart extends Chart
      */
     public function setSliceLabelFormat(string $format): static {}
 
+    /**
+     * Aggregate slices below `$percent` of the total into a single
+     * "Other" slice (or the configurable label via the second
+     * argument). Pass 0 to disable (default). Useful when a long
+     * tail of small slices clutters the pie.
+     */
+    public function setOtherThreshold(float $percent, string $label = 'Other'): static {}
+
     public function draw(\GdImage $canvas): \GdImage {}
 }
 
@@ -207,6 +315,14 @@ final class StockChart extends Chart
     public function setOhlcv(array $ohlcv): static {}
     public function setMovingAverages(array $periods): static {}
     public function setVolumePane(bool $enabled): static {}
+
+    /**
+     * Per-bar volume color override. `$colors` is an array of
+     * 24-bit RGB ints parallel to the OHLCV rows -- one entry per
+     * candle. When set, replaces the candle-direction up/down
+     * volume coloring. Pass `[]` to revert to the default coloring.
+     */
+    public function setVolumeColors(array $colors): static {}
 
     /**
      * OHLC presentation style. `STYLE_CANDLE` (default) draws a

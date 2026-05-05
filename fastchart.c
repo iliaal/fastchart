@@ -99,6 +99,34 @@ static zend_object *fastchart_create_object(zend_class_entry *ce)
     intern->slice_label_format = NULL;
     intern->area_alpha = 64;
 
+    intern->axis_color_override   = -1;
+    intern->grid_color_override   = -1;
+    intern->border_color_override = -1;
+    intern->text_color_override   = -1;
+
+    intern->title_font_path = NULL;
+    intern->axis_font_path  = NULL;
+    intern->label_font_path = NULL;
+    intern->title_font_size = 0.0;
+    intern->axis_font_size  = 0.0;
+    intern->label_font_size = 0.0;
+
+    intern->show_values = false;
+    intern->value_format = NULL;
+
+    intern->pie_other_threshold = 0.0;
+    intern->pie_other_label = NULL;
+
+    intern->transparent_bg = false;
+    intern->bg_image_path = NULL;
+
+    intern->line_interpolation = FASTCHART_INTERP_LINEAR;
+
+    intern->has_plot_rect = false;
+    intern->plot_x0 = intern->plot_y0 = intern->plot_x1 = intern->plot_y1 = 0;
+
+    intern->border_sides = FASTCHART_BORDER_ALL;
+
     if (fastchart_default_font_path) {
         intern->font_path = zend_string_copy(fastchart_default_font_path);
     } else {
@@ -116,11 +144,17 @@ static void fastchart_free_object(zend_object *object)
 {
     fastchart_obj *intern = fastchart_obj_from_zend(object);
 
-    if (intern->title)             zend_string_release(intern->title);
-    if (intern->font_path)         zend_string_release(intern->font_path);
-    if (intern->x_axis_title)      zend_string_release(intern->x_axis_title);
-    if (intern->y_axis_title)      zend_string_release(intern->y_axis_title);
+    if (intern->title)              zend_string_release(intern->title);
+    if (intern->font_path)          zend_string_release(intern->font_path);
+    if (intern->x_axis_title)       zend_string_release(intern->x_axis_title);
+    if (intern->y_axis_title)       zend_string_release(intern->y_axis_title);
     if (intern->slice_label_format) zend_string_release(intern->slice_label_format);
+    if (intern->title_font_path)    zend_string_release(intern->title_font_path);
+    if (intern->axis_font_path)     zend_string_release(intern->axis_font_path);
+    if (intern->label_font_path)    zend_string_release(intern->label_font_path);
+    if (intern->value_format)       zend_string_release(intern->value_format);
+    if (intern->pie_other_label)    zend_string_release(intern->pie_other_label);
+    if (intern->bg_image_path)      zend_string_release(intern->bg_image_path);
     zval_ptr_dtor(&intern->data);
     zval_ptr_dtor(&intern->config);
 
@@ -580,6 +614,295 @@ ZEND_METHOD(FastChart_Chart, addVerticalLine)
 
 FASTCHART_MARKER_SETTERS(FastChart_LineChart)
 FASTCHART_MARKER_SETTERS(FastChart_ScatterChart)
+
+/* ----------------- per-element color overrides ------------------ */
+
+#define FASTCHART_COLOR_OVERRIDE_SETTER(name_, field_) \
+    ZEND_METHOD(FastChart_Chart, name_) \
+    { \
+        zend_long rgb; \
+        ZEND_PARSE_PARAMETERS_START(1, 1) \
+            Z_PARAM_LONG(rgb) \
+        ZEND_PARSE_PARAMETERS_END(); \
+        if (rgb < -1 || rgb > 0xFFFFFF) { \
+            zend_value_error("FastChart\\Chart::" #name_ "() expects -1 or 0..0xFFFFFF"); \
+            RETURN_THROWS(); \
+        } \
+        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
+        self->field_ = rgb; \
+        RETURN_ZVAL(ZEND_THIS, 1, 0); \
+    }
+
+FASTCHART_COLOR_OVERRIDE_SETTER(setAxisColor,   axis_color_override)
+FASTCHART_COLOR_OVERRIDE_SETTER(setGridColor,   grid_color_override)
+FASTCHART_COLOR_OVERRIDE_SETTER(setBorderColor, border_color_override)
+FASTCHART_COLOR_OVERRIDE_SETTER(setTextColor,   text_color_override)
+
+/* ----------------- per-element font overrides -------------------- */
+
+#define FASTCHART_FONT_OVERRIDE_SETTER(name_, path_field_, size_field_) \
+    ZEND_METHOD(FastChart_Chart, name_) \
+    { \
+        zend_string *path = NULL; \
+        double size = 0.0; \
+        bool path_is_null = true, size_is_null = true; \
+        ZEND_PARSE_PARAMETERS_START(0, 2) \
+            Z_PARAM_OPTIONAL \
+            Z_PARAM_STR_OR_NULL(path) \
+            Z_PARAM_DOUBLE_OR_NULL(size, size_is_null) \
+        ZEND_PARSE_PARAMETERS_END(); \
+        path_is_null = (path == NULL); \
+        if (!path_is_null && memchr(ZSTR_VAL(path), 0, ZSTR_LEN(path)) != NULL) { \
+            zend_value_error("FastChart\\Chart::" #name_ "() path contains an embedded NUL"); \
+            RETURN_THROWS(); \
+        } \
+        if (!path_is_null && php_check_open_basedir(ZSTR_VAL(path))) { \
+            RETURN_THROWS(); \
+        } \
+        if (!size_is_null && !(size >= 1.0 && size <= 200.0)) { \
+            zend_value_error("FastChart\\Chart::" #name_ "() size must be in [1.0, 200.0]"); \
+            RETURN_THROWS(); \
+        } \
+        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
+        if (!path_is_null) { \
+            if (self->path_field_) zend_string_release(self->path_field_); \
+            self->path_field_ = ZSTR_LEN(path) == 0 ? NULL : zend_string_copy(path); \
+        } \
+        if (!size_is_null) { \
+            self->size_field_ = size; \
+        } \
+        RETURN_ZVAL(ZEND_THIS, 1, 0); \
+    }
+
+FASTCHART_FONT_OVERRIDE_SETTER(setTitleFont, title_font_path, title_font_size)
+FASTCHART_FONT_OVERRIDE_SETTER(setAxisFont,  axis_font_path,  axis_font_size)
+FASTCHART_FONT_OVERRIDE_SETTER(setLabelFont, label_font_path, label_font_size)
+
+/* ----------------- show values ----------------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setShowValues)
+{
+    bool show;
+    zend_string *fmt = NULL;
+    ZEND_PARSE_PARAMETERS_START(1, 2)
+        Z_PARAM_BOOL(show)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_STR(fmt)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->show_values = show;
+    if (fmt) {
+        if (self->value_format) zend_string_release(self->value_format);
+        self->value_format = ZSTR_LEN(fmt) == 0 ? NULL : zend_string_copy(fmt);
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- transparent bg + bg image --------------------- */
+
+ZEND_METHOD(FastChart_Chart, setTransparentBackground)
+{
+    bool en;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(en)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->transparent_bg = en;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, setBackgroundImage)
+{
+    zend_string *path;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(path)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (ZSTR_LEN(path) > 0) {
+        if (memchr(ZSTR_VAL(path), 0, ZSTR_LEN(path)) != NULL) {
+            zend_value_error("FastChart\\Chart::setBackgroundImage() path contains an embedded NUL");
+            RETURN_THROWS();
+        }
+        if (php_check_open_basedir(ZSTR_VAL(path))) {
+            RETURN_THROWS();
+        }
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (self->bg_image_path) zend_string_release(self->bg_image_path);
+    self->bg_image_path = ZSTR_LEN(path) == 0 ? NULL : zend_string_copy(path);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- line interpolation ---------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setLineInterpolation)
+{
+    zend_long mode;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(mode)
+    ZEND_PARSE_PARAMETERS_END();
+    if (mode != FASTCHART_INTERP_LINEAR && mode != FASTCHART_INTERP_SMOOTH) {
+        zend_value_error("FastChart\\Chart::setLineInterpolation() expects INTERP_LINEAR or INTERP_SMOOTH");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->line_interpolation = mode;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- hard plot rectangle --------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setPlotRect)
+{
+    zend_long x0, y0, x1, y1;
+    ZEND_PARSE_PARAMETERS_START(4, 4)
+        Z_PARAM_LONG(x0)
+        Z_PARAM_LONG(y0)
+        Z_PARAM_LONG(x1)
+        Z_PARAM_LONG(y1)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    /* Negative width or height reverts to auto-layout. */
+    if (x1 - x0 < 1 || y1 - y0 < 1) {
+        self->has_plot_rect = false;
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
+    }
+    if (x0 < 0 || y0 < 0 || x1 > 65535 || y1 > 65535) {
+        zend_value_error("FastChart\\Chart::setPlotRect() coordinates must fit within a 16-bit canvas");
+        RETURN_THROWS();
+    }
+    self->has_plot_rect = true;
+    self->plot_x0 = (int)x0;
+    self->plot_y0 = (int)y0;
+    self->plot_x1 = (int)x1;
+    self->plot_y1 = (int)y1;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- border sides ---------------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setBorderSides)
+{
+    zend_long sides;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(sides)
+    ZEND_PARSE_PARAMETERS_END();
+    if (sides < 0 || sides > FASTCHART_BORDER_ALL) {
+        zend_value_error("FastChart\\Chart::setBorderSides() expects a bitwise OR of BORDER_* constants in [0, 15]");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->border_sides = sides;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- combo overlay --------------------------------- */
+
+ZEND_METHOD(FastChart_Chart, addOverlaySeries)
+{
+    zend_string *type;
+    zval *values;
+    HashTable *opts = NULL;
+
+    ZEND_PARSE_PARAMETERS_START(2, 3)
+        Z_PARAM_STR(type)
+        Z_PARAM_ARRAY(values)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_ARRAY_HT_OR_NULL(opts)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (!zend_string_equals_literal(type, "line") &&
+        !zend_string_equals_literal(type, "area")) {
+        zend_value_error("FastChart\\Chart::addOverlaySeries() type must be \"line\" or \"area\"");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval *list_zv = zend_hash_str_find(Z_ARRVAL(self->config),
+                                       "overlays", sizeof("overlays") - 1);
+    if (!list_zv || Z_TYPE_P(list_zv) != IS_ARRAY) {
+        zval list;
+        array_init(&list);
+        list_zv = zend_hash_str_update(Z_ARRVAL(self->config),
+            "overlays", sizeof("overlays") - 1, &list);
+    }
+
+    zval entry;
+    array_init(&entry);
+    add_assoc_str(&entry, "type", zend_string_copy(type));
+    zval values_copy;
+    ZVAL_COPY(&values_copy, values);
+    add_assoc_zval(&entry, "values", &values_copy);
+
+    if (opts) {
+        zval *opt;
+        opt = zend_hash_str_find(opts, "color", sizeof("color") - 1);
+        if (opt && Z_TYPE_P(opt) == IS_LONG) {
+            zend_long c = Z_LVAL_P(opt);
+            if (c >= 0 && c <= 0xFFFFFF) add_assoc_long(&entry, "color", c);
+        }
+        opt = zend_hash_str_find(opts, "label", sizeof("label") - 1);
+        if (opt && Z_TYPE_P(opt) == IS_STRING) {
+            add_assoc_str(&entry, "label", zend_string_copy(Z_STR_P(opt)));
+        }
+        opt = zend_hash_str_find(opts, "thickness", sizeof("thickness") - 1);
+        if (opt && Z_TYPE_P(opt) == IS_LONG) {
+            zend_long t = Z_LVAL_P(opt);
+            if (t >= 1 && t <= 16) add_assoc_long(&entry, "thickness", t);
+        }
+        opt = zend_hash_str_find(opts, "axis", sizeof("axis") - 1);
+        if (opt && Z_TYPE_P(opt) == IS_STRING) {
+            add_assoc_str(&entry, "axis", zend_string_copy(Z_STR_P(opt)));
+        }
+    }
+
+    add_next_index_zval(list_zv, &entry);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- PieChart::setOtherThreshold ------------------- */
+
+ZEND_METHOD(FastChart_PieChart, setOtherThreshold)
+{
+    double percent;
+    zend_string *label = NULL;
+
+    ZEND_PARSE_PARAMETERS_START(1, 2)
+        Z_PARAM_DOUBLE(percent)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_STR(label)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (percent < 0.0 || percent >= 100.0) {
+        zend_value_error("FastChart\\PieChart::setOtherThreshold() expects a percentage in [0.0, 100.0)");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->pie_other_threshold = percent;
+    if (self->pie_other_label) zend_string_release(self->pie_other_label);
+    self->pie_other_label = label ? zend_string_copy(label) : NULL;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- StockChart::setVolumeColors ------------------- */
+
+ZEND_METHOD(FastChart_StockChart, setVolumeColors)
+{
+    zval *colors;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(colors)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval colors_copy;
+    ZVAL_COPY(&colors_copy, colors);
+    add_assoc_zval(&self->config, "volume_colors", &colors_copy);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
 /* ---------------- axis titles + label rotation ------------------- */
 

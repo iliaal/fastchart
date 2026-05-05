@@ -60,6 +60,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   extension (`.png` / `.jpg` / `.jpeg` / `.webp` / `.gif` /
   `.avif`). Honors `open_basedir`. Returns the byte count
   written.
+- Per-element color overrides: `setAxisColor(int)`,
+  `setGridColor(int)`, `setBorderColor(int)`, `setTextColor(int)`.
+  24-bit `0xRRGGBB` or `-1` to revert to the theme palette.
+- Per-element font overrides: `setTitleFont(?string $path, ?float $size)`,
+  `setAxisFont(?string $path, ?float $size)`,
+  `setLabelFont(?string $path, ?float $size)`. Each role inherits
+  from the global `setFontPath()` / `setFontSize()` when null.
+- `setShowValues(bool $on, string $format = '%.2f')` paints
+  numeric value labels above markers (Line, Scatter) and bars
+  (Bar, Area).
+- `PieChart::setOtherThreshold(float $pct, string $label = 'Other')`
+  collapses slices below the percent threshold into a single
+  aggregated slice. `0.0` disables.
+- `setTransparentBackground(bool)` keeps the canvas alpha so
+  PNG / WebP / AVIF outputs preserve transparency.
+- `setBackgroundImage(string $path)` composites a source image as
+  the canvas background; the plot area stays opaque on top.
+  Empty path clears; missing file silently no-ops.
+- `setLineInterpolation(INTERP_LINEAR | INTERP_SMOOTH)` switches
+  Line and Area top-edge segments to Catmull-Rom curves.
+- `StockChart::setVolumeColors(array)` per-bar override of the
+  default red/green volume coloring. Empty array reverts.
+- `setPlotRect(int x0, int y0, int x1, int y1)` bypasses
+  auto-layout and forces a hard plot rectangle. Negative width
+  or height reverts to auto-layout.
+- `setBorderSides(int)` selects which sides of the plot frame to
+  draw via `BORDER_NONE | BORDER_LEFT | BORDER_RIGHT | BORDER_TOP |
+  BORDER_BOTTOM | BORDER_ALL` bitmask. Default `BORDER_ALL`.
+- `addOverlaySeries(string $type, array $data, array $options = [])`
+  layers a `'line'` or `'area'` overlay onto Line / Bar / Area /
+  Stock charts (the GDChart `COMBO_*` equivalent). Options:
+  `color`, `thickness`, `label`.
 
 - Initial scaffold. Builds against PHP 8.3+, depends on `ext/gd`,
   links libgd directly for drawing primitives.

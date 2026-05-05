@@ -278,13 +278,12 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
         ? (int)self->marker_size
         : 6;
 
-    gdImageSetThickness(im, 2);
-
     int legend_colors[MAX_SERIES];
     const char *legend_labels[MAX_SERIES];
     int legend_count = 0;
 
     double values[2048];
+    fastchart_pt pts[2048];
     for (int s = 0; s < n_series; s++) {
         int color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
         const fastchart_value_range *rng =
@@ -292,29 +291,26 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
         int n = extract_doubles(series[s].data, values,
                                 series[s].len < 2048 ? series[s].len : 2048,
                                 self->strict);
-        if (n < 0) {
-            gdImageSetThickness(im, 1);
-            return -1;
-        }
+        if (n < 0) return -1;
         if (n < 1) continue;
 
-        gdImageSetAntiAliased(im, color);
-        int prev_x = 0, prev_y = 0;
-        bool prev_valid = false;
+        /* Build the polyline points (NaN -> invalid -> gap). */
         for (int i = 0; i < n; i++) {
-            int x = fastchart_x_categorical_center(&plot, i, max_len);
+            pts[i].x = fastchart_x_categorical_center(&plot, i, max_len);
             if (isnan(values[i])) {
-                /* Gap: break the polyline and skip the marker. */
-                prev_valid = false;
-                continue;
+                pts[i].valid = false;
+            } else {
+                pts[i].y = fastchart_y_to_pixel(values[i], rng, &plot);
+                pts[i].valid = true;
             }
-            int y = fastchart_y_to_pixel(values[i], rng, &plot);
+        }
 
-            if (prev_valid) {
-                gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
-            }
+        /* Polyline (linear or smooth depending on chart->line_interpolation). */
+        fastchart_draw_polyline(im, self, pts, n, color, 2, true);
 
-            /* Per-point ext color override, falls back to series color. */
+        /* Markers + value labels at each valid point. */
+        for (int i = 0; i < n; i++) {
+            if (!pts[i].valid) continue;
             int marker_color = color;
             if (series[s].colors) {
                 zval *cv = zend_hash_index_find(series[s].colors, i);
@@ -328,11 +324,10 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
                     }
                 }
             }
-            fastchart_draw_marker(im, x, y, marker_style, marker_size, marker_color);
-
-            prev_x = x;
-            prev_y = y;
-            prev_valid = true;
+            fastchart_draw_marker(im, pts[i].x, pts[i].y,
+                                  marker_style, marker_size, marker_color);
+            fastchart_draw_value_label(im, self, &pal,
+                                       pts[i].x, pts[i].y, values[i]);
         }
 
         if (series[s].label) {
@@ -341,7 +336,12 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
             legend_count++;
         }
     }
-    gdImageSetThickness(im, 1);
+
+    /* Combo overlays go on top of the primary data. */
+    fastchart_draw_overlays_categorical(im, self, &plot, &pal,
+                                         &range_l,
+                                         n_right > 0 ? &range_r : NULL,
+                                         max_len);
 
     fastchart_draw_h_annotations(im, self, &plot, &pal, &range_l);
     fastchart_draw_v_annotations_categorical(im, self, &plot, &pal, max_len);

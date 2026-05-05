@@ -122,4 +122,22 @@ void fastchart_palette_apply_overrides(gdImagePtr im,
             (chart->series_colors[i] >>  8) & 0xFF,
              chart->series_colors[i]        & 0xFF);
     }
+
+    /* Per-element color overrides (axis line, grid lines, border,
+     * text). The palette already carries theme defaults, so each
+     * field stays whatever theme set unless the user overrode it. */
+#define APPLY_COLOR_OVERRIDE(field_, override_) \
+    do { \
+        if (chart->override_ >= 0) { \
+            pal->field_ = gdImageColorAllocate(im, \
+                (int)((chart->override_ >> 16) & 0xFF), \
+                (int)((chart->override_ >>  8) & 0xFF), \
+                (int)( chart->override_        & 0xFF)); \
+        } \
+    } while (0)
+    APPLY_COLOR_OVERRIDE(axis,   axis_color_override);
+    APPLY_COLOR_OVERRIDE(grid,   grid_color_override);
+    APPLY_COLOR_OVERRIDE(border, border_color_override);
+    APPLY_COLOR_OVERRIDE(text,   text_color_override);
+#undef APPLY_COLOR_OVERRIDE
 }

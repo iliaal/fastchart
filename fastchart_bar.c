@@ -283,6 +283,28 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
         gdImageLine(im, plot.x0, zero_y, plot.x1, zero_y, pal.axis);
     }
 
+    /* Value labels above each bar (skipped when stacked since the
+     * label would land mid-stack). */
+    if (self->show_values && !(stacked && n_series > 1)) {
+        for (int i = 0; i < n_categories; i++) {
+            int slot_left = plot.x0 + i * slot_w + slot_pad;
+            for (int s = 0; s < n_series; s++) {
+                double v;
+                if (read_value(series[s].data, i, &v) != 0) continue;
+                int y_v = fastchart_y_to_pixel(v, &range, &plot);
+                int x0 = slot_left + s * sub_w;
+                int x_center = x0 + sub_w / 2;
+                /* Label sits just above the bar top (or below for
+                 * negative bars). */
+                int label_y = (v >= 0) ? y_v : y_v + (int)(self->font_size * 1.4);
+                fastchart_draw_value_label(im, self, &pal, x_center, label_y, v);
+            }
+        }
+    }
+
+    fastchart_draw_overlays_categorical(im, self, &plot, &pal,
+                                         &range, NULL, n_categories);
+
     fastchart_draw_h_annotations(im, self, &plot, &pal, &range);
     fastchart_draw_v_annotations_categorical(im, self, &plot, &pal, n_categories);
 

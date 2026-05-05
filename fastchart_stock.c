@@ -364,9 +364,17 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
         gdImageSetThickness(im, 1);
     }
 
-    /* Volume pane: filled bars from baseline up. Bar color tracks
-     * candle direction so up-day volume reads green, down-day red. */
+    /* Volume pane: filled bars from baseline up. Default color
+     * tracks candle direction (up-day green, down-day red) but the
+     * setVolumeColors() override (config[volume_colors], parallel
+     * to candles) wins when present. */
     if (show_volume && v_max > 0) {
+        zval *vol_colors_zv = zend_hash_str_find(Z_ARRVAL(self->config),
+            "volume_colors", sizeof("volume_colors") - 1);
+        HashTable *vol_colors_ht =
+            (vol_colors_zv && Z_TYPE_P(vol_colors_zv) == IS_ARRAY)
+                ? Z_ARRVAL_P(vol_colors_zv) : NULL;
+
         int baseline = volume_pane.y1;
         int vh = volume_pane.y1 - volume_pane.y0;
         int bw = candle_w;
@@ -377,7 +385,21 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
             int x = fastchart_x_time_to_pixel(&volume_pane,
                                               candles[i].ts, t_min, t_max);
             int top = baseline - (int)((double)vh * candles[i].volume / v_max);
+
             int color = candles[i].close >= candles[i].open ? pal.up : pal.down;
+            if (vol_colors_ht) {
+                zval *cv = zend_hash_index_find(vol_colors_ht, i);
+                if (cv && Z_TYPE_P(cv) == IS_LONG) {
+                    long c = Z_LVAL_P(cv);
+                    if (c >= 0 && c <= 0xFFFFFF) {
+                        color = gdImageColorAllocate(im,
+                            (int)((c >> 16) & 0xFF),
+                            (int)((c >>  8) & 0xFF),
+                            (int)( c        & 0xFF));
+                    }
+                }
+            }
+
             gdImageFilledRectangle(im,
                 x - half_bw, top, x + half_bw, baseline - 1, color);
         }
@@ -490,6 +512,17 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
             efree(vals);
             slot++;
         } ZEND_HASH_FOREACH_END();
+    }
+
+    /* Combo overlays draw onto the price pane using the price y
+     * range. Allocate a flat timestamps array since the helper
+     * walks a contiguous long[] rather than the candle struct. */
+    {
+        long *ts_arr = ecalloc((size_t)n, sizeof(long));
+        for (int i = 0; i < n; i++) ts_arr[i] = candles[i].ts;
+        fastchart_draw_overlays_time(im, self, &price_pane, &pal, &yrange,
+                                      t_min, t_max, ts_arr, n);
+        efree(ts_arr);
     }
 
     /* Annotations: only Y annotations apply within the price pane;

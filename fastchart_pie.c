@@ -154,6 +154,37 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
         return -1;
     }
 
+    /* "Other" aggregation: collapse slices below threshold% into a
+     * single Other slice. We rebuild the slice list in place,
+     * keeping the ones above threshold and accumulating the rest. */
+    if (self->pie_other_threshold > 0.0 && total > 0.0 && n_slices > 1) {
+        double threshold_value = total * (self->pie_other_threshold / 100.0);
+        fastchart_pie_slice kept[MAX_SLICES];
+        int n_kept = 0;
+        double other_sum = 0.0;
+        int other_count = 0;
+        for (int i = 0; i < n_slices; i++) {
+            if (slices[i].value < threshold_value) {
+                other_sum += slices[i].value;
+                other_count++;
+            } else if (n_kept < MAX_SLICES) {
+                kept[n_kept++] = slices[i];
+            }
+        }
+        if (other_count > 0 && n_kept < MAX_SLICES) {
+            const char *other_label = self->pie_other_label
+                ? ZSTR_VAL(self->pie_other_label) : "Other";
+            kept[n_kept].label = other_label;
+            kept[n_kept].idx_label[0] = '\0';
+            kept[n_kept].value = other_sum;
+            kept[n_kept].color_rgb = -1;  /* palette default */
+            n_kept++;
+        }
+        for (int i = 0; i < n_kept; i++) slices[i] = kept[i];
+        n_slices = n_kept;
+        /* total unchanged: aggregating doesn't change the sum */
+    }
+
     double donut = 0.0;
     {
         zval *cfg = zend_hash_str_find(Z_ARRVAL(self->config),

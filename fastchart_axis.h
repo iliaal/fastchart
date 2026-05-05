@@ -136,6 +136,55 @@ int fastchart_zval_to_long(zval *zv, long *out);
 void fastchart_draw_marker(gdImagePtr im, int x, int y,
                            int style, int size, int color);
 
+/* Resolve which font path to use for an element. `role` is one of
+ * "title" / "axis" / "label". Falls back to chart->font_path when no
+ * per-element override is set. Returns NULL if no font is available. */
+const char *fastchart_resolve_font(fastchart_obj *chart, const char *role);
+double fastchart_resolve_font_size(fastchart_obj *chart, const char *role,
+                                    double base_default);
+
+typedef struct {
+    int x, y;
+    bool valid;   /* false marks a gap (NaN data point) */
+} fastchart_pt;
+
+/* Draw a polyline through `pts` honoring the chart's
+ * line_interpolation setting. Linear uses gdImageLine for each
+ * consecutive valid pair; smooth uses Catmull-Rom with ~10 sub-
+ * segments per interval. Gaps (valid=false) break the polyline. */
+void fastchart_draw_polyline(gdImagePtr im, fastchart_obj *chart,
+                             const fastchart_pt *pts, int n,
+                             int color, int thickness, bool antialiased);
+
+/* Draw a numeric value label above (x, y) -- typically used by the
+ * setShowValues() rendering path. Picks the value font + size and
+ * applies the chart's value_format (default "%g"). No-op if the
+ * chart has no font or show_values is off. `value` is the raw
+ * datum, NaN values render nothing. */
+void fastchart_draw_value_label(gdImagePtr im, fastchart_obj *chart,
+                                const fastchart_palette *pal,
+                                int x, int y, double value);
+
+/* Walk overlay series stored on chart->config["overlays"] and
+ * draw each as a line or area on top of the existing plot, using
+ * the supplied yrange for left-axis overlays and yrange_right (may
+ * be NULL) for right-axis ones. Caller passes the categorical-
+ * X-axis cell count so position math stays consistent. */
+void fastchart_draw_overlays_categorical(gdImagePtr im, fastchart_obj *chart,
+                                          const fastchart_rect *plot,
+                                          const fastchart_palette *pal,
+                                          const fastchart_value_range *yrange,
+                                          const fastchart_value_range *yrange_right,
+                                          int n_categories);
+
+/* Time-axis variant for StockChart overlays. */
+void fastchart_draw_overlays_time(gdImagePtr im, fastchart_obj *chart,
+                                  const fastchart_rect *plot,
+                                  const fastchart_palette *pal,
+                                  const fastchart_value_range *yrange,
+                                  long t_min, long t_max,
+                                  long *timestamps, int n_candles);
+
 /* Draw a legend in the position the chart's `legend_position`
  * field selects (one of FASTCHART_LEGEND_*). One row per series
  * with a color swatch and a label. `colors[i]` and `labels[i]`

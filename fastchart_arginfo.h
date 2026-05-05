@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: c04ece191dadcc750a46d590f7dfd406c94dbece */
+ * Stub hash: 0bd8473e6031a1c1c26ee40b3b4ad30c6509f185 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -86,6 +86,53 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_addVertica
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, color, IS_LONG, 1, "null")
 ZEND_END_ARG_INFO()
 
+#define arginfo_class_FastChart_Chart_setAxisColor arginfo_class_FastChart_Chart_setBackgroundColor
+
+#define arginfo_class_FastChart_Chart_setGridColor arginfo_class_FastChart_Chart_setBackgroundColor
+
+#define arginfo_class_FastChart_Chart_setBorderColor arginfo_class_FastChart_Chart_setBackgroundColor
+
+#define arginfo_class_FastChart_Chart_setTextColor arginfo_class_FastChart_Chart_setBackgroundColor
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setTitleFont, 0, 0, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, path, IS_STRING, 1, "null")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, size, IS_DOUBLE, 1, "null")
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_Chart_setAxisFont arginfo_class_FastChart_Chart_setTitleFont
+
+#define arginfo_class_FastChart_Chart_setLabelFont arginfo_class_FastChart_Chart_setTitleFont
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setShowValues, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, show, _IS_BOOL, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, format, IS_STRING, 0, "\'%g\'")
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_Chart_setTransparentBackground arginfo_class_FastChart_Chart_setSecondaryYAxis
+
+#define arginfo_class_FastChart_Chart_setBackgroundImage arginfo_class_FastChart_Chart_setFontPath
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setLineInterpolation, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, mode, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setPlotRect, 0, 4, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, x0, IS_LONG, 0)
+	ZEND_ARG_TYPE_INFO(0, y0, IS_LONG, 0)
+	ZEND_ARG_TYPE_INFO(0, x1, IS_LONG, 0)
+	ZEND_ARG_TYPE_INFO(0, y1, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setBorderSides, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, sides, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_addOverlaySeries, 0, 2, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, type, IS_STRING, 0)
+	ZEND_ARG_TYPE_INFO(0, values, IS_ARRAY, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, opts, IS_ARRAY, 1, "null")
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_FastChart_Chart_draw, 0, 1, GdImage, 0)
 	ZEND_ARG_OBJ_INFO(0, canvas, GdImage, 0)
 ZEND_END_ARG_INFO()
@@ -159,6 +206,11 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_PieChart_setSlic
 	ZEND_ARG_TYPE_INFO(0, format, IS_STRING, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_PieChart_setOtherThreshold, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, percent, IS_DOUBLE, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, label, IS_STRING, 0, "\'Other\'")
+ZEND_END_ARG_INFO()
+
 #define arginfo_class_FastChart_PieChart_draw arginfo_class_FastChart_Chart_draw
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_ScatterChart_setPoints, 0, 1, IS_STATIC, 0)
@@ -180,6 +232,8 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_setMo
 ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_StockChart_setVolumePane arginfo_class_FastChart_Chart_setSecondaryYAxis
+
+#define arginfo_class_FastChart_StockChart_setVolumeColors arginfo_class_FastChart_Chart_setSeriesColors
 
 #define arginfo_class_FastChart_StockChart_setCandleStyle arginfo_class_FastChart_LineChart_setMarkerStyle
 
@@ -212,6 +266,20 @@ ZEND_METHOD(FastChart_Chart, setYAxisRange);
 ZEND_METHOD(FastChart_Chart, setSecondaryYAxis);
 ZEND_METHOD(FastChart_Chart, addHorizontalLine);
 ZEND_METHOD(FastChart_Chart, addVerticalLine);
+ZEND_METHOD(FastChart_Chart, setAxisColor);
+ZEND_METHOD(FastChart_Chart, setGridColor);
+ZEND_METHOD(FastChart_Chart, setBorderColor);
+ZEND_METHOD(FastChart_Chart, setTextColor);
+ZEND_METHOD(FastChart_Chart, setTitleFont);
+ZEND_METHOD(FastChart_Chart, setAxisFont);
+ZEND_METHOD(FastChart_Chart, setLabelFont);
+ZEND_METHOD(FastChart_Chart, setShowValues);
+ZEND_METHOD(FastChart_Chart, setTransparentBackground);
+ZEND_METHOD(FastChart_Chart, setBackgroundImage);
+ZEND_METHOD(FastChart_Chart, setLineInterpolation);
+ZEND_METHOD(FastChart_Chart, setPlotRect);
+ZEND_METHOD(FastChart_Chart, setBorderSides);
+ZEND_METHOD(FastChart_Chart, addOverlaySeries);
 ZEND_METHOD(FastChart_Chart, renderPng);
 ZEND_METHOD(FastChart_Chart, renderJpeg);
 ZEND_METHOD(FastChart_Chart, renderWebp);
@@ -234,6 +302,7 @@ ZEND_METHOD(FastChart_PieChart, setDonutHoleRatio);
 ZEND_METHOD(FastChart_PieChart, setExplode);
 ZEND_METHOD(FastChart_PieChart, setSliceLabelPosition);
 ZEND_METHOD(FastChart_PieChart, setSliceLabelFormat);
+ZEND_METHOD(FastChart_PieChart, setOtherThreshold);
 ZEND_METHOD(FastChart_PieChart, draw);
 ZEND_METHOD(FastChart_ScatterChart, setPoints);
 ZEND_METHOD(FastChart_ScatterChart, setMarkerStyle);
@@ -242,6 +311,7 @@ ZEND_METHOD(FastChart_ScatterChart, draw);
 ZEND_METHOD(FastChart_StockChart, setOhlcv);
 ZEND_METHOD(FastChart_StockChart, setMovingAverages);
 ZEND_METHOD(FastChart_StockChart, setVolumePane);
+ZEND_METHOD(FastChart_StockChart, setVolumeColors);
 ZEND_METHOD(FastChart_StockChart, setCandleStyle);
 ZEND_METHOD(FastChart_StockChart, addIndicatorPane);
 ZEND_METHOD(FastChart_StockChart, draw);
@@ -268,6 +338,20 @@ static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, setSecondaryYAxis, arginfo_class_FastChart_Chart_setSecondaryYAxis, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, addHorizontalLine, arginfo_class_FastChart_Chart_addHorizontalLine, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, addVerticalLine, arginfo_class_FastChart_Chart_addVerticalLine, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setAxisColor, arginfo_class_FastChart_Chart_setAxisColor, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setGridColor, arginfo_class_FastChart_Chart_setGridColor, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setBorderColor, arginfo_class_FastChart_Chart_setBorderColor, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setTextColor, arginfo_class_FastChart_Chart_setTextColor, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setTitleFont, arginfo_class_FastChart_Chart_setTitleFont, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setAxisFont, arginfo_class_FastChart_Chart_setAxisFont, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setLabelFont, arginfo_class_FastChart_Chart_setLabelFont, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setShowValues, arginfo_class_FastChart_Chart_setShowValues, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setTransparentBackground, arginfo_class_FastChart_Chart_setTransparentBackground, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setBackgroundImage, arginfo_class_FastChart_Chart_setBackgroundImage, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setLineInterpolation, arginfo_class_FastChart_Chart_setLineInterpolation, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setPlotRect, arginfo_class_FastChart_Chart_setPlotRect, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setBorderSides, arginfo_class_FastChart_Chart_setBorderSides, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, addOverlaySeries, arginfo_class_FastChart_Chart_addOverlaySeries, ZEND_ACC_PUBLIC)
 	ZEND_RAW_FENTRY("draw", NULL, arginfo_class_FastChart_Chart_draw, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
 	ZEND_ME(FastChart_Chart, renderPng, arginfo_class_FastChart_Chart_renderPng, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, renderJpeg, arginfo_class_FastChart_Chart_renderJpeg, ZEND_ACC_PUBLIC)
@@ -307,6 +391,7 @@ static const zend_function_entry class_FastChart_PieChart_methods[] = {
 	ZEND_ME(FastChart_PieChart, setExplode, arginfo_class_FastChart_PieChart_setExplode, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PieChart, setSliceLabelPosition, arginfo_class_FastChart_PieChart_setSliceLabelPosition, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PieChart, setSliceLabelFormat, arginfo_class_FastChart_PieChart_setSliceLabelFormat, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_PieChart, setOtherThreshold, arginfo_class_FastChart_PieChart_setOtherThreshold, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PieChart, draw, arginfo_class_FastChart_PieChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
@@ -323,6 +408,7 @@ static const zend_function_entry class_FastChart_StockChart_methods[] = {
 	ZEND_ME(FastChart_StockChart, setOhlcv, arginfo_class_FastChart_StockChart_setOhlcv, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, setMovingAverages, arginfo_class_FastChart_StockChart_setMovingAverages, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, setVolumePane, arginfo_class_FastChart_StockChart_setVolumePane, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_StockChart, setVolumeColors, arginfo_class_FastChart_StockChart_setVolumeColors, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, setCandleStyle, arginfo_class_FastChart_StockChart_setCandleStyle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, addIndicatorPane, arginfo_class_FastChart_StockChart_addIndicatorPane, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, draw, arginfo_class_FastChart_StockChart_draw, ZEND_ACC_PUBLIC)
@@ -467,6 +553,54 @@ static zend_class_entry *register_class_FastChart_Chart(void)
 	zend_string *const_STYLE_I_CAP_name = zend_string_init_interned("STYLE_I_CAP", sizeof("STYLE_I_CAP") - 1, 1);
 	zend_declare_typed_class_constant(class_entry, const_STYLE_I_CAP_name, &const_STYLE_I_CAP_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
 	zend_string_release(const_STYLE_I_CAP_name);
+
+	zval const_BORDER_NONE_value;
+	ZVAL_LONG(&const_BORDER_NONE_value, 0);
+	zend_string *const_BORDER_NONE_name = zend_string_init_interned("BORDER_NONE", sizeof("BORDER_NONE") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_BORDER_NONE_name, &const_BORDER_NONE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_BORDER_NONE_name);
+
+	zval const_BORDER_LEFT_value;
+	ZVAL_LONG(&const_BORDER_LEFT_value, 1);
+	zend_string *const_BORDER_LEFT_name = zend_string_init_interned("BORDER_LEFT", sizeof("BORDER_LEFT") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_BORDER_LEFT_name, &const_BORDER_LEFT_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_BORDER_LEFT_name);
+
+	zval const_BORDER_RIGHT_value;
+	ZVAL_LONG(&const_BORDER_RIGHT_value, 2);
+	zend_string *const_BORDER_RIGHT_name = zend_string_init_interned("BORDER_RIGHT", sizeof("BORDER_RIGHT") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_BORDER_RIGHT_name, &const_BORDER_RIGHT_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_BORDER_RIGHT_name);
+
+	zval const_BORDER_TOP_value;
+	ZVAL_LONG(&const_BORDER_TOP_value, 4);
+	zend_string *const_BORDER_TOP_name = zend_string_init_interned("BORDER_TOP", sizeof("BORDER_TOP") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_BORDER_TOP_name, &const_BORDER_TOP_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_BORDER_TOP_name);
+
+	zval const_BORDER_BOTTOM_value;
+	ZVAL_LONG(&const_BORDER_BOTTOM_value, 8);
+	zend_string *const_BORDER_BOTTOM_name = zend_string_init_interned("BORDER_BOTTOM", sizeof("BORDER_BOTTOM") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_BORDER_BOTTOM_name, &const_BORDER_BOTTOM_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_BORDER_BOTTOM_name);
+
+	zval const_BORDER_ALL_value;
+	ZVAL_LONG(&const_BORDER_ALL_value, 15);
+	zend_string *const_BORDER_ALL_name = zend_string_init_interned("BORDER_ALL", sizeof("BORDER_ALL") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_BORDER_ALL_name, &const_BORDER_ALL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_BORDER_ALL_name);
+
+	zval const_INTERP_LINEAR_value;
+	ZVAL_LONG(&const_INTERP_LINEAR_value, 0);
+	zend_string *const_INTERP_LINEAR_name = zend_string_init_interned("INTERP_LINEAR", sizeof("INTERP_LINEAR") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_INTERP_LINEAR_name, &const_INTERP_LINEAR_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_INTERP_LINEAR_name);
+
+	zval const_INTERP_SMOOTH_value;
+	ZVAL_LONG(&const_INTERP_SMOOTH_value, 1);
+	zend_string *const_INTERP_SMOOTH_name = zend_string_init_interned("INTERP_SMOOTH", sizeof("INTERP_SMOOTH") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_INTERP_SMOOTH_name, &const_INTERP_SMOOTH_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_INTERP_SMOOTH_name);
 
 	return class_entry;
 }

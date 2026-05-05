@@ -320,6 +320,10 @@ int fastchart_area_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
     }
 
+    /* Combo overlays + annotations on top of the area fills. */
+    fastchart_draw_overlays_categorical(im, self, &plot, &pal,
+                                         &range, NULL, max_len);
+
     fastchart_draw_h_annotations(im, self, &plot, &pal, &range);
     fastchart_draw_v_annotations_categorical(im, self, &plot, &pal, max_len);
 

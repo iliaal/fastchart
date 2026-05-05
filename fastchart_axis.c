@@ -54,6 +54,107 @@ int fastchart_zval_to_long(zval *zv, long *out)
     }
 }
 
+/* ----------------------- font resolution ------------------------ */
+
+const char *fastchart_resolve_font(fastchart_obj *chart, const char *role)
+{
+    if (strcmp(role, "title") == 0 && chart->title_font_path) {
+        return ZSTR_VAL(chart->title_font_path);
+    }
+    if (strcmp(role, "axis") == 0 && chart->axis_font_path) {
+        return ZSTR_VAL(chart->axis_font_path);
+    }
+    if (strcmp(role, "label") == 0 && chart->label_font_path) {
+        return ZSTR_VAL(chart->label_font_path);
+    }
+    return chart->font_path ? ZSTR_VAL(chart->font_path) : NULL;
+}
+
+double fastchart_resolve_font_size(fastchart_obj *chart, const char *role,
+                                    double base_default)
+{
+    if (strcmp(role, "title") == 0 && chart->title_font_size > 0) {
+        return chart->title_font_size;
+    }
+    if (strcmp(role, "axis") == 0 && chart->axis_font_size > 0) {
+        return chart->axis_font_size;
+    }
+    if (strcmp(role, "label") == 0 && chart->label_font_size > 0) {
+        return chart->label_font_size;
+    }
+    return base_default;
+}
+
+/* ------------------------ polyline drawer ----------------------- */
+
+/* Catmull-Rom interpolation of one segment (p1 -> p2) at parameter
+ * t in [0, 1], with the surrounding control points p0 (or p1 if
+ * none) and p3 (or p2 if none). */
+static void catmull_point(int p0x, int p0y, int p1x, int p1y,
+                          int p2x, int p2y, int p3x, int p3y,
+                          double t, int *ox, int *oy)
+{
+    double t2 = t * t;
+    double t3 = t2 * t;
+    double x = 0.5 * ((2 * p1x) +
+                      (-p0x + p2x) * t +
+                      (2 * p0x - 5 * p1x + 4 * p2x - p3x) * t2 +
+                      (-p0x + 3 * p1x - 3 * p2x + p3x) * t3);
+    double y = 0.5 * ((2 * p1y) +
+                      (-p0y + p2y) * t +
+                      (2 * p0y - 5 * p1y + 4 * p2y - p3y) * t2 +
+                      (-p0y + 3 * p1y - 3 * p2y + p3y) * t3);
+    *ox = (int)(x + 0.5);
+    *oy = (int)(y + 0.5);
+}
+
+void fastchart_draw_polyline(gdImagePtr im, fastchart_obj *chart,
+                             const fastchart_pt *pts, int n,
+                             int color, int thickness, bool antialiased)
+{
+    if (n < 2) return;
+    if (thickness > 1) gdImageSetThickness(im, thickness);
+    if (antialiased) gdImageSetAntiAliased(im, color);
+    int draw_color = antialiased ? gdAntiAliased : color;
+
+    if (chart->line_interpolation != FASTCHART_INTERP_SMOOTH) {
+        /* Linear: connect consecutive valid points. */
+        int prev_x = 0, prev_y = 0;
+        bool prev_valid = false;
+        for (int i = 0; i < n; i++) {
+            if (!pts[i].valid) { prev_valid = false; continue; }
+            if (prev_valid) {
+                gdImageLine(im, prev_x, prev_y, pts[i].x, pts[i].y, draw_color);
+            }
+            prev_x = pts[i].x; prev_y = pts[i].y; prev_valid = true;
+        }
+    } else {
+        /* Catmull-Rom: 10 sub-segments per valid pair, with the
+         * surrounding two valid neighbors as control points (or
+         * the endpoints themselves at boundaries / gap edges). */
+        const int subdiv = 10;
+        for (int i = 0; i < n - 1; i++) {
+            if (!pts[i].valid || !pts[i + 1].valid) continue;
+            int p0i = (i > 0 && pts[i - 1].valid) ? i - 1 : i;
+            int p3i = (i + 2 < n && pts[i + 2].valid) ? i + 2 : i + 1;
+            int prev_x = pts[i].x, prev_y = pts[i].y;
+            for (int k = 1; k <= subdiv; k++) {
+                double t = (double)k / (double)subdiv;
+                int x, y;
+                catmull_point(pts[p0i].x, pts[p0i].y,
+                              pts[i].x,   pts[i].y,
+                              pts[i + 1].x, pts[i + 1].y,
+                              pts[p3i].x, pts[p3i].y,
+                              t, &x, &y);
+                gdImageLine(im, prev_x, prev_y, x, y, draw_color);
+                prev_x = x; prev_y = y;
+            }
+        }
+    }
+
+    if (thickness > 1) gdImageSetThickness(im, 1);
+}
+
 /* ----------------------------- markers --------------------------- */
 
 void fastchart_draw_marker(gdImagePtr im, int x, int y,
@@ -106,6 +207,18 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
 {
     int W = gdImageSX(im);
     int H = gdImageSY(im);
+
+    /* Hard plot rectangle bypass: when setPlotRect() was called,
+     * skip auto-layout entirely and clamp to canvas bounds. */
+    if (chart->has_plot_rect) {
+        out_plot->x0 = chart->plot_x0 < 0 ? 0 : chart->plot_x0;
+        out_plot->y0 = chart->plot_y0 < 0 ? 0 : chart->plot_y0;
+        out_plot->x1 = chart->plot_x1 > W - 1 ? W - 1 : chart->plot_x1;
+        out_plot->y1 = chart->plot_y1 > H - 1 ? H - 1 : chart->plot_y1;
+        if (out_plot->x1 < out_plot->x0 + 10) out_plot->x1 = out_plot->x0 + 10;
+        if (out_plot->y1 < out_plot->y0 + 10) out_plot->y1 = out_plot->y0 + 10;
+        return;
+    }
 
     int top = MARGIN_TOP_PAD;
     int bottom = MARGIN_BOTTOM_PAD;
@@ -355,16 +468,64 @@ int fastchart_y_to_pixel(double y,
 
 /* --------------------------- frame + title ------------------------- */
 
+/* Load and composite a background image onto the canvas. Format
+ * detected from extension. Silently no-ops on load failure -- the
+ * chart still renders, just without the bg image. */
+static void composite_bg_image(gdImagePtr im, const char *path)
+{
+    int W = gdImageSX(im);
+    int H = gdImageSY(im);
+
+    /* gdImageCreateFromFile picks the right loader by signature
+     * (libgd 2.2.0+). Failure returns NULL. */
+    gdImagePtr src = gdImageCreateFromFile(path);
+    if (!src) return;
+
+    gdImageCopyResampled(im, src, 0, 0, 0, 0,
+                         W, H,
+                         gdImageSX(src), gdImageSY(src));
+    gdImageDestroy(src);
+}
+
 void fastchart_draw_frame(gdImagePtr im, fastchart_obj *chart,
                           const fastchart_rect *plot,
                           const fastchart_palette *pal)
 {
     int W = gdImageSX(im);
     int H = gdImageSY(im);
-    (void)chart;
-    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, pal->bg);
+
+    if (chart->transparent_bg) {
+        /* Reserve the canvas with a fully-transparent fill so PNG /
+         * WebP / AVIF outputs preserve alpha. gdImageSaveAlpha must
+         * be enabled or the encoder collapses alpha to opaque. */
+        int trans = gdImageColorAllocateAlpha(im, 0xFF, 0xFF, 0xFF, 127);
+        gdImageSaveAlpha(im, 1);
+        gdImageAlphaBlending(im, 0);
+        gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, trans);
+        gdImageAlphaBlending(im, 1);
+    } else if (chart->bg_image_path) {
+        gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, pal->bg);
+        composite_bg_image(im, ZSTR_VAL(chart->bg_image_path));
+    } else {
+        gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, pal->bg);
+    }
+
+    /* Plot area background stays opaque so chart elements remain
+     * readable on top of a transparent canvas or a busy bg image. */
     gdImageFilledRectangle(im, plot->x0, plot->y0, plot->x1, plot->y1, pal->plot_bg);
-    gdImageRectangle(im, plot->x0, plot->y0, plot->x1, plot->y1, pal->border);
+
+    /* Border-side bitmask: draw selected sides individually. The
+     * Y-axis line gets its own dedicated draw call elsewhere, so
+     * suppressing BORDER_LEFT here is safe (the Y axis still shows). */
+    zend_long sides = chart->border_sides;
+    if (sides & FASTCHART_BORDER_TOP)
+        gdImageLine(im, plot->x0, plot->y0, plot->x1, plot->y0, pal->border);
+    if (sides & FASTCHART_BORDER_BOTTOM)
+        gdImageLine(im, plot->x0, plot->y1, plot->x1, plot->y1, pal->border);
+    if (sides & FASTCHART_BORDER_LEFT)
+        gdImageLine(im, plot->x0, plot->y0, plot->x0, plot->y1, pal->border);
+    if (sides & FASTCHART_BORDER_RIGHT)
+        gdImageLine(im, plot->x1, plot->y0, plot->x1, plot->y1, pal->border);
 }
 
 void fastchart_draw_title(gdImagePtr im, fastchart_obj *chart,
@@ -372,16 +533,17 @@ void fastchart_draw_title(gdImagePtr im, fastchart_obj *chart,
                           const fastchart_palette *pal)
 {
     if (!chart->title || ZSTR_LEN(chart->title) == 0) return;
-    if (!chart->font_path) return;
+    const char *font = fastchart_resolve_font(chart, "title");
+    if (!font) return;
 
-    double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    double size = fastchart_resolve_font_size(chart, "title", base * 1.4);
+
     int W = gdImageSX(im);
     int cx = W / 2;
-    /* Place the title baseline so the text sits above the plot area. */
     int baseline = plot->y0 - TITLE_PADDING_BELOW;
 
-    fastchart_text_draw(im, ZSTR_VAL(chart->font_path), size * 1.4,
-                        pal->text, cx, baseline,
+    fastchart_text_draw(im, font, size, pal->text, cx, baseline,
                         FASTCHART_ALIGN_CENTER, ZSTR_VAL(chart->title),
                         NULL, 0);
 }
@@ -411,9 +573,10 @@ void fastchart_draw_y_axis(gdImagePtr im, fastchart_obj *chart,
     /* Y axis line. */
     gdImageLine(im, plot->x0, plot->y0, plot->x0, plot->y1, pal->axis);
 
-    if (!chart->font_path) return;
-    double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    const char *font = ZSTR_VAL(chart->font_path);
+    const char *font = fastchart_resolve_font(chart, "axis");
+    if (!font) return;
+    double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    double size = fastchart_resolve_font_size(chart, "axis", base);
 
     char buf[32];
     for (int i = 0; i < range->n_ticks; i++) {
@@ -444,10 +607,11 @@ void fastchart_draw_y_axis_right(gdImagePtr im, fastchart_obj *chart,
 {
     /* Right axis line. */
     gdImageLine(im, plot->x1, plot->y0, plot->x1, plot->y1, pal->axis);
-    if (!chart->font_path) return;
 
-    double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    const char *font = ZSTR_VAL(chart->font_path);
+    const char *font = fastchart_resolve_font(chart, "axis");
+    if (!font) return;
+    double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    double size = fastchart_resolve_font_size(chart, "axis", base);
 
     char buf[32];
     for (int i = 0; i < range->n_ticks; i++) {
@@ -470,37 +634,28 @@ void fastchart_draw_axis_titles(gdImagePtr im, fastchart_obj *chart,
                                 const fastchart_rect *plot,
                                 const fastchart_palette *pal)
 {
-    if (!chart->font_path) return;
-    double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    const char *font = ZSTR_VAL(chart->font_path);
+    const char *font = fastchart_resolve_font(chart, "axis");
+    if (!font) return;
+    double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    double size = fastchart_resolve_font_size(chart, "axis", base * 1.1);
 
     if (chart->x_axis_title && ZSTR_LEN(chart->x_axis_title) > 0) {
-        int W = gdImageSX(im);
         int H = gdImageSY(im);
-        (void)W;
         int cx = (plot->x0 + plot->x1) / 2;
-        /* Place the X-title baseline near the bottom of the canvas
-         * with a small bottom margin. */
         int baseline = H - MARGIN_BOTTOM_PAD - 2;
-        fastchart_text_draw(im, font, size * 1.1, pal->text,
+        fastchart_text_draw(im, font, size, pal->text,
                             cx, baseline, FASTCHART_ALIGN_CENTER,
                             ZSTR_VAL(chart->x_axis_title), NULL, 0);
     }
 
     if (chart->y_axis_title && ZSTR_LEN(chart->y_axis_title) > 0) {
-        /* Y-title reads bottom-to-top centered on the plot's
-         * vertical midpoint. gdImageStringFT with angle=π/2 starts
-         * at (x, y) and progresses upward; the unrotated text width
-         * becomes the rotated text's vertical extent. To visually
-         * center on cy, set the baseline y = cy + width / 2 so the
-         * top edge ends up at cy - width / 2. */
         int cy = (plot->y0 + plot->y1) / 2;
-        int x = MARGIN_LEFT_PAD + (int)(size * 1.1);
+        int x = MARGIN_LEFT_PAD + (int)(size);
         int tw = 0, th = 0;
-        if (fastchart_text_measure(font, size * 1.1, ZSTR_VAL(chart->y_axis_title),
+        if (fastchart_text_measure(font, size, ZSTR_VAL(chart->y_axis_title),
                                    &tw, &th, NULL, 0) == 0) {
             int y = cy + tw / 2;
-            fastchart_text_draw_rotated(im, font, size * 1.1, pal->text,
+            fastchart_text_draw_rotated(im, font, size, pal->text,
                                         x, y, FASTCHART_ALIGN_LEFT, 90.0,
                                         ZSTR_VAL(chart->y_axis_title), NULL, 0);
         }
@@ -528,10 +683,11 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
     gdImageLine(im, plot->x0, plot->y1, plot->x1, plot->y1, pal->axis);
 
     if (n_categories <= 0) return;
-    if (!chart->font_path) return;
+    const char *font = fastchart_resolve_font(chart, "label");
+    if (!font) return;
 
-    double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    const char *font = ZSTR_VAL(chart->font_path);
+    double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    double size = fastchart_resolve_font_size(chart, "label", base);
     int angle = (int)chart->x_axis_label_angle;
 
     int label_y;
@@ -687,6 +843,183 @@ void fastchart_draw_legend(gdImagePtr im, fastchart_obj *chart,
 
         row_y += row_h + row_pad;
     }
+}
+
+/* --------------------------- value labels ------------------------ */
+
+void fastchart_draw_value_label(gdImagePtr im, fastchart_obj *chart,
+                                const fastchart_palette *pal,
+                                int x, int y, double value)
+{
+    if (!chart->show_values) return;
+    if (!isfinite(value)) return;
+    const char *font = fastchart_resolve_font(chart, "label");
+    if (!font) return;
+    double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    double size = fastchart_resolve_font_size(chart, "label", base * 0.85);
+
+    const char *fmt = chart->value_format ? ZSTR_VAL(chart->value_format) : "%g";
+    char buf[32];
+    snprintf(buf, sizeof(buf), fmt, value);
+
+    /* Place baseline a few pixels above the data point. */
+    int label_y = y - 6;
+    fastchart_text_draw(im, font, size, pal->text,
+                        x, label_y, FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+}
+
+/* --------------------------- combo overlays ---------------------- */
+
+/* Allocate or reuse a color from an overlay's optional 'color' key.
+ * Falls back to the rotating palette index `slot`. */
+static int overlay_color(gdImagePtr im, const fastchart_palette *pal,
+                         zval *entry, int slot)
+{
+    zval *c = zend_hash_str_find(Z_ARRVAL_P(entry), "color", sizeof("color") - 1);
+    if (c && Z_TYPE_P(c) == IS_LONG) {
+        long v = Z_LVAL_P(c);
+        if (v >= 0 && v <= 0xFFFFFF) {
+            return gdImageColorAllocate(im,
+                (int)((v >> 16) & 0xFF),
+                (int)((v >>  8) & 0xFF),
+                (int)( v        & 0xFF));
+        }
+    }
+    return pal->series[(slot + 4) % FASTCHART_PALETTE_SERIES_N];
+}
+
+static int overlay_thickness(zval *entry)
+{
+    zval *t = zend_hash_str_find(Z_ARRVAL_P(entry), "thickness", sizeof("thickness") - 1);
+    if (t && Z_TYPE_P(t) == IS_LONG) {
+        long v = Z_LVAL_P(t);
+        if (v >= 1 && v <= 16) return (int)v;
+    }
+    return 2;
+}
+
+static bool overlay_right_axis(zval *entry)
+{
+    zval *a = zend_hash_str_find(Z_ARRVAL_P(entry), "axis", sizeof("axis") - 1);
+    return (a && Z_TYPE_P(a) == IS_STRING && strcmp(Z_STRVAL_P(a), "right") == 0);
+}
+
+void fastchart_draw_overlays_categorical(gdImagePtr im, fastchart_obj *chart,
+                                          const fastchart_rect *plot,
+                                          const fastchart_palette *pal,
+                                          const fastchart_value_range *yrange,
+                                          const fastchart_value_range *yrange_right,
+                                          int n_categories)
+{
+    zval *list = zend_hash_str_find(Z_ARRVAL(chart->config),
+                                    "overlays", sizeof("overlays") - 1);
+    if (!list || Z_TYPE_P(list) != IS_ARRAY) return;
+    if (n_categories <= 0) return;
+
+    int slot = 0;
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(list), entry) {
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        zval *type_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "type", sizeof("type") - 1);
+        zval *vals_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "values", sizeof("values") - 1);
+        if (!type_zv || !vals_zv || Z_TYPE_P(vals_zv) != IS_ARRAY) continue;
+
+        bool is_area = (Z_TYPE_P(type_zv) == IS_STRING &&
+                        strcmp(Z_STRVAL_P(type_zv), "area") == 0);
+        const fastchart_value_range *rng =
+            (overlay_right_axis(entry) && yrange_right) ? yrange_right : yrange;
+        int color = overlay_color(im, pal, entry, slot);
+        int thick = overlay_thickness(entry);
+
+        /* Build a points array. Missing / non-numeric entries break
+         * the polyline (matching the line-gap convention). */
+        fastchart_pt *pts = ecalloc((size_t)n_categories, sizeof(fastchart_pt));
+        for (int i = 0; i < n_categories; i++) {
+            zval *vv = zend_hash_index_find(Z_ARRVAL_P(vals_zv), i);
+            double d;
+            if (vv && Z_TYPE_P(vv) != IS_NULL && fastchart_zval_to_double(vv, &d) == 0) {
+                pts[i].x = fastchart_x_categorical_center(plot, i, n_categories);
+                pts[i].y = fastchart_y_to_pixel(d, rng, plot);
+                pts[i].valid = true;
+            } else {
+                pts[i].valid = false;
+            }
+        }
+
+        if (is_area) {
+            /* Build a closed polygon: top edge through valid points,
+             * then bottom edge along zero baseline (or plot bottom
+             * for log scale). Translucent fill so layered overlays
+             * stay readable. */
+            int zero_y = fastchart_y_to_pixel(rng->log_scale ? rng->min : 0.0, rng, plot);
+            int r = (color >> 16) & 0xFF, g = (color >> 8) & 0xFF, b = color & 0xFF;
+            (void)r; (void)g; (void)b;
+            int alpha_color = gdImageColorAllocateAlpha(im,
+                gdImageRed(im, color), gdImageGreen(im, color), gdImageBlue(im, color), 80);
+
+            gdPoint poly[2 * 1024];
+            int np = 0;
+            for (int i = 0; i < n_categories && np < 1024; i++) {
+                if (!pts[i].valid) continue;
+                poly[np].x = pts[i].x; poly[np].y = pts[i].y; np++;
+            }
+            for (int i = n_categories - 1; i >= 0 && np < 2 * 1024; i--) {
+                if (!pts[i].valid) continue;
+                poly[np].x = pts[i].x; poly[np].y = zero_y; np++;
+            }
+            if (np >= 3) {
+                gdImageAlphaBlending(im, 1);
+                gdImageFilledPolygon(im, poly, np, alpha_color);
+                gdImageAlphaBlending(im, 0);
+            }
+        }
+
+        fastchart_draw_polyline(im, chart, pts, n_categories,
+                                color, thick, !is_area);
+        efree(pts);
+        slot++;
+    } ZEND_HASH_FOREACH_END();
+}
+
+void fastchart_draw_overlays_time(gdImagePtr im, fastchart_obj *chart,
+                                  const fastchart_rect *plot,
+                                  const fastchart_palette *pal,
+                                  const fastchart_value_range *yrange,
+                                  long t_min, long t_max,
+                                  long *timestamps, int n_candles)
+{
+    zval *list = zend_hash_str_find(Z_ARRVAL(chart->config),
+                                    "overlays", sizeof("overlays") - 1);
+    if (!list || Z_TYPE_P(list) != IS_ARRAY) return;
+    if (n_candles <= 0) return;
+
+    int slot = 0;
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(list), entry) {
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        zval *type_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "type", sizeof("type") - 1);
+        zval *vals_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "values", sizeof("values") - 1);
+        if (!type_zv || !vals_zv || Z_TYPE_P(vals_zv) != IS_ARRAY) continue;
+
+        int color = overlay_color(im, pal, entry, slot);
+        int thick = overlay_thickness(entry);
+
+        fastchart_pt *pts = ecalloc((size_t)n_candles, sizeof(fastchart_pt));
+        for (int i = 0; i < n_candles; i++) {
+            zval *vv = zend_hash_index_find(Z_ARRVAL_P(vals_zv), i);
+            double d;
+            if (vv && Z_TYPE_P(vv) != IS_NULL && fastchart_zval_to_double(vv, &d) == 0) {
+                pts[i].x = fastchart_x_time_to_pixel(plot, timestamps[i], t_min, t_max);
+                pts[i].y = fastchart_y_to_pixel(d, yrange, plot);
+                pts[i].valid = true;
+            } else {
+                pts[i].valid = false;
+            }
+        }
+        fastchart_draw_polyline(im, chart, pts, n_candles, color, thick, true);
+        efree(pts);
+        slot++;
+    } ZEND_HASH_FOREACH_END();
 }
 
 /* --------------------------- annotations ------------------------- */
@@ -875,10 +1208,11 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
     gdImageLine(im, plot->x0, plot->y1, plot->x1, plot->y1, pal->axis);
 
     if (t_max <= t_min) return;
-    if (!chart->font_path) return;
+    const char *font = fastchart_resolve_font(chart, "label");
+    if (!font) return;
 
-    double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    const char *font = ZSTR_VAL(chart->font_path);
+    double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    double size = fastchart_resolve_font_size(chart, "label", base);
     int angle = (int)chart->x_axis_label_angle;
 
     int label_y;

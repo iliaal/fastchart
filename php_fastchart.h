@@ -121,6 +121,42 @@ typedef struct _fastchart_obj {
     /* AreaChart fill alpha (0..127, libgd convention). */
     zend_long area_alpha;
 
+    /* Per-element color overrides. -1 = use theme palette. */
+    zend_long axis_color_override;
+    zend_long grid_color_override;
+    zend_long border_color_override;
+    zend_long text_color_override;
+
+    /* Per-element font overrides. NULL path / 0.0 size = default. */
+    zend_string *title_font_path;
+    zend_string *axis_font_path;
+    zend_string *label_font_path;
+    double title_font_size;
+    double axis_font_size;
+    double label_font_size;
+
+    /* Numeric value labels next to data points. */
+    bool show_values;
+    zend_string *value_format;
+
+    /* PieChart "Other" slice aggregation threshold (percent of total). */
+    double pie_other_threshold;
+    zend_string *pie_other_label;
+
+    /* Background features. */
+    bool transparent_bg;
+    zend_string *bg_image_path;
+
+    /* Line interpolation mode (FASTCHART_INTERP_*). */
+    zend_long line_interpolation;
+
+    /* Hard plot rectangle. has_plot_rect = false means auto-layout. */
+    bool has_plot_rect;
+    int plot_x0, plot_y0, plot_x1, plot_y1;
+
+    /* Border-side bitmask (FASTCHART_BORDER_*). Default ALL. */
+    zend_long border_sides;
+
     zval data;
     zval config;
     zend_object std;
@@ -168,6 +204,18 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define FASTCHART_STYLE_BAR     1
 #define FASTCHART_STYLE_DIAMOND 2
 #define FASTCHART_STYLE_I_CAP   3
+
+/* Border side bitmask. */
+#define FASTCHART_BORDER_NONE   0
+#define FASTCHART_BORDER_LEFT   1
+#define FASTCHART_BORDER_RIGHT  2
+#define FASTCHART_BORDER_TOP    4
+#define FASTCHART_BORDER_BOTTOM 8
+#define FASTCHART_BORDER_ALL    15
+
+/* Line interpolation. */
+#define FASTCHART_INTERP_LINEAR 0
+#define FASTCHART_INTERP_SMOOTH 1
 
 /* Forward-declare the only ext/gd public API we use (also declared in
  * fastchart.c at the call site). Mirrored verbatim from

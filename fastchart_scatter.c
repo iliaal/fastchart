@@ -218,6 +218,7 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
 
         int color = pal.series[points[i].series % FASTCHART_PALETTE_SERIES_N];
         fastchart_draw_marker(im, px, py, marker_style, marker_size, color);
+        fastchart_draw_value_label(im, self, &pal, px, py, points[i].y);
     }
 
     fastchart_draw_h_annotations(im, self, &plot, &pal, &yrange);
