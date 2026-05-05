@@ -1,11 +1,10 @@
 /*
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2026 The PHP Group                                |
+  | Copyright (c) 2025-2026, Ilia Alshanetsky                            |
+  | Copyright (c) 2025-2026, Advanced Internet Designs Inc.              |
   +----------------------------------------------------------------------+
-  | This source file is subject to version 3.01 of the PHP license,     |
-  | that is bundled with this package in the file LICENSE, and is       |
-  | available through the world-wide-web at the following url:          |
-  | http://www.php.net/license/3_01.txt                                 |
+  | This source file is subject to the BSD 3-Clause license that is      |
+  | bundled with this package in the file LICENSE.                       |
   +----------------------------------------------------------------------+
   | Author: Ilia Alshanetsky <ilia@ilia.ws>                              |
   +----------------------------------------------------------------------+
@@ -36,6 +35,10 @@ zend_class_entry *fastchart_bar_chart_ce;
 zend_class_entry *fastchart_pie_chart_ce;
 zend_class_entry *fastchart_scatter_chart_ce;
 zend_class_entry *fastchart_stock_chart_ce;
+zend_class_entry *fastchart_radar_chart_ce;
+zend_class_entry *fastchart_bubble_chart_ce;
+zend_class_entry *fastchart_surface_chart_ce;
+zend_class_entry *fastchart_gauge_chart_ce;
 zend_class_entry *fastchart_gd_image_ce = NULL;
 
 static zend_object_handlers fastchart_object_handlers;
@@ -154,6 +157,28 @@ static zend_object *fastchart_create_object(zend_class_entry *ce)
     intern->y_axis_title_font_size = 0.0;
     intern->annotation_font_size = 0.0;
 
+    intern->line_style = FASTCHART_LINE_SOLID;
+    intern->gradient_from = -1;
+    intern->gradient_to = -1;
+    intern->gradient_dir = FASTCHART_GRADIENT_VERTICAL;
+    intern->has_drop_shadow = false;
+    intern->shadow_dx = 3;
+    intern->shadow_dy = 3;
+    intern->shadow_color = 0x000000;
+    intern->shadow_alpha = 64;          /* 50% opaque in gd's 0..127 space */
+    intern->trend_line = false;
+    intern->trend_line_color = -1;
+    intern->radar_max = 0.0;
+    intern->radar_filled = true;
+    intern->surface_low = 0x1f77b4;     /* default cool blue */
+    intern->surface_high = 0xd62728;    /* default warm red */
+    intern->surface_show_values = false;
+    intern->surface_value_format = NULL;
+    intern->gauge_value = 0.0;
+    intern->gauge_min = 0.0;
+    intern->gauge_max = 100.0;
+    intern->gauge_value_format = NULL;
+
     if (fastchart_default_font_path) {
         intern->font_path = zend_string_copy(fastchart_default_font_path);
     } else {
@@ -190,6 +215,8 @@ static void fastchart_free_object(zend_object *object)
     if (intern->x_axis_title_font_path) zend_string_release(intern->x_axis_title_font_path);
     if (intern->y_axis_title_font_path) zend_string_release(intern->y_axis_title_font_path);
     if (intern->annotation_font_path) zend_string_release(intern->annotation_font_path);
+    if (intern->surface_value_format) zend_string_release(intern->surface_value_format);
+    if (intern->gauge_value_format)   zend_string_release(intern->gauge_value_format);
     zval_ptr_dtor(&intern->data);
     zval_ptr_dtor(&intern->config);
 
@@ -1089,6 +1116,272 @@ ZEND_METHOD(FastChart_BarChart, setFloating)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+/* ----------------- line style ----------------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setLineStyle)
+{
+    zend_long s;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(s)
+    ZEND_PARSE_PARAMETERS_END();
+    if (s < FASTCHART_LINE_SOLID || s > FASTCHART_LINE_DOTTED) {
+        zend_value_error("FastChart\\Chart::setLineStyle() expects LINE_SOLID | LINE_DASHED | LINE_DOTTED");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->line_style = s;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- gradient fill -------------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setGradientFill)
+{
+    zend_long from, to = -1, dir = FASTCHART_GRADIENT_VERTICAL;
+    ZEND_PARSE_PARAMETERS_START(1, 3)
+        Z_PARAM_LONG(from)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(to)
+        Z_PARAM_LONG(dir)
+    ZEND_PARSE_PARAMETERS_END();
+    if (from != -1 && (from < 0 || from > 0xFFFFFF)) {
+        zend_value_error("FastChart\\Chart::setGradientFill() $from must be -1 or 0..0xFFFFFF");
+        RETURN_THROWS();
+    }
+    if (to != -1 && (to < 0 || to > 0xFFFFFF)) {
+        zend_value_error("FastChart\\Chart::setGradientFill() $to must be -1 or 0..0xFFFFFF");
+        RETURN_THROWS();
+    }
+    if (dir != FASTCHART_GRADIENT_VERTICAL && dir != FASTCHART_GRADIENT_HORIZONTAL) {
+        zend_value_error("FastChart\\Chart::setGradientFill() $direction must be GRADIENT_VERTICAL or GRADIENT_HORIZONTAL");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->gradient_from = from;
+    self->gradient_to = (to == -1 && from != -1) ? from : to;
+    self->gradient_dir = dir;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- drop shadow ---------------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setDropShadow)
+{
+    zend_long dx, dy;
+    zend_long color = 0x000000;
+    bool color_is_null = true;
+
+    ZEND_PARSE_PARAMETERS_START(2, 3)
+        Z_PARAM_LONG(dx)
+        Z_PARAM_LONG(dy)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG_OR_NULL(color, color_is_null)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (dx < -50 || dx > 50 || dy < -50 || dy > 50) {
+        zend_value_error("FastChart\\Chart::setDropShadow() offsets must be in [-50, 50]");
+        RETURN_THROWS();
+    }
+    if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
+        zend_value_error("FastChart\\Chart::setDropShadow() color must be 0..0xFFFFFF");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->shadow_dx = dx;
+    self->shadow_dy = dy;
+    if (!color_is_null) self->shadow_color = color;
+    self->has_drop_shadow = (dx != 0 || dy != 0);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- ScatterChart::setTrendLine ------------------- */
+
+ZEND_METHOD(FastChart_ScatterChart, setTrendLine)
+{
+    bool en;
+    zend_long color = -1;
+    bool color_is_null = true;
+
+    ZEND_PARSE_PARAMETERS_START(1, 2)
+        Z_PARAM_BOOL(en)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG_OR_NULL(color, color_is_null)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
+        zend_value_error("FastChart\\ScatterChart::setTrendLine() color must be 0..0xFFFFFF");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->trend_line = en;
+    self->trend_line_color = color_is_null ? -1 : color;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- RadarChart setters --------------------------- */
+
+ZEND_METHOD(FastChart_RadarChart, setSeries)
+{
+    zval *data;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(data)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval_ptr_dtor(&self->data);
+    ZVAL_COPY(&self->data, data);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_RadarChart, setMaxValue)
+{
+    double m;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_DOUBLE(m)
+    ZEND_PARSE_PARAMETERS_END();
+    if (m < 0.0) {
+        zend_value_error("FastChart\\RadarChart::setMaxValue() must be non-negative");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->radar_max = m;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_RadarChart, setFilled)
+{
+    bool f;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(f)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->radar_filled = f;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- BubbleChart setters -------------------------- */
+
+ZEND_METHOD(FastChart_BubbleChart, setPoints)
+{
+    zval *data;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(data)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval_ptr_dtor(&self->data);
+    ZVAL_COPY(&self->data, data);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- SurfaceChart setters ------------------------- */
+
+ZEND_METHOD(FastChart_SurfaceChart, setGrid)
+{
+    zval *data;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(data)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval_ptr_dtor(&self->data);
+    ZVAL_COPY(&self->data, data);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_SurfaceChart, setColorRamp)
+{
+    zend_long lo, hi;
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_LONG(lo)
+        Z_PARAM_LONG(hi)
+    ZEND_PARSE_PARAMETERS_END();
+    if (lo < 0 || lo > 0xFFFFFF || hi < 0 || hi > 0xFFFFFF) {
+        zend_value_error("FastChart\\SurfaceChart::setColorRamp() colors must be 0..0xFFFFFF");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->surface_low = lo;
+    self->surface_high = hi;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_SurfaceChart, setShowCellValues)
+{
+    bool show;
+    zend_string *fmt = NULL;
+    ZEND_PARSE_PARAMETERS_START(1, 2)
+        Z_PARAM_BOOL(show)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_STR(fmt)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->surface_show_values = show;
+    if (fmt) {
+        if (self->surface_value_format) zend_string_release(self->surface_value_format);
+        self->surface_value_format = ZSTR_LEN(fmt) == 0 ? NULL : zend_string_copy(fmt);
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- GaugeChart setters --------------------------- */
+
+ZEND_METHOD(FastChart_GaugeChart, setValue)
+{
+    double v;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_DOUBLE(v)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->gauge_value = v;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_GaugeChart, setRange)
+{
+    double mn, mx;
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_DOUBLE(mn)
+        Z_PARAM_DOUBLE(mx)
+    ZEND_PARSE_PARAMETERS_END();
+    if (mn >= mx) {
+        zend_value_error("FastChart\\GaugeChart::setRange() requires min < max");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->gauge_min = mn;
+    self->gauge_max = mx;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_GaugeChart, setZones)
+{
+    zval *zones;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(zones)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval copy;
+    ZVAL_COPY(&copy, zones);
+    zend_hash_str_update(Z_ARRVAL(self->config), "gauge_zones",
+                         sizeof("gauge_zones") - 1, &copy);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_GaugeChart, setValueFormat)
+{
+    zend_string *fmt;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(fmt)
+    ZEND_PARSE_PARAMETERS_END();
+    if (ZSTR_LEN(fmt) > 0 && memchr(ZSTR_VAL(fmt), 0, ZSTR_LEN(fmt))) {
+        zend_value_error("FastChart\\GaugeChart::setValueFormat() format contains an embedded NUL");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (self->gauge_value_format) zend_string_release(self->gauge_value_format);
+    self->gauge_value_format = ZSTR_LEN(fmt) == 0 ? NULL : zend_string_copy(fmt);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 /* ----------------- combo overlay --------------------------------- */
 
 ZEND_METHOD(FastChart_Chart, addOverlaySeries)
@@ -1390,6 +1683,10 @@ static int dispatch_render(fastchart_obj *self, zend_class_entry *ce, gdImagePtr
     if (ce == fastchart_pie_chart_ce)     return fastchart_pie_render_to_image(self, im);
     if (ce == fastchart_scatter_chart_ce) return fastchart_scatter_render_to_image(self, im);
     if (ce == fastchart_stock_chart_ce)   return fastchart_stock_render_to_image(self, im);
+    if (ce == fastchart_radar_chart_ce)   return fastchart_radar_render_to_image(self, im);
+    if (ce == fastchart_bubble_chart_ce)  return fastchart_bubble_render_to_image(self, im);
+    if (ce == fastchart_surface_chart_ce) return fastchart_surface_render_to_image(self, im);
+    if (ce == fastchart_gauge_chart_ce)   return fastchart_gauge_render_to_image(self, im);
     zend_throw_error(NULL, "FastChart: render dispatch found unknown class entry");
     return -1;
 }
@@ -1817,6 +2114,18 @@ PHP_MINIT_FUNCTION(fastchart)
 
     fastchart_stock_chart_ce   = register_class_FastChart_StockChart(fastchart_chart_ce);
     fastchart_stock_chart_ce->create_object = fastchart_create_object;
+
+    fastchart_radar_chart_ce   = register_class_FastChart_RadarChart(fastchart_chart_ce);
+    fastchart_radar_chart_ce->create_object = fastchart_create_object;
+
+    fastchart_bubble_chart_ce  = register_class_FastChart_BubbleChart(fastchart_chart_ce);
+    fastchart_bubble_chart_ce->create_object = fastchart_create_object;
+
+    fastchart_surface_chart_ce = register_class_FastChart_SurfaceChart(fastchart_chart_ce);
+    fastchart_surface_chart_ce->create_object = fastchart_create_object;
+
+    fastchart_gauge_chart_ce   = register_class_FastChart_GaugeChart(fastchart_chart_ce);
+    fastchart_gauge_chart_ce->create_object = fastchart_create_object;
 
     fastchart_gd_image_ce = zend_hash_str_find_ptr(CG(class_table),
         "gdimage", sizeof("gdimage") - 1);

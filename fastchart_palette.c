@@ -1,11 +1,10 @@
 /*
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2026 The PHP Group                                |
+  | Copyright (c) 2025-2026, Ilia Alshanetsky                            |
+  | Copyright (c) 2025-2026, Advanced Internet Designs Inc.              |
   +----------------------------------------------------------------------+
-  | This source file is subject to version 3.01 of the PHP license,     |
-  | that is bundled with this package in the file LICENSE, and is       |
-  | available through the world-wide-web at the following url:          |
-  | http://www.php.net/license/3_01.txt                                 |
+  | This source file is subject to the BSD 3-Clause license that is      |
+  | bundled with this package in the file LICENSE.                       |
   +----------------------------------------------------------------------+
   | Author: Ilia Alshanetsky <ilia@ilia.ws>                              |
   +----------------------------------------------------------------------+

@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `FastChart\RadarChart` — spider/radar chart class. N axes radiating
+  from the center, one polygon per series. Single-flat-list and
+  multi-series shapes accepted. `setMaxValue(float)` forces the
+  radial scale; `setFilled(bool)` toggles between filled translucent
+  polygons and outline-only spider plots.
+- `FastChart\BubbleChart` — `setPoints([[x, y, size, ?color], ...])`
+  draws translucent circles whose radius scales with the size
+  dimension. Uses sqrt scaling so large values don't dominate.
+- `FastChart\SurfaceChart` — heatmap / 2D grid colored by value.
+  `setGrid([[v, v, ...], ...])`, `setColorRamp(int $low, int $high)`
+  for the two-stop ramp (default cool blue → warm red),
+  `setShowCellValues(bool, ?string $format)` to print the numeric
+  value inside each cell with contrast-correct text color.
+- `FastChart\GaugeChart` — semi-circular dial readout with a needle
+  pointing at the value. `setRange(min, max)`, `setValue(float)`,
+  `setZones([[from, to, color], ...])` for green/yellow/red zones,
+  `setValueFormat(string)` for the central label.
+- `Chart::setLineStyle(LINE_SOLID | LINE_DASHED | LINE_DOTTED)` —
+  dash pattern for line series and overlay lines via libgd's
+  `gdImageSetStyle` styled-color path. Dashed/dotted lines drop
+  antialiasing because libgd doesn't compose `gdStyled` and
+  `gdAntiAliased`.
+- `Chart::setGradientFill(int $from, int $to = -1, int $direction = GRADIENT_VERTICAL)`
+  applies a linear gradient to bar / area-fill / pie-slice shapes.
+  `-1` for `$from` reverts to solid fills.
+- `Chart::setDropShadow(int $offsetX, int $offsetY, ?int $color = null)`
+  paints a translucent shadow at the offset position behind each
+  filled shape. `setDropShadow(0, 0)` disables.
+- `ScatterChart::setTrendLine(bool, ?int $color)` overlays a
+  least-squares linear regression line through the scatter points.
 - `Chart::__construct(?int $width = null, ?int $height = null)` —
   optional canvas size at construction so callers using
   `renderPng()` / `renderToFile()` don't need a separate

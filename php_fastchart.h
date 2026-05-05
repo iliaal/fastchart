@@ -1,11 +1,10 @@
 /*
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2026 The PHP Group                                |
+  | Copyright (c) 2025-2026, Ilia Alshanetsky                            |
+  | Copyright (c) 2025-2026, Advanced Internet Designs Inc.              |
   +----------------------------------------------------------------------+
-  | This source file is subject to version 3.01 of the PHP license,     |
-  | that is bundled with this package in the file LICENSE, and is       |
-  | available through the world-wide-web at the following url:          |
-  | http://www.php.net/license/3_01.txt                                 |
+  | This source file is subject to the BSD 3-Clause license that is      |
+  | bundled with this package in the file LICENSE.                       |
   +----------------------------------------------------------------------+
   | Author: Ilia Alshanetsky <ilia@ilia.ws>                              |
   +----------------------------------------------------------------------+
@@ -50,6 +49,10 @@ extern zend_class_entry *fastchart_bar_chart_ce;
 extern zend_class_entry *fastchart_pie_chart_ce;
 extern zend_class_entry *fastchart_scatter_chart_ce;
 extern zend_class_entry *fastchart_stock_chart_ce;
+extern zend_class_entry *fastchart_radar_chart_ce;
+extern zend_class_entry *fastchart_bubble_chart_ce;
+extern zend_class_entry *fastchart_surface_chart_ce;
+extern zend_class_entry *fastchart_gauge_chart_ce;
 
 /* Cached \GdImage class entry, resolved at MINIT via direct
  * CG(class_table) lookup. ext/gd defines gd_image_ce file-static
@@ -209,6 +212,41 @@ typedef struct _fastchart_obj {
     double y_axis_title_font_size;
     double annotation_font_size;
 
+    /* Line dash style (FASTCHART_LINE_*). Default SOLID. */
+    zend_long line_style;
+
+    /* Gradient fill: enabled when gradient_from >= 0. */
+    zend_long gradient_from;
+    zend_long gradient_to;
+    zend_long gradient_dir;     /* FASTCHART_GRADIENT_* */
+
+    /* Drop shadow: enabled when has_drop_shadow == true. */
+    bool has_drop_shadow;
+    zend_long shadow_dx;
+    zend_long shadow_dy;
+    zend_long shadow_color;     /* 24-bit RGB */
+    zend_long shadow_alpha;     /* 0..127 (gd convention) */
+
+    /* ScatterChart trend line. -1 color = use series color. */
+    bool trend_line;
+    zend_long trend_line_color;
+
+    /* RadarChart-specific config. */
+    double radar_max;           /* 0 = auto */
+    bool radar_filled;          /* default true */
+
+    /* SurfaceChart-specific config. */
+    zend_long surface_low;
+    zend_long surface_high;
+    bool surface_show_values;
+    zend_string *surface_value_format;
+
+    /* GaugeChart-specific config. */
+    double gauge_value;
+    double gauge_min;
+    double gauge_max;
+    zend_string *gauge_value_format;
+
     zval data;
     zval config;
     zend_object std;
@@ -284,6 +322,15 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define FASTCHART_LABEL_LEFT  3
 #define FASTCHART_LABEL_RIGHT 4
 
+/* Line dash styles. */
+#define FASTCHART_LINE_SOLID  0
+#define FASTCHART_LINE_DASHED 1
+#define FASTCHART_LINE_DOTTED 2
+
+/* Gradient direction. */
+#define FASTCHART_GRADIENT_VERTICAL   0
+#define FASTCHART_GRADIENT_HORIZONTAL 1
+
 /* Forward-declare the only ext/gd public API we use (also declared in
  * fastchart.c at the call site). Mirrored verbatim from
  * ext/gd/php_gd.h since that header is not installed via make install. */
@@ -304,5 +351,9 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im);
 int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im);
 int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im);
 int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im);
+int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im);
+int fastchart_bubble_render_to_image(fastchart_obj *self, gdImagePtr im);
+int fastchart_surface_render_to_image(fastchart_obj *self, gdImagePtr im);
+int fastchart_gauge_render_to_image(fastchart_obj *self, gdImagePtr im);
 
 #endif /* PHP_FASTCHART_H */

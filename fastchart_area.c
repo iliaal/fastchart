@@ -1,11 +1,10 @@
 /*
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2026 The PHP Group                                |
+  | Copyright (c) 2025-2026, Ilia Alshanetsky                            |
+  | Copyright (c) 2025-2026, Advanced Internet Designs Inc.              |
   +----------------------------------------------------------------------+
-  | This source file is subject to version 3.01 of the PHP license,     |
-  | that is bundled with this package in the file LICENSE, and is       |
-  | available through the world-wide-web at the following url:          |
-  | http://www.php.net/license/3_01.txt                                 |
+  | This source file is subject to the BSD 3-Clause license that is      |
+  | bundled with this package in the file LICENSE.                       |
   +----------------------------------------------------------------------+
   | Author: Ilia Alshanetsky <ilia@ilia.ws>                              |
   +----------------------------------------------------------------------+
@@ -23,6 +22,7 @@
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
 #include "fastchart_axis.h"
+#include "fastchart_effects.h"
 
 #define MAX_SERIES 8
 
@@ -244,7 +244,10 @@ int fastchart_area_render_to_image(fastchart_obj *self, gdImagePtr im)
                 n_pts++;
             }
             if (n_pts >= 3) {
-                gdImageFilledPolygon(im, poly, n_pts, rgb_color);
+                fastchart_shadow_filled_polygon(im, self, poly, n_pts);
+                if (!fastchart_gradient_filled_polygon(im, self, poly, n_pts, rgb_color)) {
+                    gdImageFilledPolygon(im, poly, n_pts, rgb_color);
+                }
                 if (self->edge_color >= 0) {
                     gdImagePolygon(im, poly, n_pts, (int)self->edge_color);
                 }
@@ -301,8 +304,11 @@ int fastchart_area_render_to_image(fastchart_obj *self, gdImagePtr im)
                 n_pts++;
             }
             if (n_pts >= 3) {
+                fastchart_shadow_filled_polygon(im, self, poly, n_pts);
                 gdImageAlphaBlending(im, 1);
-                gdImageFilledPolygon(im, poly, n_pts, alpha_color);
+                if (!fastchart_gradient_filled_polygon(im, self, poly, n_pts, alpha_color)) {
+                    gdImageFilledPolygon(im, poly, n_pts, alpha_color);
+                }
                 if (self->edge_color >= 0) {
                     gdImagePolygon(im, poly, n_pts, (int)self->edge_color);
                 }

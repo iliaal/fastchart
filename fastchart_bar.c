@@ -1,11 +1,10 @@
 /*
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2026 The PHP Group                                |
+  | Copyright (c) 2025-2026, Ilia Alshanetsky                            |
+  | Copyright (c) 2025-2026, Advanced Internet Designs Inc.              |
   +----------------------------------------------------------------------+
-  | This source file is subject to version 3.01 of the PHP license,     |
-  | that is bundled with this package in the file LICENSE, and is       |
-  | available through the world-wide-web at the following url:          |
-  | http://www.php.net/license/3_01.txt                                 |
+  | This source file is subject to the BSD 3-Clause license that is      |
+  | bundled with this package in the file LICENSE.                       |
   +----------------------------------------------------------------------+
   | Author: Ilia Alshanetsky <ilia@ilia.ws>                              |
   +----------------------------------------------------------------------+
@@ -21,6 +20,7 @@
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
 #include "fastchart_axis.h"
+#include "fastchart_effects.h"
 
 #define MAX_SERIES 8
 
@@ -320,7 +320,10 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
                 int x0 = slot_left + s * sub_w + sub_inset;
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
-                gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                fastchart_shadow_filled_rectangle(im, self, x0, y0, x1, y1);
+                if (!fastchart_gradient_filled_rectangle(im, self, x0, y0, x1, y1, color)) {
+                    gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                }
                 if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
             }
         } else if (stack_layer && n_series > 1) {
@@ -336,7 +339,10 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
                 int x0 = slot_left + sub_inset;
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
-                gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                fastchart_shadow_filled_rectangle(im, self, x0, y0, x1, y1);
+                if (!fastchart_gradient_filled_rectangle(im, self, x0, y0, x1, y1, color)) {
+                    gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                }
                 if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
             }
         } else if (stacked && n_series > 1) {
@@ -360,7 +366,10 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
                 int x0 = slot_left + sub_inset;
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
-                gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                fastchart_shadow_filled_rectangle(im, self, x0, y0, x1, y1);
+                if (!fastchart_gradient_filled_rectangle(im, self, x0, y0, x1, y1, color)) {
+                    gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                }
                 if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
             }
         } else {
@@ -377,7 +386,10 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
 
                 int y0 = y_v < zero_y ? y_v : zero_y;
                 int y1 = y_v < zero_y ? zero_y : y_v;
-                gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                fastchart_shadow_filled_rectangle(im, self, x0, y0, x1, y1);
+                if (!fastchart_gradient_filled_rectangle(im, self, x0, y0, x1, y1, color)) {
+                    gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                }
                 if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
             }
         }

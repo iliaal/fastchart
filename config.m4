@@ -54,7 +54,12 @@ if test "$PHP_FASTCHART" != "no"; then
     fastchart_bar.c \
     fastchart_pie.c \
     fastchart_scatter.c \
-    fastchart_stock.c"
+    fastchart_stock.c \
+    fastchart_radar.c \
+    fastchart_bubble.c \
+    fastchart_surface.c \
+    fastchart_gauge.c \
+    fastchart_effects.c"
 
   dnl -Wall -Wextra are on by default so wrapper regressions get caught
   dnl in every local build; --enable-fastchart-dev upgrades warnings to

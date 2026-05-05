@@ -3,7 +3,7 @@
     "type": "php-ext",
     "description": "Native C PHP extension for fast chart generation (line, bar, pie, scatter, candlestick) drawn onto ext/gd \\GdImage canvases via libgd primitives.",
     "keywords": ["chart", "graph", "gd", "candlestick", "ohlcv", "visualization", "php-extension", "pie"],
-    "license": "PHP-3.01",
+    "license": "BSD-3-Clause",
     "homepage": "https://github.com/iliaal/fastchart",
     "authors": [
         {

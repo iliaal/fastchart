@@ -61,6 +61,15 @@ abstract class Chart
     public const int LABEL_LEFT  = 3;
     public const int LABEL_RIGHT = 4;
 
+    /** Line dash style for setLineStyle(). */
+    public const int LINE_SOLID  = 0;
+    public const int LINE_DASHED = 1;
+    public const int LINE_DOTTED = 2;
+
+    /** Gradient direction for setGradientFill(). */
+    public const int GRADIENT_VERTICAL   = 0;
+    public const int GRADIENT_HORIZONTAL = 1;
+
     /**
      * Optionally pass canvas dimensions at construction so callers
      * can skip the `imagecreatetruecolor()` step entirely when they
@@ -318,6 +327,29 @@ abstract class Chart
      */
     public function addTextAnnotation(string $text, int $x, int $y, ?int $color = null): static {}
 
+    /**
+     * Line dash style for line series and overlay lines:
+     * `LINE_SOLID` (default), `LINE_DASHED`, `LINE_DOTTED`.
+     * Doesn't affect grid, axis, or annotation lines.
+     */
+    public function setLineStyle(int $style): static {}
+
+    /**
+     * Apply a linear gradient to filled shapes (bars, area fills,
+     * pie slices). `$from` is the color at the top (or left, for
+     * horizontal); `$to` is at the bottom (or right). Pass -1 for
+     * `$from` to disable gradient and revert to solid fills.
+     */
+    public function setGradientFill(int $from, int $to = -1, int $direction = Chart::GRADIENT_VERTICAL): static {}
+
+    /**
+     * Add a drop shadow behind filled shapes and text. `$offsetX`
+     * and `$offsetY` are shadow displacement in pixels. `$color`
+     * defaults to a 50% opacity black. Pass `setDropShadow(0, 0)`
+     * to disable.
+     */
+    public function setDropShadow(int $offsetX, int $offsetY, ?int $color = null): static {}
+
     abstract public function draw(\GdImage $canvas): \GdImage;
 
     /** Render to PNG bytes at the configured size. */
@@ -447,6 +479,14 @@ final class ScatterChart extends Chart
     public function setPoints(array $points): static {}
     public function setMarkerStyle(int $style): static {}
     public function setMarkerSize(int $size): static {}
+
+    /**
+     * Overlay a least-squares linear regression line over the
+     * scatter points. Useful for visualizing correlation. Pass
+     * false (default) to suppress.
+     */
+    public function setTrendLine(bool $enabled, ?int $color = null): static {}
+
     public function draw(\GdImage $canvas): \GdImage {}
 }
 
@@ -476,6 +516,97 @@ final class StockChart extends Chart
     public function setCandleStyle(int $style): static {}
 
     public function addIndicatorPane(string $name, array $values, ?array $opts = null): static {}
+
+    public function draw(\GdImage $canvas): \GdImage {}
+}
+
+/**
+ * Spider / radar chart. Each axis radiates from the center; one
+ * polygon per series threads its values across all axes.
+ */
+final class RadarChart extends Chart
+{
+    /**
+     * Either a flat `[v0, v1, v2, ...]` (single series) or a list of
+     * `['data' => [...], 'label' => 'name', 'color' => 0xRRGGBB]` for
+     * multi-series. All series must have the same length, which fixes
+     * the number of axes (use setCategoryLabels for axis names).
+     */
+    public function setSeries(array $series): static {}
+
+    /** Force a maximum value for the radial scale. 0 = auto. */
+    public function setMaxValue(float $max): static {}
+
+    /**
+     * Fill the radar polygon area in the series color (translucent).
+     * Default true. Pass false for line-only spider plots.
+     */
+    public function setFilled(bool $filled): static {}
+
+    public function draw(\GdImage $canvas): \GdImage {}
+}
+
+/**
+ * Bubble chart. Each point is `[x, y, size]`, optionally
+ * `[x, y, size, color]`. Size is a positive radius in pixels.
+ */
+final class BubbleChart extends Chart
+{
+    public function setPoints(array $points): static {}
+    public function draw(\GdImage $canvas): \GdImage {}
+}
+
+/**
+ * Surface / heatmap. Data is a 2D array (rows of columns) of numeric
+ * values. Each cell is colored by its value via a configurable color
+ * ramp.
+ */
+final class SurfaceChart extends Chart
+{
+    /**
+     * 2D grid of values: `[[v00, v01, ...], [v10, v11, ...]]`. Rows
+     * paint top-to-bottom; columns left-to-right.
+     */
+    public function setGrid(array $grid): static {}
+
+    /**
+     * Two-stop color ramp (low value -> high value). 24-bit RGB ints.
+     * Default cool blue -> warm red.
+     */
+    public function setColorRamp(int $low, int $high): static {}
+
+    /**
+     * Show the numeric value inside each cell. Default false.
+     */
+    public function setShowCellValues(bool $show, string $format = '%g'): static {}
+
+    public function draw(\GdImage $canvas): \GdImage {}
+}
+
+/**
+ * Gauge / dial readout: a single value within `[min, max]`, drawn as
+ * a 180° arc with a needle. Optional colored zones partition the arc.
+ */
+final class GaugeChart extends Chart
+{
+    public function setValue(float $value): static {}
+
+    /**
+     * Numeric range of the gauge. Default `[0.0, 100.0]`.
+     */
+    public function setRange(float $min, float $max): static {}
+
+    /**
+     * Colored zones along the arc. Each zone is
+     * `['from' => float, 'to' => float, 'color' => int]`. Zones not
+     * covering the full range fill in with the theme accent color.
+     */
+    public function setZones(array $zones): static {}
+
+    /**
+     * sprintf format for the central value label. Default `"%.1f"`.
+     */
+    public function setValueFormat(string $format): static {}
 
     public function draw(\GdImage $canvas): \GdImage {}
 }

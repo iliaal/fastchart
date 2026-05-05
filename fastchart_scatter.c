@@ -1,11 +1,10 @@
 /*
   +----------------------------------------------------------------------+
-  | Copyright (c) 1997-2026 The PHP Group                                |
+  | Copyright (c) 2025-2026, Ilia Alshanetsky                            |
+  | Copyright (c) 2025-2026, Advanced Internet Designs Inc.              |
   +----------------------------------------------------------------------+
-  | This source file is subject to version 3.01 of the PHP license,     |
-  | that is bundled with this package in the file LICENSE, and is       |
-  | available through the world-wide-web at the following url:          |
-  | http://www.php.net/license/3_01.txt                                 |
+  | This source file is subject to the BSD 3-Clause license that is      |
+  | bundled with this package in the file LICENSE.                       |
   +----------------------------------------------------------------------+
   | Author: Ilia Alshanetsky <ilia@ilia.ws>                              |
   +----------------------------------------------------------------------+
@@ -219,6 +218,40 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
         int color = pal.series[points[i].series % FASTCHART_PALETTE_SERIES_N];
         fastchart_draw_marker(im, px, py, marker_style, marker_size, color);
         fastchart_draw_value_label(im, self, &pal, px, py, points[i].y);
+    }
+
+    /* Linear regression overlay: simple least-squares y = a + b*x
+     * across all points (across series too -- the user can split
+     * series and call setTrendLine independently per chart if a
+     * per-series trend is wanted). */
+    if (self->trend_line && n >= 2) {
+        double sx = 0, sy = 0, sxx = 0, sxy = 0;
+        for (int i = 0; i < n; i++) {
+            sx  += points[i].x;
+            sy  += points[i].y;
+            sxx += points[i].x * points[i].x;
+            sxy += points[i].x * points[i].y;
+        }
+        double denom = n * sxx - sx * sx;
+        if (denom != 0.0) {
+            double b = (n * sxy - sx * sy) / denom;
+            double a = (sy - b * sx) / n;
+            double y0 = a + b * x_min;
+            double y1 = a + b * x_max;
+            int px0 = plot.x0;
+            int px1 = plot.x1;
+            int py0 = fastchart_y_to_pixel(y0, &yrange, &plot);
+            int py1 = fastchart_y_to_pixel(y1, &yrange, &plot);
+            int color = self->trend_line_color >= 0
+                ? gdImageColorAllocate(im,
+                    (int)((self->trend_line_color >> 16) & 0xFF),
+                    (int)((self->trend_line_color >>  8) & 0xFF),
+                    (int)( self->trend_line_color        & 0xFF))
+                : pal.axis;
+            gdImageSetThickness(im, 2);
+            gdImageLine(im, px0, py0, px1, py1, color);
+            gdImageSetThickness(im, 1);
+        }
     }
 
     fastchart_draw_h_annotations(im, self, &plot, &pal, &yrange);
