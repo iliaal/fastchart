@@ -486,12 +486,17 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
             int prev_x = 0, prev_y = 0;
             int has_prev = 0;
 
+            /* Sliding-window sum: each step subtracts the value
+             * leaving the window and adds the new one — O(n) over
+             * the whole series, vs O(n*period) for the naive
+             * recomputation. */
+            double sum = 0;
+            for (int k = 0; k < period && k < n; k++) sum += candles[k].close;
+            double inv_p = 1.0 / (double)period;
+
             for (int i = period - 1; i < n; i++) {
-                double sum = 0;
-                for (int k = 0; k < period; k++) {
-                    sum += candles[i - k].close;
-                }
-                double avg = sum / period;
+                if (i >= period) sum += candles[i].close - candles[i - period].close;
+                double avg = sum * inv_p;
                 int x = fastchart_x_time_to_pixel(&price_pane,
                                                   candles[i].ts, t_min, t_max);
                 int y = fastchart_y_to_pixel(avg, &yrange, &price_pane);

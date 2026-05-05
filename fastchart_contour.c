@@ -29,32 +29,51 @@
  * each cell (square between four neighboring grid points) we compute
  * a 4-bit case index (one bit per corner above the threshold) and
  * draw 0, 1, or 2 line segments connecting the threshold crossings
- * along the cell's edges. */
+ * along the cell's edges.
+ *
+ * The grid arrives as a HashTable<HashTable<zval>> from PHP. We
+ * materialize once into a flat double[rows*cols] (NAN for missing /
+ * non-numeric cells) so the marching-squares loop can index by
+ * arithmetic instead of nested hash lookups, which were costing two
+ * zend_hash_index_find calls per corner per cell per level. */
 
-static double cell_value(zval *grid, int row, int col)
+static double *materialize_grid(zval *grid_zv, int *rows_out, int *cols_out)
 {
-    if (Z_TYPE_P(grid) != IS_ARRAY) return NAN;
-    zval *r = zend_hash_index_find(Z_ARRVAL_P(grid), row);
-    if (!r || Z_TYPE_P(r) != IS_ARRAY) return NAN;
-    zval *c = zend_hash_index_find(Z_ARRVAL_P(r), col);
-    if (!c) return NAN;
-    double d;
-    if (fastchart_zval_to_double(c, &d) != 0) return NAN;
-    return d;
-}
-
-static int grid_dims(zval *grid, int *rows, int *cols)
-{
-    if (Z_TYPE_P(grid) != IS_ARRAY) return -1;
-    *rows = (int)zend_hash_num_elements(Z_ARRVAL_P(grid));
-    *cols = 0;
+    if (Z_TYPE_P(grid_zv) != IS_ARRAY) return NULL;
+    HashTable *grid = Z_ARRVAL_P(grid_zv);
+    int rows = (int)zend_hash_num_elements(grid);
+    int cols = 0;
     zval *r;
-    ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(grid), r) {
+    ZEND_HASH_FOREACH_VAL(grid, r) {
         if (Z_TYPE_P(r) != IS_ARRAY) continue;
         int n = (int)zend_hash_num_elements(Z_ARRVAL_P(r));
-        if (n > *cols) *cols = n;
+        if (n > cols) cols = n;
     } ZEND_HASH_FOREACH_END();
-    return (*rows >= 2 && *cols >= 2) ? 0 : -1;
+    if (rows < 2 || cols < 2) return NULL;
+
+    double *flat = emalloc((size_t)rows * (size_t)cols * sizeof(double));
+    int i = 0;
+    ZEND_HASH_FOREACH_VAL(grid, r) {
+        if (Z_TYPE_P(r) != IS_ARRAY) {
+            for (int j = 0; j < cols; j++) flat[i * cols + j] = NAN;
+            i++;
+            continue;
+        }
+        int j = 0;
+        zval *c;
+        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(r), c) {
+            if (j >= cols) break;
+            double d;
+            flat[i * cols + j] = (fastchart_zval_to_double(c, &d) == 0) ? d : NAN;
+            j++;
+        } ZEND_HASH_FOREACH_END();
+        for (; j < cols; j++) flat[i * cols + j] = NAN;
+        i++;
+    } ZEND_HASH_FOREACH_END();
+
+    *rows_out = rows;
+    *cols_out = cols;
+    return flat;
 }
 
 static void cell_to_pixel(int col, int row, double col_f, double row_f,
@@ -77,25 +96,28 @@ static double t_cross(double a, double b, double level)
 
 int fastchart_contour_render_to_image(fastchart_obj *self, gdImagePtr im)
 {
-    int rows, cols;
-    if (grid_dims(&self->data, &rows, &cols) != 0) {
+    int rows = 0, cols = 0;
+    double *grid = materialize_grid(&self->data, &rows, &cols);
+    if (!grid) {
         zend_throw_error(NULL,
             "FastChart\\ContourChart::draw() requires setGrid() with at least a 2x2 grid");
         return -1;
     }
+#define G(i, j) grid[(i) * cols + (j)]
 
     /* Find global min/max. */
     double vmin = 0, vmax = 0;
     int seen = 0;
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
-            double v = cell_value(&self->data, i, j);
+            double v = G(i, j);
             if (isnan(v)) continue;
             if (!seen) { vmin = vmax = v; seen = 1; }
             else { if (v < vmin) vmin = v; if (v > vmax) vmax = v; }
         }
     }
     if (!seen) {
+        efree(grid);
         zend_throw_error(NULL,
             "FastChart\\ContourChart::draw() found no numeric values");
         return -1;
@@ -143,24 +165,35 @@ int fastchart_contour_render_to_image(fastchart_obj *self, gdImagePtr im)
     double cell_h = (double)(y1 - y0) / (double)(rows - 1);
 
     /* Filled-mode background: paint each cell with the average-value color
-     * before drawing isolines. */
+     * before drawing isolines. A 256-entry color LUT keyed on the
+     * normalized value is allocated once instead of per-cell, which
+     * matters on large grids (a 100x100 grid is 10k allocations the
+     * old way). */
     if (self->contour_filled) {
         int low = (int)self->contour_low;
         int high = (int)self->contour_high;
         double span = vmax - vmin;
         if (span <= 0) span = 1.0;
+
+        int lut[256];
+        for (int k = 0; k < 256; k++) {
+            int rgb = fastchart_lerp_rgb(low, high, (double)k / 255.0);
+            lut[k] = gdImageColorAllocate(im,
+                (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+        }
+
         for (int i = 0; i < rows - 1; i++) {
             for (int j = 0; j < cols - 1; j++) {
-                double v00 = cell_value(&self->data, i,     j);
-                double v01 = cell_value(&self->data, i,     j + 1);
-                double v10 = cell_value(&self->data, i + 1, j);
-                double v11 = cell_value(&self->data, i + 1, j + 1);
+                double v00 = G(i,     j);
+                double v01 = G(i,     j + 1);
+                double v10 = G(i + 1, j);
+                double v11 = G(i + 1, j + 1);
                 if (isnan(v00) || isnan(v01) || isnan(v10) || isnan(v11)) continue;
                 double avg = (v00 + v01 + v10 + v11) * 0.25;
                 double t = (avg - vmin) / span;
-                int rgb = fastchart_lerp_rgb(low, high, t);
-                int color = gdImageColorAllocate(im,
-                    (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+                int idx = (int)(t * 255.0 + 0.5);
+                if (idx < 0) idx = 0; else if (idx > 255) idx = 255;
+                int color = lut[idx];
                 int px0 = x0 + (int)(j * cell_w);
                 int py0 = y0 + (int)(i * cell_h);
                 int px1 = x0 + (int)((j + 1) * cell_w);
@@ -175,10 +208,10 @@ int fastchart_contour_render_to_image(fastchart_obj *self, gdImagePtr im)
         double L = levels[k];
         for (int i = 0; i < rows - 1; i++) {
             for (int j = 0; j < cols - 1; j++) {
-                double v00 = cell_value(&self->data, i,     j);
-                double v01 = cell_value(&self->data, i,     j + 1);
-                double v10 = cell_value(&self->data, i + 1, j);
-                double v11 = cell_value(&self->data, i + 1, j + 1);
+                double v00 = G(i,     j);
+                double v01 = G(i,     j + 1);
+                double v10 = G(i + 1, j);
+                double v11 = G(i + 1, j + 1);
                 if (isnan(v00) || isnan(v01) || isnan(v10) || isnan(v11)) continue;
 
                 int idx = 0;
@@ -256,7 +289,9 @@ int fastchart_contour_render_to_image(fastchart_obj *self, gdImagePtr im)
     fastchart_draw_floating_title(im, self, &pal, W / 2, 24);
 
     fastchart_draw_text_annotations(im, self, &pal);
+    efree(grid);
     return 0;
+#undef G
 }
 
 ZEND_METHOD(FastChart_ContourChart, draw)

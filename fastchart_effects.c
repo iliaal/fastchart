@@ -59,6 +59,28 @@ static int gradient_active(const fastchart_obj *chart)
     return chart->gradient_from >= 0 && chart->gradient_to >= 0;
 }
 
+/* Build a 256-entry palette of interpolated colors from `from` -> `to`
+ * via fastchart_lerp_rgb. One gdImageColorAllocate call per LUT entry,
+ * once per gradient draw, so a 600-pixel-wide rectangle (or a 50k-pixel
+ * polygon bbox) becomes ~256 allocs instead of 600 / 50k. */
+static void build_gradient_lut(gdImagePtr im, int from, int to, int lut[256])
+{
+    for (int k = 0; k < 256; k++) {
+        int rgb = fastchart_lerp_rgb(from, to, (double)k / 255.0);
+        lut[k] = gdImageColorAllocate(im,
+            (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    }
+}
+
+static inline int lut_index(int pos, int span)
+{
+    if (span <= 0) return 0;
+    int idx = (int)((double)pos / (double)span * 255.0 + 0.5);
+    if (idx < 0) return 0;
+    if (idx > 255) return 255;
+    return idx;
+}
+
 int fastchart_gradient_filled_rectangle(gdImagePtr im, fastchart_obj *chart,
                                         int x0, int y0, int x1, int y1,
                                         int solid_color)
@@ -68,26 +90,18 @@ int fastchart_gradient_filled_rectangle(gdImagePtr im, fastchart_obj *chart,
     if (x1 < x0) { int t = x0; x0 = x1; x1 = t; }
     if (y1 < y0) { int t = y0; y0 = y1; y1 = t; }
 
-    int from = (int)chart->gradient_from;
-    int to   = (int)chart->gradient_to;
+    int lut[256];
+    build_gradient_lut(im, (int)chart->gradient_from, (int)chart->gradient_to, lut);
 
     if (chart->gradient_dir == FASTCHART_GRADIENT_HORIZONTAL) {
         int span = x1 - x0;
         for (int x = x0; x <= x1; x++) {
-            double t = span > 0 ? (double)(x - x0) / (double)span : 0.0;
-            int rgb = fastchart_lerp_rgb(from, to, t);
-            int c = gdImageColorAllocate(im,
-                (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
-            gdImageLine(im, x, y0, x, y1, c);
+            gdImageLine(im, x, y0, x, y1, lut[lut_index(x - x0, span)]);
         }
     } else { /* vertical */
         int span = y1 - y0;
         for (int y = y0; y <= y1; y++) {
-            double t = span > 0 ? (double)(y - y0) / (double)span : 0.0;
-            int rgb = fastchart_lerp_rgb(from, to, t);
-            int c = gdImageColorAllocate(im,
-                (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
-            gdImageLine(im, x0, y, x1, y, c);
+            gdImageLine(im, x0, y, x1, y, lut[lut_index(y - y0, span)]);
         }
     }
     return 1;
@@ -97,15 +111,15 @@ int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
                                       gdPointPtr poly, int n_pts,
                                       int solid_color)
 {
+    (void)solid_color;
     if (!gradient_active(chart) || n_pts < 3) return 0;
 
-    /* Find the bbox so we can paint scanlines in the gradient axis,
-     * then use libgd to clip the row to the polygon shape via a
-     * temporary mask trick: paint the polygon in `solid_color`, then
-     * recolor each scanline with the interpolated gradient via
-     * brute-force per-pixel comparison (~one pass, dominated by the
-     * fill rect anyway). For typical chart shapes this is fast and
-     * keeps the implementation small. */
+    /* Approach: paint the polygon in a sentinel color via libgd's
+     * filled-polygon (handles concavity, edge anti-aliasing rules).
+     * Then walk only the bbox, replacing sentinel pixels with the
+     * gradient-indexed LUT color. The 256-entry LUT avoids per-row
+     * gdImageColorAllocate calls; the bbox-only walk avoids touching
+     * pixels outside the polygon's enclosing rectangle. */
     int xmin = poly[0].x, xmax = poly[0].x;
     int ymin = poly[0].y, ymax = poly[0].y;
     for (int i = 1; i < n_pts; i++) {
@@ -115,24 +129,18 @@ int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
         if (poly[i].y > ymax) ymax = poly[i].y;
     }
 
-    /* Sentinel solid color the polygon starts in -- pick a color
-     * unlikely to clash with the gradient by allocating a fresh one. */
     int sentinel = gdImageColorAllocate(im, 1, 2, 3);
     gdImageFilledPolygon(im, poly, n_pts, sentinel);
 
-    int from = (int)chart->gradient_from;
-    int to   = (int)chart->gradient_to;
-    int sentinel_idx = sentinel;
+    int lut[256];
+    build_gradient_lut(im, (int)chart->gradient_from, (int)chart->gradient_to, lut);
 
     if (chart->gradient_dir == FASTCHART_GRADIENT_HORIZONTAL) {
         int span = xmax - xmin;
         for (int x = xmin; x <= xmax; x++) {
-            double t = span > 0 ? (double)(x - xmin) / (double)span : 0.0;
-            int rgb = fastchart_lerp_rgb(from, to, t);
-            int c = gdImageColorAllocate(im,
-                (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+            int c = lut[lut_index(x - xmin, span)];
             for (int y = ymin; y <= ymax; y++) {
-                if (gdImageGetPixel(im, x, y) == sentinel_idx) {
+                if (gdImageGetPixel(im, x, y) == sentinel) {
                     gdImageSetPixel(im, x, y, c);
                 }
             }
@@ -140,18 +148,14 @@ int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
     } else {
         int span = ymax - ymin;
         for (int y = ymin; y <= ymax; y++) {
-            double t = span > 0 ? (double)(y - ymin) / (double)span : 0.0;
-            int rgb = fastchart_lerp_rgb(from, to, t);
-            int c = gdImageColorAllocate(im,
-                (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+            int c = lut[lut_index(y - ymin, span)];
             for (int x = xmin; x <= xmax; x++) {
-                if (gdImageGetPixel(im, x, y) == sentinel_idx) {
+                if (gdImageGetPixel(im, x, y) == sentinel) {
                     gdImageSetPixel(im, x, y, c);
                 }
             }
         }
     }
-    (void)solid_color;
     return 1;
 }
 

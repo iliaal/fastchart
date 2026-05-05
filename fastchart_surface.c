@@ -25,34 +25,63 @@
 
 int fastchart_surface_render_to_image(fastchart_obj *self, gdImagePtr im)
 {
-    HashTable *grid = Z_TYPE(self->data) == IS_ARRAY ? Z_ARRVAL(self->data) : NULL;
-    if (!grid || zend_hash_num_elements(grid) == 0) {
+    HashTable *grid_ht = Z_TYPE(self->data) == IS_ARRAY ? Z_ARRVAL(self->data) : NULL;
+    if (!grid_ht || zend_hash_num_elements(grid_ht) == 0) {
         zend_throw_error(NULL,
             "FastChart\\SurfaceChart::draw() requires setGrid() with non-empty data");
         return -1;
     }
 
-    int rows = (int)zend_hash_num_elements(grid);
+    int rows = (int)zend_hash_num_elements(grid_ht);
     int cols = 0;
-    /* Determine column count from the longest row, and find min/max
-     * across all numeric cells. */
-    double vmin = 0, vmax = 0;
-    int seen = 0;
     zval *row;
-    ZEND_HASH_FOREACH_VAL(grid, row) {
+    ZEND_HASH_FOREACH_VAL(grid_ht, row) {
         if (Z_TYPE_P(row) != IS_ARRAY) continue;
         int rlen = (int)zend_hash_num_elements(Z_ARRVAL_P(row));
         if (rlen > cols) cols = rlen;
-        zval *cell;
-        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(row), cell) {
-            double v;
-            if (fastchart_zval_to_double(cell, &v) != 0) continue;
-            if (!seen) { vmin = vmax = v; seen = 1; }
-            else { if (v < vmin) vmin = v; if (v > vmax) vmax = v; }
-        } ZEND_HASH_FOREACH_END();
     } ZEND_HASH_FOREACH_END();
 
-    if (!seen || rows == 0 || cols == 0) {
+    if (rows == 0 || cols == 0) {
+        zend_throw_error(NULL,
+            "FastChart\\SurfaceChart::draw() found no numeric cells");
+        return -1;
+    }
+
+    /* Materialize once into a flat double[rows*cols] (NAN for missing
+     * cells). The render loop indexes by arithmetic and the min/max
+     * scan and per-cell color lookup both read from the same buffer. */
+    double *grid = emalloc((size_t)rows * (size_t)cols * sizeof(double));
+    int ri = 0;
+    ZEND_HASH_FOREACH_VAL(grid_ht, row) {
+        if (Z_TYPE_P(row) != IS_ARRAY) {
+            for (int j = 0; j < cols; j++) grid[ri * cols + j] = NAN;
+            ri++;
+            continue;
+        }
+        int j = 0;
+        zval *cell;
+        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(row), cell) {
+            if (j >= cols) break;
+            double d;
+            grid[ri * cols + j] = (fastchart_zval_to_double(cell, &d) == 0) ? d : NAN;
+            j++;
+        } ZEND_HASH_FOREACH_END();
+        for (; j < cols; j++) grid[ri * cols + j] = NAN;
+        ri++;
+    } ZEND_HASH_FOREACH_END();
+
+    double vmin = 0, vmax = 0;
+    int seen = 0;
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            double v = grid[i * cols + j];
+            if (isnan(v)) continue;
+            if (!seen) { vmin = vmax = v; seen = 1; }
+            else { if (v < vmin) vmin = v; if (v > vmax) vmax = v; }
+        }
+    }
+    if (!seen) {
+        efree(grid);
         zend_throw_error(NULL,
             "FastChart\\SurfaceChart::draw() found no numeric cells");
         return -1;
@@ -79,62 +108,67 @@ int fastchart_surface_render_to_image(fastchart_obj *self, gdImagePtr im)
     if (cell_w < 1) cell_w = 1;
     if (cell_h < 1) cell_h = 1;
 
-    /* Draw grid cells. */
+    /* Draw grid cells. A 256-entry color LUT keyed on the
+     * normalized cell value is allocated once instead of per-cell.
+     * Two contrasting label-text colors (dark / light) are also
+     * pre-allocated here so the value-label path stops calling
+     * gdImageColorAllocate per cell. */
     int low = (int)self->surface_low;
     int high = (int)self->surface_high;
     double span = vmax - vmin;
     if (span <= 0) span = 1.0;
 
-    int y_idx = 0;
-    ZEND_HASH_FOREACH_VAL(grid, row) {
-        if (Z_TYPE_P(row) != IS_ARRAY) { y_idx++; continue; }
-        int x_idx = 0;
-        zval *cell;
-        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(row), cell) {
-            double v;
-            if (fastchart_zval_to_double(cell, &v) == 0) {
-                double t = (v - vmin) / span;
-                int rgb = fastchart_lerp_rgb(low, high, t);
-                int color = gdImageColorAllocate(im,
-                    (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
-                int x0 = margin_x + x_idx * cell_w;
-                int y0 = top + y_idx * cell_h;
-                int x1 = x0 + cell_w - 1;
-                int y1 = y0 + cell_h - 1;
-                fastchart_shadow_filled_rectangle(im, self, x0, y0, x1, y1);
-                gdImageFilledRectangle(im, x0, y0, x1, y1, color);
-                if (self->edge_color >= 0) {
-                    gdImageRectangle(im, x0, y0, x1, y1, (int)self->edge_color);
-                }
-                if (self->surface_show_values) {
-                    const char *font = fastchart_resolve_font(self, "label");
-                    if (font) {
-                        const char *fmt = self->surface_value_format
-                            ? ZSTR_VAL(self->surface_value_format) : "%g";
-                        char buf[32];
-                        snprintf(buf, sizeof(buf), fmt, v);
-                        double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-                        double size = fastchart_resolve_font_size(self, "label", base * 0.8);
-                        int tx = (x0 + x1) / 2;
-                        int ty = (y0 + y1) / 2 + (int)(size * 0.35);
-                        /* Pick contrasting text color. */
-                        int luma = ((rgb >> 16) & 0xFF) * 299
-                                 + ((rgb >>  8) & 0xFF) * 587
-                                 + ( rgb        & 0xFF) * 114;
-                        int tc = luma > 128000
-                            ? gdImageColorAllocate(im, 0x22, 0x22, 0x22)
-                            : gdImageColorAllocate(im, 0xEE, 0xEE, 0xEE);
-                        fastchart_text_draw(im, font, size, tc, tx, ty,
-                                            FASTCHART_ALIGN_CENTER, buf, NULL, 0);
-                    }
+    int color_lut[256];
+    int rgb_lut[256];
+    for (int k = 0; k < 256; k++) {
+        int rgb = fastchart_lerp_rgb(low, high, (double)k / 255.0);
+        rgb_lut[k] = rgb;
+        color_lut[k] = gdImageColorAllocate(im,
+            (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    }
+    int label_dark  = gdImageColorAllocate(im, 0x22, 0x22, 0x22);
+    int label_light = gdImageColorAllocate(im, 0xEE, 0xEE, 0xEE);
+
+    for (int y_idx = 0; y_idx < rows; y_idx++) {
+        for (int x_idx = 0; x_idx < cols; x_idx++) {
+            double v = grid[y_idx * cols + x_idx];
+            if (isnan(v)) continue;
+            double t = (v - vmin) / span;
+            int idx = (int)(t * 255.0 + 0.5);
+            if (idx < 0) idx = 0; else if (idx > 255) idx = 255;
+            int color = color_lut[idx];
+            int rgb = rgb_lut[idx];
+            int x0 = margin_x + x_idx * cell_w;
+            int y0 = top + y_idx * cell_h;
+            int x1 = x0 + cell_w - 1;
+            int y1 = y0 + cell_h - 1;
+            fastchart_shadow_filled_rectangle(im, self, x0, y0, x1, y1);
+            gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+            if (self->edge_color >= 0) {
+                gdImageRectangle(im, x0, y0, x1, y1, (int)self->edge_color);
+            }
+            if (self->surface_show_values) {
+                const char *font = fastchart_resolve_font(self, "label");
+                if (font) {
+                    const char *fmt = self->surface_value_format
+                        ? ZSTR_VAL(self->surface_value_format) : "%g";
+                    char buf[32];
+                    snprintf(buf, sizeof(buf), fmt, v);
+                    double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+                    double size = fastchart_resolve_font_size(self, "label", base * 0.8);
+                    int tx = (x0 + x1) / 2;
+                    int ty = (y0 + y1) / 2 + (int)(size * 0.35);
+                    int luma = ((rgb >> 16) & 0xFF) * 299
+                             + ((rgb >>  8) & 0xFF) * 587
+                             + ( rgb        & 0xFF) * 114;
+                    int tc = luma > 128000 ? label_dark : label_light;
+                    fastchart_text_draw(im, font, size, tc, tx, ty,
+                                        FASTCHART_ALIGN_CENTER, buf, NULL, 0);
                 }
             }
-            x_idx++;
-            if (x_idx >= cols) break;
-        } ZEND_HASH_FOREACH_END();
-        y_idx++;
-        if (y_idx >= rows) break;
-    } ZEND_HASH_FOREACH_END();
+        }
+    }
+    efree(grid);
 
     /* Outer frame around the heatmap. */
     int frame_x1 = margin_x + cols * cell_w - 1;
