@@ -395,9 +395,13 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
                 break;
 
             case FASTCHART_STYLE_DIAMOND: {
-                /* High-low wick + small diamond at the close. */
+                /* High-low wick + small diamond at the close.
+                 * dh is clamped to half_w so the diamond never grows
+                 * past the cell; a hard floor of 4 (the previous code)
+                 * produced an 8-pixel polygon at dense scales where
+                 * half_w=1, which clobbered neighboring cells. */
                 gdImageLine(im, x, y_high, x, y_low, color);
-                int dh = half_w < 4 ? 4 : half_w;
+                int dh = half_w < 2 ? 2 : half_w;
                 gdPoint pts[4] = {
                     { x,      y_close - dh },
                     { x + dh, y_close      },
@@ -615,12 +619,15 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
             }
             if (!valid) { efree(vals); slot++; continue; }
 
-            /* Apply opts.min / opts.max clamps. */
+            /* Apply opts.min / opts.max clamps. fastchart_zval_to_double
+             * accepts both IS_LONG and IS_DOUBLE (and numeric strings)
+             * so 'min' => 0 works the way a PHP user expects. */
             zval *opt;
+            double dv;
             opt = zend_hash_str_find(Z_ARRVAL_P(pane_zv), "min", 3);
-            if (opt && Z_TYPE_P(opt) == IS_DOUBLE) pmin = Z_DVAL_P(opt);
+            if (opt && fastchart_zval_to_double(opt, &dv) == 0 && isfinite(dv)) pmin = dv;
             opt = zend_hash_str_find(Z_ARRVAL_P(pane_zv), "max", 3);
-            if (opt && Z_TYPE_P(opt) == IS_DOUBLE) pmax = Z_DVAL_P(opt);
+            if (opt && fastchart_zval_to_double(opt, &dv) == 0 && isfinite(dv)) pmax = dv;
 
             fastchart_value_range pr;
             fastchart_value_range_compute(pmin, pmax, 4, &pr);
@@ -639,9 +646,9 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
 
             /* Reference line, if configured. */
             opt = zend_hash_str_find(Z_ARRVAL_P(pane_zv), "reference", 9);
-            if (opt && Z_TYPE_P(opt) == IS_DOUBLE) {
-                double r = Z_DVAL_P(opt);
-                int ry = fastchart_y_to_pixel(r, &pr, &indicator_panes[slot]);
+            double ref_v;
+            if (opt && fastchart_zval_to_double(opt, &ref_v) == 0 && isfinite(ref_v)) {
+                int ry = fastchart_y_to_pixel(ref_v, &pr, &indicator_panes[slot]);
                 if (ry >= indicator_panes[slot].y0 && ry <= indicator_panes[slot].y1) {
                     static int ref_style[8];
                     for (int k = 0; k < 4; k++) ref_style[k] = pal.grid;
