@@ -226,6 +226,7 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
     } else {
         fastchart_value_range_compute(y_min, y_max, 6, &yrange);
+        fastchart_value_range_apply_override(self, &yrange);
     }
 
     fastchart_palette pal;
@@ -254,6 +255,7 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
     fastchart_draw_title(im, self, &plot, &pal);
     fastchart_draw_y_axis(im, self, &price_pane, &pal, &yrange);
     fastchart_draw_x_axis_time(im, self, &plot, &pal, t_min, t_max);
+    fastchart_draw_axis_titles(im, self, &plot, &pal);
 
     /* Candle width: divide the available x-span into (n + 1) cells
      * and use ~70% as the body width. Wicks always sit at the
@@ -270,6 +272,7 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
     int half_w = candle_w / 2;
     if (half_w < 1) half_w = 1;
 
+    int candle_style = (int)self->candle_style;
     for (int i = 0; i < n; i++) {
         int x = fastchart_x_time_to_pixel(&price_pane,
                                           candles[i].ts, t_min, t_max);
@@ -281,21 +284,51 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
         int up = candles[i].close >= candles[i].open;
         int color = up ? pal.up : pal.down;
 
-        /* Wick. */
-        gdImageLine(im, x, y_high, x, y_low, color);
+        switch (candle_style) {
+            case FASTCHART_STYLE_BAR:
+                /* Vertical line for high-low; left tick at open,
+                 * right tick at close. Classic Western HLC bar. */
+                gdImageLine(im, x, y_high, x, y_low, color);
+                gdImageLine(im, x - half_w, y_open,  x, y_open,  color);
+                gdImageLine(im, x, y_close, x + half_w, y_close, color);
+                break;
 
-        /* Body. Hollow if up to mirror common candlestick conventions
-         * (filled = down, hollow up = up); the clearer high-density
-         * default is filled bodies for both with color discrimination,
-         * so we use filled. Open and close are equal -> draw a single
-         * horizontal line as a doji marker. */
-        int y_top = up ? y_close : y_open;
-        int y_bot = up ? y_open  : y_close;
-        if (y_top == y_bot) {
-            gdImageLine(im, x - half_w, y_top, x + half_w, y_top, color);
-        } else {
-            gdImageFilledRectangle(im, x - half_w, y_top,
-                                   x + half_w, y_bot, color);
+            case FASTCHART_STYLE_DIAMOND: {
+                /* High-low wick + small diamond at the close. */
+                gdImageLine(im, x, y_high, x, y_low, color);
+                int dh = half_w < 4 ? 4 : half_w;
+                gdPoint pts[4] = {
+                    { x,      y_close - dh },
+                    { x + dh, y_close      },
+                    { x,      y_close + dh },
+                    { x - dh, y_close      },
+                };
+                gdImageFilledPolygon(im, pts, 4, color);
+                break;
+            }
+
+            case FASTCHART_STYLE_I_CAP:
+                /* High-low wick + horizontal cap at high and low. */
+                gdImageLine(im, x, y_high, x, y_low, color);
+                gdImageLine(im, x - half_w, y_high, x + half_w, y_high, color);
+                gdImageLine(im, x - half_w, y_low,  x + half_w, y_low,  color);
+                break;
+
+            case FASTCHART_STYLE_CANDLE:
+            default: {
+                /* High-low wick + filled body. Doji (open == close)
+                 * collapses to a horizontal line at the open. */
+                gdImageLine(im, x, y_high, x, y_low, color);
+                int y_top = up ? y_close : y_open;
+                int y_bot = up ? y_open  : y_close;
+                if (y_top == y_bot) {
+                    gdImageLine(im, x - half_w, y_top, x + half_w, y_top, color);
+                } else {
+                    gdImageFilledRectangle(im, x - half_w, y_top,
+                                           x + half_w, y_bot, color);
+                }
+                break;
+            }
         }
     }
 

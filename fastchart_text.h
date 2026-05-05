@@ -33,6 +33,17 @@ int fastchart_text_draw(gdImagePtr im,
                         const char *text,
                         char *err_buf, size_t err_buf_n);
 
+/* Same as fastchart_text_draw but rotates the text counter-clockwise
+ * by `angle_deg` (typical: 0, 45, 90). The anchor (x, y) is the
+ * alignment point of the unrotated bounding box; libgd rotates
+ * around that anchor. */
+int fastchart_text_draw_rotated(gdImagePtr im,
+                                const char *font_path, double font_size,
+                                int color, int x, int y,
+                                fastchart_align align, double angle_deg,
+                                const char *text,
+                                char *err_buf, size_t err_buf_n);
+
 /* Measure rendered bounds. *out_w and *out_h are populated on success.
  * Returns 0 on success, -1 on failure. */
 int fastchart_text_measure(const char *font_path, double font_size,

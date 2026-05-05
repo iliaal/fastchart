@@ -1,7 +1,7 @@
 --TEST--
 Antialiased line segments emit blended pixels along diagonals
---SKIPIF--
-<?php if (!extension_loaded("fastchart")) print "skip fastchart not loaded"; ?>
+--EXTENSIONS--
+fastchart
 --FILE--
 <?php
 

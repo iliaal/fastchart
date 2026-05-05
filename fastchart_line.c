@@ -33,8 +33,10 @@
  *
  * Sets *out_count to 0 if the data zval is empty or shape-invalid. */
 typedef struct {
-    HashTable *data;        /* zend_hash; values are numeric */
+    HashTable *data;        /* zend_hash; values are numeric or NULL (gap) */
+    HashTable *colors;      /* optional per-point colors; NULL when absent */
     const char *label;      /* NULL if the series had no label */
+    bool right_axis;        /* opt-in to setSecondaryYAxis() right scale */
     int len;
 } fastchart_line_series;
 
@@ -85,11 +87,19 @@ static int collect_line_series(zval *data_zv,
 
             zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
                                                 "label", sizeof("label") - 1);
-            if (label_zv && Z_TYPE_P(label_zv) == IS_STRING) {
-                out[*out_count].label = Z_STRVAL_P(label_zv);
-            } else {
-                out[*out_count].label = NULL;
-            }
+            out[*out_count].label = (label_zv && Z_TYPE_P(label_zv) == IS_STRING)
+                ? Z_STRVAL_P(label_zv) : NULL;
+
+            zval *colors_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
+                                                 "colors", sizeof("colors") - 1);
+            out[*out_count].colors = (colors_zv && Z_TYPE_P(colors_zv) == IS_ARRAY)
+                ? Z_ARRVAL_P(colors_zv) : NULL;
+
+            zval *axis_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
+                                               "axis", sizeof("axis") - 1);
+            out[*out_count].right_axis =
+                (axis_zv && Z_TYPE_P(axis_zv) == IS_STRING &&
+                 strcmp(Z_STRVAL_P(axis_zv), "right") == 0);
 
             if (out[*out_count].len > *out_max_len) {
                 *out_max_len = out[*out_count].len;
@@ -98,7 +108,9 @@ static int collect_line_series(zval *data_zv,
         } ZEND_HASH_FOREACH_END();
     } else {
         out[0].data = ht;
+        out[0].colors = NULL;
         out[0].label = NULL;
+        out[0].right_axis = false;
         out[0].len = n;
         *out_count = 1;
         *out_max_len = n;
@@ -107,10 +119,11 @@ static int collect_line_series(zval *data_zv,
     return 0;
 }
 
-/* Iterate values of `series_data` in insertion order, storing
- * coerced doubles into `out` (which has at least `len` slots). Returns
- * the number of values successfully extracted, or -1 in strict mode
- * when a non-numeric value is encountered (PHP TypeError pending). */
+/* Iterate values of `series_data`, storing coerced doubles into
+ * `out[i]`. NULL values become NaN (intentional gap). Numeric values
+ * pass through. Other types: NaN in non-strict mode, TypeError in
+ * strict mode. Returns the number of slots filled (up to max_n), or
+ * -1 if strict mode rejected a value. */
 static int extract_doubles(HashTable *series_data, double *out, int max_n,
                            bool strict)
 {
@@ -118,43 +131,49 @@ static int extract_doubles(HashTable *series_data, double *out, int max_n,
     zval *v;
     ZEND_HASH_FOREACH_VAL(series_data, v) {
         if (n >= max_n) break;
+        if (Z_TYPE_P(v) == IS_NULL) {
+            out[n++] = NAN;  /* intentional gap */
+            continue;
+        }
         double d;
         if (fastchart_zval_to_double(v, &d) == 0) {
             out[n++] = d;
         } else if (strict) {
-            zend_type_error("FastChart strict mode: series data must be numeric (long or double); got %s",
+            zend_type_error("FastChart strict mode: series data must be numeric or null; got %s",
                 zend_zval_type_name(v));
             return -1;
+        } else {
+            out[n++] = NAN;
         }
     } ZEND_HASH_FOREACH_END();
     return n;
 }
 
-/* Find the data min and max across all series. Returns 0 if at least
- * one numeric value was seen, -1 if no numerics or strict mode failed. */
+/* Find data min and max across (a subset of) series. `right_axis`
+ * picks which series to include: false includes left-axis series,
+ * true includes only series with `right_axis = true`. Returns 0 if
+ * at least one numeric value was seen, -1 if none or strict failed. */
 static int compute_y_range(fastchart_line_series *series, int n_series,
-                           bool strict, double *out_min, double *out_max)
+                           bool strict, bool want_right,
+                           double *out_min, double *out_max)
 {
     int seen = 0;
     double mn = 0, mx = 0;
     for (int s = 0; s < n_series; s++) {
+        if (series[s].right_axis != want_right) continue;
         zval *v;
         ZEND_HASH_FOREACH_VAL(series[s].data, v) {
+            if (Z_TYPE_P(v) == IS_NULL) continue;  /* gap */
             double d;
             if (fastchart_zval_to_double(v, &d) != 0) {
                 if (strict) {
-                    zend_type_error("FastChart strict mode: series data must be numeric");
+                    zend_type_error("FastChart strict mode: series data must be numeric or null");
                     return -1;
                 }
                 continue;
             }
-            if (!seen) {
-                mn = mx = d;
-                seen = 1;
-            } else {
-                if (d < mn) mn = d;
-                if (d > mx) mx = d;
-            }
+            if (!seen) { mn = mx = d; seen = 1; }
+            else { if (d < mn) mn = d; if (d > mx) mx = d; }
         } ZEND_HASH_FOREACH_END();
     }
     if (!seen) return -1;
@@ -176,23 +195,49 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
         return -1;
     }
 
-    double dmin, dmax;
-    if (compute_y_range(series, n_series, self->strict, &dmin, &dmax) != 0) {
+    /* Compute left + right Y ranges. With secondary axis on, series
+     * route by the 'axis' key; without it, all series go to left. */
+    int n_left = 0, n_right = 0;
+    for (int s = 0; s < n_series; s++) {
+        if (self->secondary_y && series[s].right_axis) n_right++;
+        else { series[s].right_axis = false; n_left++; }
+    }
+
+    double dmin_l = 0, dmax_l = 0, dmin_r = 0, dmax_r = 0;
+    if (n_left == 0) {
+        zend_throw_error(NULL,
+            "FastChart\\LineChart::draw(): primary Y axis has no series");
+        return -1;
+    }
+    if (compute_y_range(series, n_series, self->strict, false, &dmin_l, &dmax_l) != 0) {
         if (!EG(exception)) {
             zend_throw_error(NULL,
-                "FastChart\\LineChart::draw() found no numeric values in the series");
+                "FastChart\\LineChart::draw() found no numeric values for the primary Y axis");
         }
         return -1;
     }
+    if (n_right > 0) {
+        if (compute_y_range(series, n_series, self->strict, true, &dmin_r, &dmax_r) != 0) {
+            if (!EG(exception)) {
+                zend_throw_error(NULL,
+                    "FastChart\\LineChart::draw() found no numeric values for the secondary Y axis");
+            }
+            return -1;
+        }
+    }
 
-    fastchart_value_range range;
+    fastchart_value_range range_l, range_r;
     if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
-        if (fastchart_value_range_compute_log(dmin, dmax, &range) != 0) {
+        if (fastchart_value_range_compute_log(dmin_l, dmax_l, &range_l) != 0) {
             zend_value_error("FastChart\\LineChart::draw(): log Y-axis requires strictly-positive data");
             return -1;
         }
     } else {
-        fastchart_value_range_compute(dmin, dmax, 6, &range);
+        fastchart_value_range_compute(dmin_l, dmax_l, 6, &range_l);
+        fastchart_value_range_apply_override(self, &range_l);
+    }
+    if (n_right > 0) {
+        fastchart_value_range_compute(dmin_r, dmax_r, 6, &range_r);
     }
 
     fastchart_rect plot;
@@ -204,7 +249,10 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
 
     fastchart_draw_frame(im, self, &plot, &pal);
     fastchart_draw_title(im, self, &plot, &pal);
-    fastchart_draw_y_axis(im, self, &plot, &pal, &range);
+    fastchart_draw_y_axis(im, self, &plot, &pal, &range_l);
+    if (n_right > 0) {
+        fastchart_draw_y_axis_right(im, self, &plot, &pal, &range_r);
+    }
 
     /* Category labels: borrowed pointers into still-rooted PHP
      * zend_strings, valid for the rest of this call. */
@@ -221,9 +269,8 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
     fastchart_draw_x_axis_categorical(im, self, &plot, &pal, max_len, label_ptrs);
     if (label_ptrs) efree(label_ptrs);
 
-    /* Marker resolution: the LineChart-side default is a 6px circle
-     * unless the user overrode either knob via setMarkerStyle /
-     * setMarkerSize. -1 in either field means "use the default". */
+    fastchart_draw_axis_titles(im, self, &plot, &pal);
+
     int marker_style = self->marker_style >= 0
         ? (int)self->marker_style
         : FASTCHART_MARKER_CIRCLE;
@@ -240,6 +287,8 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
     double values[2048];
     for (int s = 0; s < n_series; s++) {
         int color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+        const fastchart_value_range *rng =
+            series[s].right_axis ? &range_r : &range_l;
         int n = extract_doubles(series[s].data, values,
                                 series[s].len < 2048 ? series[s].len : 2048,
                                 self->strict);
@@ -251,17 +300,39 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
 
         gdImageSetAntiAliased(im, color);
         int prev_x = 0, prev_y = 0;
+        bool prev_valid = false;
         for (int i = 0; i < n; i++) {
             int x = fastchart_x_categorical_center(&plot, i, max_len);
-            int y = fastchart_y_to_pixel(values[i], &range, &plot);
+            if (isnan(values[i])) {
+                /* Gap: break the polyline and skip the marker. */
+                prev_valid = false;
+                continue;
+            }
+            int y = fastchart_y_to_pixel(values[i], rng, &plot);
 
-            if (i > 0) {
+            if (prev_valid) {
                 gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
             }
-            fastchart_draw_marker(im, x, y, marker_style, marker_size, color);
+
+            /* Per-point ext color override, falls back to series color. */
+            int marker_color = color;
+            if (series[s].colors) {
+                zval *cv = zend_hash_index_find(series[s].colors, i);
+                if (cv && Z_TYPE_P(cv) == IS_LONG) {
+                    long c = Z_LVAL_P(cv);
+                    if (c >= 0 && c <= 0xFFFFFF) {
+                        marker_color = gdImageColorAllocate(im,
+                            (int)((c >> 16) & 0xFF),
+                            (int)((c >>  8) & 0xFF),
+                            (int)( c        & 0xFF));
+                    }
+                }
+            }
+            fastchart_draw_marker(im, x, y, marker_style, marker_size, marker_color);
 
             prev_x = x;
             prev_y = y;
+            prev_valid = true;
         }
 
         if (series[s].label) {
@@ -272,7 +343,7 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
     }
     gdImageSetThickness(im, 1);
 
-    fastchart_draw_h_annotations(im, self, &plot, &pal, &range);
+    fastchart_draw_h_annotations(im, self, &plot, &pal, &range_l);
     fastchart_draw_v_annotations_categorical(im, self, &plot, &pal, max_len);
 
     if (legend_count >= 1 && n_series >= 2) {

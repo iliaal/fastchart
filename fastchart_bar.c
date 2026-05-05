@@ -33,6 +33,7 @@
 
 typedef struct {
     HashTable *data;
+    HashTable *colors;     /* optional per-bar colors */
     const char *label;
     int len;
 } fastchart_bar_series;
@@ -75,17 +76,37 @@ static int collect_bar_series(zval *data_zv,
                 (label_zv && Z_TYPE_P(label_zv) == IS_STRING)
                     ? Z_STRVAL_P(label_zv) : NULL;
 
+            zval *colors_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
+                                                 "colors", sizeof("colors") - 1);
+            out[*out_count].colors = (colors_zv && Z_TYPE_P(colors_zv) == IS_ARRAY)
+                ? Z_ARRVAL_P(colors_zv) : NULL;
+
             if (out[*out_count].len > *out_max_len) *out_max_len = out[*out_count].len;
             (*out_count)++;
         } ZEND_HASH_FOREACH_END();
     } else {
         out[0].data = ht;
+        out[0].colors = NULL;
         out[0].label = NULL;
         out[0].len = (int)zend_hash_num_elements(ht);
         *out_count = 1;
         *out_max_len = out[0].len;
     }
     return 0;
+}
+
+static int per_point_color(HashTable *colors_ht, int idx, int fallback,
+                           gdImagePtr im)
+{
+    if (!colors_ht) return fallback;
+    zval *cv = zend_hash_index_find(colors_ht, idx);
+    if (!cv || Z_TYPE_P(cv) != IS_LONG) return fallback;
+    long c = Z_LVAL_P(cv);
+    if (c < 0 || c > 0xFFFFFF) return fallback;
+    return gdImageColorAllocate(im,
+        (int)((c >> 16) & 0xFF),
+        (int)((c >>  8) & 0xFF),
+        (int)( c        & 0xFF));
 }
 
 static int read_value(HashTable *ht, int index, double *out)
@@ -172,6 +193,7 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
     } else {
         fastchart_value_range_compute(dmin, dmax, 6, &range);
+        fastchart_value_range_apply_override(self, &range);
     }
 
     fastchart_rect plot;
@@ -198,6 +220,8 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
     fastchart_draw_x_axis_categorical(im, self, &plot, &pal, n_categories, label_ptrs);
     if (label_ptrs) efree(label_ptrs);
 
+    fastchart_draw_axis_titles(im, self, &plot, &pal);
+
     int zero_y = fastchart_y_to_pixel(0.0, &range, &plot);
 
     int slot_w = (plot.x1 - plot.x0) / (n_categories > 0 ? n_categories : 1);
@@ -218,7 +242,8 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
             for (int s = 0; s < n_series; s++) {
                 double v;
                 if (read_value(series[s].data, i, &v) != 0) continue;
-                int color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+                int series_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+                int color = per_point_color(series[s].colors, i, series_color, im);
 
                 double a, b;
                 if (v >= 0) {
@@ -239,7 +264,8 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
             for (int s = 0; s < n_series; s++) {
                 double v;
                 if (read_value(series[s].data, i, &v) != 0) continue;
-                int color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+                int series_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+                int color = per_point_color(series[s].colors, i, series_color, im);
                 int y_v = fastchart_y_to_pixel(v, &range, &plot);
 
                 int x0 = slot_left + s * sub_w;

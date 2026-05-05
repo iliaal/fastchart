@@ -50,6 +50,7 @@ if test "$PHP_FASTCHART" != "no"; then
     fastchart_text.c \
     fastchart_axis.c \
     fastchart_line.c \
+    fastchart_area.c \
     fastchart_bar.c \
     fastchart_pie.c \
     fastchart_scatter.c \

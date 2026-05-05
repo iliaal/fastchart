@@ -1,7 +1,7 @@
 --TEST--
 addHorizontalLine / addVerticalLine: dashed reference lines + labels
---SKIPIF--
-<?php if (!extension_loaded("fastchart")) print "skip fastchart not loaded"; ?>
+--EXTENSIONS--
+fastchart
 --FILE--
 <?php
 

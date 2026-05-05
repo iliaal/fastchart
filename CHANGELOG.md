@@ -9,6 +9,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Chart::__construct(?int $width = null, ?int $height = null)` —
+  optional canvas size at construction so callers using
+  `renderPng()` / `renderToFile()` don't need a separate
+  `imagecreatetruecolor()` step. `setSize()` still works and
+  overrides per-instance.
+- `FastChart\AreaChart` — new chart class. Filled-line areas with
+  the same data shape as `LineChart`. `setStacked(true)` (default)
+  paints opaque cumulative areas; `setStacked(false)` paints
+  translucent overlapping fills with `setFillOpacity(0..127)`.
+  Honors null-sentinel gaps and category labels.
+- `Chart::setXAxisTitle(string)` and `Chart::setYAxisTitle(string)`
+  render axis titles below the X labels and rotated 90° on the
+  left side of the Y labels. Empty string suppresses.
+- `Chart::setXAxisLabelAngle(int $degrees)` rotates X-axis tick
+  labels by 0, 45, or 90 degrees. Useful when long date or
+  category labels overlap horizontally.
+- `Chart::setYAxisRange(?float $min, ?float $max, ?float $interval)`
+  forces Y-axis bounds and (optionally) tick interval. Pass null
+  for any argument to keep the auto-computed value.
+- `Chart::setSecondaryYAxis(bool)` enables a right-side Y axis
+  with an independent value range. Series opt in via
+  `'axis' => 'right'` in the series dict. Currently honored on
+  `LineChart` and `AreaChart`.
+- Null values in `LineChart::setSeries()` and
+  `AreaChart::setSeries()` data render as polyline gaps (intentional
+  missing data). Strict mode tolerates `null` while still
+  rejecting other non-numeric types.
+- `PieChart::setExplode([slice_index => offset_pixels])` displaces
+  individual slices radially outward.
+- `PieChart::setSliceLabelPosition(LABEL_INSIDE | LABEL_OUTSIDE | LABEL_NONE)`
+  and `PieChart::setSliceLabelFormat(string $sprintf_format)` for
+  labels with leader lines or fully suppressed labels.
+- `StockChart::setCandleStyle(STYLE_CANDLE | STYLE_BAR | STYLE_DIAMOND | STYLE_I_CAP)`
+  — four OHLC presentation styles. `STYLE_CANDLE` (default) is the
+  filled body + wick. `STYLE_BAR` is the classic Western HLC bar
+  (vertical line + open tick on the left + close tick on the
+  right). `STYLE_DIAMOND` is a diamond at the close + wick.
+  `STYLE_I_CAP` is the high-low wick with horizontal caps.
+- Per-point ext colors. `LineChart` and `BarChart` series accept
+  an optional `'colors' => [int, int, ...]` array parallel to the
+  data; each value is a 24-bit RGB and overrides the series
+  palette color for that data point. Useful for highlighting
+  specific bars or markers.
+- `Chart::renderGif()` and `Chart::renderAvif(int $quality = 60)` —
+  GIF and AVIF output formats. AVIF requires libgd built with
+  AVIF support; raises a runtime exception on stripped builds.
+- `Chart::renderToFile(string $path, int $quality = 90)` — render
+  and write directly to a file. Format is inferred from the path
+  extension (`.png` / `.jpg` / `.jpeg` / `.webp` / `.gif` /
+  `.avif`). Honors `open_basedir`. Returns the byte count
+  written.
+
 - Initial scaffold. Builds against PHP 8.3+, depends on `ext/gd`,
   links libgd directly for drawing primitives.
 - Public OO surface registered: `FastChart\Chart` (abstract base),

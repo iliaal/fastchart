@@ -1,7 +1,7 @@
 --TEST--
 Legend renders for multi-series Line/Bar/Scatter and for Stock SMA overlays
---SKIPIF--
-<?php if (!extension_loaded("fastchart")) print "skip fastchart not loaded"; ?>
+--EXTENSIONS--
+fastchart
 --FILE--
 <?php
 

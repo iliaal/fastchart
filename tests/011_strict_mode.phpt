@@ -1,7 +1,7 @@
 --TEST--
 Strict mode: non-numeric values raise TypeError instead of being skipped
---SKIPIF--
-<?php if (!extension_loaded("fastchart")) print "skip fastchart not loaded"; ?>
+--EXTENSIONS--
+fastchart
 --FILE--
 <?php
 

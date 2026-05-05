@@ -185,6 +185,12 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
     int diameter = (avail_w < avail_h ? avail_w : avail_h) - 60;
     if (diameter < 40) diameter = 40;
 
+    /* Per-slice radial offset from setExplode([idx => px, ...]). */
+    zval *explode_zv = zend_hash_str_find(Z_ARRVAL(self->config),
+                                          "explode", sizeof("explode") - 1);
+    HashTable *explode_ht =
+        (explode_zv && Z_TYPE_P(explode_zv) == IS_ARRAY) ? Z_ARRVAL_P(explode_zv) : NULL;
+
     /* Slices via gdImageFilledArc. gdPie produces a filled wedge;
      * gdNoFill + gdEdged outlines without filling. We draw the wedge
      * with gdPie + a thin outline pass for slice separation. */
@@ -201,48 +207,90 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
             color = pal.series[i % FASTCHART_PALETTE_SERIES_N];
         }
 
-        gdImageFilledArc(im, cx, cy, diameter, diameter,
+        /* Explode this slice radially outward by `offset` pixels
+         * along its mid-angle. Slices not mentioned stay at center. */
+        int slice_cx = cx, slice_cy = cy;
+        if (explode_ht) {
+            zval *off_zv = zend_hash_index_find(explode_ht, i);
+            if (off_zv) {
+                long off = 0;
+                if (Z_TYPE_P(off_zv) == IS_LONG) off = Z_LVAL_P(off_zv);
+                else if (Z_TYPE_P(off_zv) == IS_DOUBLE) off = (long)Z_DVAL_P(off_zv);
+                if (off > 0) {
+                    double mid_rad = (start_deg + sweep / 2.0) * M_PI / 180.0;
+                    slice_cx = cx + (int)((double)off * cos(mid_rad));
+                    slice_cy = cy + (int)((double)off * sin(mid_rad));
+                }
+            }
+        }
+
+        gdImageFilledArc(im, slice_cx, slice_cy, diameter, diameter,
                          (int)floor(start_deg), (int)ceil(start_deg + sweep),
                          color, gdPie);
-        gdImageFilledArc(im, cx, cy, diameter, diameter,
+        gdImageFilledArc(im, slice_cx, slice_cy, diameter, diameter,
                          (int)floor(start_deg), (int)ceil(start_deg + sweep),
                          pal.border, gdNoFill | gdEdged);
         start_deg += sweep;
     }
 
-    /* Donut overdraw: paint a plot-bg-colored disk over the center. */
+    /* Donut overdraw: paint a plot-bg-colored disk over the center.
+     * Note: with explode, the donut hole stays centered (which is
+     * the standard appearance -- exploding slices leave the center
+     * looking ring-broken on purpose). */
     if (donut > 0) {
         int hole = (int)((double)diameter * donut);
         if (hole < 4) hole = 4;
         gdImageFilledEllipse(im, cx, cy, hole, hole, pal.plot_bg);
     }
 
-    /* Slice labels: percentage at the slice's mid-angle, on a radius
-     * that lands midway between the donut hole edge and the outer
-     * edge (or 70% of outer for solid pies). Skip if no font. */
-    if (self->font_path) {
-        double label_radius_frac = donut > 0
-            ? (donut + 1.0) / 2.0
-            : 0.7;
-        double label_r = (diameter / 2.0) * label_radius_frac;
+    /* Slice labels: percentage at the slice's mid-angle. Position
+     * mode picks INSIDE (default), OUTSIDE (with leader line), or
+     * NONE. Format string defaults to "%.0f%%"; the user-supplied
+     * format receives the percentage as the sole sprintf argument. */
+    if (self->font_path && self->slice_label_position != FASTCHART_LABEL_NONE) {
+        const char *fmt = self->slice_label_format
+            ? ZSTR_VAL(self->slice_label_format)
+            : "%.0f%%";
         double size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
         const char *font = ZSTR_VAL(self->font_path);
+
+        double inside_frac = donut > 0 ? (donut + 1.0) / 2.0 : 0.7;
+        double inside_r = (diameter / 2.0) * inside_frac;
+        double outside_r = (diameter / 2.0) + 14.0;
 
         start_deg = -90.0;
         for (int i = 0; i < n_slices; i++) {
             double sweep = 360.0 * (slices[i].value / total);
-            double mid_rad = (start_deg + sweep / 2.0) * M_PI / 180.0;
-            int lx = cx + (int)(label_r * cos(mid_rad));
-            int ly = cy + (int)(label_r * sin(mid_rad));
+            if (sweep < 4.0) { start_deg += sweep; continue; }
 
-            /* Skip labels for tiny slices to avoid overlap clutter. */
-            if (sweep >= 8.0) {
-                char buf[32];
-                snprintf(buf, sizeof(buf), "%.0f%%",
-                         100.0 * slices[i].value / total);
+            double mid_rad = (start_deg + sweep / 2.0) * M_PI / 180.0;
+            char buf[64];
+            snprintf(buf, sizeof(buf), fmt, 100.0 * slices[i].value / total);
+
+            if (self->slice_label_position == FASTCHART_LABEL_OUTSIDE) {
+                int lx = cx + (int)(outside_r * cos(mid_rad));
+                int ly = cy + (int)(outside_r * sin(mid_rad));
+                /* Tiny leader line from rim to label anchor. */
+                int rim_x = cx + (int)((diameter / 2.0) * cos(mid_rad));
+                int rim_y = cy + (int)((diameter / 2.0) * sin(mid_rad));
+                gdImageLine(im, rim_x, rim_y, lx, ly, pal.axis);
+                fastchart_align align = (cos(mid_rad) >= 0)
+                    ? FASTCHART_ALIGN_LEFT : FASTCHART_ALIGN_RIGHT;
+                int anchor_x = lx + (cos(mid_rad) >= 0 ? 4 : -4);
                 fastchart_text_draw(im, font, size, pal.text,
-                                    lx, ly + (int)(size * 0.35),
-                                    FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+                                    anchor_x, ly + (int)(size * 0.35),
+                                    align, buf, NULL, 0);
+            } else {
+                /* INSIDE -- skip labels for very small slices to
+                 * avoid overlap. The 8-degree threshold roughly
+                 * matches the GDChart default. */
+                if (sweep >= 8.0) {
+                    int lx = cx + (int)(inside_r * cos(mid_rad));
+                    int ly = cy + (int)(inside_r * sin(mid_rad));
+                    fastchart_text_draw(im, font, size, pal.text,
+                                        lx, ly + (int)(size * 0.35),
+                                        FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+                }
             }
             start_deg += sweep;
         }

@@ -1,7 +1,7 @@
 --TEST--
 PieChart::draw fills slices with palette colors; donut hole overdraws center
---SKIPIF--
-<?php if (!extension_loaded("fastchart")) print "skip fastchart not loaded"; ?>
+--EXTENSIONS--
+fastchart
 --FILE--
 <?php
 

@@ -17,10 +17,13 @@
 
 #include "php.h"
 #include "php_ini.h"
+#include "php_streams.h"
 #include "ext/standard/info.h"
 #include "Zend/zend_exceptions.h"
 
 #include <math.h>
+#include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 
 #include "php_fastchart.h"
@@ -28,6 +31,7 @@
 
 zend_class_entry *fastchart_chart_ce;
 zend_class_entry *fastchart_line_chart_ce;
+zend_class_entry *fastchart_area_chart_ce;
 zend_class_entry *fastchart_bar_chart_ce;
 zend_class_entry *fastchart_pie_chart_ce;
 zend_class_entry *fastchart_scatter_chart_ce;
@@ -78,6 +82,23 @@ static zend_object *fastchart_create_object(zend_class_entry *ce)
     intern->marker_style = -1;  /* per-chart default applies */
     intern->marker_size = -1;
 
+    intern->x_axis_title = NULL;
+    intern->y_axis_title = NULL;
+    intern->x_axis_label_angle = 0;
+
+    intern->has_y_min = false;
+    intern->has_y_max = false;
+    intern->has_y_interval = false;
+    intern->y_min = 0;
+    intern->y_max = 0;
+    intern->y_interval = 0;
+
+    intern->secondary_y = false;
+    intern->candle_style = FASTCHART_STYLE_CANDLE;
+    intern->slice_label_position = FASTCHART_LABEL_INSIDE;
+    intern->slice_label_format = NULL;
+    intern->area_alpha = 64;
+
     if (fastchart_default_font_path) {
         intern->font_path = zend_string_copy(fastchart_default_font_path);
     } else {
@@ -95,12 +116,11 @@ static void fastchart_free_object(zend_object *object)
 {
     fastchart_obj *intern = fastchart_obj_from_zend(object);
 
-    if (intern->title) {
-        zend_string_release(intern->title);
-    }
-    if (intern->font_path) {
-        zend_string_release(intern->font_path);
-    }
+    if (intern->title)             zend_string_release(intern->title);
+    if (intern->font_path)         zend_string_release(intern->font_path);
+    if (intern->x_axis_title)      zend_string_release(intern->x_axis_title);
+    if (intern->y_axis_title)      zend_string_release(intern->y_axis_title);
+    if (intern->slice_label_format) zend_string_release(intern->slice_label_format);
     zval_ptr_dtor(&intern->data);
     zval_ptr_dtor(&intern->config);
 
@@ -147,6 +167,43 @@ static zend_string *fastchart_probe_default_font(void)
 }
 
 /* ---------------- FastChart\Chart base method bodies --------------- */
+
+ZEND_METHOD(FastChart_Chart, __construct)
+{
+    zend_long width = 0, height = 0;
+    bool width_is_null = true, height_is_null = true;
+
+    ZEND_PARSE_PARAMETERS_START(0, 2)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG_OR_NULL(width, width_is_null)
+        Z_PARAM_LONG_OR_NULL(height, height_is_null)
+    ZEND_PARSE_PARAMETERS_END();
+
+    /* If only one of width/height is given, treat as user error
+     * rather than auto-defaulting one and not the other -- better
+     * to surface the asymmetry than silently produce a chart of
+     * unexpected dimensions. */
+    if (width_is_null != height_is_null) {
+        zend_value_error("FastChart\\Chart::__construct() requires both width and height, or neither");
+        RETURN_THROWS();
+    }
+    if (width_is_null) {
+        return; /* keep create_object defaults */
+    }
+
+    if (width <= 0 || height <= 0) {
+        zend_value_error("FastChart\\Chart::__construct() requires positive dimensions");
+        RETURN_THROWS();
+    }
+    if (width > 65535 || height > 65535) {
+        zend_value_error("FastChart\\Chart::__construct() dimensions must fit in 16 bits");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->width  = width;
+    self->height = height;
+}
 
 ZEND_METHOD(FastChart_Chart, version)
 {
@@ -524,9 +581,190 @@ ZEND_METHOD(FastChart_Chart, addVerticalLine)
 FASTCHART_MARKER_SETTERS(FastChart_LineChart)
 FASTCHART_MARKER_SETTERS(FastChart_ScatterChart)
 
+/* ---------------- axis titles + label rotation ------------------- */
+
+#define FASTCHART_OPTSTR_SETTER(field_) \
+    do { \
+        zend_string *txt; \
+        ZEND_PARSE_PARAMETERS_START(1, 1) \
+            Z_PARAM_STR(txt) \
+        ZEND_PARSE_PARAMETERS_END(); \
+        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
+        if (self->field_) zend_string_release(self->field_); \
+        self->field_ = ZSTR_LEN(txt) == 0 ? NULL : zend_string_copy(txt); \
+        RETURN_ZVAL(ZEND_THIS, 1, 0); \
+    } while (0)
+
+ZEND_METHOD(FastChart_Chart, setXAxisTitle) { FASTCHART_OPTSTR_SETTER(x_axis_title); }
+ZEND_METHOD(FastChart_Chart, setYAxisTitle) { FASTCHART_OPTSTR_SETTER(y_axis_title); }
+
+ZEND_METHOD(FastChart_Chart, setXAxisLabelAngle)
+{
+    zend_long deg;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(deg)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (deg != 0 && deg != 45 && deg != 90) {
+        zend_value_error("FastChart\\Chart::setXAxisLabelAngle() expects 0, 45, or 90 degrees");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->x_axis_label_angle = deg;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ---------------- forced Y-axis range ----------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setYAxisRange)
+{
+    double y_min = 0, y_max = 0, y_int = 0;
+    bool y_min_is_null = true, y_max_is_null = true, y_int_is_null = true;
+
+    ZEND_PARSE_PARAMETERS_START(0, 3)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_DOUBLE_OR_NULL(y_min, y_min_is_null)
+        Z_PARAM_DOUBLE_OR_NULL(y_max, y_max_is_null)
+        Z_PARAM_DOUBLE_OR_NULL(y_int, y_int_is_null)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+
+    if (!y_min_is_null && !y_max_is_null && y_min >= y_max) {
+        zend_value_error("FastChart\\Chart::setYAxisRange() min must be < max");
+        RETURN_THROWS();
+    }
+    if (!y_int_is_null && y_int <= 0) {
+        zend_value_error("FastChart\\Chart::setYAxisRange() interval must be > 0");
+        RETURN_THROWS();
+    }
+
+    self->has_y_min      = !y_min_is_null;
+    self->has_y_max      = !y_max_is_null;
+    self->has_y_interval = !y_int_is_null;
+    self->y_min          = y_min;
+    self->y_max          = y_max;
+    self->y_interval     = y_int;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ---------------- secondary Y axis -------------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setSecondaryYAxis)
+{
+    bool en;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(en)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->secondary_y = en;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ---------------- pie label / explode ----------------------------- */
+
+ZEND_METHOD(FastChart_PieChart, setExplode)
+{
+    zval *offsets;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(offsets)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval offsets_copy;
+    ZVAL_COPY(&offsets_copy, offsets);
+    add_assoc_zval(&self->config, "explode", &offsets_copy);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_PieChart, setSliceLabelPosition)
+{
+    zend_long pos;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(pos)
+    ZEND_PARSE_PARAMETERS_END();
+    if (pos < FASTCHART_LABEL_NONE || pos > FASTCHART_LABEL_OUTSIDE) {
+        zend_value_error("FastChart\\PieChart::setSliceLabelPosition() expects a LABEL_* class constant");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->slice_label_position = pos;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_PieChart, setSliceLabelFormat)
+{
+    zend_string *fmt;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(fmt)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (self->slice_label_format) zend_string_release(self->slice_label_format);
+    self->slice_label_format = zend_string_copy(fmt);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ---------------- StockChart candle style ------------------------- */
+
+ZEND_METHOD(FastChart_StockChart, setCandleStyle)
+{
+    zend_long style;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(style)
+    ZEND_PARSE_PARAMETERS_END();
+    if (style < FASTCHART_STYLE_CANDLE || style > FASTCHART_STYLE_I_CAP) {
+        zend_value_error("FastChart\\StockChart::setCandleStyle() expects a STYLE_* class constant");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->candle_style = style;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ---------------- AreaChart-specific setters ---------------------- */
+
+ZEND_METHOD(FastChart_AreaChart, setSeries)
+{
+    zval *series;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(series)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval_ptr_dtor(&self->data);
+    ZVAL_COPY(&self->data, series);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_AreaChart, setStacked)
+{
+    bool stacked;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(stacked)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    add_assoc_bool(&self->config, "stacked", stacked);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_AreaChart, setFillOpacity)
+{
+    zend_long alpha;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(alpha)
+    ZEND_PARSE_PARAMETERS_END();
+    if (alpha < 0 || alpha > 127) {
+        zend_value_error("FastChart\\AreaChart::setFillOpacity() expects a value in [0, 127]");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->area_alpha = alpha;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 /* ----------------- renderPng / renderJpeg / renderWebp ----------- */
 
-/* Dispatch by class entry. Five concrete subclasses; a single
+/* Dispatch by class entry. Six concrete subclasses; a single
  * if/else chain is fine -- this is per-render-call, not per-pixel.
  * Returns 0 on success with a PHP exception possibly pending; -1
  * if we hit an unknown class entry (defensive; should not happen
@@ -534,6 +772,7 @@ FASTCHART_MARKER_SETTERS(FastChart_ScatterChart)
 static int dispatch_render(fastchart_obj *self, zend_class_entry *ce, gdImagePtr im)
 {
     if (ce == fastchart_line_chart_ce)    return fastchart_line_render_to_image(self, im);
+    if (ce == fastchart_area_chart_ce)    return fastchart_area_render_to_image(self, im);
     if (ce == fastchart_bar_chart_ce)     return fastchart_bar_render_to_image(self, im);
     if (ce == fastchart_pie_chart_ce)     return fastchart_pie_render_to_image(self, im);
     if (ce == fastchart_scatter_chart_ce) return fastchart_scatter_render_to_image(self, im);
@@ -542,7 +781,35 @@ static int dispatch_render(fastchart_obj *self, zend_class_entry *ce, gdImagePtr
     return -1;
 }
 
-/* `format`: 0 = PNG, 1 = JPEG, 2 = WebP. */
+/* Encode a rendered gdImagePtr in the requested format. Returns
+ * malloc'd bytes via *out_bytes / *out_sz; caller gdFree's. NULL
+ * out_bytes on failure (caller throws). `format`: 0 PNG, 1 JPEG,
+ * 2 WebP, 3 GIF, 4 AVIF. */
+static int encode_image(gdImagePtr im, int format, int quality,
+                        void **out_bytes, int *out_sz)
+{
+    *out_bytes = NULL;
+    *out_sz = 0;
+    switch (format) {
+        case 0: *out_bytes = gdImagePngPtr(im, out_sz); break;
+        case 1: *out_bytes = gdImageJpegPtr(im, out_sz, quality); break;
+        case 2: *out_bytes = gdImageWebpPtrEx(im, out_sz, quality); break;
+        case 3: *out_bytes = gdImageGifPtr(im, out_sz); break;
+        case 4:
+#ifdef gdImageAvifPtrEx
+            *out_bytes = gdImageAvifPtrEx(im, out_sz, quality, -1);
+#else
+            zend_throw_exception(zend_ce_exception,
+                "FastChart: libgd was built without AVIF support", 0);
+            return -1;
+#endif
+            break;
+        default:
+            return -1;
+    }
+    return (*out_bytes && *out_sz > 0) ? 0 : -1;
+}
+
 static void render_to_string_helper(INTERNAL_FUNCTION_PARAMETERS, int format, zend_long quality)
 {
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
@@ -563,29 +830,20 @@ static void render_to_string_helper(INTERNAL_FUNCTION_PARAMETERS, int format, ze
         RETURN_THROWS();
     }
 
-    int sz = 0;
     void *bytes = NULL;
-    if (format == 0) {
-        bytes = gdImagePngPtr(im, &sz);
-    } else if (format == 1) {
-        bytes = gdImageJpegPtr(im, &sz, (int)quality);
-    } else {
-        bytes = gdImageWebpPtrEx(im, &sz, (int)quality);
-    }
-
-    if (!bytes || sz <= 0) {
+    int sz = 0;
+    if (encode_image(im, format, (int)quality, &bytes, &sz) != 0) {
         if (bytes) gdFree(bytes);
         gdImageDestroy(im);
-        zend_throw_error(NULL, "FastChart: gd encoder produced no output");
+        if (!EG(exception)) {
+            zend_throw_error(NULL, "FastChart: gd encoder produced no output");
+        }
         RETURN_THROWS();
     }
 
-    /* gdImage*Ptr buffers are gdMalloc'd; copy into a Zend string,
-     * then gdFree the libgd buffer. */
     zend_string *out = zend_string_init((const char *)bytes, (size_t)sz, 0);
     gdFree(bytes);
     gdImageDestroy(im);
-
     RETURN_STR(out);
 }
 
@@ -623,6 +881,124 @@ ZEND_METHOD(FastChart_Chart, renderWebp)
         RETURN_THROWS();
     }
     render_to_string_helper(INTERNAL_FUNCTION_PARAM_PASSTHRU, 2, quality);
+}
+
+ZEND_METHOD(FastChart_Chart, renderGif)
+{
+    ZEND_PARSE_PARAMETERS_NONE();
+    render_to_string_helper(INTERNAL_FUNCTION_PARAM_PASSTHRU, 3, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, renderAvif)
+{
+    zend_long quality = 60;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(quality)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (quality < 0 || quality > 100) {
+        zend_value_error("FastChart\\Chart::renderAvif() quality must be in [0, 100]");
+        RETURN_THROWS();
+    }
+    render_to_string_helper(INTERNAL_FUNCTION_PARAM_PASSTHRU, 4, quality);
+}
+
+/* --------------------- renderToFile -------------------------------
+ *
+ * Path extension picks the format. Honors open_basedir. Writes via
+ * the Zend stream layer so wrapper paths (file://, sftp://) work
+ * within open_basedir constraints. */
+static int format_from_path(const char *path, size_t len)
+{
+    /* Walk back to find the last '.'; bounded to avoid scanning a
+     * megabyte of pathological input. */
+    if (len == 0 || len > 4096) return -1;
+    const char *dot = NULL;
+    for (size_t i = len; i > 0; i--) {
+        if (path[i - 1] == '.') { dot = &path[i - 1]; break; }
+        if (path[i - 1] == '/' || path[i - 1] == '\\') break;
+    }
+    if (!dot) return -1;
+    const char *ext = dot + 1;
+    /* lowercase compare against known extensions */
+    if (!strcasecmp(ext, "png"))  return 0;
+    if (!strcasecmp(ext, "jpg"))  return 1;
+    if (!strcasecmp(ext, "jpeg")) return 1;
+    if (!strcasecmp(ext, "webp")) return 2;
+    if (!strcasecmp(ext, "gif"))  return 3;
+    if (!strcasecmp(ext, "avif")) return 4;
+    return -1;
+}
+
+ZEND_METHOD(FastChart_Chart, renderToFile)
+{
+    zend_string *path;
+    zend_long quality = 90;
+    ZEND_PARSE_PARAMETERS_START(1, 2)
+        Z_PARAM_PATH_STR(path)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(quality)
+    ZEND_PARSE_PARAMETERS_END();
+
+    int format = format_from_path(ZSTR_VAL(path), ZSTR_LEN(path));
+    if (format < 0) {
+        zend_value_error("FastChart\\Chart::renderToFile() could not infer format from extension; expected .png/.jpg/.jpeg/.webp/.gif/.avif");
+        RETURN_THROWS();
+    }
+    if (quality < 1 || quality > 100) {
+        zend_value_error("FastChart\\Chart::renderToFile() quality must be in [1, 100]");
+        RETURN_THROWS();
+    }
+    if (php_check_open_basedir(ZSTR_VAL(path))) {
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (self->width <= 0 || self->height <= 0) {
+        zend_throw_error(NULL, "FastChart: invalid canvas size; setSize() first");
+        RETURN_THROWS();
+    }
+
+    gdImagePtr im = gdImageCreateTrueColor((int)self->width, (int)self->height);
+    if (!im) {
+        zend_throw_error(NULL, "FastChart: gdImageCreateTrueColor() returned NULL");
+        RETURN_THROWS();
+    }
+
+    if (dispatch_render(self, Z_OBJCE_P(ZEND_THIS), im) != 0 || EG(exception)) {
+        gdImageDestroy(im);
+        RETURN_THROWS();
+    }
+
+    void *bytes = NULL;
+    int sz = 0;
+    if (encode_image(im, format, (int)quality, &bytes, &sz) != 0) {
+        if (bytes) gdFree(bytes);
+        gdImageDestroy(im);
+        if (!EG(exception)) {
+            zend_throw_error(NULL, "FastChart: gd encoder produced no output");
+        }
+        RETURN_THROWS();
+    }
+    gdImageDestroy(im);
+
+    php_stream *stream = php_stream_open_wrapper(ZSTR_VAL(path), "wb",
+        REPORT_ERRORS, NULL);
+    if (!stream) {
+        gdFree(bytes);
+        RETURN_THROWS();
+    }
+
+    ssize_t written = php_stream_write(stream, (const char *)bytes, (size_t)sz);
+    php_stream_close(stream);
+    gdFree(bytes);
+
+    if (written < 0) {
+        zend_throw_error(NULL, "FastChart: write to %s failed", ZSTR_VAL(path));
+        RETURN_THROWS();
+    }
+    RETURN_LONG((zend_long)written);
 }
 
 /* ---------------- per-class setSeries family --------------------
@@ -813,6 +1189,9 @@ PHP_MINIT_FUNCTION(fastchart)
 
     fastchart_line_chart_ce    = register_class_FastChart_LineChart(fastchart_chart_ce);
     fastchart_line_chart_ce->create_object = fastchart_create_object;
+
+    fastchart_area_chart_ce    = register_class_FastChart_AreaChart(fastchart_chart_ce);
+    fastchart_area_chart_ce->create_object = fastchart_create_object;
 
     fastchart_bar_chart_ce     = register_class_FastChart_BarChart(fastchart_chart_ce);
     fastchart_bar_chart_ce->create_object = fastchart_create_object;

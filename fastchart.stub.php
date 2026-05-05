@@ -25,149 +25,135 @@ abstract class Chart
     public const int SCALE_LINEAR = 0;
     public const int SCALE_LOG    = 1;
 
+    public const int LABEL_NONE    = 0;
+    public const int LABEL_INSIDE  = 1;
+    public const int LABEL_OUTSIDE = 2;
+
+    public const int STYLE_CANDLE  = 0;
+    public const int STYLE_BAR     = 1;
+    public const int STYLE_DIAMOND = 2;
+    public const int STYLE_I_CAP   = 3;
+
     /**
-     * Returns the loaded fastchart extension version, e.g. "0.1.0".
+     * Optionally pass canvas dimensions at construction so callers
+     * can skip the `imagecreatetruecolor()` step entirely when they
+     * use the renderXxx() shortcuts. Both `null` keeps the default
+     * 800 x 600. setSize() still works and overrides per-instance.
      */
+    public function __construct(?int $width = null, ?int $height = null) {}
+
     public static function version(): string {}
 
-    /**
-     * Set the canvas dimensions the chart will draw within. Default
-     * 800 x 600. Out-of-bounds canvas raises a \ValueError.
-     */
     public function setSize(int $width, int $height): static {}
-
-    /**
-     * Set the title rendered above the plot area. Empty string
-     * suppresses the title.
-     */
     public function setTitle(string $title): static {}
-
-    /**
-     * Select a built-in theme (`THEME_LIGHT`, `THEME_DARK`).
-     * Per-instance setBackgroundColor / setSeriesColors override
-     * specific palette slots without disturbing the rest.
-     */
     public function setTheme(int $theme): static {}
-
-    /**
-     * Override the canvas background color (24-bit 0xRRGGBB).
-     * Pass -1 to revert to the theme default. Affects the canvas
-     * around the plot area; the plot area background tracks this
-     * unless setPlotBackgroundColor() is also called.
-     */
     public function setBackgroundColor(int $rgb): static {}
-
-    /**
-     * Override the plot-area background color independently of the
-     * canvas background. Pass -1 to revert to the theme default.
-     */
     public function setPlotBackgroundColor(int $rgb): static {}
-
-    /**
-     * Override the per-series color palette. Pass a list of up to 8
-     * integers (24-bit 0xRRGGBB). Series index N rotates through the
-     * supplied colors; pass [] to revert to the theme palette.
-     */
     public function setSeriesColors(array $colors): static {}
-
-    /**
-     * Set the TTF font used for titles, axis labels, value tags.
-     */
     public function setFontPath(string $path): static {}
-
-    /**
-     * Set the base font size in points. Default: 10.0.
-     */
     public function setFontSize(float $size): static {}
-
-    /**
-     * Set the X-axis category labels for chart types that use a
-     * categorical X-axis (Line, Bar). Pie/Scatter/Stock ignore this
-     * setter.
-     */
     public function setCategoryLabels(array $labels): static {}
-
-    /**
-     * Where to draw the legend, when one applies. Pass one of the
-     * `LEGEND_*` class constants. `LEGEND_NONE` suppresses the
-     * legend entirely. Default: `LEGEND_TOP_RIGHT`.
-     */
     public function setLegendPosition(int $position): static {}
-
-    /**
-     * Y-axis scale: `SCALE_LINEAR` (default) or `SCALE_LOG` (base
-     * 10). Log scale requires strictly-positive data; passing
-     * non-positive values to a log-scaled chart raises \ValueError
-     * at draw() time.
-     */
     public function setYAxisScale(int $scale): static {}
-
-    /**
-     * Strict input validation. With strict mode on (default off),
-     * a non-numeric value inside the data passed to setSeries /
-     * setSlices / setPoints / setOhlcv triggers \TypeError on
-     * draw() instead of being silently skipped.
-     */
     public function setStrict(bool $strict): static {}
 
     /**
-     * Add a horizontal reference line at the given Y value. Renders
-     * as a dashed line across the plot area; if `$label` is given,
-     * the label is drawn at the right edge. `$color` is 24-bit
-     * 0xRRGGBB; null uses the theme axis color.
+     * X-axis title rendered below the X-axis labels. Empty string
+     * suppresses. Pie ignores. Default: "" (no title).
      */
-    public function addHorizontalLine(float $value, ?string $label = null, ?int $color = null): static {}
+    public function setXAxisTitle(string $title): static {}
 
     /**
-     * Add a vertical reference line at the given X position. For
-     * Line / Bar charts the position is interpreted as a category
-     * index (0..n-1); for Scatter as a numeric x-value; for Stock
-     * as a Unix timestamp.
+     * Y-axis title rendered rotated 90deg to the left of the
+     * Y-axis labels. Empty string suppresses.
      */
+    public function setYAxisTitle(string $title): static {}
+
+    /**
+     * Rotate the X-axis tick labels. 0, 45, or 90 degrees only;
+     * other values raise \ValueError. Useful when long date or
+     * category labels overlap horizontally.
+     */
+    public function setXAxisLabelAngle(int $degrees): static {}
+
+    /**
+     * Force Y-axis bounds and (optionally) tick interval. Pass
+     * null for any argument to keep the auto-computed value.
+     * Forced ranges still go through "nice" tick rounding unless
+     * `$interval` is supplied.
+     */
+    public function setYAxisRange(?float $min = null, ?float $max = null, ?float $interval = null): static {}
+
+    /**
+     * Enable a secondary Y axis on the right side of the plot.
+     * Series can opt into the right axis via an `'axis' => 'right'`
+     * key in the series dict (default 'left'). Independent value
+     * range and tick scale per axis. Currently honored on
+     * `LineChart` and `AreaChart`; other types silently ignore.
+     */
+    public function setSecondaryYAxis(bool $enabled): static {}
+
+    public function addHorizontalLine(float $value, ?string $label = null, ?int $color = null): static {}
     public function addVerticalLine(float $position, ?string $label = null, ?int $color = null): static {}
 
-    /**
-     * Render the chart into the caller-supplied GD canvas and
-     * return the same canvas for chaining.
-     */
     abstract public function draw(\GdImage $canvas): \GdImage;
 
-    /**
-     * Convenience: draw to a fresh internal canvas at the size
-     * configured via setSize() and return PNG-encoded bytes.
-     * Equivalent to `imagepng()` on a `draw()` result, without the
-     * ext/gd round-trip.
-     */
+    /** Render to PNG bytes at the configured size. */
     public function renderPng(): string {}
 
-    /**
-     * As renderPng(), but JPEG-encoded. `$quality` is 1..100
-     * (default 90).
-     */
+    /** Render to JPEG bytes. `$quality` is 1..100. */
     public function renderJpeg(int $quality = 90): string {}
 
-    /**
-     * As renderPng(), but WebP-encoded. `$quality` is 0..100
-     * (default 90).
-     */
+    /** Render to WebP bytes. `$quality` is 0..100. */
     public function renderWebp(int $quality = 90): string {}
+
+    /** Render to GIF bytes. */
+    public function renderGif(): string {}
+
+    /**
+     * Render to AVIF bytes. `$quality` is 0..100. Raises
+     * \RuntimeException if libgd was built without AVIF support.
+     */
+    public function renderAvif(int $quality = 60): string {}
+
+    /**
+     * Render and write directly to a file. Format is inferred from
+     * the path extension: `.png` / `.jpg` / `.jpeg` / `.webp` /
+     * `.gif` / `.avif`. `$quality` only applies to JPEG / WebP /
+     * AVIF outputs. Returns the byte count written. Honors
+     * `open_basedir`.
+     */
+    public function renderToFile(string $path, int $quality = 90): int {}
 }
 
 final class LineChart extends Chart
 {
     public function setSeries(array $series): static {}
-
-    /**
-     * Marker shape drawn at each data point. Default
-     * `MARKER_CIRCLE`. `MARKER_NONE` plots only the connecting
-     * lines.
-     */
     public function setMarkerStyle(int $style): static {}
+    public function setMarkerSize(int $size): static {}
+    public function draw(\GdImage $canvas): \GdImage {}
+}
+
+final class AreaChart extends Chart
+{
+    /**
+     * Same data shape as `LineChart::setSeries()`. Each series is
+     * filled below the line down to the zero baseline (or to the
+     * Y-axis min, whichever is higher). Multi-series stacks by
+     * default; pass `setStacked(false)` for overlapping translucent
+     * fills.
+     */
+    public function setSeries(array $series): static {}
+
+    public function setStacked(bool $stacked): static {}
 
     /**
-     * Marker size in pixels (1..32). Default 6.
+     * Fill alpha for non-stacked overlapping areas (0..127, where
+     * 127 is fully transparent and 0 is fully opaque, matching
+     * libgd's alpha convention). Default 64. Stacked areas are
+     * always opaque.
      */
-    public function setMarkerSize(int $size): static {}
+    public function setFillOpacity(int $alpha): static {}
 
     public function draw(\GdImage $canvas): \GdImage {}
 }
@@ -175,17 +161,35 @@ final class LineChart extends Chart
 final class BarChart extends Chart
 {
     public function setSeries(array $series): static {}
-
     public function setStacked(bool $stacked): static {}
-
     public function draw(\GdImage $canvas): \GdImage {}
 }
 
 final class PieChart extends Chart
 {
     public function setSlices(array $slices): static {}
-
     public function setDonutHoleRatio(float $ratio): static {}
+
+    /**
+     * Per-slice radial offset in pixels, indexed by slice index.
+     * Pass `[0 => 20]` to push the first slice 20px outward to
+     * highlight it. Slices not mentioned stay at radius 0.
+     */
+    public function setExplode(array $offsets): static {}
+
+    /**
+     * Where slice labels render. `LABEL_INSIDE` (default) places
+     * labels at the radial midpoint inside the slice.
+     * `LABEL_OUTSIDE` places labels just past the slice edge with
+     * a short leader line. `LABEL_NONE` suppresses labels.
+     */
+    public function setSliceLabelPosition(int $position): static {}
+
+    /**
+     * sprintf format string for slice labels. Receives the
+     * percentage value as its sole argument. Default `"%.0f%%"`.
+     */
+    public function setSliceLabelFormat(string $format): static {}
 
     public function draw(\GdImage $canvas): \GdImage {}
 }
@@ -193,39 +197,28 @@ final class PieChart extends Chart
 final class ScatterChart extends Chart
 {
     public function setPoints(array $points): static {}
-
-    /**
-     * Marker shape for each point. Default `MARKER_CIRCLE`.
-     */
     public function setMarkerStyle(int $style): static {}
-
-    /**
-     * Marker size in pixels (1..32). Default 7.
-     */
     public function setMarkerSize(int $size): static {}
-
     public function draw(\GdImage $canvas): \GdImage {}
 }
 
 final class StockChart extends Chart
 {
     public function setOhlcv(array $ohlcv): static {}
-
     public function setMovingAverages(array $periods): static {}
-
     public function setVolumePane(bool $enabled): static {}
 
     /**
-     * Add a stacked indicator pane below the price (and volume)
-     * pane. `$values` is parallel to the OHLCV rows -- one numeric
-     * value per row in the same order. Optional `$opts`:
-     *   'color'     => int 0xRRGGBB (default: rotates the palette)
-     *   'reference' => float (draws a horizontal reference line at
-     *                  this value, e.g. 50 for an RSI midline)
-     *   'min'       => float (clamp the pane's y-range minimum)
-     *   'max'       => float (clamp the pane's y-range maximum)
-     * Multiple panes stack vertically. Up to 3 panes total.
+     * OHLC presentation style. `STYLE_CANDLE` (default) draws a
+     * filled body with a high-low wick. `STYLE_BAR` draws a
+     * vertical line with a left tick at the open and a right tick
+     * at the close (classic Western HLC bar). `STYLE_DIAMOND`
+     * draws a diamond at the close with a high-low wick.
+     * `STYLE_I_CAP` draws the wick with horizontal caps at high
+     * and low.
      */
+    public function setCandleStyle(int $style): static {}
+
     public function addIndicatorPane(string $name, array $values, ?array $opts = null): static {}
 
     public function draw(\GdImage $canvas): \GdImage {}

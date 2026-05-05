@@ -135,12 +135,55 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
         }
     }
 
-    /* X-axis: one row of labels at the standard size. */
+    /* Y-axis title: rotated 90deg on the left of the y-axis labels.
+     * The title's height becomes its visible width after rotation. */
+    if (has_y_axis && chart->y_axis_title && font) {
+        int tw, th;
+        if (fastchart_text_measure(font, size * 1.1, ZSTR_VAL(chart->y_axis_title),
+                                   &tw, &th, NULL, 0) == 0) {
+            (void)tw;
+            left += th + 8;
+        }
+    }
+
+    /* Secondary Y axis: mirror the left-side reservation on the
+     * right edge. */
+    if (has_y_axis && chart->secondary_y && font) {
+        int lw, lh;
+        if (fastchart_text_measure(font, size, "999999",
+                                   &lw, &lh, NULL, 0) == 0) {
+            right += lw + TICK_MARK_LEN + Y_LABEL_PADDING;
+        }
+    }
+
+    /* X-axis labels. Horizontal labels reserve one line; rotated
+     * labels reserve roughly the label width as height. The
+     * rotated reservation is conservative for 45deg (true height
+     * is width / sqrt(2) but layout-wise we don't need a tight fit). */
     if (has_x_axis && font) {
         int lw, lh;
-        if (fastchart_text_measure(font, size, "Mg9",
+        const char *probe = "999999"; /* same probe as y-axis */
+        if (fastchart_text_measure(font, size, probe,
                                    &lw, &lh, NULL, 0) == 0) {
-            bottom += lh + TICK_MARK_LEN + X_LABEL_PADDING;
+            int needed;
+            if (chart->x_axis_label_angle == 90) {
+                needed = lw + TICK_MARK_LEN + X_LABEL_PADDING;
+            } else if (chart->x_axis_label_angle == 45) {
+                needed = (int)((double)lw * 0.75) + TICK_MARK_LEN + X_LABEL_PADDING;
+            } else {
+                needed = lh + TICK_MARK_LEN + X_LABEL_PADDING;
+            }
+            bottom += needed;
+        }
+    }
+
+    /* X-axis title: an extra line below the labels. */
+    if (has_x_axis && chart->x_axis_title && font) {
+        int tw, th;
+        if (fastchart_text_measure(font, size * 1.1, ZSTR_VAL(chart->x_axis_title),
+                                   &tw, &th, NULL, 0) == 0) {
+            (void)tw;
+            bottom += th + 6;
         }
     }
 
@@ -207,6 +250,47 @@ void fastchart_value_range_compute(double dmin, double dmax,
         out->ticks[0] = nice_min;
         out->ticks[1] = nice_max;
         out->n_ticks = 2;
+    }
+}
+
+void fastchart_value_range_apply_override(const fastchart_obj *chart,
+                                          fastchart_value_range *out)
+{
+    if (!chart->has_y_min && !chart->has_y_max && !chart->has_y_interval) return;
+    if (out->log_scale) return;  /* log-scale ignores forced bounds */
+
+    double mn = chart->has_y_min ? chart->y_min : out->min;
+    double mx = chart->has_y_max ? chart->y_max : out->max;
+    if (mx <= mn) return;  /* malformed override; leave the auto range */
+
+    out->min = mn;
+    out->max = mx;
+
+    if (chart->has_y_interval) {
+        double step = chart->y_interval;
+        out->tick_step = step;
+        out->n_ticks = 0;
+        for (double v = mn;
+             v <= mx + step * 0.5 && out->n_ticks < FASTCHART_MAX_TICKS;
+             v += step) {
+            out->ticks[out->n_ticks++] = v;
+        }
+        if (out->n_ticks < 2) {
+            out->ticks[0] = mn;
+            out->ticks[1] = mx;
+            out->n_ticks = 2;
+        }
+    } else {
+        /* Re-run the nice-tick generator on the forced bounds. */
+        fastchart_value_range tmp;
+        fastchart_value_range_compute(mn, mx, 6, &tmp);
+        out->tick_step = tmp.tick_step;
+        out->n_ticks = tmp.n_ticks;
+        for (int i = 0; i < tmp.n_ticks; i++) out->ticks[i] = tmp.ticks[i];
+        /* But preserve the user's literal min/max (not the rounded
+         * "nice" version), since the user explicitly asked. */
+        out->min = mn;
+        out->max = mx;
     }
 }
 
@@ -353,6 +437,76 @@ void fastchart_draw_y_axis(gdImagePtr im, fastchart_obj *chart,
     }
 }
 
+void fastchart_draw_y_axis_right(gdImagePtr im, fastchart_obj *chart,
+                                 const fastchart_rect *plot,
+                                 const fastchart_palette *pal,
+                                 const fastchart_value_range *range)
+{
+    /* Right axis line. */
+    gdImageLine(im, plot->x1, plot->y0, plot->x1, plot->y1, pal->axis);
+    if (!chart->font_path) return;
+
+    double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    const char *font = ZSTR_VAL(chart->font_path);
+
+    char buf[32];
+    for (int i = 0; i < range->n_ticks; i++) {
+        double v = range->ticks[i];
+        int y = fastchart_y_to_pixel(v, range, plot);
+
+        gdImageLine(im, plot->x1 + 1, y,
+                        plot->x1 + TICK_MARK_LEN, y, pal->axis);
+
+        format_tick_label(v, range->tick_step, buf, sizeof(buf));
+        int label_x = plot->x1 + TICK_MARK_LEN + Y_LABEL_PADDING / 2;
+        int label_y = y + (int)(size * 0.35);
+        fastchart_text_draw(im, font, size, pal->text,
+                            label_x, label_y, FASTCHART_ALIGN_LEFT,
+                            buf, NULL, 0);
+    }
+}
+
+void fastchart_draw_axis_titles(gdImagePtr im, fastchart_obj *chart,
+                                const fastchart_rect *plot,
+                                const fastchart_palette *pal)
+{
+    if (!chart->font_path) return;
+    double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    const char *font = ZSTR_VAL(chart->font_path);
+
+    if (chart->x_axis_title && ZSTR_LEN(chart->x_axis_title) > 0) {
+        int W = gdImageSX(im);
+        int H = gdImageSY(im);
+        (void)W;
+        int cx = (plot->x0 + plot->x1) / 2;
+        /* Place the X-title baseline near the bottom of the canvas
+         * with a small bottom margin. */
+        int baseline = H - MARGIN_BOTTOM_PAD - 2;
+        fastchart_text_draw(im, font, size * 1.1, pal->text,
+                            cx, baseline, FASTCHART_ALIGN_CENTER,
+                            ZSTR_VAL(chart->x_axis_title), NULL, 0);
+    }
+
+    if (chart->y_axis_title && ZSTR_LEN(chart->y_axis_title) > 0) {
+        /* Y-title reads bottom-to-top centered on the plot's
+         * vertical midpoint. gdImageStringFT with angle=π/2 starts
+         * at (x, y) and progresses upward; the unrotated text width
+         * becomes the rotated text's vertical extent. To visually
+         * center on cy, set the baseline y = cy + width / 2 so the
+         * top edge ends up at cy - width / 2. */
+        int cy = (plot->y0 + plot->y1) / 2;
+        int x = MARGIN_LEFT_PAD + (int)(size * 1.1);
+        int tw = 0, th = 0;
+        if (fastchart_text_measure(font, size * 1.1, ZSTR_VAL(chart->y_axis_title),
+                                   &tw, &th, NULL, 0) == 0) {
+            int y = cy + tw / 2;
+            fastchart_text_draw_rotated(im, font, size * 1.1, pal->text,
+                                        x, y, FASTCHART_ALIGN_LEFT, 90.0,
+                                        ZSTR_VAL(chart->y_axis_title), NULL, 0);
+        }
+    }
+}
+
 /* --------------------------- x axis (categorical) ------------------ */
 
 int fastchart_x_categorical_center(const fastchart_rect *plot, int idx, int n)
@@ -378,12 +532,27 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
 
     double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
     const char *font = ZSTR_VAL(chart->font_path);
-    int label_y = plot->y1 + TICK_MARK_LEN + (int)(size * 1.2);
+    int angle = (int)chart->x_axis_label_angle;
 
-    /* Cap rendered labels to ~10 to avoid overlap on dense categories. */
+    int label_y;
+    fastchart_align align;
+    if (angle == 0) {
+        label_y = plot->y1 + TICK_MARK_LEN + (int)(size * 1.2);
+        align = FASTCHART_ALIGN_CENTER;
+    } else if (angle == 45) {
+        label_y = plot->y1 + TICK_MARK_LEN + (int)(size * 1.0);
+        align = FASTCHART_ALIGN_RIGHT;
+    } else { /* 90 */
+        label_y = plot->y1 + TICK_MARK_LEN + (int)(size * 0.5);
+        align = FASTCHART_ALIGN_RIGHT;
+    }
+
+    /* Stride caps horizontal labels to ~10; rotated labels are
+     * narrow enough that we can show all of them up to ~30. */
+    int max_visible = (angle == 0) ? 10 : 30;
     int stride = 1;
-    if (n_categories > 12) {
-        stride = (n_categories + 9) / 10;
+    if (n_categories > max_visible + 2) {
+        stride = (n_categories + max_visible - 1) / max_visible;
     }
 
     for (int i = 0; i < n_categories; i += stride) {
@@ -399,9 +568,14 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
             snprintf(fallback, sizeof(fallback), "%d", i);
             txt = fallback;
         }
-        fastchart_text_draw(im, font, size, pal->text,
-                            x, label_y, FASTCHART_ALIGN_CENTER,
-                            txt, NULL, 0);
+        if (angle == 0) {
+            fastchart_text_draw(im, font, size, pal->text,
+                                x, label_y, align, txt, NULL, 0);
+        } else {
+            fastchart_text_draw_rotated(im, font, size, pal->text,
+                                        x, label_y, align, (double)angle,
+                                        txt, NULL, 0);
+        }
     }
 }
 
@@ -705,10 +879,20 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
 
     double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
     const char *font = ZSTR_VAL(chart->font_path);
-    int label_y = plot->y1 + TICK_MARK_LEN + (int)(size * 1.2);
+    int angle = (int)chart->x_axis_label_angle;
 
-    /* 5 evenly-spaced ticks across the time range. */
-    const int N = 5;
+    int label_y;
+    fastchart_align align;
+    if (angle == 0) {
+        label_y = plot->y1 + TICK_MARK_LEN + (int)(size * 1.2);
+        align = FASTCHART_ALIGN_CENTER;
+    } else {
+        label_y = plot->y1 + TICK_MARK_LEN + (int)(size * 1.0);
+        align = FASTCHART_ALIGN_RIGHT;
+    }
+
+    /* Rotated labels are narrower so they can pack more densely. */
+    const int N = (angle == 0) ? 5 : 8;
     for (int i = 0; i < N; i++) {
         long ts = t_min + (long)((double)(t_max - t_min) * i / (N - 1));
         int x = fastchart_x_time_to_pixel(plot, ts, t_min, t_max);
@@ -721,8 +905,13 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
         char buf[16];
         strftime(buf, sizeof(buf), "%Y-%m-%d", &tm_buf);
 
-        fastchart_text_draw(im, font, size, pal->text,
-                            x, label_y, FASTCHART_ALIGN_CENTER,
-                            buf, NULL, 0);
+        if (angle == 0) {
+            fastchart_text_draw(im, font, size, pal->text,
+                                x, label_y, align, buf, NULL, 0);
+        } else {
+            fastchart_text_draw_rotated(im, font, size, pal->text,
+                                        x, label_y, align, (double)angle,
+                                        buf, NULL, 0);
+        }
     }
 }

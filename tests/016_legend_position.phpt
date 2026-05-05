@@ -1,7 +1,7 @@
 --TEST--
 setLegendPosition: legend renders in the chosen corner; LEGEND_NONE suppresses
---SKIPIF--
-<?php if (!extension_loaded("fastchart")) print "skip fastchart not loaded"; ?>
+--EXTENSIONS--
+fastchart
 --FILE--
 <?php
 

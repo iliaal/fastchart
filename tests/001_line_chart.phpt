@@ -1,7 +1,7 @@
 --TEST--
 LineChart::draw renders into a GdImage and reaches the plot area
---SKIPIF--
-<?php if (!extension_loaded("fastchart")) print "skip fastchart not loaded"; ?>
+--EXTENSIONS--
+fastchart
 --FILE--
 <?php
 

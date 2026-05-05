@@ -154,6 +154,7 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
     } else {
         fastchart_value_range_compute(y_min, y_max, 6, &yrange);
+        fastchart_value_range_apply_override(self, &yrange);
     }
 
     /* X range. */
@@ -197,6 +198,8 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
                                 buf, NULL, 0);
         }
     }
+
+    fastchart_draw_axis_titles(im, self, &plot, &pal);
 
     /* Marker resolution: ScatterChart's default is a 7px circle. */
     int marker_style = self->marker_style >= 0

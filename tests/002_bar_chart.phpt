@@ -1,7 +1,7 @@
 --TEST--
 BarChart::draw renders bars in the plot area; stacked toggles independently
---SKIPIF--
-<?php if (!extension_loaded("fastchart")) print "skip fastchart not loaded"; ?>
+--EXTENSIONS--
+fastchart
 --FILE--
 <?php
 

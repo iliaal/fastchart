@@ -1,7 +1,7 @@
 --TEST--
 ScatterChart::draw plots [x, y] pairs as colored points
---SKIPIF--
-<?php if (!extension_loaded("fastchart")) print "skip fastchart not loaded"; ?>
+--EXTENSIONS--
+fastchart
 --FILE--
 <?php
 

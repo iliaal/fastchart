@@ -45,6 +45,7 @@ static inline zend_class_entry *zend_register_internal_class_with_flags(
 
 extern zend_class_entry *fastchart_chart_ce;
 extern zend_class_entry *fastchart_line_chart_ce;
+extern zend_class_entry *fastchart_area_chart_ce;
 extern zend_class_entry *fastchart_bar_chart_ce;
 extern zend_class_entry *fastchart_pie_chart_ce;
 extern zend_class_entry *fastchart_scatter_chart_ce;
@@ -90,6 +91,36 @@ typedef struct _fastchart_obj {
     zend_long marker_style;   /* FASTCHART_MARKER_* */
     zend_long marker_size;    /* pixels */
 
+    /* Axis titles. NULL when unset. */
+    zend_string *x_axis_title;
+    zend_string *y_axis_title;
+
+    /* X-axis label rotation in degrees: 0, 45, or 90. */
+    zend_long x_axis_label_angle;
+
+    /* Forced Y-axis range. has_y_min / has_y_max / has_y_interval
+     * track whether the value is meaningful (since 0.0 is a legal
+     * forced bound). */
+    bool has_y_min;
+    bool has_y_max;
+    bool has_y_interval;
+    double y_min;
+    double y_max;
+    double y_interval;
+
+    /* Secondary Y axis on the right side of the plot. */
+    bool secondary_y;
+
+    /* StockChart candle presentation style. */
+    zend_long candle_style;
+
+    /* PieChart label rendering mode + sprintf format string. */
+    zend_long slice_label_position;
+    zend_string *slice_label_format;
+
+    /* AreaChart fill alpha (0..127, libgd convention). */
+    zend_long area_alpha;
+
     zval data;
     zval config;
     zend_object std;
@@ -127,6 +158,17 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define FASTCHART_SCALE_LINEAR 0
 #define FASTCHART_SCALE_LOG    1
 
+/* PieChart label position. */
+#define FASTCHART_LABEL_NONE    0
+#define FASTCHART_LABEL_INSIDE  1
+#define FASTCHART_LABEL_OUTSIDE 2
+
+/* StockChart OHLC presentation style. */
+#define FASTCHART_STYLE_CANDLE  0
+#define FASTCHART_STYLE_BAR     1
+#define FASTCHART_STYLE_DIAMOND 2
+#define FASTCHART_STYLE_I_CAP   3
+
 /* Forward-declare the only ext/gd public API we use (also declared in
  * fastchart.c at the call site). Mirrored verbatim from
  * ext/gd/php_gd.h since that header is not installed via make install. */
@@ -142,6 +184,7 @@ gdImagePtr fastchart_gd_image_from_zval(zval *canvas_zv);
  * success, -1 on a draw-time error (a PHP exception is already
  * pending). */
 int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im);
+int fastchart_area_render_to_image(fastchart_obj *self, gdImagePtr im);
 int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im);
 int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im);
 int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im);

@@ -36,7 +36,8 @@ typedef struct {
 
 /* Compute the plot rectangle inside the canvas after subtracting space
  * for title (top), x-axis labels (bottom), and y-axis labels (left).
- * Right margin is a small fixed pad. */
+ * Right margin grows when the chart has a secondary Y axis. Axis
+ * titles, when set on the chart, also reserve space. */
 void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
                               int has_y_axis, int has_x_axis,
                               fastchart_rect *out_plot);
@@ -47,6 +48,13 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
 void fastchart_value_range_compute(double dmin, double dmax,
                                    int target_ticks,
                                    fastchart_value_range *out);
+
+/* Apply the chart's setYAxisRange() overrides on top of an
+ * already-computed `out`. If the user forced min/max, ticks are
+ * regenerated using the (also optional) forced interval. No-op if
+ * the chart has no overrides. */
+void fastchart_value_range_apply_override(const fastchart_obj *chart,
+                                          fastchart_value_range *out);
 
 /* Log10 value range; ticks at powers of ten that bracket the data.
  * Both `dmin` and `dmax` must be strictly positive. Returns 0 on
@@ -75,6 +83,22 @@ void fastchart_draw_y_axis(gdImagePtr im, fastchart_obj *chart,
                            const fastchart_rect *plot,
                            const fastchart_palette *pal,
                            const fastchart_value_range *range);
+
+/* Draw the secondary Y axis on the right edge of the plot. No grid
+ * lines (those would clash with the primary axis grid); just the
+ * vertical line, tick marks, and labels. Charts that don't enable
+ * setSecondaryYAxis() should skip this call. */
+void fastchart_draw_y_axis_right(gdImagePtr im, fastchart_obj *chart,
+                                 const fastchart_rect *plot,
+                                 const fastchart_palette *pal,
+                                 const fastchart_value_range *range);
+
+/* Draw axis-title text: x_axis_title centered below the X-axis
+ * labels, y_axis_title rotated 90deg on the left edge. No-op if
+ * the corresponding chart field is NULL or empty. */
+void fastchart_draw_axis_titles(gdImagePtr im, fastchart_obj *chart,
+                                const fastchart_rect *plot,
+                                const fastchart_palette *pal);
 
 /* Draw an X axis whose positions are categorical (one tick per index
  * 0..n-1). Optional `labels` array (NULL means just draw indices); if

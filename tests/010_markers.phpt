@@ -1,7 +1,7 @@
 --TEST--
 LineChart / ScatterChart marker style + size customization
---SKIPIF--
-<?php if (!extension_loaded("fastchart")) print "skip fastchart not loaded"; ?>
+--EXTENSIONS--
+fastchart
 --FILE--
 <?php
 

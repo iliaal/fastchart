@@ -1,7 +1,7 @@
 --TEST--
 StockChart::draw renders candles, SMA overlay, optional volume pane
---SKIPIF--
-<?php if (!extension_loaded("fastchart")) print "skip fastchart not loaded"; ?>
+--EXTENSIONS--
+fastchart
 --FILE--
 <?php
 

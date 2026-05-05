@@ -1,7 +1,7 @@
 --TEST--
 StockChart::addIndicatorPane stacks indicator sub-panes below price (and volume)
---SKIPIF--
-<?php if (!extension_loaded("fastchart")) print "skip fastchart not loaded"; ?>
+--EXTENSIONS--
+fastchart
 --FILE--
 <?php
 
