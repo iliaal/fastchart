@@ -198,13 +198,39 @@ ZEND_METHOD(FastChart_LineChart, draw)
     fastchart_draw_frame(im, self, &plot, &pal);
     fastchart_draw_title(im, self, &plot, &pal);
     fastchart_draw_y_axis(im, self, &plot, &pal, &range);
-    fastchart_draw_x_axis_categorical(im, self, &plot, &pal, max_len, NULL);
+
+    /* Pull category labels out of config if setCategoryLabels() was
+     * called. The PHP zend_string buffers stay alive for the
+     * duration of this method call (config is rooted in self), so
+     * keeping borrowed const char* into them inside the labels
+     * array is safe. */
+    const char **label_ptrs = NULL;
+    zval *labels_zv = zend_hash_str_find(Z_ARRVAL(self->config),
+        "category_labels", sizeof("category_labels") - 1);
+    if (labels_zv && Z_TYPE_P(labels_zv) == IS_ARRAY && max_len > 0) {
+        label_ptrs = ecalloc((size_t)max_len, sizeof(const char *));
+        for (int i = 0; i < max_len; i++) {
+            zval *lv = zend_hash_index_find(Z_ARRVAL_P(labels_zv), i);
+            label_ptrs[i] = (lv && Z_TYPE_P(lv) == IS_STRING) ? Z_STRVAL_P(lv) : NULL;
+        }
+    }
+    fastchart_draw_x_axis_categorical(im, self, &plot, &pal, max_len, label_ptrs);
+    if (label_ptrs) efree(label_ptrs);
 
     /* Each series is rendered as line segments connecting consecutive
      * points, plus a small marker at every data point. Line width is
      * 2px via gdImageSetThickness so the series stand out against the
-     * grid; reset to 1px before any axis-overdraw work would happen. */
+     * grid; reset to 1px before any axis-overdraw work would happen.
+     *
+     * gdAntiAliased is a sentinel color that draws using whatever
+     * color was last passed to gdImageSetAntiAliased. Set it per-
+     * series so segments smooth out diagonally without bleed-through
+     * between adjacent series colors. */
     gdImageSetThickness(im, 2);
+
+    int legend_colors[MAX_SERIES];
+    const char *legend_labels[MAX_SERIES];
+    int legend_count = 0;
 
     double values[2048];
     for (int s = 0; s < n_series; s++) {
@@ -213,13 +239,14 @@ ZEND_METHOD(FastChart_LineChart, draw)
                                 series[s].len < 2048 ? series[s].len : 2048);
         if (n < 1) continue;
 
+        gdImageSetAntiAliased(im, color);
         int prev_x = 0, prev_y = 0;
         for (int i = 0; i < n; i++) {
             int x = fastchart_x_categorical_center(&plot, i, max_len);
             int y = fastchart_y_to_pixel(values[i], &range, &plot);
 
             if (i > 0) {
-                gdImageLine(im, prev_x, prev_y, x, y, color);
+                gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
             }
             /* Filled marker disk. Radius 3 -- visible without being
              * obtrusive on a 800x600 default canvas. */
@@ -228,8 +255,22 @@ ZEND_METHOD(FastChart_LineChart, draw)
             prev_x = x;
             prev_y = y;
         }
+
+        if (series[s].label) {
+            legend_colors[legend_count] = color;
+            legend_labels[legend_count] = series[s].label;
+            legend_count++;
+        }
     }
     gdImageSetThickness(im, 1);
+
+    /* Legend only fires when at least one series carried a label.
+     * Single-series flat-list inputs have no label so they don't
+     * paint a one-row legend, which would just be visual noise. */
+    if (legend_count >= 1 && n_series >= 2) {
+        fastchart_draw_legend(im, self, &plot, &pal,
+                              legend_count, legend_colors, legend_labels);
+    }
 
     RETURN_ZVAL(canvas_zv, 1, 0);
 }

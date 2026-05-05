@@ -99,4 +99,17 @@ int fastchart_zval_to_double(zval *zv, double *out);
 /* Coerce a zval to a long. Returns 0 on success, -1 on mismatch. */
 int fastchart_zval_to_long(zval *zv, long *out);
 
+/* Draw a legend in the top-right corner of the plot area: one row
+ * per series with a color swatch and a label. `colors[i]` and
+ * `labels[i]` are paired. A label may be NULL, in which case the
+ * row is skipped. The legend has an opaque background so it
+ * overdraws data underneath -- callers place this last. No-op if
+ * n_entries < 1 or the chart has no font. */
+void fastchart_draw_legend(gdImagePtr im, fastchart_obj *chart,
+                           const fastchart_rect *plot,
+                           const fastchart_palette *pal,
+                           int n_entries,
+                           const int *colors,
+                           const char *const *labels);
+
 #endif /* FASTCHART_AXIS_H */

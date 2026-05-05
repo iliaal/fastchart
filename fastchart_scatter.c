@@ -26,6 +26,7 @@
 #include "fastchart_text.h"
 
 #define MAX_POINTS 8192
+#define MAX_SCATTER_SERIES 8
 
 /* Two accepted shapes:
  *   1. List of [x, y] pairs:           [[1.0, 2.5], [2.0, 3.1], ...]
@@ -52,12 +53,18 @@ static int read_xy_pair(zval *pair, double *x, double *y)
     return 0;
 }
 
+/* `series_labels` is filled per series index encountered. Caller
+ * passes a buffer of MAX_SCATTER_SERIES slots. Slots stay NULL for
+ * series with no label, or when the input is single-series. */
 static int collect_scatter_points(zval *data_zv,
                                   fastchart_scatter_point *out,
                                   int max_pts,
-                                  int *out_n)
+                                  int *out_n,
+                                  const char **series_labels,
+                                  int *out_n_series)
 {
     *out_n = 0;
+    *out_n_series = 0;
     if (Z_TYPE_P(data_zv) != IS_ARRAY) return -1;
     HashTable *ht = Z_ARRVAL_P(data_zv);
     if (zend_hash_num_elements(ht) == 0) return 0;
@@ -76,9 +83,15 @@ static int collect_scatter_points(zval *data_zv,
         int s = 0;
         ZEND_HASH_FOREACH_VAL(ht, series_zv) {
             if (Z_TYPE_P(series_zv) != IS_ARRAY) continue;
+            if (s >= MAX_SCATTER_SERIES) break;
             zval *data_key = zend_hash_str_find(Z_ARRVAL_P(series_zv),
                                                 "data", sizeof("data") - 1);
             if (!data_key || Z_TYPE_P(data_key) != IS_ARRAY) continue;
+
+            zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
+                                                "label", sizeof("label") - 1);
+            series_labels[s] = (label_zv && Z_TYPE_P(label_zv) == IS_STRING)
+                ? Z_STRVAL_P(label_zv) : NULL;
 
             zval *pair;
             ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(data_key), pair) {
@@ -92,6 +105,7 @@ static int collect_scatter_points(zval *data_zv,
             } ZEND_HASH_FOREACH_END();
             s++;
         } ZEND_HASH_FOREACH_END();
+        *out_n_series = s;
     } else {
         zval *pair;
         ZEND_HASH_FOREACH_VAL(ht, pair) {
@@ -103,6 +117,7 @@ static int collect_scatter_points(zval *data_zv,
             out[*out_n].series = 0;
             (*out_n)++;
         } ZEND_HASH_FOREACH_END();
+        *out_n_series = 1;
     }
 
 done:
@@ -126,8 +141,10 @@ ZEND_METHOD(FastChart_ScatterChart, draw)
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
 
     static fastchart_scatter_point points[MAX_POINTS];
-    int n = 0;
-    if (collect_scatter_points(&self->data, points, MAX_POINTS, &n) != 0 || n == 0) {
+    const char *series_labels[MAX_SCATTER_SERIES] = { NULL };
+    int n = 0, n_series = 0;
+    if (collect_scatter_points(&self->data, points, MAX_POINTS, &n,
+                               series_labels, &n_series) != 0 || n == 0) {
         zend_throw_error(NULL,
             "FastChart\\ScatterChart::draw() requires setPoints() with one or more [x, y] pairs");
         RETURN_THROWS();
@@ -199,6 +216,22 @@ ZEND_METHOD(FastChart_ScatterChart, draw)
 
         int color = pal.series[points[i].series % FASTCHART_PALETTE_SERIES_N];
         gdImageFilledEllipse(im, px, py, 7, 7, color);
+    }
+
+    if (n_series >= 2) {
+        int legend_colors[MAX_SCATTER_SERIES];
+        const char *legend_labels[MAX_SCATTER_SERIES];
+        int legend_count = 0;
+        for (int s = 0; s < n_series; s++) {
+            if (!series_labels[s]) continue;
+            legend_colors[legend_count] = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+            legend_labels[legend_count] = series_labels[s];
+            legend_count++;
+        }
+        if (legend_count > 0) {
+            fastchart_draw_legend(im, self, &plot, &pal,
+                                  legend_count, legend_colors, legend_labels);
+        }
     }
 
     RETURN_ZVAL(canvas_zv, 1, 0);

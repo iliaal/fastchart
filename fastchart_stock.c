@@ -260,12 +260,15 @@ ZEND_METHOD(FastChart_StockChart, draw)
         }
     }
 
-    /* SMA overlays. Each period gets a series color and a 2px line. */
+    /* SMA overlays. Each period gets a series color and a 2px line.
+     * gdAntiAliased smooths the diagonals; set the AA color per
+     * overlay since gd carries one AA color across calls. */
     if (sma_count > 0) {
         gdImageSetThickness(im, 2);
         for (int s = 0; s < sma_count; s++) {
             int period = sma_periods[s];
             int color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+            gdImageSetAntiAliased(im, color);
             int prev_x = 0, prev_y = 0;
             int has_prev = 0;
 
@@ -279,7 +282,7 @@ ZEND_METHOD(FastChart_StockChart, draw)
                                                   candles[i].ts, t_min, t_max);
                 int y = fastchart_y_to_pixel(avg, &yrange, &price_pane);
                 if (has_prev) {
-                    gdImageLine(im, prev_x, prev_y, x, y, color);
+                    gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
                 }
                 prev_x = x;
                 prev_y = y;
@@ -306,6 +309,24 @@ ZEND_METHOD(FastChart_StockChart, draw)
             gdImageFilledRectangle(im,
                 x - half_bw, top, x + half_bw, baseline - 1, color);
         }
+    }
+
+    /* Legend for the SMA overlays (the candles themselves are
+     * self-explanatory red/green). One row per moving-average
+     * period, labeled "SMA(N)". */
+    if (sma_count > 0) {
+        int legend_colors[8];
+        const char *legend_labels[8];
+        char *legend_label_storage = ecalloc((size_t)sma_count, 16);
+        for (int s = 0; s < sma_count; s++) {
+            legend_colors[s] = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+            char *slot = legend_label_storage + s * 16;
+            snprintf(slot, 16, "SMA(%d)", sma_periods[s]);
+            legend_labels[s] = slot;
+        }
+        fastchart_draw_legend(im, self, &price_pane, &pal,
+                              sma_count, legend_colors, legend_labels);
+        efree(legend_label_storage);
     }
 
     efree(candles);

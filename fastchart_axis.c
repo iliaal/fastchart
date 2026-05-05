@@ -328,6 +328,81 @@ int fastchart_x_time_to_pixel(const fastchart_rect *plot,
     return plot->x0 + (int)(frac * (double)w + 0.5);
 }
 
+/* --------------------------- legend ------------------------------- */
+
+void fastchart_draw_legend(gdImagePtr im, fastchart_obj *chart,
+                           const fastchart_rect *plot,
+                           const fastchart_palette *pal,
+                           int n_entries,
+                           const int *colors,
+                           const char *const *labels)
+{
+    if (n_entries < 1) return;
+    if (!chart->font_path) return;
+
+    double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    const char *font = ZSTR_VAL(chart->font_path);
+
+    int swatch_w  = 14;
+    int swatch_h  = 10;
+    int row_pad   = 4;
+    int outer_pad = 6;
+    int gap       = 6;     /* swatch -> text gap */
+
+    int row_h, dummy;
+    if (fastchart_text_measure(font, size, "Mg9", &dummy, &row_h, NULL, 0) != 0) {
+        row_h = (int)(size * 1.4);
+    }
+    if (row_h < swatch_h) row_h = swatch_h;
+
+    /* Measure the longest label to size the legend box. Skip NULL
+     * labels in both width measurement and rendering. */
+    int max_label_w = 0;
+    int rows = 0;
+    for (int i = 0; i < n_entries; i++) {
+        if (!labels[i]) continue;
+        int w, h;
+        if (fastchart_text_measure(font, size, labels[i], &w, &h, NULL, 0) == 0) {
+            if (w > max_label_w) max_label_w = w;
+        }
+        rows++;
+    }
+    if (rows == 0) return;
+
+    int box_w = outer_pad * 2 + swatch_w + gap + max_label_w;
+    int box_h = outer_pad * 2 + rows * row_h + (rows - 1) * row_pad;
+
+    int x0 = plot->x1 - box_w - 6;
+    int y0 = plot->y0 + 6;
+    int x1 = x0 + box_w;
+    int y1 = y0 + box_h;
+    if (x0 < plot->x0 + 6) x0 = plot->x0 + 6;
+
+    gdImageFilledRectangle(im, x0, y0, x1, y1, pal->plot_bg);
+    gdImageRectangle(im, x0, y0, x1, y1, pal->border);
+
+    int row_y = y0 + outer_pad;
+    for (int i = 0; i < n_entries; i++) {
+        if (!labels[i]) continue;
+        int sx0 = x0 + outer_pad;
+        int sy0 = row_y + (row_h - swatch_h) / 2;
+        gdImageFilledRectangle(im, sx0, sy0,
+                               sx0 + swatch_w - 1, sy0 + swatch_h - 1,
+                               colors[i]);
+        gdImageRectangle(im, sx0, sy0,
+                         sx0 + swatch_w - 1, sy0 + swatch_h - 1,
+                         pal->border);
+
+        int tx = sx0 + swatch_w + gap;
+        int ty = row_y + row_h - 2;
+        fastchart_text_draw(im, font, size, pal->text,
+                            tx, ty, FASTCHART_ALIGN_LEFT,
+                            labels[i], NULL, 0);
+
+        row_y += row_h + row_pad;
+    }
+}
+
 void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
                                 const fastchart_rect *plot,
                                 const fastchart_palette *pal,

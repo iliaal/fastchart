@@ -52,6 +52,16 @@ abstract class Chart
     public function setFontSize(float $size): static {}
 
     /**
+     * Set the X-axis category labels for chart types that use a
+     * categorical X-axis (Line, Bar). The array is taken in order,
+     * one label per category index. Pass an empty array (the
+     * default) to fall back to integer indices ("0", "1", ...).
+     * Charts without a categorical X-axis (Pie, Scatter, Stock)
+     * silently ignore this setter.
+     */
+    public function setCategoryLabels(array $labels): static {}
+
+    /**
      * Render the chart into the caller-supplied GD canvas and return
      * the same canvas for chaining. The canvas is mutated in place;
      * existing pixels under the plot area are overwritten. Caller

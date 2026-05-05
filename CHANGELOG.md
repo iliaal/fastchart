@@ -14,10 +14,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Public OO surface registered: `FastChart\Chart` (abstract base),
   `FastChart\LineChart`, `BarChart`, `PieChart`, `ScatterChart`,
   `StockChart`. Fluent setters (`setSize`, `setTitle`, `setTheme`,
-  `setFontPath`, `setFontSize`, per-type `setSeries` / `setSlices` /
-  `setPoints` / `setOhlcv`, `setMovingAverages`, `setVolumePane`,
-  `setStacked`, `setDonutHoleRatio`).
+  `setFontPath`, `setFontSize`, `setCategoryLabels`, per-type
+  `setSeries` / `setSlices` / `setPoints` / `setOhlcv`,
+  `setMovingAverages`, `setVolumePane`, `setStacked`,
+  `setDonutHoleRatio`).
 - `Chart::version()` static returning `PHP_FASTCHART_VERSION`.
+- `Chart::setCategoryLabels(array)` lets line and bar charts
+  render user-supplied X-axis labels (`'Q1', 'Q2', …`) instead
+  of integer indices. Pie/scatter/stock silently ignore the
+  setter.
+- `PieChart::setSlices()` honors an optional `'color' => 0xRRGGBB`
+  key on each slice dict, overriding the palette per-slice.
+  Out-of-range integers fall back to the palette without
+  raising. Lets callers map slices to brand colors.
+- Antialiased line segments via `gdImageSetAntiAliased` +
+  `gdAntiAliased` for `LineChart` series and `StockChart` SMA
+  overlays. Diagonals smooth out instead of staircasing.
+- Multi-series legend in the top-right of the plot area: one row
+  per labeled series with a color swatch and the series label.
+  Renders for `LineChart` / `BarChart` / `ScatterChart` when at
+  least two series carry a `'label'` key, and for `StockChart`
+  whenever moving averages are configured (labeled `SMA(N)`).
+  Single-series flat-list inputs do not paint a one-row legend.
 - `LineChart::draw()` renders one or more series as connected
   segments with point markers. Accepts a flat numeric list for
   single-series, or a list of `['label' => ..., 'data' => [...]]`

@@ -33,6 +33,7 @@ typedef struct {
     const char *label;     /* may be NULL */
     char        idx_label[16];  /* fallback "0" / "1" / etc. */
     double      value;     /* > 0 only -- nonpositive slices skipped */
+    int         color_rgb; /* explicit color override; -1 means use palette */
 } fastchart_pie_slice;
 
 /* Accept two shapes for the slice array:
@@ -87,6 +88,7 @@ static int collect_pie_slices(zval *data_zv,
                 out[*out_count].idx_label[0] = '\0';
             }
             out[*out_count].value = d;
+            out[*out_count].color_rgb = -1;
             *out_total += d;
             (*out_count)++;
         } ZEND_HASH_FOREACH_END();
@@ -116,6 +118,22 @@ static int collect_pie_slices(zval *data_zv,
                          "%d", *out_count);
             }
             out[*out_count].value = d;
+
+            /* Optional 'color' key. Accept long (24-bit packed
+             * 0xRRGGBB). Out-of-range values fall back to palette
+             * rather than error -- this mirrors how callers
+             * typically generate colors (often via a hash with no
+             * a-priori bounds check). */
+            out[*out_count].color_rgb = -1;
+            zval *color_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
+                                                "color", sizeof("color") - 1);
+            if (color_zv && Z_TYPE_P(color_zv) == IS_LONG) {
+                long c = (long)Z_LVAL_P(color_zv);
+                if (c >= 0 && c <= 0xFFFFFF) {
+                    out[*out_count].color_rgb = (int)c;
+                }
+            }
+
             *out_total += d;
             (*out_count)++;
         } ZEND_HASH_FOREACH_END();
@@ -186,7 +204,15 @@ ZEND_METHOD(FastChart_PieChart, draw)
     double start_deg = -90.0;  /* 12 o'clock */
     for (int i = 0; i < n_slices; i++) {
         double sweep = 360.0 * (slices[i].value / total);
-        int color = pal.series[i % FASTCHART_PALETTE_SERIES_N];
+        int color;
+        if (slices[i].color_rgb >= 0) {
+            color = gdImageColorAllocate(im,
+                (slices[i].color_rgb >> 16) & 0xFF,
+                (slices[i].color_rgb >>  8) & 0xFF,
+                 slices[i].color_rgb        & 0xFF);
+        } else {
+            color = pal.series[i % FASTCHART_PALETTE_SERIES_N];
+        }
 
         gdImageFilledArc(im, cx, cy, diameter, diameter,
                          (int)floor(start_deg), (int)ceil(start_deg + sweep),

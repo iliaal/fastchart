@@ -33,6 +33,7 @@
 
 typedef struct {
     HashTable *data;
+    const char *label;
     int len;
 } fastchart_bar_series;
 
@@ -67,11 +68,19 @@ static int collect_bar_series(zval *data_zv,
             HashTable *sht = Z_ARRVAL_P(data_key);
             out[*out_count].data = sht;
             out[*out_count].len = (int)zend_hash_num_elements(sht);
+
+            zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
+                                                "label", sizeof("label") - 1);
+            out[*out_count].label =
+                (label_zv && Z_TYPE_P(label_zv) == IS_STRING)
+                    ? Z_STRVAL_P(label_zv) : NULL;
+
             if (out[*out_count].len > *out_max_len) *out_max_len = out[*out_count].len;
             (*out_count)++;
         } ZEND_HASH_FOREACH_END();
     } else {
         out[0].data = ht;
+        out[0].label = NULL;
         out[0].len = (int)zend_hash_num_elements(ht);
         *out_count = 1;
         *out_max_len = out[0].len;
@@ -168,7 +177,19 @@ ZEND_METHOD(FastChart_BarChart, draw)
     fastchart_draw_frame(im, self, &plot, &pal);
     fastchart_draw_title(im, self, &plot, &pal);
     fastchart_draw_y_axis(im, self, &plot, &pal, &range);
-    fastchart_draw_x_axis_categorical(im, self, &plot, &pal, n_categories, NULL);
+
+    const char **label_ptrs = NULL;
+    zval *labels_zv = zend_hash_str_find(Z_ARRVAL(self->config),
+        "category_labels", sizeof("category_labels") - 1);
+    if (labels_zv && Z_TYPE_P(labels_zv) == IS_ARRAY && n_categories > 0) {
+        label_ptrs = ecalloc((size_t)n_categories, sizeof(const char *));
+        for (int i = 0; i < n_categories; i++) {
+            zval *lv = zend_hash_index_find(Z_ARRVAL_P(labels_zv), i);
+            label_ptrs[i] = (lv && Z_TYPE_P(lv) == IS_STRING) ? Z_STRVAL_P(lv) : NULL;
+        }
+    }
+    fastchart_draw_x_axis_categorical(im, self, &plot, &pal, n_categories, label_ptrs);
+    if (label_ptrs) efree(label_ptrs);
 
     int zero_y = fastchart_y_to_pixel(0.0, &range, &plot);
 
@@ -231,6 +252,25 @@ ZEND_METHOD(FastChart_BarChart, draw)
     /* Re-stroke the zero baseline so it's visible against the grid. */
     if (range.min < 0 && range.max > 0) {
         gdImageLine(im, plot.x0, zero_y, plot.x1, zero_y, pal.axis);
+    }
+
+    /* Legend: one row per labeled series. Single-series flat-list
+     * data has no labels, so the legend only shows up when the
+     * caller explicitly tagged each series with a 'label' key. */
+    if (n_series >= 2) {
+        int legend_colors[MAX_SERIES];
+        const char *legend_labels[MAX_SERIES];
+        int legend_count = 0;
+        for (int s = 0; s < n_series; s++) {
+            if (!series[s].label) continue;
+            legend_colors[legend_count] = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+            legend_labels[legend_count] = series[s].label;
+            legend_count++;
+        }
+        if (legend_count > 0) {
+            fastchart_draw_legend(im, self, &plot, &pal,
+                                  legend_count, legend_colors, legend_labels);
+        }
     }
 
     RETURN_ZVAL(canvas_zv, 1, 0);

@@ -257,6 +257,25 @@ ZEND_METHOD(FastChart_Chart, setFontSize)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+ZEND_METHOD(FastChart_Chart, setCategoryLabels)
+{
+    zval *labels;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(labels)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    /* Stash a refcounted copy on config so the per-type draw can
+     * find it under a known key. Replacing on each call keeps the
+     * setter idempotent. */
+    zval labels_copy;
+    ZVAL_COPY(&labels_copy, labels);
+    add_assoc_zval(&self->config, "category_labels", &labels_copy);
+
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 /* ---------------- per-class setSeries family --------------------
  *
  * gen_stub emits a separate ZEND_METHOD entry per class even though
