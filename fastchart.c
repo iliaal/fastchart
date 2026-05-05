@@ -163,6 +163,10 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
     b->color_ramp_high = 0xd62728;
     b->date_axis_unit = FASTCHART_DATE_DAY;
     b->date_axis_every = 0;
+    /* Default DPI matches libgd's own default and the web-screen
+     * convention. Affects PNG/JPEG metadata and FreeType glyph
+     * hinting via gdImageStringFTEx. setDpi() overrides. */
+    b->dpi = 96;
 
     b->font_path = fastchart_default_font_path
         ? zend_string_copy(fastchart_default_font_path) : NULL;
@@ -2459,9 +2463,8 @@ static int fastchart_parse_error_bars(zval *errs, uint32_t cap,
         return 0;
     }
     /* Cap is per-chart-type: line series cap at FASTCHART_MAX_POINTS_PER_SERIES
-     * (2048), scatter at FASTCHART_MAX_SCATTER_POINTS (4096). The earlier
-     * unconditional FASTCHART_MAX_POINTS_PER_SERIES cap silently dropped
-     * scatter error bars at indices 2048..4095. */
+     * (2048), scatter at FASTCHART_MAX_SCATTER_POINTS (4096). Extra entries
+     * beyond the cap simply have no data point to attach to. */
     if (n > cap) n = cap;
     double *lo = emalloc((size_t)n * sizeof(double));
     double *hi = emalloc((size_t)n * sizeof(double));
@@ -2844,6 +2847,25 @@ ZEND_METHOD(FastChart_Chart, setDateAxisStride)
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     self->date_axis_unit = unit;
     self->date_axis_every = every;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, setDpi)
+{
+    zend_long dpi;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(dpi)
+    ZEND_PARSE_PARAMETERS_END();
+    /* Cap range at sane bounds. libgd / FreeType happily accept
+     * arbitrary values, but anything outside [24, 1200] is either a
+     * bug or a typo (24 dpi = e-paper teletypes; 1200 dpi = pro
+     * print). */
+    if (dpi < 24 || dpi > 1200) {
+        zend_value_error("FastChart\\Chart::setDpi() must be in [24, 1200]");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->dpi = dpi;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -3726,6 +3748,19 @@ static int encode_image(gdImagePtr im, int format, int quality,
     return (*out_bytes && *out_sz > 0) ? 0 : -1;
 }
 
+/* HiDPI canvas scale derived from setDpi(). 96 DPI = 1.0×; 200 DPI =
+ * 200/96 ≈ 2.08×. The user-supplied size is the LOGICAL size; the
+ * actual pixel canvas allocated for the render*() helpers grows with
+ * DPI so the chart keeps its apparent layout while every glyph and
+ * shape gains pixel density. The PNG metadata then reports the same
+ * DPI so retina viewers / print pipelines display the image at its
+ * intended physical size. */
+static double fastchart_dpi_scale(const fastchart_obj *self)
+{
+    if (self->dpi <= 0 || self->dpi == 96) return 1.0;
+    return (double)self->dpi / 96.0;
+}
+
 static void fastchart_render_to_string(INTERNAL_FUNCTION_PARAMETERS, int format, zend_long quality)
 {
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
@@ -3735,7 +3770,10 @@ static void fastchart_render_to_string(INTERNAL_FUNCTION_PARAMETERS, int format,
         RETURN_THROWS();
     }
 
-    gdImagePtr im = gdImageCreateTrueColor((int)self->width, (int)self->height);
+    double scale = fastchart_dpi_scale(self);
+    int alloc_w = (int)((double)self->width  * scale + 0.5);
+    int alloc_h = (int)((double)self->height * scale + 0.5);
+    gdImagePtr im = gdImageCreateTrueColor(alloc_w, alloc_h);
     if (!im) {
         zend_throw_error(NULL, "FastChart: gdImageCreateTrueColor() returned NULL");
         RETURN_THROWS();
@@ -3893,7 +3931,10 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         RETURN_THROWS();
     }
 
-    gdImagePtr im = gdImageCreateTrueColor((int)self->width, (int)self->height);
+    double scale = fastchart_dpi_scale(self);
+    int alloc_w = (int)((double)self->width  * scale + 0.5);
+    int alloc_h = (int)((double)self->height * scale + 0.5);
+    gdImagePtr im = gdImageCreateTrueColor(alloc_w, alloc_h);
     if (!im) {
         zend_throw_error(NULL, "FastChart: gdImageCreateTrueColor() returned NULL");
         RETURN_THROWS();

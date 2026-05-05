@@ -358,6 +358,21 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
     chart->font_cache_valid = false;
     chart->shadow_color_valid = false;
 
+    /* Stamp the canvas resolution. Two consequences flow from this:
+     *   - PNG pHYs / JPEG density metadata reports the right physical
+     *     size when the image is embedded in print or HiDPI contexts.
+     *   - fastchart_text_draw reads gdImageResolutionX(im) and feeds
+     *     it to FreeType via gdImageStringFTEx + gdFTEX_RESOLUTION,
+     *     which controls glyph hinting. Higher DPI -> finer hinting.
+     * Without this call libgd defaults the resolution to 96 (image
+     * meta) and FreeType defaults to 100 (hinting), leaving us with
+     * inconsistent state. Setting both via gdImageResolution keeps
+     * them aligned. */
+    if (chart->dpi > 0) {
+        gdImageSetResolution(im, (unsigned int)chart->dpi,
+                              (unsigned int)chart->dpi);
+    }
+
     int W = gdImageSX(im);
     int H = gdImageSY(im);
 
@@ -373,10 +388,25 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
         return;
     }
 
-    int top = MARGIN_TOP_PAD;
-    int bottom = MARGIN_BOTTOM_PAD;
-    int left = MARGIN_LEFT_PAD;
-    int right = MARGIN_RIGHT_PAD;
+    /* Scale hardcoded pixel constants with DPI so layout doesn't get
+     * cramped at high-DPI canvases. At 96 DPI scale=1.0 (no change);
+     * at 200 DPI scale~2.08 — fonts already grow ×scale via FreeType,
+     * so margins / tick lengths / paddings need to grow proportionally
+     * or labels overflow the canvas. */
+    double dpi_scale = chart->dpi > 96 ? (double)chart->dpi / 96.0 : 1.0;
+    int margin_top    = (int)(MARGIN_TOP_PAD    * dpi_scale + 0.5);
+    int margin_bottom = (int)(MARGIN_BOTTOM_PAD * dpi_scale + 0.5);
+    int margin_left   = (int)(MARGIN_LEFT_PAD   * dpi_scale + 0.5);
+    int margin_right  = (int)(MARGIN_RIGHT_PAD  * dpi_scale + 0.5);
+    int tick_mark_len = (int)(TICK_MARK_LEN     * dpi_scale + 0.5);
+    int y_label_pad   = (int)(Y_LABEL_PADDING   * dpi_scale + 0.5);
+    int x_label_pad   = (int)(X_LABEL_PADDING   * dpi_scale + 0.5);
+    int title_pad     = (int)(TITLE_PADDING_BELOW * dpi_scale + 0.5);
+
+    int top = margin_top;
+    int bottom = margin_bottom;
+    int left = margin_left;
+    int right = margin_right;
 
     /* Each role is resolved through fastchart_resolve_font so the
      * draw-time open_basedir re-check fires before the path reaches
@@ -395,14 +425,14 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
     /* Title: measure ascender height + a bit of padding. The "999999"
      * probe used for axis labels is cached once below. */
     int probe_w = 0, probe_h = 0;
-    int probe_ok = (axis_font && fastchart_text_measure(axis_font, size, "999999",
+    int probe_ok = (axis_font && fastchart_text_measure(im, axis_font, size, "999999",
                                                         &probe_w, &probe_h, NULL, 0) == 0);
 
     if (labels_drawn && chart->title && ZSTR_LEN(chart->title) > 0 && title_font) {
         int th;
-        if (fastchart_text_measure(title_font, size * 1.4, ZSTR_VAL(chart->title),
+        if (fastchart_text_measure(im, title_font, size * 1.4, ZSTR_VAL(chart->title),
                                    NULL, &th, NULL, 0) == 0) {
-            top += th + TITLE_PADDING_BELOW;
+            top += th + title_pad;
         }
     }
 
@@ -410,23 +440,23 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
      * actual label width is data-dependent; we pick a conservative
      * "999999" sample so layout is stable across data ranges. */
     if (labels_drawn && has_y_axis && probe_ok) {
-        left += probe_w + TICK_MARK_LEN + Y_LABEL_PADDING;
+        left += probe_w + tick_mark_len + y_label_pad;
     }
 
     /* Y-axis title: rotated 90deg on the left of the y-axis labels.
      * The title's height becomes its visible width after rotation. */
     if (labels_drawn && has_y_axis && chart->y_axis_title && axis_font) {
         int th;
-        if (fastchart_text_measure(axis_font, size * 1.1, ZSTR_VAL(chart->y_axis_title),
+        if (fastchart_text_measure(im, axis_font, size * 1.1, ZSTR_VAL(chart->y_axis_title),
                                    NULL, &th, NULL, 0) == 0) {
-            left += th + 8;
+            left += th + (int)(8 * dpi_scale + 0.5);
         }
     }
 
     /* Secondary Y axis: mirror the left-side reservation on the
      * right edge using the cached probe. */
     if (labels_drawn && has_y_axis && chart->secondary_y && probe_ok) {
-        right += probe_w + TICK_MARK_LEN + Y_LABEL_PADDING;
+        right += probe_w + tick_mark_len + y_label_pad;
     }
 
     /* X-axis labels. Horizontal labels reserve one line; rotated
@@ -436,11 +466,11 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
     if (labels_drawn && has_x_axis && probe_ok) {
         int needed;
         if (chart->x_axis_label_angle == 90) {
-            needed = probe_w + TICK_MARK_LEN + X_LABEL_PADDING;
+            needed = probe_w + tick_mark_len + x_label_pad;
         } else if (chart->x_axis_label_angle == 45) {
-            needed = (int)((double)probe_w * 0.75) + TICK_MARK_LEN + X_LABEL_PADDING;
+            needed = (int)((double)probe_w * 0.75) + tick_mark_len + x_label_pad;
         } else {
-            needed = probe_h + TICK_MARK_LEN + X_LABEL_PADDING;
+            needed = probe_h + tick_mark_len + x_label_pad;
         }
         bottom += needed;
     }
@@ -448,9 +478,9 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
     /* X-axis title: an extra line below the labels. */
     if (labels_drawn && has_x_axis && chart->x_axis_title && axis_font) {
         int th;
-        if (fastchart_text_measure(axis_font, size * 1.1, ZSTR_VAL(chart->x_axis_title),
+        if (fastchart_text_measure(im, axis_font, size * 1.1, ZSTR_VAL(chart->x_axis_title),
                                    NULL, &th, NULL, 0) == 0) {
-            bottom += th + 6;
+            bottom += th + (int)(6 * dpi_scale + 0.5);
         }
     }
 
@@ -1121,7 +1151,7 @@ void fastchart_draw_axis_titles(gdImagePtr im, fastchart_obj *chart,
             int cy = (plot->y0 + plot->y1) / 2;
             int x = MARGIN_LEFT_PAD + (int)(size);
             int tw = 0, th = 0;
-            if (fastchart_text_measure(font, size, ZSTR_VAL(chart->y_axis_title),
+            if (fastchart_text_measure(im, font, size, ZSTR_VAL(chart->y_axis_title),
                                        &tw, &th, NULL, 0) == 0) {
                 int y = cy + tw / 2;
                 fastchart_text_draw_rotated(im, font, size, color,
@@ -1139,7 +1169,7 @@ void fastchart_draw_axis_titles(gdImagePtr im, fastchart_obj *chart,
             int W = gdImageSX(im);
             int x = W - MARGIN_LEFT_PAD - (int)(size);
             int tw = 0, th = 0;
-            if (fastchart_text_measure(font, size, ZSTR_VAL(chart->y_axis_title2),
+            if (fastchart_text_measure(im, font, size, ZSTR_VAL(chart->y_axis_title2),
                                        &tw, &th, NULL, 0) == 0) {
                 int y = cy - tw / 2;
                 fastchart_text_draw_rotated(im, font, size, color,
@@ -1381,7 +1411,7 @@ void fastchart_draw_legend(gdImagePtr im, fastchart_obj *chart,
     int margin    = 6;     /* gap to plot border */
 
     int row_h, dummy;
-    if (fastchart_text_measure(font, size, "Mg9", &dummy, &row_h, NULL, 0) != 0) {
+    if (fastchart_text_measure(im, font, size, "Mg9", &dummy, &row_h, NULL, 0) != 0) {
         row_h = (int)(size * 1.4);
     }
     if (row_h < swatch_h) row_h = swatch_h;
@@ -1393,7 +1423,7 @@ void fastchart_draw_legend(gdImagePtr im, fastchart_obj *chart,
     for (int i = 0; i < n_entries; i++) {
         if (!labels[i]) continue;
         int w, h;
-        if (fastchart_text_measure(font, size, labels[i], &w, &h, NULL, 0) == 0) {
+        if (fastchart_text_measure(im, font, size, labels[i], &w, &h, NULL, 0) == 0) {
             if (w > max_label_w) max_label_w = w;
         }
         rows++;

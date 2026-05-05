@@ -44,8 +44,12 @@ int fastchart_text_draw_rotated(gdImagePtr im,
                                 char *err_buf, size_t err_buf_n);
 
 /* Measure rendered bounds. *out_w and *out_h are populated on success.
+ * `im` is the eventual destination canvas (may be NULL); when non-NULL
+ * the measurement uses the canvas's DPI via gdFTEX_RESOLUTION so the
+ * bounds match what the corresponding draw call will produce.
  * Returns 0 on success, -1 on failure. */
-int fastchart_text_measure(const char *font_path, double font_size,
+int fastchart_text_measure(gdImagePtr im,
+                           const char *font_path, double font_size,
                            const char *text,
                            int *out_w, int *out_h,
                            char *err_buf, size_t err_buf_n);

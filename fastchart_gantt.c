@@ -68,7 +68,7 @@ int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
             for (int i = 0; i < n_tasks; i++) {
                 if (!tasks[i].name) continue;
                 int w = 0, h = 0;
-                if (fastchart_text_measure(font, size, tasks[i].name, &w, &h, NULL, 0) == 0) {
+                if (fastchart_text_measure(im, font, size, tasks[i].name, &w, &h, NULL, 0) == 0) {
                     if (w > max_w) max_w = w;
                 }
             }

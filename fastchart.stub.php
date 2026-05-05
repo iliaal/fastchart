@@ -447,6 +447,25 @@ abstract class Chart
      */
     public function setDateAxisStride(int $unit, int $every = 1): static {}
 
+    /**
+     * Output / FreeType DPI for the rendered canvas.
+     *
+     * Sets two things on every draw:
+     *   - the gdImage's reported resolution (PNG `pHYs` chunk and JPEG
+     *     density bytes) so print pipelines and HiDPI viewers size
+     *     the image correctly,
+     *   - the resolution passed to FreeType via `gdImageStringFTEx`,
+     *     which controls glyph hinting. Higher DPI = finer hinting.
+     *
+     * Default 96 (matches libgd / web-screen convention). For print
+     * exports, 200-300 is usual; for retina dashboards rendering at
+     * 2x canvas dimensions, 192. Glyphs rendered at the same point
+     * size will appear physically larger at higher DPI, so size up
+     * the canvas proportionally if you want the chart to keep its
+     * apparent layout.
+     */
+    public function setDpi(int $dpi): static {}
+
     abstract public function draw(\GdImage $canvas): \GdImage;
 
     /** Render to PNG bytes at the configured size. */
