@@ -1325,8 +1325,8 @@ ZEND_METHOD(FastChart_ScatterChart, setTrendLine)
         zend_value_error("FastChart\\ScatterChart::setTrendLine() color must be 0..0xFFFFFF");
         RETURN_THROWS();
     }
-    if (degree < 1 || degree > 5) {
-        zend_value_error("FastChart\\ScatterChart::setTrendLine() degree must be in [1, 5]");
+    if (degree < 1 || degree > 3) {
+        zend_value_error("FastChart\\ScatterChart::setTrendLine() degree must be in [1, 3]");
         RETURN_THROWS();
     }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);

@@ -273,7 +273,12 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
     if (self->trend_line && n >= 2) {
         int deg = (int)self->trend_degree;
         if (deg < 1) deg = 1;
-        if (deg > 5) deg = 5;
+        /* Cap at 3. Quintic / quartic fits over raw scatter data
+         * are essentially never the right answer — they overfit
+         * noise and the high-order Vandermonde is numerically
+         * fragile even with normalization. Three is high enough
+         * for the vast majority of "is there a trend?" use cases. */
+        if (deg > 3) deg = 3;
         if (deg + 1 > n) deg = n - 1;
         if (deg < 1) deg = 1;
 
@@ -284,14 +289,26 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
                 (int)( self->trend_line_color        & 0xFF))
             : pal.axis;
 
-        double coeffs[6] = {0};
+        /* Normalize x to xn = (x - x_mid) / x_half so xn ∈ [-1, 1]
+         * across the input range. The Vandermonde of normalized x
+         * is several orders of magnitude better-conditioned than
+         * raw x for any non-trivial domain (e.g. timestamps near
+         * 1.7e9 + degree 3 produces matrix entries near 1e30, well
+         * past double-precision recovery). Evaluation re-applies
+         * the same normalization. */
+        double x_mid  = 0.5 * (x_min + x_max);
+        double x_half = 0.5 * (x_max - x_min);
+        if (x_half <= 0) x_half = 1.0;
+
+        double coeffs[4] = {0};
         if (deg == 1) {
             double sx = 0, sy = 0, sxx = 0, sxy = 0;
             for (int i = 0; i < n; i++) {
-                sx  += points[i].x;
+                double xn = (points[i].x - x_mid) / x_half;
+                sx  += xn;
                 sy  += points[i].y;
-                sxx += points[i].x * points[i].x;
-                sxy += points[i].x * points[i].y;
+                sxx += xn * xn;
+                sxy += xn * points[i].y;
             }
             double denom = n * sxx - sx * sx;
             if (denom != 0.0) {
@@ -299,18 +316,19 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
                 coeffs[0] = (sy - coeffs[1] * sx) / n;
             }
         } else {
-            /* Normal equations for polynomial of degree `deg`:
-             *   A[k][j] = sum x^(j+k)        for j,k in 0..deg
-             *   b[k]    = sum y * x^k
+            /* Normal equations for polynomial of degree `deg` in
+             * normalized x:
+             *   A[k][j] = sum xn^(j+k)        for j,k in 0..deg
+             *   b[k]    = sum y * xn^k
              * Solve A * c = b (size deg+1) via partial-pivot Gauss. */
             int m = deg + 1;
-            double A[6][7] = {{0}};   /* augmented [m | b] */
+            double A[4][5] = {{0}};   /* augmented [m | b] */
             for (int i = 0; i < n; i++) {
-                double xi = points[i].x;
+                double xn = (points[i].x - x_mid) / x_half;
                 double yi = points[i].y;
-                double xpow_row[12]; /* x^0 .. x^(2*deg) */
+                double xpow_row[8]; /* xn^0 .. xn^(2*deg) for deg<=3 */
                 xpow_row[0] = 1.0;
-                for (int p = 1; p <= 2 * deg; p++) xpow_row[p] = xpow_row[p-1] * xi;
+                for (int p = 1; p <= 2 * deg; p++) xpow_row[p] = xpow_row[p-1] * xn;
                 for (int k = 0; k < m; k++) {
                     for (int j = 0; j < m; j++) {
                         A[k][j] += xpow_row[j + k];
@@ -343,16 +361,17 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
             for (int k = 0; k < m; k++) coeffs[k] = A[k][m];
         }
 
-        /* Plot 200 sub-segments. */
+        /* Plot 200 sub-segments. Normalize x exactly as the fit did. */
         const int N = 200;
         gdImageSetThickness(im, 2);
         int prev_px = 0, prev_py = 0;
         for (int s = 0; s <= N; s++) {
             double t = (double)s / (double)N;
             double x = x_min + t * (x_max - x_min);
+            double xn = (x - x_mid) / x_half;
             double y = 0;
             double xp = 1.0;
-            for (int k = 0; k <= deg; k++) { y += coeffs[k] * xp; xp *= x; }
+            for (int k = 0; k <= deg; k++) { y += coeffs[k] * xp; xp *= xn; }
             double frac = (xrange.max - xrange.min) > 0
                 ? (x - xrange.min) / (xrange.max - xrange.min) : 0.5;
             int px = plot.x0 + (int)(frac * (plot.x1 - plot.x0) + 0.5);
