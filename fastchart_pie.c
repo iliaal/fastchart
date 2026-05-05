@@ -27,143 +27,27 @@
 #include "fastchart_text.h"
 #include "fastchart_effects.h"
 
-#define MAX_SLICES 32
-
-typedef struct {
-    const char *label;     /* may be NULL */
-    char        idx_label[16];  /* fallback "0" / "1" / etc. */
-    double      value;     /* > 0 only -- nonpositive slices skipped */
-    int         color_rgb; /* explicit color override; -1 means use palette */
-} fastchart_pie_slice;
-
-/* Accept two shapes for the slice array:
- *   1. ['label' => value, 'label2' => value, ...]  (associative map)
- *   2. [['label' => 'X', 'value' => 1.5], ...]     (list of dicts)
- *
- * Detection: if every key is a string and every value is numeric,
- * it's shape 1. Otherwise shape 2 (drop entries that don't conform). */
-
-static int collect_pie_slices(zval *data_zv,
-                              fastchart_pie_slice *out, int max_slices,
-                              int *out_count, double *out_total)
-{
-    *out_count = 0;
-    *out_total = 0;
-    if (Z_TYPE_P(data_zv) != IS_ARRAY) return -1;
-    HashTable *ht = Z_ARRVAL_P(data_zv);
-    int n = (int)zend_hash_num_elements(ht);
-    if (n == 0) return 0;
-
-    /* Decide shape by sampling first element. */
-    int shape_assoc = 1;
-    {
-        zend_string *k;
-        zend_ulong h;
-        zval *v;
-        ZEND_HASH_FOREACH_KEY_VAL(ht, h, k, v) {
-            (void)h;
-            if (!k || (Z_TYPE_P(v) != IS_LONG && Z_TYPE_P(v) != IS_DOUBLE)) {
-                shape_assoc = 0;
-            }
-            break;
-        } ZEND_HASH_FOREACH_END();
-    }
-
-    if (shape_assoc) {
-        zend_string *k;
-        zend_ulong h;
-        zval *v;
-        ZEND_HASH_FOREACH_KEY_VAL(ht, h, k, v) {
-            (void)h;
-            if (*out_count >= max_slices) break;
-            double d;
-            if (fastchart_zval_to_double(v, &d) != 0) continue;
-            if (d <= 0.0 || !isfinite(d)) continue;
-            /* Drop slices whose key carries an embedded NUL: same
-             * divergence rationale as fastchart_label_or_null. */
-            if (k && memchr(ZSTR_VAL(k), 0, ZSTR_LEN(k)) != NULL) continue;
-            out[*out_count].label = k ? ZSTR_VAL(k) : NULL;
-            if (!k) {
-                snprintf(out[*out_count].idx_label,
-                         sizeof(out[*out_count].idx_label),
-                         "%d", *out_count);
-            } else {
-                out[*out_count].idx_label[0] = '\0';
-            }
-            out[*out_count].value = d;
-            out[*out_count].color_rgb = -1;
-            *out_total += d;
-            (*out_count)++;
-        } ZEND_HASH_FOREACH_END();
-    } else {
-        zval *entry;
-        ZEND_HASH_FOREACH_VAL(ht, entry) {
-            if (Z_TYPE_P(entry) != IS_ARRAY) continue;
-            if (*out_count >= max_slices) break;
-
-            zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
-                                                "label", sizeof("label") - 1);
-            zval *value_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
-                                                "value", sizeof("value") - 1);
-            if (!value_zv) continue;
-
-            double d;
-            if (fastchart_zval_to_double(value_zv, &d) != 0) continue;
-            if (d <= 0.0 || !isfinite(d)) continue;
-
-            const char *label = fastchart_label_or_null(label_zv);
-            if (label) {
-                out[*out_count].label = label;
-                out[*out_count].idx_label[0] = '\0';
-            } else {
-                out[*out_count].label = NULL;
-                snprintf(out[*out_count].idx_label,
-                         sizeof(out[*out_count].idx_label),
-                         "%d", *out_count);
-            }
-            out[*out_count].value = d;
-
-            /* Optional 'color' key. Accept long (24-bit packed
-             * 0xRRGGBB). Out-of-range values fall back to palette
-             * rather than error -- this mirrors how callers
-             * typically generate colors (often via a hash with no
-             * a-priori bounds check). */
-            out[*out_count].color_rgb = -1;
-            zval *color_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
-                                                "color", sizeof("color") - 1);
-            if (color_zv && Z_TYPE_P(color_zv) == IS_LONG) {
-                zend_long c = Z_LVAL_P(color_zv);
-                if (c >= 0 && c <= 0xFFFFFF) {
-                    out[*out_count].color_rgb = (int)c;
-                }
-            }
-
-            *out_total += d;
-            (*out_count)++;
-        } ZEND_HASH_FOREACH_END();
-    }
-
-    return 0;
-}
-
 int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
 {
-    fastchart_pie_slice slices[MAX_SLICES];
-    int n_slices = 0;
-    double total = 0;
-    if (collect_pie_slices(&self->data, slices, MAX_SLICES,
-                           &n_slices, &total) != 0 || n_slices == 0) {
+    if (self->slice_count == 0) {
         zend_throw_error(NULL,
             "FastChart\\PieChart::draw() requires setSlices() with one or more positive values");
         return -1;
     }
 
-    /* "Other" aggregation: collapse slices below threshold% into a
-     * single Other slice. We rebuild the slice list in place,
-     * keeping the ones above threshold and accumulating the rest. */
+    /* Render-time copy of the typed slices so "Other" aggregation
+     * doesn't mutate the persistent self->slices state. The temporary
+     * doesn't own the label pointers; aggregation uses the
+     * persistent copy's strings and the optional self->pie_other_label
+     * for the Other bucket, so no per-slot ownership churn. */
+    fastchart_pie_slice slices[FASTCHART_MAX_SLICES];
+    int n_slices = self->slice_count;
+    double total = self->total;
+    for (int i = 0; i < n_slices; i++) slices[i] = self->slices[i];
+
     if (self->pie_other_threshold > 0.0 && total > 0.0 && n_slices > 1) {
         double threshold_value = total * (self->pie_other_threshold / 100.0);
-        fastchart_pie_slice kept[MAX_SLICES];
+        fastchart_pie_slice kept[FASTCHART_MAX_SLICES];
         int n_kept = 0;
         double other_sum = 0.0;
         int other_count = 0;
@@ -171,31 +55,23 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
             if (slices[i].value < threshold_value) {
                 other_sum += slices[i].value;
                 other_count++;
-            } else if (n_kept < MAX_SLICES) {
+            } else if (n_kept < FASTCHART_MAX_SLICES) {
                 kept[n_kept++] = slices[i];
             }
         }
-        if (other_count > 0 && n_kept < MAX_SLICES) {
-            const char *other_label = self->pie_other_label
-                ? ZSTR_VAL(self->pie_other_label) : "Other";
-            kept[n_kept].label = other_label;
+        if (other_count > 0 && n_kept < FASTCHART_MAX_SLICES) {
+            kept[n_kept].label = self->pie_other_label
+                ? ZSTR_VAL(self->pie_other_label) : (char *)"Other";
             kept[n_kept].idx_label[0] = '\0';
             kept[n_kept].value = other_sum;
-            kept[n_kept].color_rgb = -1;  /* palette default */
+            kept[n_kept].color_rgb = -1;
             n_kept++;
         }
         for (int i = 0; i < n_kept; i++) slices[i] = kept[i];
         n_slices = n_kept;
-        /* total unchanged: aggregating doesn't change the sum */
     }
 
-    double donut = 0.0;
-    {
-        zval *cfg = zend_hash_str_find(Z_ARRVAL(self->config),
-                                       "donut_hole_ratio",
-                                       sizeof("donut_hole_ratio") - 1);
-        if (cfg) fastchart_zval_to_double(cfg, &donut);
-    }
+    double donut = self->donut_hole_ratio;
     if (donut < 0) donut = 0;
     if (donut >= 1.0) donut = 0.95;
 
@@ -220,11 +96,10 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
     int diameter = (avail_w < avail_h ? avail_w : avail_h) - 60;
     if (diameter < 40) diameter = 40;
 
-    /* Per-slice radial offset from setExplode([idx => px, ...]). */
-    zval *explode_zv = zend_hash_str_find(Z_ARRVAL(self->config),
-                                          "explode", sizeof("explode") - 1);
-    HashTable *explode_ht =
-        (explode_zv && Z_TYPE_P(explode_zv) == IS_ARRAY) ? Z_ARRVAL_P(explode_zv) : NULL;
+    /* Per-slice radial offset from setExplode([idx => px, ...]),
+     * pre-parsed at setter time into self->explode. */
+    const zend_long *explode = self->explode;
+    int explode_count = self->explode_count;
 
     /* Slices via gdImageFilledArc. gdPie produces a filled wedge;
      * gdNoFill + gdEdged outlines without filling. We draw the wedge
@@ -253,12 +128,9 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
         /* Explode this slice radially outward by `offset` pixels
          * along its mid-angle. Slices not mentioned stay at center. */
         int slice_cx = cx, slice_cy = cy;
-        if (explode_ht) {
-            zval *off_zv = zend_hash_index_find(explode_ht, i);
-            zend_long off = 0;
-            /* fastchart_zval_to_long rejects non-finite and out-of-range
-             * doubles; raw (zend_long)Z_DVAL_P would be UB on Inf/NaN. */
-            if (off_zv && fastchart_zval_to_long(off_zv, &off) == 0 && off > 0) {
+        if (explode && i < explode_count) {
+            zend_long off = explode[i];
+            if (off > 0) {
                 double mid_rad = (start_deg + sweep / 2.0) * M_PI / 180.0;
                 slice_cx = cx + (int)((double)off * cos(mid_rad));
                 slice_cy = cy + (int)((double)off * sin(mid_rad));

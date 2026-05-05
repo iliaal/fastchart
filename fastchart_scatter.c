@@ -25,118 +25,18 @@
 #include "fastchart_text.h"
 
 #define MAX_POINTS 8192
-#define MAX_SCATTER_SERIES 8
-
-/* Two accepted shapes:
- *   1. List of [x, y] pairs:           [[1.0, 2.5], [2.0, 3.1], ...]
- *   2. List of series with 'data' key: [{label, data: [[x,y], ...]}, ...]
- *
- * For v0.1 we keep the implementation linear in points and skip
- * non-numeric pairs silently rather than aborting the draw. */
-
-typedef struct {
-    double x, y;
-    int series;  /* 0..7, indexes into pal.series */
-} fastchart_scatter_point;
-
-static int read_xy_pair(zval *pair, double *x, double *y)
-{
-    if (Z_TYPE_P(pair) != IS_ARRAY) return -1;
-    HashTable *p = Z_ARRVAL_P(pair);
-    if (zend_hash_num_elements(p) < 2) return -1;
-    zval *zx = zend_hash_index_find(p, 0);
-    zval *zy = zend_hash_index_find(p, 1);
-    if (!zx || !zy) return -1;
-    if (fastchart_zval_to_double(zx, x) != 0) return -1;
-    if (fastchart_zval_to_double(zy, y) != 0) return -1;
-    return 0;
-}
-
-/* `series_labels` is filled per series index encountered. Caller
- * passes a buffer of MAX_SCATTER_SERIES slots. Slots stay NULL for
- * series with no label, or when the input is single-series. */
-static int collect_scatter_points(zval *data_zv,
-                                  fastchart_scatter_point *out,
-                                  int max_pts,
-                                  int *out_n,
-                                  const char **series_labels,
-                                  int *out_n_series)
-{
-    *out_n = 0;
-    *out_n_series = 0;
-    if (Z_TYPE_P(data_zv) != IS_ARRAY) return -1;
-    HashTable *ht = Z_ARRVAL_P(data_zv);
-    if (zend_hash_num_elements(ht) == 0) return 0;
-
-    /* Detect multi-series shape: first element is a dict with 'data'. */
-    zval *first = zend_hash_index_find(ht, 0);
-    int is_multi = 0;
-    if (first && Z_TYPE_P(first) == IS_ARRAY) {
-        zval *data_key = zend_hash_str_find(Z_ARRVAL_P(first),
-                                            "data", sizeof("data") - 1);
-        if (data_key && Z_TYPE_P(data_key) == IS_ARRAY) is_multi = 1;
-    }
-
-    if (is_multi) {
-        zval *series_zv;
-        int s = 0;
-        ZEND_HASH_FOREACH_VAL(ht, series_zv) {
-            if (Z_TYPE_P(series_zv) != IS_ARRAY) continue;
-            if (s >= MAX_SCATTER_SERIES) break;
-            zval *data_key = zend_hash_str_find(Z_ARRVAL_P(series_zv),
-                                                "data", sizeof("data") - 1);
-            if (!data_key || Z_TYPE_P(data_key) != IS_ARRAY) continue;
-
-            zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
-                                                "label", sizeof("label") - 1);
-            series_labels[s] = fastchart_label_or_null(label_zv);
-
-            zval *pair;
-            ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(data_key), pair) {
-                if (*out_n >= max_pts) goto done;
-                double x, y;
-                if (read_xy_pair(pair, &x, &y) != 0) continue;
-                out[*out_n].x = x;
-                out[*out_n].y = y;
-                out[*out_n].series = s;
-                (*out_n)++;
-            } ZEND_HASH_FOREACH_END();
-            s++;
-        } ZEND_HASH_FOREACH_END();
-        *out_n_series = s;
-    } else {
-        zval *pair;
-        ZEND_HASH_FOREACH_VAL(ht, pair) {
-            if (*out_n >= max_pts) break;
-            double x, y;
-            if (read_xy_pair(pair, &x, &y) != 0) continue;
-            out[*out_n].x = x;
-            out[*out_n].y = y;
-            out[*out_n].series = 0;
-            (*out_n)++;
-        } ZEND_HASH_FOREACH_END();
-        *out_n_series = 1;
-    }
-
-done:
-    return 0;
-}
+#define FASTCHART_MAX_SCATTER_SERIES 8
 
 int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im)
 {
-    /* Per-call scratch. The previous file-static buffer made render
-     * non-reentrant — broken under ZTS or any SAPI that runs two
-     * draws concurrently. ~256 KB at MAX_POINTS=8192. */
-    fastchart_scatter_point *points = ecalloc(MAX_POINTS, sizeof(*points));
-    const char *series_labels[MAX_SCATTER_SERIES] = { NULL };
-    int n = 0, n_series = 0;
-    if (collect_scatter_points(&self->data, points, MAX_POINTS, &n,
-                               series_labels, &n_series) != 0 || n == 0) {
-        efree(points);
+    if (self->point_count == 0) {
         zend_throw_error(NULL,
             "FastChart\\ScatterChart::draw() requires setPoints() with one or more [x, y] pairs");
         return -1;
     }
+    fastchart_scatter_point *points = self->points;
+    int n = self->point_count;
+    int n_series = self->n_series > 0 ? self->n_series : 1;
 
     /* Y range from data. */
     double y_min = points[0].y, y_max = points[0].y;
@@ -151,7 +51,6 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
     fastchart_value_range yrange;
     if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
         if (fastchart_value_range_compute_log(y_min, y_max, &yrange) != 0) {
-            efree(points);
             zend_value_error("FastChart\\ScatterChart::draw(): log Y-axis requires strictly-positive Y values");
             return -1;
         }
@@ -228,7 +127,14 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
         int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
         int py = fastchart_y_to_pixel(points[i].y, &yrange, &plot);
 
-        int color = pal.series[points[i].series % FASTCHART_PALETTE_SERIES_N];
+        int color;
+        if (points[i].color_rgb >= 0) {
+            int c = points[i].color_rgb;
+            color = gdImageColorAllocate(im,
+                (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+        } else {
+            color = pal.series[points[i].series_idx % FASTCHART_PALETTE_SERIES_N];
+        }
 
         /* Error bar before marker so the marker overdraws the stem
          * cleanly. err_ht entries: scalar -> symmetric ±, [lo, hi] ->
@@ -387,13 +293,13 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
     fastchart_draw_v_annotations_continuous(im, (fastchart_obj *)self, &plot, &pal, &xrange);
 
     if (n_series >= 2) {
-        int legend_colors[MAX_SCATTER_SERIES];
-        const char *legend_labels[MAX_SCATTER_SERIES];
+        int legend_colors[FASTCHART_MAX_SCATTER_SERIES];
+        const char *legend_labels[FASTCHART_MAX_SCATTER_SERIES];
         int legend_count = 0;
         for (int s = 0; s < n_series; s++) {
-            if (!series_labels[s]) continue;
+            if (!self->series_labels[s]) continue;
             legend_colors[legend_count] = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-            legend_labels[legend_count] = series_labels[s];
+            legend_labels[legend_count] = self->series_labels[s];
             legend_count++;
         }
         if (legend_count > 0) {
@@ -404,88 +310,35 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
 
     fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
 
-    /* Build the image-map area list for points that carry an
-     * 'href' / 'tooltip' key. We re-walk the source data because
-     * the flat points[] struct doesn't preserve the originating
-     * dict. The map is parked on config["image_map_areas"] for
-     * later retrieval via Chart::getImageMap(). */
+    /* Build the image-map area list from typed points. Stash on
+     * config["image_map_areas"] so Chart::getImageMap can serialize
+     * later without revisiting the input zval. */
     {
         zval map_list;
         array_init(&map_list);
-        if (Z_TYPE(self->data) == IS_ARRAY) {
-            int point_idx = 0;
-            zval *first = zend_hash_index_find(Z_ARRVAL(self->data), 0);
-            int multi = first && Z_TYPE_P(first) == IS_ARRAY &&
-                zend_hash_str_find(Z_ARRVAL_P(first), "data", sizeof("data") - 1) != NULL;
-
-            zval *outer;
-            ZEND_HASH_FOREACH_VAL(Z_ARRVAL(self->data), outer) {
-                if (Z_TYPE_P(outer) != IS_ARRAY) continue;
-                HashTable *src;
-                if (multi) {
-                    zval *d = zend_hash_str_find(Z_ARRVAL_P(outer), "data", sizeof("data") - 1);
-                    if (!d || Z_TYPE_P(d) != IS_ARRAY) continue;
-                    src = Z_ARRVAL_P(d);
-                } else {
-                    src = NULL;
-                }
-
-                /* Single-series flat: outer is the point dict itself. */
-                if (!multi) {
-                    zval *href = zend_hash_str_find(Z_ARRVAL_P(outer), "href", sizeof("href") - 1);
-                    if (href && Z_TYPE_P(href) == IS_STRING && point_idx < n) {
-                        double frac_x = (xrange.max - xrange.min) > 0
-                            ? (points[point_idx].x - xrange.min) / (xrange.max - xrange.min)
-                            : 0.5;
-                        int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
-                        int py = fastchart_y_to_pixel(points[point_idx].y, &yrange, &plot);
-                        zval e;
-                        array_init(&e);
-                        add_assoc_long(&e, "x", px);
-                        add_assoc_long(&e, "y", py);
-                        add_assoc_long(&e, "r", marker_size);
-                        add_assoc_str(&e, "href", zend_string_copy(Z_STR_P(href)));
-                        zval *tip = zend_hash_str_find(Z_ARRVAL_P(outer), "tooltip", sizeof("tooltip") - 1);
-                        if (tip && Z_TYPE_P(tip) == IS_STRING) {
-                            add_assoc_str(&e, "title", zend_string_copy(Z_STR_P(tip)));
-                        }
-                        add_next_index_zval(&map_list, &e);
-                    }
-                    point_idx++;
-                } else if (src) {
-                    zval *p;
-                    ZEND_HASH_FOREACH_VAL(src, p) {
-                        if (Z_TYPE_P(p) == IS_ARRAY && point_idx < n) {
-                            zval *href = zend_hash_str_find(Z_ARRVAL_P(p), "href", sizeof("href") - 1);
-                            if (href && Z_TYPE_P(href) == IS_STRING) {
-                                double frac_x = (xrange.max - xrange.min) > 0
-                                    ? (points[point_idx].x - xrange.min) / (xrange.max - xrange.min)
-                                    : 0.5;
-                                int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
-                                int py = fastchart_y_to_pixel(points[point_idx].y, &yrange, &plot);
-                                zval e;
-                                array_init(&e);
-                                add_assoc_long(&e, "x", px);
-                                add_assoc_long(&e, "y", py);
-                                add_assoc_long(&e, "r", marker_size);
-                                add_assoc_str(&e, "href", zend_string_copy(Z_STR_P(href)));
-                                zval *tip = zend_hash_str_find(Z_ARRVAL_P(p), "tooltip", sizeof("tooltip") - 1);
-                                if (tip && Z_TYPE_P(tip) == IS_STRING) {
-                                    add_assoc_str(&e, "title", zend_string_copy(Z_STR_P(tip)));
-                                }
-                                add_next_index_zval(&map_list, &e);
-                            }
-                        }
-                        point_idx++;
-                    } ZEND_HASH_FOREACH_END();
-                }
-            } ZEND_HASH_FOREACH_END();
+        for (int i = 0; i < n; i++) {
+            if (!points[i].href) continue;
+            double frac_x = (xrange.max - xrange.min) > 0
+                ? (points[i].x - xrange.min) / (xrange.max - xrange.min)
+                : 0.5;
+            int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
+            int py = fastchart_y_to_pixel(points[i].y, &yrange, &plot);
+            zval e;
+            array_init(&e);
+            add_assoc_long(&e, "x", px);
+            add_assoc_long(&e, "y", py);
+            add_assoc_long(&e, "r", marker_size);
+            add_assoc_str(&e, "href",
+                zend_string_init(points[i].href, strlen(points[i].href), 0));
+            if (points[i].tooltip) {
+                add_assoc_str(&e, "title",
+                    zend_string_init(points[i].tooltip, strlen(points[i].tooltip), 0));
+            }
+            add_next_index_zval(&map_list, &e);
         }
         zend_hash_str_update(Z_ARRVAL(self->config), "image_map_areas",
                              sizeof("image_map_areas") - 1, &map_list);
     }
-
-    efree(points);
     return 0;
 }
 

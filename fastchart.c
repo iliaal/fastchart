@@ -471,22 +471,68 @@ static void fastchart_bar_addref_extras(fastchart_bar_obj *o)
     fastchart_series_array_addref(o->series, o->n_series);
 }
 
+/* dup/release helpers shared across the typed-storage classes. */
+static char *fc_strdup_opt(const char *src)
+{
+    if (!src) return NULL;
+    size_t len = strlen(src);
+    char *copy = emalloc(len + 1);
+    memcpy(copy, src, len + 1);
+    return copy;
+}
+static void fc_efree_opt(void *p) { if (p) efree(p); }
+
 static void fastchart_pie_init_extras(fastchart_pie_obj *o)
 {
     o->slice_label_position = FASTCHART_LABEL_INSIDE;
     o->slice_label_format = NULL;
     o->pie_other_threshold = 0.0;
     o->pie_other_label = NULL;
+    o->slices = NULL;
+    o->slice_count = 0;
+    o->total = 0.0;
+    o->donut_hole_ratio = 0.0;
+    o->explode = NULL;
+    o->explode_count = 0;
 }
 static void fastchart_pie_release_extras(fastchart_pie_obj *o)
 {
     if (o->slice_label_format) zend_string_release(o->slice_label_format);
     if (o->pie_other_label)    zend_string_release(o->pie_other_label);
+    if (o->slices) {
+        for (int i = 0; i < o->slice_count; i++) {
+            if (o->slices[i].label) efree(o->slices[i].label);
+        }
+        efree(o->slices);
+        o->slices = NULL;
+    }
+    if (o->explode) { efree(o->explode); o->explode = NULL; }
+    o->slice_count = 0;
+    o->explode_count = 0;
 }
 static void fastchart_pie_addref_extras(fastchart_pie_obj *o)
 {
     if (o->slice_label_format) zend_string_addref(o->slice_label_format);
     if (o->pie_other_label)    zend_string_addref(o->pie_other_label);
+    if (o->slices && o->slice_count > 0) {
+        size_t bytes = (size_t)o->slice_count * sizeof(fastchart_pie_slice);
+        fastchart_pie_slice *copy = emalloc(bytes);
+        memcpy(copy, o->slices, bytes);
+        for (int i = 0; i < o->slice_count; i++) {
+            copy[i].label = fc_strdup_opt(o->slices[i].label);
+        }
+        o->slices = copy;
+    } else {
+        o->slices = NULL;
+    }
+    if (o->explode && o->explode_count > 0) {
+        size_t bytes = (size_t)o->explode_count * sizeof(zend_long);
+        zend_long *copy = emalloc(bytes);
+        memcpy(copy, o->explode, bytes);
+        o->explode = copy;
+    } else {
+        o->explode = NULL;
+    }
 }
 
 static void fastchart_scatter_init_extras(fastchart_scatter_obj *o)
@@ -494,9 +540,50 @@ static void fastchart_scatter_init_extras(fastchart_scatter_obj *o)
     o->trend_line = false;
     o->trend_line_color = -1;
     o->trend_degree = 1;
+    o->points = NULL;
+    o->point_count = 0;
+    o->n_series = 0;
+    for (int i = 0; i < FASTCHART_MAX_SCATTER_SERIES; i++) {
+        o->series_labels[i] = NULL;
+    }
 }
-static void fastchart_scatter_release_extras(fastchart_scatter_obj *o) { (void)o; }
-static void fastchart_scatter_addref_extras(fastchart_scatter_obj *o)  { (void)o; }
+static void fastchart_scatter_release_extras(fastchart_scatter_obj *o)
+{
+    if (o->points) {
+        for (int i = 0; i < o->point_count; i++) {
+            if (o->points[i].href) efree(o->points[i].href);
+            if (o->points[i].tooltip) efree(o->points[i].tooltip);
+        }
+        efree(o->points);
+        o->points = NULL;
+    }
+    o->point_count = 0;
+    for (int i = 0; i < FASTCHART_MAX_SCATTER_SERIES; i++) {
+        if (o->series_labels[i]) {
+            efree(o->series_labels[i]);
+            o->series_labels[i] = NULL;
+        }
+    }
+    o->n_series = 0;
+}
+static void fastchart_scatter_addref_extras(fastchart_scatter_obj *o)
+{
+    if (o->points && o->point_count > 0) {
+        size_t bytes = (size_t)o->point_count * sizeof(fastchart_scatter_point);
+        fastchart_scatter_point *copy = emalloc(bytes);
+        memcpy(copy, o->points, bytes);
+        for (int i = 0; i < o->point_count; i++) {
+            copy[i].href = fc_strdup_opt(o->points[i].href);
+            copy[i].tooltip = fc_strdup_opt(o->points[i].tooltip);
+        }
+        o->points = copy;
+    } else {
+        o->points = NULL;
+    }
+    for (int i = 0; i < o->n_series; i++) {
+        o->series_labels[i] = fc_strdup_opt(o->series_labels[i]);
+    }
+}
 
 static void fastchart_stock_init_extras(fastchart_stock_obj *o)
 {
@@ -575,26 +662,101 @@ static void fastchart_radar_init_extras(fastchart_radar_obj *o)
 {
     o->radar_max = 0.0;
     o->radar_filled = true;
+    o->n_series = 0;
+    for (int i = 0; i < FASTCHART_MAX_RADAR_SERIES; i++) {
+        o->series[i].values = NULL;
+        o->series[i].len = 0;
+        o->series[i].label = NULL;
+        o->series[i].color_rgb = -1;
+    }
+    o->categories = NULL;
+    o->n_categories = 0;
 }
-static void fastchart_radar_release_extras(fastchart_radar_obj *o)     { (void)o; }
-static void fastchart_radar_addref_extras(fastchart_radar_obj *o)      { (void)o; }
+static void fastchart_radar_release_extras(fastchart_radar_obj *o)
+{
+    for (int i = 0; i < o->n_series; i++) {
+        fc_efree_opt(o->series[i].values);
+        fc_efree_opt(o->series[i].label);
+        o->series[i].values = NULL;
+        o->series[i].label = NULL;
+        o->series[i].len = 0;
+    }
+    o->n_series = 0;
+    if (o->categories) {
+        for (int i = 0; i < o->n_categories; i++) fc_efree_opt(o->categories[i]);
+        efree(o->categories);
+        o->categories = NULL;
+    }
+    o->n_categories = 0;
+}
+static void fastchart_radar_addref_extras(fastchart_radar_obj *o)
+{
+    for (int i = 0; i < o->n_series; i++) {
+        if (o->series[i].values && o->series[i].len > 0) {
+            size_t bytes = (size_t)o->series[i].len * sizeof(double);
+            double *copy = emalloc(bytes);
+            memcpy(copy, o->series[i].values, bytes);
+            o->series[i].values = copy;
+        }
+        o->series[i].label = fc_strdup_opt(o->series[i].label);
+    }
+    if (o->categories && o->n_categories > 0) {
+        char **copy = emalloc((size_t)o->n_categories * sizeof(char *));
+        for (int i = 0; i < o->n_categories; i++) {
+            copy[i] = fc_strdup_opt(o->categories[i]);
+        }
+        o->categories = copy;
+    }
+}
 
-static void fastchart_bubble_init_extras(fastchart_bubble_obj *o)      { (void)o; }
-static void fastchart_bubble_release_extras(fastchart_bubble_obj *o)   { (void)o; }
-static void fastchart_bubble_addref_extras(fastchart_bubble_obj *o)    { (void)o; }
+static void fastchart_bubble_init_extras(fastchart_bubble_obj *o)
+{
+    o->points = NULL;
+    o->point_count = 0;
+}
+static void fastchart_bubble_release_extras(fastchart_bubble_obj *o)
+{
+    if (o->points) { efree(o->points); o->points = NULL; }
+    o->point_count = 0;
+}
+static void fastchart_bubble_addref_extras(fastchart_bubble_obj *o)
+{
+    if (o->points && o->point_count > 0) {
+        size_t bytes = (size_t)o->point_count * sizeof(fastchart_bubble_point);
+        fastchart_bubble_point *copy = emalloc(bytes);
+        memcpy(copy, o->points, bytes);
+        o->points = copy;
+    } else {
+        o->points = NULL;
+    }
+}
 
 static void fastchart_surface_init_extras(fastchart_surface_obj *o)
 {
     o->surface_show_values = false;
     o->surface_value_format = NULL;
+    o->grid.cells = NULL;
+    o->grid.rows = 0;
+    o->grid.cols = 0;
 }
 static void fastchart_surface_release_extras(fastchart_surface_obj *o)
 {
     if (o->surface_value_format) zend_string_release(o->surface_value_format);
+    if (o->grid.cells) { efree(o->grid.cells); o->grid.cells = NULL; }
+    o->grid.rows = 0;
+    o->grid.cols = 0;
 }
 static void fastchart_surface_addref_extras(fastchart_surface_obj *o)
 {
     if (o->surface_value_format) zend_string_addref(o->surface_value_format);
+    if (o->grid.cells && o->grid.rows > 0 && o->grid.cols > 0) {
+        size_t bytes = (size_t)o->grid.rows * (size_t)o->grid.cols * sizeof(double);
+        double *copy = emalloc(bytes);
+        memcpy(copy, o->grid.cells, bytes);
+        o->grid.cells = copy;
+    } else {
+        o->grid.cells = NULL;
+    }
 }
 
 static void fastchart_gauge_init_extras(fastchart_gauge_obj *o)
@@ -619,25 +781,167 @@ static void fastchart_gantt_init_extras(fastchart_gantt_obj *o)
     o->gantt_has_range = false;
     o->gantt_range_start = 0;
     o->gantt_range_end = 0;
+    o->tasks = NULL;
+    o->task_count = 0;
 }
-static void fastchart_gantt_release_extras(fastchart_gantt_obj *o)     { (void)o; }
-static void fastchart_gantt_addref_extras(fastchart_gantt_obj *o)      { (void)o; }
+static void fastchart_gantt_release_extras(fastchart_gantt_obj *o)
+{
+    if (o->tasks) {
+        for (int i = 0; i < o->task_count; i++) {
+            fc_efree_opt(o->tasks[i].name);
+            fc_efree_opt(o->tasks[i].deps);
+        }
+        efree(o->tasks);
+        o->tasks = NULL;
+    }
+    o->task_count = 0;
+}
+static void fastchart_gantt_addref_extras(fastchart_gantt_obj *o)
+{
+    if (o->tasks && o->task_count > 0) {
+        size_t bytes = (size_t)o->task_count * sizeof(fastchart_gantt_task);
+        fastchart_gantt_task *copy = emalloc(bytes);
+        memcpy(copy, o->tasks, bytes);
+        for (int i = 0; i < o->task_count; i++) {
+            copy[i].name = fc_strdup_opt(o->tasks[i].name);
+            if (o->tasks[i].deps && o->tasks[i].n_deps > 0) {
+                size_t db = (size_t)o->tasks[i].n_deps * sizeof(int);
+                int *dcopy = emalloc(db);
+                memcpy(dcopy, o->tasks[i].deps, db);
+                copy[i].deps = dcopy;
+            } else {
+                copy[i].deps = NULL;
+            }
+        }
+        o->tasks = copy;
+    } else {
+        o->tasks = NULL;
+    }
+}
 
-static void fastchart_boxplot_init_extras(fastchart_boxplot_obj *o)    { o->box_width_pct = 60; }
-static void fastchart_boxplot_release_extras(fastchart_boxplot_obj *o) { (void)o; }
-static void fastchart_boxplot_addref_extras(fastchart_boxplot_obj *o)  { (void)o; }
+static void fastchart_boxplot_init_extras(fastchart_boxplot_obj *o)
+{
+    o->box_width_pct = 60;
+    o->entries = NULL;
+    o->entry_count = 0;
+}
+static void fastchart_boxplot_release_extras(fastchart_boxplot_obj *o)
+{
+    if (o->entries) {
+        for (int i = 0; i < o->entry_count; i++) {
+            fc_efree_opt(o->entries[i].label);
+            fc_efree_opt(o->entries[i].outliers);
+        }
+        efree(o->entries);
+        o->entries = NULL;
+    }
+    o->entry_count = 0;
+}
+static void fastchart_boxplot_addref_extras(fastchart_boxplot_obj *o)
+{
+    if (o->entries && o->entry_count > 0) {
+        size_t bytes = (size_t)o->entry_count * sizeof(fastchart_boxplot_entry);
+        fastchart_boxplot_entry *copy = emalloc(bytes);
+        memcpy(copy, o->entries, bytes);
+        for (int i = 0; i < o->entry_count; i++) {
+            copy[i].label = fc_strdup_opt(o->entries[i].label);
+            if (o->entries[i].outliers && o->entries[i].outlier_count > 0) {
+                size_t obytes = (size_t)o->entries[i].outlier_count * sizeof(double);
+                double *ocopy = emalloc(obytes);
+                memcpy(ocopy, o->entries[i].outliers, obytes);
+                copy[i].outliers = ocopy;
+            } else {
+                copy[i].outliers = NULL;
+            }
+        }
+        o->entries = copy;
+    } else {
+        o->entries = NULL;
+    }
+}
 
 static void fastchart_polar_init_extras(fastchart_polar_obj *o)
 {
     o->polar_max_radius = 0.0;
     o->polar_filled = true;
+    o->n_series = 0;
+    for (int i = 0; i < FASTCHART_MAX_POLAR_SERIES; i++) {
+        o->series[i].angles = NULL;
+        o->series[i].radii = NULL;
+        o->series[i].len = 0;
+        o->series[i].label = NULL;
+        o->series[i].color_rgb = -1;
+    }
 }
-static void fastchart_polar_release_extras(fastchart_polar_obj *o)     { (void)o; }
-static void fastchart_polar_addref_extras(fastchart_polar_obj *o)      { (void)o; }
+static void fastchart_polar_release_extras(fastchart_polar_obj *o)
+{
+    for (int i = 0; i < o->n_series; i++) {
+        fc_efree_opt(o->series[i].angles);
+        fc_efree_opt(o->series[i].radii);
+        fc_efree_opt(o->series[i].label);
+        o->series[i].angles = NULL;
+        o->series[i].radii = NULL;
+        o->series[i].label = NULL;
+        o->series[i].len = 0;
+    }
+    o->n_series = 0;
+}
+static void fastchart_polar_addref_extras(fastchart_polar_obj *o)
+{
+    for (int i = 0; i < o->n_series; i++) {
+        int len = o->series[i].len;
+        if (o->series[i].angles && len > 0) {
+            size_t bytes = (size_t)len * sizeof(double);
+            double *copy = emalloc(bytes);
+            memcpy(copy, o->series[i].angles, bytes);
+            o->series[i].angles = copy;
+        }
+        if (o->series[i].radii && len > 0) {
+            size_t bytes = (size_t)len * sizeof(double);
+            double *copy = emalloc(bytes);
+            memcpy(copy, o->series[i].radii, bytes);
+            o->series[i].radii = copy;
+        }
+        o->series[i].label = fc_strdup_opt(o->series[i].label);
+    }
+}
 
-static void fastchart_contour_init_extras(fastchart_contour_obj *o)    { o->contour_filled = true; }
-static void fastchart_contour_release_extras(fastchart_contour_obj *o) { (void)o; }
-static void fastchart_contour_addref_extras(fastchart_contour_obj *o)  { (void)o; }
+static void fastchart_contour_init_extras(fastchart_contour_obj *o)
+{
+    o->contour_filled = true;
+    o->grid.cells = NULL;
+    o->grid.rows = 0;
+    o->grid.cols = 0;
+    o->levels = NULL;
+    o->level_count = 0;
+}
+static void fastchart_contour_release_extras(fastchart_contour_obj *o)
+{
+    if (o->grid.cells) { efree(o->grid.cells); o->grid.cells = NULL; }
+    if (o->levels)     { efree(o->levels);     o->levels = NULL; }
+    o->grid.rows = 0;
+    o->grid.cols = 0;
+    o->level_count = 0;
+}
+static void fastchart_contour_addref_extras(fastchart_contour_obj *o)
+{
+    if (o->grid.cells && o->grid.rows > 0 && o->grid.cols > 0) {
+        size_t bytes = (size_t)o->grid.rows * (size_t)o->grid.cols * sizeof(double);
+        double *copy = emalloc(bytes);
+        memcpy(copy, o->grid.cells, bytes);
+        o->grid.cells = copy;
+    } else {
+        o->grid.cells = NULL;
+    }
+    if (o->levels && o->level_count > 0) {
+        size_t bytes = (size_t)o->level_count * sizeof(double);
+        double *copy = emalloc(bytes);
+        memcpy(copy, o->levels, bytes);
+        o->levels = copy;
+    } else {
+        o->levels = NULL;
+    }
+}
 
 /* Generates the create / free / clone trio for one chart class.
  * The handlers struct must already exist in static scope; MINIT
@@ -1742,6 +2046,152 @@ ZEND_METHOD(FastChart_ScatterChart, setTrendLine)
 FASTCHART_ERROR_BARS_SETTER(FastChart_LineChart)
 FASTCHART_ERROR_BARS_SETTER(FastChart_ScatterChart)
 
+/* Parse one [x, y] (or longer) tuple plus optional 'href' / 'tooltip'
+ * / 'color' assoc keys into a typed scatter point. Returns 0 on
+ * success, -1 on shape error. */
+static int fastchart_parse_scatter_point(zval *pair, fastchart_scatter_point *out,
+                                         int series_idx)
+{
+    if (Z_TYPE_P(pair) != IS_ARRAY) return -1;
+    HashTable *p = Z_ARRVAL_P(pair);
+    zval *zx = zend_hash_index_find(p, 0);
+    zval *zy = zend_hash_index_find(p, 1);
+    if (!zx || !zy) return -1;
+    double x, y;
+    if (fastchart_zval_to_double(zx, &x) != 0) return -1;
+    if (fastchart_zval_to_double(zy, &y) != 0) return -1;
+    out->x = x;
+    out->y = y;
+    out->series_idx = series_idx;
+    out->color_rgb = -1;
+    out->href = NULL;
+    out->tooltip = NULL;
+
+    zval *zh = zend_hash_str_find(p, "href", sizeof("href") - 1);
+    if (zh && Z_TYPE_P(zh) == IS_STRING) {
+        if (memchr(Z_STRVAL_P(zh), 0, Z_STRLEN_P(zh)) == NULL) {
+            size_t len = Z_STRLEN_P(zh);
+            out->href = emalloc(len + 1);
+            memcpy(out->href, Z_STRVAL_P(zh), len + 1);
+        }
+    }
+    zval *zt = zend_hash_str_find(p, "tooltip", sizeof("tooltip") - 1);
+    if (zt && Z_TYPE_P(zt) == IS_STRING) {
+        if (memchr(Z_STRVAL_P(zt), 0, Z_STRLEN_P(zt)) == NULL) {
+            size_t len = Z_STRLEN_P(zt);
+            out->tooltip = emalloc(len + 1);
+            memcpy(out->tooltip, Z_STRVAL_P(zt), len + 1);
+        }
+    }
+    zval *zc = zend_hash_str_find(p, "color", sizeof("color") - 1);
+    if (zc && Z_TYPE_P(zc) == IS_LONG) {
+        zend_long c = Z_LVAL_P(zc);
+        if (c >= 0 && c <= 0xFFFFFF) out->color_rgb = (int)c;
+    }
+    return 0;
+}
+
+ZEND_METHOD(FastChart_ScatterChart, setPoints)
+{
+    zval *data_zv;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(data_zv)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_scatter_obj *self = Z_FASTCHART_SCATTER_OBJ_P(ZEND_THIS);
+    /* Drop any existing parsed state. */
+    if (self->points) {
+        for (int i = 0; i < self->point_count; i++) {
+            if (self->points[i].href) efree(self->points[i].href);
+            if (self->points[i].tooltip) efree(self->points[i].tooltip);
+        }
+        efree(self->points);
+        self->points = NULL;
+    }
+    self->point_count = 0;
+    for (int i = 0; i < FASTCHART_MAX_SCATTER_SERIES; i++) {
+        if (self->series_labels[i]) {
+            efree(self->series_labels[i]);
+            self->series_labels[i] = NULL;
+        }
+    }
+    self->n_series = 0;
+
+    HashTable *ht = Z_ARRVAL_P(data_zv);
+    int n_input = (int)zend_hash_num_elements(ht);
+    if (n_input == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+
+    /* Detect multi-series: first element is dict with 'data' key. */
+    zval *first = zend_hash_index_find(ht, 0);
+    bool is_multi = false;
+    if (first && Z_TYPE_P(first) == IS_ARRAY) {
+        zval *dk = zend_hash_str_find(Z_ARRVAL_P(first), "data", sizeof("data") - 1);
+        if (dk && Z_TYPE_P(dk) == IS_ARRAY) is_multi = true;
+    }
+
+    /* Two-pass: first count points so we can size the output once. */
+    int total_pts = 0;
+    if (is_multi) {
+        zval *series_zv;
+        int s = 0;
+        ZEND_HASH_FOREACH_VAL(ht, series_zv) {
+            if (s >= FASTCHART_MAX_SCATTER_SERIES) break;
+            if (Z_TYPE_P(series_zv) != IS_ARRAY) continue;
+            zval *dk = zend_hash_str_find(Z_ARRVAL_P(series_zv),
+                                          "data", sizeof("data") - 1);
+            if (!dk || Z_TYPE_P(dk) != IS_ARRAY) continue;
+            total_pts += (int)zend_hash_num_elements(Z_ARRVAL_P(dk));
+            s++;
+        } ZEND_HASH_FOREACH_END();
+    } else {
+        total_pts = n_input;
+    }
+    if (total_pts > FASTCHART_MAX_SCATTER_POINTS) total_pts = FASTCHART_MAX_SCATTER_POINTS;
+    if (total_pts == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+
+    self->points = ecalloc((size_t)total_pts, sizeof(fastchart_scatter_point));
+    int slot = 0;
+
+    if (is_multi) {
+        zval *series_zv;
+        int s = 0;
+        ZEND_HASH_FOREACH_VAL(ht, series_zv) {
+            if (s >= FASTCHART_MAX_SCATTER_SERIES) break;
+            if (Z_TYPE_P(series_zv) != IS_ARRAY) continue;
+            zval *dk = zend_hash_str_find(Z_ARRVAL_P(series_zv),
+                                          "data", sizeof("data") - 1);
+            if (!dk || Z_TYPE_P(dk) != IS_ARRAY) continue;
+
+            zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
+                                                "label", sizeof("label") - 1);
+            const char *label = fastchart_label_or_null(label_zv);
+            self->series_labels[s] = fc_strdup_opt(label);
+
+            zval *pair;
+            ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(dk), pair) {
+                if (slot >= total_pts) break;
+                if (fastchart_parse_scatter_point(pair, &self->points[slot], s) == 0) slot++;
+            } ZEND_HASH_FOREACH_END();
+            s++;
+        } ZEND_HASH_FOREACH_END();
+        self->n_series = s;
+    } else {
+        zval *pair;
+        ZEND_HASH_FOREACH_VAL(ht, pair) {
+            if (slot >= total_pts) break;
+            if (fastchart_parse_scatter_point(pair, &self->points[slot], 0) == 0) slot++;
+        } ZEND_HASH_FOREACH_END();
+        self->n_series = 1;
+    }
+
+    self->point_count = slot;
+    if (slot == 0) {
+        efree(self->points);
+        self->points = NULL;
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 ZEND_METHOD(FastChart_RadarChart, setMaxValue)
 {
     double m;
@@ -2400,10 +2850,150 @@ ZEND_METHOD(FastChart_PieChart, setExplode)
         Z_PARAM_ARRAY(offsets)
     ZEND_PARSE_PARAMETERS_END();
 
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval offsets_copy;
-    ZVAL_COPY(&offsets_copy, offsets);
-    add_assoc_zval(&self->config, "explode", &offsets_copy);
+    fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(offsets);
+    int n = (int)zend_hash_num_elements(ht);
+    if (self->explode) { efree(self->explode); self->explode = NULL; }
+    self->explode_count = 0;
+    if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    self->explode = ecalloc((size_t)n, sizeof(zend_long));
+    /* Walk by index 0..n-1 so the array is positional even when the
+     * user supplied an associative-style { 0 => 8, 2 => 12 } shape. */
+    for (int i = 0; i < n; i++) {
+        zval *off_zv = zend_hash_index_find(ht, i);
+        zend_long off = 0;
+        if (off_zv && fastchart_zval_to_long(off_zv, &off) == 0 && off > 0) {
+            self->explode[i] = off;
+        } else {
+            self->explode[i] = 0;
+        }
+    }
+    self->explode_count = n;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_PieChart, setSlices)
+{
+    zval *data_zv;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(data_zv)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
+
+    /* Drop any previously-parsed slices. */
+    if (self->slices) {
+        for (int i = 0; i < self->slice_count; i++) {
+            if (self->slices[i].label) efree(self->slices[i].label);
+        }
+        efree(self->slices);
+        self->slices = NULL;
+    }
+    self->slice_count = 0;
+    self->total = 0.0;
+
+    HashTable *ht = Z_ARRVAL_P(data_zv);
+    int n = (int)zend_hash_num_elements(ht);
+    if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    if (n > FASTCHART_MAX_SLICES) n = FASTCHART_MAX_SLICES;
+
+    self->slices = ecalloc((size_t)n, sizeof(fastchart_pie_slice));
+    int slot = 0;
+
+    /* Decide shape by sampling first element: associative map vs
+     * list of dicts. The associative shape requires every key to be
+     * a string and every value to be numeric; otherwise treat as a
+     * list of dicts and skip non-conformant entries. */
+    int shape_assoc = 1;
+    {
+        zend_string *k;
+        zend_ulong h;
+        zval *v;
+        ZEND_HASH_FOREACH_KEY_VAL(ht, h, k, v) {
+            (void)h;
+            if (!k || (Z_TYPE_P(v) != IS_LONG && Z_TYPE_P(v) != IS_DOUBLE)) {
+                shape_assoc = 0;
+            }
+            break;
+        } ZEND_HASH_FOREACH_END();
+    }
+
+    if (shape_assoc) {
+        zend_string *k;
+        zend_ulong h;
+        zval *v;
+        ZEND_HASH_FOREACH_KEY_VAL(ht, h, k, v) {
+            (void)h;
+            if (slot >= n) break;
+            double d;
+            if (fastchart_zval_to_double(v, &d) != 0) continue;
+            if (d <= 0.0 || !isfinite(d)) continue;
+            if (k && memchr(ZSTR_VAL(k), 0, ZSTR_LEN(k)) != NULL) continue;
+            self->slices[slot].label = k ? fc_strdup_opt(ZSTR_VAL(k)) : NULL;
+            if (!k) {
+                snprintf(self->slices[slot].idx_label,
+                         sizeof(self->slices[slot].idx_label),
+                         "%d", slot);
+            } else {
+                self->slices[slot].idx_label[0] = '\0';
+            }
+            self->slices[slot].value = d;
+            self->slices[slot].color_rgb = -1;
+            self->total += d;
+            slot++;
+        } ZEND_HASH_FOREACH_END();
+    } else {
+        zval *entry;
+        ZEND_HASH_FOREACH_VAL(ht, entry) {
+            if (slot >= n) break;
+            if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+            zval *value_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
+                                                "value", sizeof("value") - 1);
+            if (!value_zv) continue;
+            double d;
+            if (fastchart_zval_to_double(value_zv, &d) != 0) continue;
+            if (d <= 0.0 || !isfinite(d)) continue;
+
+            zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
+                                                "label", sizeof("label") - 1);
+            const char *label = fastchart_label_or_null(label_zv);
+            self->slices[slot].label = fc_strdup_opt(label);
+            if (!label) {
+                snprintf(self->slices[slot].idx_label,
+                         sizeof(self->slices[slot].idx_label),
+                         "%d", slot);
+            } else {
+                self->slices[slot].idx_label[0] = '\0';
+            }
+            self->slices[slot].value = d;
+            self->slices[slot].color_rgb = -1;
+            zval *color_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
+                                                "color", sizeof("color") - 1);
+            if (color_zv && Z_TYPE_P(color_zv) == IS_LONG) {
+                zend_long c = Z_LVAL_P(color_zv);
+                if (c >= 0 && c <= 0xFFFFFF) {
+                    self->slices[slot].color_rgb = (int)c;
+                }
+            }
+            self->total += d;
+            slot++;
+        } ZEND_HASH_FOREACH_END();
+    }
+
+    if (slot < n) {
+        /* Trim down. */
+        if (slot == 0) {
+            efree(self->slices);
+            self->slices = NULL;
+        } else {
+            fastchart_pie_slice *trimmed = ecalloc((size_t)slot, sizeof(*trimmed));
+            memcpy(trimmed, self->slices, (size_t)slot * sizeof(*trimmed));
+            efree(self->slices);
+            self->slices = trimmed;
+        }
+    }
+    self->slice_count = slot;
+
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -2816,8 +3406,8 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         RETURN_ZVAL(ZEND_THIS, 1, 0); \
     }
 
-FASTCHART_SETTER_ARRAY(FastChart_PieChart,     setSlices, data)
-FASTCHART_SETTER_ARRAY(FastChart_ScatterChart, setPoints, data)
+/* Pie + Scatter setters land below; remaining FASTCHART_SETTER_ARRAY
+ * users are limited to classes still on parse-at-draw. */
 FASTCHART_SETTER_ARRAY(FastChart_RadarChart,   setSeries, data)
 FASTCHART_SETTER_ARRAY(FastChart_BubbleChart,  setPoints, data)
 FASTCHART_SETTER_ARRAY(FastChart_SurfaceChart, setGrid,   data)
@@ -2856,8 +3446,8 @@ ZEND_METHOD(FastChart_PieChart, setDonutHoleRatio)
         RETURN_THROWS();
     }
 
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    add_assoc_double(&self->config, "donut_hole_ratio", ratio);
+    fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
+    self->donut_hole_ratio = ratio;
 
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }

@@ -177,6 +177,96 @@ typedef struct {
 
 #define FASTCHART_MAX_SERIES 8
 
+/* PieChart slice. label is owned (malloc'd, NUL-terminated) when the
+ * caller supplied one; NULL means "use idx_label as a numeric
+ * fallback". value is always > 0 (non-positive slices skip parsing).
+ * color_rgb < 0 means "use the next palette color". */
+typedef struct {
+    char *label;
+    char  idx_label[16];
+    double value;
+    int color_rgb;
+} fastchart_pie_slice;
+
+#define FASTCHART_MAX_SLICES 32
+
+/* ScatterChart point. series_idx selects the per-series palette
+ * color when color_rgb is -1; href and tooltip are owned strings used
+ * by getImageMap to emit clickable areas. */
+typedef struct {
+    double x;
+    double y;
+    int series_idx;       /* 0..MAX_SCATTER_SERIES-1 */
+    int color_rgb;        /* -1 = use palette */
+    char *href;           /* owned, may be NULL */
+    char *tooltip;        /* owned, may be NULL */
+} fastchart_scatter_point;
+
+#define FASTCHART_MAX_SCATTER_POINTS 4096
+#define FASTCHART_MAX_SCATTER_SERIES 8
+
+/* BubbleChart entry. */
+typedef struct {
+    double x;
+    double y;
+    double size;
+    int color_rgb;       /* -1 = use palette */
+} fastchart_bubble_point;
+
+#define FASTCHART_MAX_BUBBLE_POINTS 4096
+
+/* BoxPlot entry. five-number summary plus optional outliers. */
+typedef struct {
+    char *label;          /* owned */
+    double min, q1, median, q3, max;
+    double *outliers;     /* malloc'd OR NULL */
+    int outlier_count;
+} fastchart_boxplot_entry;
+
+#define FASTCHART_MAX_BOXPLOT_ENTRIES 32
+
+/* PolarChart series: list of (angle_deg, radius) points plus optional
+ * label / color override. */
+typedef struct {
+    double *angles;       /* malloc'd, len entries */
+    double *radii;        /* malloc'd, len entries */
+    int len;
+    char *label;          /* owned */
+    int color_rgb;        /* -1 = use palette */
+} fastchart_polar_series;
+
+#define FASTCHART_MAX_POLAR_SERIES 8
+
+/* RadarChart series: parallel array of values per axis. */
+typedef struct {
+    double *values;       /* malloc'd, len entries */
+    int len;
+    char *label;          /* owned */
+    int color_rgb;        /* -1 = use palette */
+} fastchart_radar_series;
+
+#define FASTCHART_MAX_RADAR_SERIES 8
+
+/* GanttChart task / milestone. */
+typedef struct {
+    char *name;           /* owned */
+    zend_long start;
+    zend_long end;        /* same as start for milestones */
+    int color_rgb;        /* -1 = use palette */
+    bool is_milestone;
+    int *deps;            /* malloc'd OR NULL; indices into the task array */
+    int n_deps;
+} fastchart_gantt_task;
+
+#define FASTCHART_MAX_GANTT_TASKS 64
+
+/* SurfaceChart / ContourChart 2D grid. Stored row-major. */
+typedef struct {
+    double *cells;        /* malloc'd, rows*cols, NaN = missing */
+    int rows;
+    int cols;
+} fastchart_grid;
+
 /* Per-type structs. Each adds the class-specific fields (or none)
  * plus the zend_object std at the end. */
 typedef struct {
@@ -212,6 +302,12 @@ typedef struct {
     zend_string *slice_label_format;
     double pie_other_threshold;
     zend_string *pie_other_label;
+    fastchart_pie_slice *slices;       /* owned */
+    int slice_count;
+    double total;
+    double donut_hole_ratio;
+    zend_long *explode;                /* owned, parallel to slices; 0 = no offset */
+    int explode_count;
     zend_object std;
 } fastchart_pie_obj;
 
@@ -220,6 +316,12 @@ typedef struct {
     bool trend_line;
     zend_long trend_line_color;
     zend_long trend_degree;
+    fastchart_scatter_point *points;        /* owned */
+    int point_count;
+    char *series_labels[FASTCHART_MAX_SCATTER_SERIES]; /* owned */
+    int n_series;
+    /* error_bars storage shared with LineChart's config zval for now;
+     * a future migration would land here as well. */
     zend_object std;
 } fastchart_scatter_obj;
 
@@ -276,11 +378,17 @@ typedef struct {
     FASTCHART_BASE_FIELDS
     double radar_max;
     bool radar_filled;
+    fastchart_radar_series series[FASTCHART_MAX_RADAR_SERIES];
+    int n_series;
+    char **categories;                 /* malloc'd, n_categories entries; each owned */
+    int n_categories;
     zend_object std;
 } fastchart_radar_obj;
 
 typedef struct {
     FASTCHART_BASE_FIELDS
+    fastchart_bubble_point *points;    /* owned */
+    int point_count;
     zend_object std;
 } fastchart_bubble_obj;
 
@@ -288,6 +396,7 @@ typedef struct {
     FASTCHART_BASE_FIELDS
     bool surface_show_values;
     zend_string *surface_value_format;
+    fastchart_grid grid;
     zend_object std;
 } fastchart_surface_obj;
 
@@ -306,12 +415,16 @@ typedef struct {
     bool gantt_has_range;
     zend_long gantt_range_start;
     zend_long gantt_range_end;
+    fastchart_gantt_task *tasks;       /* owned */
+    int task_count;
     zend_object std;
 } fastchart_gantt_obj;
 
 typedef struct {
     FASTCHART_BASE_FIELDS
     zend_long box_width_pct;
+    fastchart_boxplot_entry *entries;  /* owned */
+    int entry_count;
     zend_object std;
 } fastchart_boxplot_obj;
 
@@ -319,12 +432,17 @@ typedef struct {
     FASTCHART_BASE_FIELDS
     double polar_max_radius;
     bool polar_filled;
+    fastchart_polar_series series[FASTCHART_MAX_POLAR_SERIES];
+    int n_series;
     zend_object std;
 } fastchart_polar_obj;
 
 typedef struct {
     FASTCHART_BASE_FIELDS
     bool contour_filled;
+    fastchart_grid grid;
+    double *levels;                    /* owned, level_count entries */
+    int level_count;
     zend_object std;
 } fastchart_contour_obj;
 
