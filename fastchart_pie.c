@@ -310,6 +310,8 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
             if (sweep < 4.0) { start_deg += sweep; continue; }
 
             double mid_rad = (start_deg + sweep / 2.0) * M_PI / 180.0;
+            double cos_mid = cos(mid_rad);
+            double sin_mid = sin(mid_rad);
             char buf[64];
             snprintf(buf, sizeof(buf), fmt, 100.0 * slices[i].value / total);
 
@@ -322,9 +324,9 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
                 int lx = right_side
                     ? cx + (int)((diameter / 2.0) + 14.0)
                     : cx - (int)((diameter / 2.0) + 14.0);
-                int ly = cy + (int)(outside_r * sin(mid_rad));
-                int rim_x = cx + (int)((diameter / 2.0) * cos(mid_rad));
-                int rim_y = cy + (int)((diameter / 2.0) * sin(mid_rad));
+                int ly = cy + (int)(outside_r * sin_mid);
+                int rim_x = cx + (int)((diameter / 2.0) * cos_mid);
+                int rim_y = cy + (int)((diameter / 2.0) * sin_mid);
                 gdImageLine(im, rim_x, rim_y, lx, ly, pal.axis);
                 fastchart_align align = right_side
                     ? FASTCHART_ALIGN_LEFT : FASTCHART_ALIGN_RIGHT;
@@ -333,15 +335,16 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
                                     anchor_x, ly + (int)(size * 0.35),
                                     align, buf, NULL, 0);
             } else if (self->slice_label_position == FASTCHART_LABEL_OUTSIDE) {
-                int lx = cx + (int)(outside_r * cos(mid_rad));
-                int ly = cy + (int)(outside_r * sin(mid_rad));
+                int lx = cx + (int)(outside_r * cos_mid);
+                int ly = cy + (int)(outside_r * sin_mid);
                 /* Tiny leader line from rim to label anchor. */
-                int rim_x = cx + (int)((diameter / 2.0) * cos(mid_rad));
-                int rim_y = cy + (int)((diameter / 2.0) * sin(mid_rad));
+                int rim_x = cx + (int)((diameter / 2.0) * cos_mid);
+                int rim_y = cy + (int)((diameter / 2.0) * sin_mid);
                 gdImageLine(im, rim_x, rim_y, lx, ly, pal.axis);
-                fastchart_align align = (cos(mid_rad) >= 0)
+                bool right_side = (cos_mid >= 0);
+                fastchart_align align = right_side
                     ? FASTCHART_ALIGN_LEFT : FASTCHART_ALIGN_RIGHT;
-                int anchor_x = lx + (cos(mid_rad) >= 0 ? 4 : -4);
+                int anchor_x = lx + (right_side ? 4 : -4);
                 fastchart_text_draw(im, font, size, pal.text,
                                     anchor_x, ly + (int)(size * 0.35),
                                     align, buf, NULL, 0);
@@ -350,8 +353,8 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
                  * avoid overlap. The 8-degree threshold roughly
                  * matches the GDChart default. */
                 if (sweep >= 8.0) {
-                    int lx = cx + (int)(inside_r * cos(mid_rad));
-                    int ly = cy + (int)(inside_r * sin(mid_rad));
+                    int lx = cx + (int)(inside_r * cos_mid);
+                    int ly = cy + (int)(inside_r * sin_mid);
                     fastchart_text_draw(im, font, size, pal.text,
                                         lx, ly + (int)(size * 0.35),
                                         FASTCHART_ALIGN_CENTER, buf, NULL, 0);

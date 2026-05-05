@@ -116,6 +116,18 @@ int fastchart_bubble_render_to_image(fastchart_obj *self, gdImagePtr im)
     double r_max = plot_w * 0.05;
     if (r_max < 4) r_max = 4;
 
+    /* Pre-resolve translucent fills for the palette so the per-bubble
+     * loop avoids gdImageColorAllocateAlpha on every iteration. The
+     * override-color path still allocates inline but typically hits
+     * for a small number of distinct values. */
+    int palette_alpha[FASTCHART_PALETTE_SERIES_N];
+    for (int i = 0; i < FASTCHART_PALETTE_SERIES_N; i++) {
+        int c = pal.series[i];
+        palette_alpha[i] = gdImageColorAllocateAlpha(im,
+            gdImageRed(im, c), gdImageGreen(im, c), gdImageBlue(im, c), 70);
+    }
+
+    gdImageAlphaBlending(im, 1);
     for (int i = 0; i < collected; i++) {
         double xfrac = (xrange.max - xrange.min) > 0
             ? (xs[i] - xrange.min) / (xrange.max - xrange.min) : 0.5;
@@ -125,25 +137,24 @@ int fastchart_bubble_render_to_image(fastchart_obj *self, gdImagePtr im)
         int rad = (int)(r_max * sfrac);
         if (rad < 2) rad = 2;
 
-        int color = has_color[i]
-            ? gdImageColorAllocate(im,
-                (cs[i] >> 16) & 0xFF, (cs[i] >> 8) & 0xFF, cs[i] & 0xFF)
-            : pal.series[i % FASTCHART_PALETTE_SERIES_N];
-        int r0 = gdImageRed(im, color);
-        int g0 = gdImageGreen(im, color);
-        int b0 = gdImageBlue(im, color);
-        int alpha = gdImageColorAllocateAlpha(im, r0, g0, b0, 70);
+        int color, alpha;
+        if (has_color[i]) {
+            color = gdImageColorAllocate(im,
+                (cs[i] >> 16) & 0xFF, (cs[i] >> 8) & 0xFF, cs[i] & 0xFF);
+            alpha = gdImageColorAllocateAlpha(im,
+                (cs[i] >> 16) & 0xFF, (cs[i] >> 8) & 0xFF, cs[i] & 0xFF, 70);
+        } else {
+            int idx = i % FASTCHART_PALETTE_SERIES_N;
+            color = pal.series[idx];
+            alpha = palette_alpha[idx];
+        }
 
-        gdImageAlphaBlending(im, 1);
         fastchart_shadow_filled_arc(im, self, px, py, rad * 2, 0, 360);
         gdImageFilledEllipse(im, px, py, rad * 2, rad * 2, alpha);
-        if (self->edge_color >= 0) {
-            gdImageEllipse(im, px, py, rad * 2, rad * 2, (int)self->edge_color);
-        } else {
-            gdImageEllipse(im, px, py, rad * 2, rad * 2, color);
-        }
-        gdImageAlphaBlending(im, 0);
+        int edge = self->edge_color >= 0 ? (int)self->edge_color : color;
+        gdImageEllipse(im, px, py, rad * 2, rad * 2, edge);
     }
+    gdImageAlphaBlending(im, 0);
 
     efree(xs); efree(ys); efree(ss); efree(cs); efree(has_color);
 
