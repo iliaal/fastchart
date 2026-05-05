@@ -197,9 +197,52 @@ typedef struct {
     zend_object std;
 } fastchart_scatter_obj;
 
+/* StockChart parsed-data shapes. setOhlcv() parses user rows into a
+ * fastchart_candle array, sorts by timestamp, and stores it on the
+ * stock obj. setMovingAverages / setVolumePane / setVolumeColors /
+ * addIndicatorPane similarly store typed C state instead of stuffing
+ * into the generic config zval. */
+typedef struct {
+    zend_long ts;
+    double open;
+    double high;
+    double low;
+    double close;
+    double volume;
+    int has_volume;
+} fastchart_candle;
+
+typedef struct {
+    char *name;            /* malloc'd, NUL-terminated; NULL = empty slot */
+    double *values;        /* malloc'd; non-numeric input becomes NaN */
+    int value_count;
+    bool has_color;
+    int color_rgb;
+    bool has_reference;
+    double reference;
+    bool has_min;
+    double min;
+    bool has_max;
+    double max;
+} fastchart_indicator_pane;
+
+#define FASTCHART_MAX_CANDLES         4096
+#define FASTCHART_MAX_SMA             8
+#define FASTCHART_MAX_INDICATOR_PANES 3
+
 typedef struct {
     FASTCHART_BASE_FIELDS
     zend_long candle_style;
+    fastchart_candle *candles;          /* malloc'd, owned */
+    int candle_count;
+    bool any_volume;
+    bool volume_pane;
+    int *volume_colors;                 /* malloc'd, parallel to candles up to volume_colors_count; -1 = use up/down default */
+    int volume_colors_count;
+    int sma_periods[FASTCHART_MAX_SMA];
+    int sma_count;
+    fastchart_indicator_pane indicator_panes[FASTCHART_MAX_INDICATOR_PANES];
+    int indicator_pane_count;
     zend_object std;
 } fastchart_stock_obj;
 

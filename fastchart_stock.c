@@ -26,109 +26,23 @@
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 
-/* Each candle has up to 6 components: timestamp, open, high, low,
- * close, volume. Volume is optional; missing or non-numeric drops
- * volume rendering for the bar but keeps the candle. */
-typedef struct {
-    zend_long ts;
-    double open;
-    double high;
-    double low;
-    double close;
-    double volume;
-    int    has_volume;
-} fastchart_candle;
-
-#define MAX_CANDLES 4096
-
-/* Pull a candle out of one row. Required indices: 0=ts, 1=open,
- * 2=high, 3=low, 4=close. Optional 5=volume. Returns 0 on success. */
-static int read_candle(zval *row, fastchart_candle *out)
-{
-    if (Z_TYPE_P(row) != IS_ARRAY) return -1;
-    HashTable *r = Z_ARRVAL_P(row);
-    if (zend_hash_num_elements(r) < 5) return -1;
-
-    zval *zts = zend_hash_index_find(r, 0);
-    zval *zo  = zend_hash_index_find(r, 1);
-    zval *zh  = zend_hash_index_find(r, 2);
-    zval *zl  = zend_hash_index_find(r, 3);
-    zval *zc  = zend_hash_index_find(r, 4);
-    if (!zts || !zo || !zh || !zl || !zc) return -1;
-
-    zend_long ts;
-    double o, h, l, c;
-    if (fastchart_zval_to_long(zts, &ts) != 0) return -1;
-    if (fastchart_zval_to_double(zo, &o) != 0) return -1;
-    if (fastchart_zval_to_double(zh, &h) != 0) return -1;
-    if (fastchart_zval_to_double(zl, &l) != 0) return -1;
-    if (fastchart_zval_to_double(zc, &c) != 0) return -1;
-    if (!(isfinite(o) && isfinite(h) && isfinite(l) && isfinite(c))) return -1;
-
-    out->ts = ts;
-    out->open = o;
-    out->high = h;
-    out->low = l;
-    out->close = c;
-    out->volume = 0;
-    out->has_volume = 0;
-
-    zval *zv = zend_hash_index_find(r, 5);
-    if (zv) {
-        double v;
-        if (fastchart_zval_to_double(zv, &v) == 0 && isfinite(v) && v >= 0) {
-            out->volume = v;
-            out->has_volume = 1;
-        }
-    }
-    return 0;
-}
-
 int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
 {
-    if (Z_TYPE(self->data) != IS_ARRAY ||
-        zend_hash_num_elements(Z_ARRVAL(self->data)) == 0) {
+    if (!self->candles || self->candle_count == 0) {
         zend_throw_error(NULL,
             "FastChart\\StockChart::draw() requires setOhlcv() with one or more rows");
         return -1;
     }
 
-    fastchart_candle *candles = ecalloc(MAX_CANDLES, sizeof(fastchart_candle));
-    int n = 0;
-    int any_volume = 0;
-    {
-        zval *row;
-        ZEND_HASH_FOREACH_VAL(Z_ARRVAL(self->data), row) {
-            if (n >= MAX_CANDLES) break;
-            if (read_candle(row, &candles[n]) != 0) continue;
-            if (candles[n].has_volume) any_volume = 1;
-            n++;
-        } ZEND_HASH_FOREACH_END();
-    }
-    if (n == 0) {
-        efree(candles);
-        zend_throw_error(NULL,
-            "FastChart\\StockChart::draw() found no valid OHLC rows; expected [ts, o, h, l, c] or [ts, o, h, l, c, v]");
-        return -1;
-    }
-
-    /* Sort by timestamp. Insertion sort -- caller is expected to feed
-     * already-sorted data so this is O(n) on the happy path; a worst-
-     * case unsorted feed of 4096 candles is still fast (~16M compares
-     * which run in single-digit ms on a modern CPU). */
-    for (int i = 1; i < n; i++) {
-        fastchart_candle k = candles[i];
-        int j = i - 1;
-        while (j >= 0 && candles[j].ts > k.ts) {
-            candles[j + 1] = candles[j];
-            j--;
-        }
-        candles[j + 1] = k;
-    }
+    /* setOhlcv parsed, validated, and timestamp-sorted the candles
+     * already; the renderer just reads them. */
+    fastchart_candle *candles = self->candles;
+    int n = self->candle_count;
+    bool any_volume = self->any_volume;
 
     zend_long t_min = candles[0].ts;
     zend_long t_max = candles[n - 1].ts;
-    if (t_min == t_max) t_max = t_min + 1;  /* avoid div-by-zero */
+    if (t_min == t_max) t_max = t_min + 1;
 
     double y_min = candles[0].low, y_max = candles[0].high;
     double v_max = 0;
@@ -138,44 +52,22 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
         if (candles[i].has_volume && candles[i].volume > v_max) v_max = candles[i].volume;
     }
 
-    /* Optional config: moving averages array, volume_pane bool. */
-    bool show_volume = false;
-    zval *cfg_vp = zend_hash_str_find(Z_ARRVAL(self->config),
-                                      "volume_pane", sizeof("volume_pane") - 1);
-    if (cfg_vp && Z_TYPE_P(cfg_vp) == IS_TRUE) show_volume = true;
-    if (show_volume && !any_volume) show_volume = false;
+    bool show_volume = self->volume_pane && any_volume;
 
-    int sma_periods[8];
+    /* SMA periods were validated as >= 2 in setMovingAverages(); cap
+     * each here to <= n so the inner sliding-window loop is bounded. */
+    int sma_periods[FASTCHART_MAX_SMA];
     int sma_count = 0;
-    zval *cfg_ma = zend_hash_str_find(Z_ARRVAL(self->config),
-                                      "moving_averages", sizeof("moving_averages") - 1);
-    if (cfg_ma && Z_TYPE_P(cfg_ma) == IS_ARRAY) {
-        zval *p;
-        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(cfg_ma), p) {
-            if (sma_count >= 8) break;
-            zend_long pp;
-            if (fastchart_zval_to_long(p, &pp) == 0 && pp >= 2 && pp <= n) {
-                sma_periods[sma_count++] = (int)pp;
-            }
-        } ZEND_HASH_FOREACH_END();
+    for (int i = 0; i < self->sma_count; i++) {
+        if (self->sma_periods[i] <= n) {
+            sma_periods[sma_count++] = self->sma_periods[i];
+        }
     }
 
-    /* Layout: full plot rect, then split into price + volume panes
-     * if volume is enabled. Volume gets the bottom 22% of the plot. */
     fastchart_rect plot;
     fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, &plot);
 
-    /* Pane stacking: optional volume + up to 3 indicator panes
-     * stack below the price pane. Each sub-pane gets a fixed share
-     * of the available height. */
-    zval *cfg_panes = zend_hash_str_find(Z_ARRVAL(self->config),
-                                         "indicator_panes",
-                                         sizeof("indicator_panes") - 1);
-    int n_indicator_panes = 0;
-    if (cfg_panes && Z_TYPE_P(cfg_panes) == IS_ARRAY) {
-        n_indicator_panes = (int)zend_hash_num_elements(Z_ARRVAL_P(cfg_panes));
-        if (n_indicator_panes > 3) n_indicator_panes = 3;
-    }
+    int n_indicator_panes = self->indicator_pane_count;
 
     fastchart_rect price_pane = plot;
     fastchart_rect volume_pane = { 0, 0, 0, 0 };
@@ -527,43 +419,33 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
 
     /* Volume pane: filled bars from baseline up. Default color
      * tracks candle direction (up-day green, down-day red) but the
-     * setVolumeColors() override (config[volume_colors], parallel
-     * to candles) wins when present. */
+     * setVolumeColors() override wins when present. */
     if (show_volume && v_max > 0) {
-        zval *vol_colors_zv = zend_hash_str_find(Z_ARRVAL(self->config),
-            "volume_colors", sizeof("volume_colors") - 1);
-        HashTable *vol_colors_ht =
-            (vol_colors_zv && Z_TYPE_P(vol_colors_zv) == IS_ARRAY)
-                ? Z_ARRVAL_P(vol_colors_zv) : NULL;
-
         int baseline = volume_pane.y1;
         int vh = volume_pane.y1 - volume_pane.y0;
         int bw = candle_w;
         int half_bw = bw / 2;
         if (half_bw < 1) half_bw = 1;
 
-        /* Pre-walk vol_colors_ht once into a flat int[] of resolved
-         * gd color handles (or -1 for "use default up/down"). The
-         * draw loop then reads from that array instead of calling
-         * gdImageColorAllocate per candle. */
+        /* Resolve override RGBs into gd color handles once, parallel
+         * to candles up to the override count. setVolumeColors()
+         * already validated each entry to 0..0xFFFFFF or stored -1. */
         int *vol_colors = NULL;
-        if (vol_colors_ht) {
-            vol_colors = ecalloc((size_t)n, sizeof(int));
-            for (int i = 0; i < n; i++) vol_colors[i] = -1;
-            for (int i = 0; i < n; i++) {
-                zval *cv = zend_hash_index_find(vol_colors_ht, i);
-                if (cv && Z_TYPE_P(cv) == IS_LONG) {
-                    zend_long c = Z_LVAL_P(cv);
-                    if (c >= 0 && c <= 0xFFFFFF) {
-                        vol_colors[i] = gdImageColorAllocate(im,
-                            (int)((c >> 16) & 0xFF),
-                            (int)((c >>  8) & 0xFF),
-                            (int)( c        & 0xFF));
-                    }
+        if (self->volume_colors && self->volume_colors_count > 0) {
+            int vcn = self->volume_colors_count;
+            vol_colors = ecalloc((size_t)vcn, sizeof(int));
+            for (int i = 0; i < vcn; i++) {
+                int c = self->volume_colors[i];
+                if (c >= 0) {
+                    vol_colors[i] = gdImageColorAllocate(im,
+                        (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+                } else {
+                    vol_colors[i] = -1;
                 }
             }
         }
 
+        int vcn = self->volume_colors_count;
         for (int i = 0; i < n; i++) {
             if (!candles[i].has_volume) continue;
             int x = fastchart_x_time_to_pixel(&volume_pane,
@@ -571,7 +453,7 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
             int top = baseline - (int)((double)vh * candles[i].volume / v_max);
 
             int color = candles[i].close >= candles[i].open ? pal.up : pal.down;
-            if (vol_colors && vol_colors[i] >= 0) color = vol_colors[i];
+            if (vol_colors && i < vcn && vol_colors[i] >= 0) color = vol_colors[i];
 
             gdImageFilledRectangle(im,
                 x - half_bw, top, x + half_bw, baseline - 1, color);
@@ -587,68 +469,37 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
         double size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
         const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
 
-        int slot = 0;
-        zval *pane_zv;
-        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(cfg_panes), pane_zv) {
-            if (slot >= n_indicator_panes) break;
-            if (Z_TYPE_P(pane_zv) != IS_ARRAY) { slot++; continue; }
+        for (int slot = 0; slot < n_indicator_panes; slot++) {
+            fastchart_indicator_pane *pane = &self->indicator_panes[slot];
+            if (!pane->values || pane->value_count == 0) continue;
 
-            zval *values_zv = zend_hash_str_find(Z_ARRVAL_P(pane_zv),
-                                                 "values", sizeof("values") - 1);
-            zval *name_zv = zend_hash_str_find(Z_ARRVAL_P(pane_zv),
-                                               "name", sizeof("name") - 1);
-            if (!values_zv || Z_TYPE_P(values_zv) != IS_ARRAY) { slot++; continue; }
-
-            /* Read the first n values out of the array (parallel to
-             * candles). Missing or non-numeric entries become NaN
-             * so the line skips that segment. */
-            double *vals = ecalloc((size_t)n, sizeof(double));
+            /* Compute the data-driven y-range; opts.min / opts.max
+             * (if set at addIndicatorPane time) override afterwards. */
             int valid = 0;
             double pmin = 0, pmax = 0;
-            HashTable *vht = Z_ARRVAL_P(values_zv);
-            for (int i = 0; i < n; i++) {
-                zval *vv = zend_hash_index_find(vht, i);
-                double d;
-                if (vv && fastchart_zval_to_double(vv, &d) == 0 && isfinite(d)) {
-                    vals[i] = d;
-                    if (valid == 0) { pmin = pmax = d; valid = 1; }
-                    else { if (d < pmin) pmin = d; if (d > pmax) pmax = d; }
-                } else {
-                    vals[i] = NAN;
-                }
+            int upto = pane->value_count < n ? pane->value_count : n;
+            for (int i = 0; i < upto; i++) {
+                double d = pane->values[i];
+                if (isnan(d)) continue;
+                if (!valid) { pmin = pmax = d; valid = 1; }
+                else { if (d < pmin) pmin = d; if (d > pmax) pmax = d; }
             }
-            if (!valid) { efree(vals); slot++; continue; }
-
-            /* Apply opts.min / opts.max clamps. fastchart_zval_to_double
-             * accepts both IS_LONG and IS_DOUBLE (and numeric strings)
-             * so 'min' => 0 works the way a PHP user expects. */
-            zval *opt;
-            double dv;
-            opt = zend_hash_str_find(Z_ARRVAL_P(pane_zv), "min", 3);
-            if (opt && fastchart_zval_to_double(opt, &dv) == 0 && isfinite(dv)) pmin = dv;
-            opt = zend_hash_str_find(Z_ARRVAL_P(pane_zv), "max", 3);
-            if (opt && fastchart_zval_to_double(opt, &dv) == 0 && isfinite(dv)) pmax = dv;
+            if (!valid) continue;
+            if (pane->has_min) pmin = pane->min;
+            if (pane->has_max) pmax = pane->max;
 
             fastchart_value_range pr;
             fastchart_value_range_compute(pmin, pmax, 4, &pr);
 
-            int color;
-            opt = zend_hash_str_find(Z_ARRVAL_P(pane_zv), "color", 5);
-            if (opt && Z_TYPE_P(opt) == IS_LONG) {
-                zend_long c = Z_LVAL_P(opt);
-                color = gdImageColorAllocate(im,
-                    (int)((c >> 16) & 0xFF),
-                    (int)((c >>  8) & 0xFF),
-                    (int)( c        & 0xFF));
-            } else {
-                color = pal.series[(slot + 4) % FASTCHART_PALETTE_SERIES_N];
-            }
+            int color = pane->has_color
+                ? gdImageColorAllocate(im,
+                    (pane->color_rgb >> 16) & 0xFF,
+                    (pane->color_rgb >>  8) & 0xFF,
+                    pane->color_rgb & 0xFF)
+                : pal.series[(slot + 4) % FASTCHART_PALETTE_SERIES_N];
 
-            /* Reference line, if configured. */
-            opt = zend_hash_str_find(Z_ARRVAL_P(pane_zv), "reference", 9);
-            double ref_v;
-            if (opt && fastchart_zval_to_double(opt, &ref_v) == 0 && isfinite(ref_v)) {
-                int ry = fastchart_y_to_pixel(ref_v, &pr, &indicator_panes[slot]);
+            if (pane->has_reference) {
+                int ry = fastchart_y_to_pixel(pane->reference, &pr, &indicator_panes[slot]);
                 if (ry >= indicator_panes[slot].y0 && ry <= indicator_panes[slot].y1) {
                     static int ref_style[8];
                     for (int k = 0; k < 4; k++) ref_style[k] = pal.grid;
@@ -659,16 +510,15 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
                 }
             }
 
-            /* Polyline through the values that map to actual times. */
             gdImageSetThickness(im, 2);
             gdImageSetAntiAliased(im, color);
             int prev_x = 0, prev_y = 0;
             int has_prev = 0;
-            for (int i = 0; i < n; i++) {
-                if (isnan(vals[i])) { has_prev = 0; continue; }
+            for (int i = 0; i < upto; i++) {
+                if (isnan(pane->values[i])) { has_prev = 0; continue; }
                 int x = fastchart_x_time_to_pixel(&indicator_panes[slot],
                                                   candles[i].ts, t_min, t_max);
-                int y = fastchart_y_to_pixel(vals[i], &pr, &indicator_panes[slot]);
+                int y = fastchart_y_to_pixel(pane->values[i], &pr, &indicator_panes[slot]);
                 if (has_prev) {
                     gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
                 }
@@ -678,17 +528,13 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
             }
             gdImageSetThickness(im, 1);
 
-            /* Pane name top-left of the pane. */
-            if (font && name_zv && Z_TYPE_P(name_zv) == IS_STRING) {
+            if (font && pane->name) {
                 fastchart_text_draw(im, font, size * 0.9, color,
                     indicator_panes[slot].x0 + 6,
                     indicator_panes[slot].y0 + (int)(size * 1.1),
-                    FASTCHART_ALIGN_LEFT, Z_STRVAL_P(name_zv), NULL, 0);
+                    FASTCHART_ALIGN_LEFT, pane->name, NULL, 0);
             }
-
-            efree(vals);
-            slot++;
-        } ZEND_HASH_FOREACH_END();
+        }
     }
 
     /* Combo overlays draw onto the price pane using the price y
@@ -724,7 +570,6 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
     }
 
     fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
-    efree(candles);
     return 0;
 }
 

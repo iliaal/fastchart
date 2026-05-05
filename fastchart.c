@@ -27,6 +27,7 @@
 #include <sys/stat.h>
 
 #include "php_fastchart.h"
+#include "fastchart_axis.h"
 #include "fastchart_arginfo.h"
 
 zend_class_entry *fastchart_chart_ce;
@@ -239,9 +240,78 @@ static void fastchart_scatter_init_extras(fastchart_scatter_obj *o)
 static void fastchart_scatter_release_extras(fastchart_scatter_obj *o) { (void)o; }
 static void fastchart_scatter_addref_extras(fastchart_scatter_obj *o)  { (void)o; }
 
-static void fastchart_stock_init_extras(fastchart_stock_obj *o)        { o->candle_style = FASTCHART_STYLE_CANDLE; }
-static void fastchart_stock_release_extras(fastchart_stock_obj *o)     { (void)o; }
-static void fastchart_stock_addref_extras(fastchart_stock_obj *o)      { (void)o; }
+static void fastchart_stock_init_extras(fastchart_stock_obj *o)
+{
+    o->candle_style = FASTCHART_STYLE_CANDLE;
+    o->candles = NULL;
+    o->candle_count = 0;
+    o->any_volume = false;
+    o->volume_pane = false;
+    o->volume_colors = NULL;
+    o->volume_colors_count = 0;
+    o->sma_count = 0;
+    o->indicator_pane_count = 0;
+    for (int i = 0; i < FASTCHART_MAX_INDICATOR_PANES; i++) {
+        o->indicator_panes[i].name = NULL;
+        o->indicator_panes[i].values = NULL;
+        o->indicator_panes[i].value_count = 0;
+    }
+}
+static void fastchart_stock_release_extras(fastchart_stock_obj *o)
+{
+    if (o->candles)        { efree(o->candles);        o->candles = NULL; }
+    if (o->volume_colors)  { efree(o->volume_colors);  o->volume_colors = NULL; }
+    for (int i = 0; i < o->indicator_pane_count; i++) {
+        if (o->indicator_panes[i].name)   efree(o->indicator_panes[i].name);
+        if (o->indicator_panes[i].values) efree(o->indicator_panes[i].values);
+        o->indicator_panes[i].name = NULL;
+        o->indicator_panes[i].values = NULL;
+    }
+    o->candle_count = 0;
+    o->volume_colors_count = 0;
+    o->indicator_pane_count = 0;
+    o->sma_count = 0;
+}
+/* Clone deep-copies the malloc'd candle / volume_color / indicator-
+ * pane storage. After fastchart_DEFINE_LIFECYCLE's memcpy of the POD
+ * region, dst points at src's allocations; this function replaces
+ * those with fresh copies so source and clone don't alias. */
+static void fastchart_stock_addref_extras(fastchart_stock_obj *o)
+{
+    if (o->candles && o->candle_count > 0) {
+        size_t bytes = (size_t)o->candle_count * sizeof(fastchart_candle);
+        fastchart_candle *copy = emalloc(bytes);
+        memcpy(copy, o->candles, bytes);
+        o->candles = copy;
+    } else {
+        o->candles = NULL;
+    }
+    if (o->volume_colors && o->volume_colors_count > 0) {
+        size_t bytes = (size_t)o->volume_colors_count * sizeof(int);
+        int *copy = emalloc(bytes);
+        memcpy(copy, o->volume_colors, bytes);
+        o->volume_colors = copy;
+    } else {
+        o->volume_colors = NULL;
+    }
+    for (int i = 0; i < o->indicator_pane_count; i++) {
+        fastchart_indicator_pane *p = &o->indicator_panes[i];
+        if (p->name) {
+            size_t name_len = strlen(p->name);
+            char *copy = emalloc(name_len + 1);
+            memcpy(copy, p->name, name_len + 1);
+            p->name = copy;
+        }
+        if (p->values && p->value_count > 0) {
+            size_t bytes = (size_t)p->value_count * sizeof(double);
+            double *copy = emalloc(bytes);
+            memcpy(copy, p->values, bytes);
+            p->values = copy;
+        } else {
+            p->values = NULL;
+        }
+    }
+}
 
 static void fastchart_radar_init_extras(fastchart_radar_obj *o)
 {
@@ -1855,6 +1925,99 @@ ZEND_METHOD(FastChart_PieChart, setOtherThreshold)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+/* Parse one OHLCV row into out. Required indices 0=ts,1=o,2=h,3=l,4=c
+ * with optional 5=v. Returns 0 on success, -1 if the row is too short
+ * or any required cell is non-numeric / non-finite. */
+static int fastchart_parse_candle(zval *row, fastchart_candle *out)
+{
+    if (Z_TYPE_P(row) != IS_ARRAY) return -1;
+    HashTable *r = Z_ARRVAL_P(row);
+    if (zend_hash_num_elements(r) < 5) return -1;
+    zval *zts = zend_hash_index_find(r, 0);
+    zval *zo  = zend_hash_index_find(r, 1);
+    zval *zh  = zend_hash_index_find(r, 2);
+    zval *zl  = zend_hash_index_find(r, 3);
+    zval *zc  = zend_hash_index_find(r, 4);
+    if (!zts || !zo || !zh || !zl || !zc) return -1;
+    zend_long ts;
+    double o, h, l, c;
+    if (fastchart_zval_to_long(zts, &ts) != 0) return -1;
+    if (fastchart_zval_to_double(zo, &o) != 0) return -1;
+    if (fastchart_zval_to_double(zh, &h) != 0) return -1;
+    if (fastchart_zval_to_double(zl, &l) != 0) return -1;
+    if (fastchart_zval_to_double(zc, &c) != 0) return -1;
+    if (!(isfinite(o) && isfinite(h) && isfinite(l) && isfinite(c))) return -1;
+    out->ts = ts; out->open = o; out->high = h; out->low = l; out->close = c;
+    out->volume = 0; out->has_volume = 0;
+    zval *zv = zend_hash_index_find(r, 5);
+    if (zv) {
+        double v;
+        if (fastchart_zval_to_double(zv, &v) == 0 && isfinite(v) && v >= 0) {
+            out->volume = v; out->has_volume = 1;
+        }
+    }
+    return 0;
+}
+
+ZEND_METHOD(FastChart_StockChart, setOhlcv)
+{
+    zval *rows;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(rows)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(rows);
+    int n_input = (int)zend_hash_num_elements(ht);
+    if (n_input == 0) {
+        zend_value_error("FastChart\\StockChart::setOhlcv() requires one or more OHLC rows");
+        RETURN_THROWS();
+    }
+    if (n_input > FASTCHART_MAX_CANDLES) n_input = FASTCHART_MAX_CANDLES;
+
+    fastchart_candle *parsed = emalloc((size_t)n_input * sizeof(fastchart_candle));
+    int n = 0;
+    bool any_volume = false;
+    {
+        zval *row;
+        ZEND_HASH_FOREACH_VAL(ht, row) {
+            if (n >= n_input) break;
+            if (fastchart_parse_candle(row, &parsed[n]) != 0) continue;
+            if (parsed[n].has_volume) any_volume = true;
+            n++;
+        } ZEND_HASH_FOREACH_END();
+    }
+    if (n == 0) {
+        efree(parsed);
+        zend_value_error("FastChart\\StockChart::setOhlcv() found no valid OHLC rows; expected [ts, o, h, l, c] or [ts, o, h, l, c, v]");
+        RETURN_THROWS();
+    }
+
+    /* Insertion sort by timestamp. Caller is expected to feed already-
+     * sorted data so the loop runs O(n) on the happy path. */
+    for (int i = 1; i < n; i++) {
+        fastchart_candle k = parsed[i];
+        int j = i - 1;
+        while (j >= 0 && parsed[j].ts > k.ts) { parsed[j+1] = parsed[j]; j--; }
+        parsed[j+1] = k;
+    }
+
+    /* Right-size to n (avoids over-allocation when input had non-numeric
+     * rows that got skipped). */
+    if (n < n_input) {
+        fastchart_candle *trimmed = emalloc((size_t)n * sizeof(fastchart_candle));
+        memcpy(trimmed, parsed, (size_t)n * sizeof(fastchart_candle));
+        efree(parsed);
+        parsed = trimmed;
+    }
+
+    if (self->candles) efree(self->candles);
+    self->candles = parsed;
+    self->candle_count = n;
+    self->any_volume = any_volume;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 ZEND_METHOD(FastChart_StockChart, setVolumeColors)
 {
     zval *colors;
@@ -1862,10 +2025,25 @@ ZEND_METHOD(FastChart_StockChart, setVolumeColors)
         Z_PARAM_ARRAY(colors)
     ZEND_PARSE_PARAMETERS_END();
 
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval colors_copy;
-    ZVAL_COPY(&colors_copy, colors);
-    add_assoc_zval(&self->config, "volume_colors", &colors_copy);
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(colors);
+    int n = (int)zend_hash_num_elements(ht);
+    if (n == 0) {
+        if (self->volume_colors) efree(self->volume_colors);
+        self->volume_colors = NULL;
+        self->volume_colors_count = 0;
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
+    }
+    int *parsed = emalloc((size_t)n * sizeof(int));
+    for (int i = 0; i < n; i++) {
+        zval *cv = zend_hash_index_find(ht, i);
+        zend_long c = -1;
+        if (cv && Z_TYPE_P(cv) == IS_LONG) c = Z_LVAL_P(cv);
+        parsed[i] = (c >= 0 && c <= 0xFFFFFF) ? (int)c : -1;
+    }
+    if (self->volume_colors) efree(self->volume_colors);
+    self->volume_colors = parsed;
+    self->volume_colors_count = n;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -2330,7 +2508,6 @@ FASTCHART_SETTER_ARRAY(FastChart_LineChart,    setSeries, data)
 FASTCHART_SETTER_ARRAY(FastChart_BarChart,     setSeries, data)
 FASTCHART_SETTER_ARRAY(FastChart_PieChart,     setSlices, data)
 FASTCHART_SETTER_ARRAY(FastChart_ScatterChart, setPoints, data)
-FASTCHART_SETTER_ARRAY(FastChart_StockChart,   setOhlcv,  data)
 FASTCHART_SETTER_ARRAY(FastChart_RadarChart,   setSeries, data)
 FASTCHART_SETTER_ARRAY(FastChart_BubbleChart,  setPoints, data)
 FASTCHART_SETTER_ARRAY(FastChart_SurfaceChart, setGrid,   data)
@@ -2378,32 +2555,25 @@ ZEND_METHOD(FastChart_PieChart, setDonutHoleRatio)
 ZEND_METHOD(FastChart_StockChart, setMovingAverages)
 {
     zval *periods;
-
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(periods)
     ZEND_PARSE_PARAMETERS_END();
 
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval periods_copy;
-    ZVAL_COPY(&periods_copy, periods);
-    add_assoc_zval(&self->config, "moving_averages", &periods_copy);
-
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(periods);
+    self->sma_count = 0;
+    zval *p;
+    ZEND_HASH_FOREACH_VAL(ht, p) {
+        if (self->sma_count >= FASTCHART_MAX_SMA) break;
+        zend_long pp;
+        if (fastchart_zval_to_long(p, &pp) == 0 && pp >= 2 && pp <= INT_MAX) {
+            self->sma_periods[self->sma_count++] = (int)pp;
+        }
+    } ZEND_HASH_FOREACH_END();
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-ZEND_METHOD(FastChart_StockChart, setVolumePane)
-{
-    bool enabled;
-
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_BOOL(enabled)
-    ZEND_PARSE_PARAMETERS_END();
-
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    add_assoc_bool(&self->config, "volume_pane", enabled);
-
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
+FASTCHART_BOOL_SETTER_AS(FastChart_StockChart, setVolumePane, Z_FASTCHART_STOCK_OBJ_P, volume_pane)
 
 ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
 {
@@ -2427,33 +2597,41 @@ ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
         RETURN_THROWS();
     }
 
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-
-    /* Indicator panes live as a list under config[indicator_panes].
-     * Each entry: {name, values: [...], color?, reference?, min?, max?}.
-     * Cap at 3 panes so the price+volume+indicator stack stays
-     * legible on a typical 600-700px tall canvas. */
-    zval *list_zv = zend_hash_str_find(Z_ARRVAL(self->config),
-                                       "indicator_panes",
-                                       sizeof("indicator_panes") - 1);
-    if (!list_zv || Z_TYPE_P(list_zv) != IS_ARRAY) {
-        zval list;
-        array_init(&list);
-        list_zv = zend_hash_str_update(Z_ARRVAL(self->config),
-            "indicator_panes", sizeof("indicator_panes") - 1, &list);
-    }
-    if (zend_hash_num_elements(Z_ARRVAL_P(list_zv)) >= 3) {
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    if (self->indicator_pane_count >= FASTCHART_MAX_INDICATOR_PANES) {
         zend_value_error("FastChart\\StockChart::addIndicatorPane() supports at most 3 panes");
         RETURN_THROWS();
     }
 
-    zval entry;
-    array_init(&entry);
-    add_assoc_str(&entry, "name", zend_string_copy(name));
+    /* Parse values array into a typed double[]. Non-numeric / non-
+     * finite cells become NaN so the renderer can break the line at
+     * those gaps. */
+    HashTable *vht = Z_ARRVAL_P(values);
+    int vn = (int)zend_hash_num_elements(vht);
+    double *parsed_values = vn > 0 ? emalloc((size_t)vn * sizeof(double)) : NULL;
+    int idx = 0;
+    zval *vv;
+    ZEND_HASH_FOREACH_VAL(vht, vv) {
+        if (idx >= vn) break;
+        double d;
+        if (fastchart_zval_to_double(vv, &d) == 0 && isfinite(d)) {
+            parsed_values[idx] = d;
+        } else {
+            parsed_values[idx] = NAN;
+        }
+        idx++;
+    } ZEND_HASH_FOREACH_END();
 
-    zval values_copy;
-    ZVAL_COPY(&values_copy, values);
-    add_assoc_zval(&entry, "values", &values_copy);
+    fastchart_indicator_pane *p = &self->indicator_panes[self->indicator_pane_count];
+    size_t name_len = ZSTR_LEN(name);
+    p->name = emalloc(name_len + 1);
+    memcpy(p->name, ZSTR_VAL(name), name_len + 1);
+    p->values = parsed_values;
+    p->value_count = idx;
+    p->has_color = false;     p->color_rgb = 0;
+    p->has_reference = false; p->reference = 0.0;
+    p->has_min = false;       p->min = 0.0;
+    p->has_max = false;       p->max = 0.0;
 
     if (opts) {
         zval *opt;
@@ -2461,36 +2639,26 @@ ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
         if (opt && Z_TYPE_P(opt) == IS_LONG) {
             zend_long c = Z_LVAL_P(opt);
             if (c >= 0 && c <= 0xFFFFFF) {
-                add_assoc_long(&entry, "color", c);
+                p->has_color = true;
+                p->color_rgb = (int)c;
             }
         }
+        double d;
         opt = zend_hash_str_find(opts, "reference", sizeof("reference") - 1);
-        if (opt) {
-            double d;
-            if (Z_TYPE_P(opt) == IS_DOUBLE) d = Z_DVAL_P(opt);
-            else if (Z_TYPE_P(opt) == IS_LONG) d = (double)Z_LVAL_P(opt);
-            else d = NAN;
-            if (!isnan(d)) add_assoc_double(&entry, "reference", d);
+        if (opt && fastchart_zval_to_double(opt, &d) == 0 && isfinite(d)) {
+            p->has_reference = true; p->reference = d;
         }
         opt = zend_hash_str_find(opts, "min", sizeof("min") - 1);
-        if (opt) {
-            double d;
-            if (Z_TYPE_P(opt) == IS_DOUBLE) d = Z_DVAL_P(opt);
-            else if (Z_TYPE_P(opt) == IS_LONG) d = (double)Z_LVAL_P(opt);
-            else d = NAN;
-            if (!isnan(d)) add_assoc_double(&entry, "min", d);
+        if (opt && fastchart_zval_to_double(opt, &d) == 0 && isfinite(d)) {
+            p->has_min = true; p->min = d;
         }
         opt = zend_hash_str_find(opts, "max", sizeof("max") - 1);
-        if (opt) {
-            double d;
-            if (Z_TYPE_P(opt) == IS_DOUBLE) d = Z_DVAL_P(opt);
-            else if (Z_TYPE_P(opt) == IS_LONG) d = (double)Z_LVAL_P(opt);
-            else d = NAN;
-            if (!isnan(d)) add_assoc_double(&entry, "max", d);
+        if (opt && fastchart_zval_to_double(opt, &d) == 0 && isfinite(d)) {
+            p->has_max = true; p->max = d;
         }
     }
 
-    add_next_index_zval(list_zv, &entry);
+    self->indicator_pane_count++;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
