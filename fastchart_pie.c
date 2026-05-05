@@ -258,9 +258,10 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
         gdImageFilledArc(im, slice_cx, slice_cy, diameter, diameter,
                          (int)floor(start_deg), (int)ceil(start_deg + sweep),
                          color, gdPie);
+        int edge = self->edge_color >= 0 ? (int)self->edge_color : pal.border;
         gdImageFilledArc(im, slice_cx, slice_cy, diameter, diameter,
                          (int)floor(start_deg), (int)ceil(start_deg + sweep),
-                         pal.border, gdNoFill | gdEdged);
+                         edge, gdNoFill | gdEdged);
         start_deg += sweep;
     }
 
@@ -298,7 +299,26 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
             char buf[64];
             snprintf(buf, sizeof(buf), fmt, 100.0 * slices[i].value / total);
 
-            if (self->slice_label_position == FASTCHART_LABEL_OUTSIDE) {
+            if (self->slice_label_position == FASTCHART_LABEL_LEFT ||
+                self->slice_label_position == FASTCHART_LABEL_RIGHT) {
+                /* Force all labels to one side with leader lines from
+                 * the slice rim. Useful when many small slices crowd
+                 * a particular sector and OUTSIDE-mode labels overlap. */
+                bool right_side = (self->slice_label_position == FASTCHART_LABEL_RIGHT);
+                int lx = right_side
+                    ? cx + (int)((diameter / 2.0) + 14.0)
+                    : cx - (int)((diameter / 2.0) + 14.0);
+                int ly = cy + (int)(outside_r * sin(mid_rad));
+                int rim_x = cx + (int)((diameter / 2.0) * cos(mid_rad));
+                int rim_y = cy + (int)((diameter / 2.0) * sin(mid_rad));
+                gdImageLine(im, rim_x, rim_y, lx, ly, pal.axis);
+                fastchart_align align = right_side
+                    ? FASTCHART_ALIGN_LEFT : FASTCHART_ALIGN_RIGHT;
+                int anchor_x = lx + (right_side ? 4 : -4);
+                fastchart_text_draw(im, font, size, pal.text,
+                                    anchor_x, ly + (int)(size * 0.35),
+                                    align, buf, NULL, 0);
+            } else if (self->slice_label_position == FASTCHART_LABEL_OUTSIDE) {
                 int lx = cx + (int)(outside_r * cos(mid_rad));
                 int ly = cy + (int)(outside_r * sin(mid_rad));
                 /* Tiny leader line from rim to label anchor. */
@@ -327,6 +347,7 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
     }
 
+    fastchart_draw_text_annotations(im, self, &pal);
     return 0;
 }
 

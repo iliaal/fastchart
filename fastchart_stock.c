@@ -546,6 +546,7 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
         efree(legend_label_storage);
     }
 
+    fastchart_draw_text_annotations(im, self, &pal);
     efree(candles);
     return 0;
 }

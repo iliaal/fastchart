@@ -351,6 +351,8 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
                               legend_count, legend_colors, legend_labels);
     }
 
+    fastchart_draw_text_annotations(im, self, &pal);
+
     return 0;
 }
 

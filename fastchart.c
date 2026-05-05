@@ -127,6 +127,33 @@ static zend_object *fastchart_create_object(zend_class_entry *ce)
 
     intern->border_sides = FASTCHART_BORDER_ALL;
 
+    intern->x_axis_visible = true;
+    intern->y_axis_visible = true;
+    intern->y_axis_label_format = NULL;
+    intern->x_axis_label_format = NULL;
+    intern->tick_mode = FASTCHART_TICK_BOTH;
+    intern->bar_width_pct = 0;
+    intern->edge_color = -1;
+    intern->zero_shelf = false;
+    intern->x_label_stride = 1;
+    intern->y_axis_title2 = NULL;
+    intern->thumbnail_mode = false;
+    intern->stack_mode = FASTCHART_STACK_SUM;
+    intern->bar_floating = false;
+    intern->title_color = -1;
+    intern->axis_label_color = -1;
+    intern->axis_title_color = -1;
+    intern->x_axis_font_path = NULL;
+    intern->y_axis_font_path = NULL;
+    intern->x_axis_title_font_path = NULL;
+    intern->y_axis_title_font_path = NULL;
+    intern->annotation_font_path = NULL;
+    intern->x_axis_font_size = 0.0;
+    intern->y_axis_font_size = 0.0;
+    intern->x_axis_title_font_size = 0.0;
+    intern->y_axis_title_font_size = 0.0;
+    intern->annotation_font_size = 0.0;
+
     if (fastchart_default_font_path) {
         intern->font_path = zend_string_copy(fastchart_default_font_path);
     } else {
@@ -155,6 +182,14 @@ static void fastchart_free_object(zend_object *object)
     if (intern->value_format)       zend_string_release(intern->value_format);
     if (intern->pie_other_label)    zend_string_release(intern->pie_other_label);
     if (intern->bg_image_path)      zend_string_release(intern->bg_image_path);
+    if (intern->y_axis_label_format) zend_string_release(intern->y_axis_label_format);
+    if (intern->x_axis_label_format) zend_string_release(intern->x_axis_label_format);
+    if (intern->y_axis_title2)      zend_string_release(intern->y_axis_title2);
+    if (intern->x_axis_font_path)   zend_string_release(intern->x_axis_font_path);
+    if (intern->y_axis_font_path)   zend_string_release(intern->y_axis_font_path);
+    if (intern->x_axis_title_font_path) zend_string_release(intern->x_axis_title_font_path);
+    if (intern->y_axis_title_font_path) zend_string_release(intern->y_axis_title_font_path);
+    if (intern->annotation_font_path) zend_string_release(intern->annotation_font_path);
     zval_ptr_dtor(&intern->data);
     zval_ptr_dtor(&intern->config);
 
@@ -799,6 +834,261 @@ ZEND_METHOD(FastChart_Chart, setBorderSides)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+/* ----------------- axis visibility -------------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setXAxisVisible)
+{
+    bool v;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(v)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->x_axis_visible = v;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, setYAxisVisible)
+{
+    bool v;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(v)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->y_axis_visible = v;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- axis label format ----------------------------- */
+
+#define FASTCHART_LABEL_FORMAT_SETTER(name_, field_) \
+    ZEND_METHOD(FastChart_Chart, name_) \
+    { \
+        zend_string *fmt; \
+        ZEND_PARSE_PARAMETERS_START(1, 1) \
+            Z_PARAM_STR(fmt) \
+        ZEND_PARSE_PARAMETERS_END(); \
+        if (ZSTR_LEN(fmt) > 0 && memchr(ZSTR_VAL(fmt), 0, ZSTR_LEN(fmt))) { \
+            zend_value_error("FastChart\\Chart::" #name_ "() format contains an embedded NUL"); \
+            RETURN_THROWS(); \
+        } \
+        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
+        if (self->field_) zend_string_release(self->field_); \
+        self->field_ = ZSTR_LEN(fmt) == 0 ? NULL : zend_string_copy(fmt); \
+        RETURN_ZVAL(ZEND_THIS, 1, 0); \
+    }
+
+FASTCHART_LABEL_FORMAT_SETTER(setYAxisLabelFormat, y_axis_label_format)
+FASTCHART_LABEL_FORMAT_SETTER(setXAxisLabelFormat, x_axis_label_format)
+
+/* ----------------- tick mode ------------------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setTickMode)
+{
+    zend_long m;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(m)
+    ZEND_PARSE_PARAMETERS_END();
+    if (m < 0 || m > FASTCHART_TICK_BOTH) {
+        zend_value_error("FastChart\\Chart::setTickMode() expects TICK_NONE | TICK_LABELS | TICK_POINTS | TICK_BOTH");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->tick_mode = m;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- bar width ------------------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setBarWidth)
+{
+    zend_long pct;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(pct)
+    ZEND_PARSE_PARAMETERS_END();
+    if (pct < 1 || pct > 100) {
+        zend_value_error("FastChart\\Chart::setBarWidth() expects a percent in [1, 100]");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->bar_width_pct = pct;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- edge color ------------------------------------ */
+
+ZEND_METHOD(FastChart_Chart, setEdgeColor)
+{
+    zend_long rgb;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(rgb)
+    ZEND_PARSE_PARAMETERS_END();
+    if (rgb < -1 || rgb > 0xFFFFFF) {
+        zend_value_error("FastChart\\Chart::setEdgeColor() expects -1 or 0..0xFFFFFF");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->edge_color = rgb;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- zero shelf ------------------------------------ */
+
+ZEND_METHOD(FastChart_Chart, setZeroShelf)
+{
+    bool en;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(en)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->zero_shelf = en;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- x-label stride -------------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setXLabelStride)
+{
+    zend_long n;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(n)
+    ZEND_PARSE_PARAMETERS_END();
+    if (n < 1 || n > 1000) {
+        zend_value_error("FastChart\\Chart::setXLabelStride() expects a stride in [1, 1000]");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->x_label_stride = n;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- secondary y axis title ------------------------ */
+
+ZEND_METHOD(FastChart_Chart, setSecondaryYAxisTitle)
+{
+    zend_string *t;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(t)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (self->y_axis_title2) zend_string_release(self->y_axis_title2);
+    self->y_axis_title2 = ZSTR_LEN(t) == 0 ? NULL : zend_string_copy(t);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- thumbnail mode -------------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setThumbnailMode)
+{
+    bool en;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(en)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->thumbnail_mode = en;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- per-element text colors ----------------------- */
+
+#define FASTCHART_TEXT_COLOR_SETTER(name_, field_) \
+    ZEND_METHOD(FastChart_Chart, name_) \
+    { \
+        zend_long rgb; \
+        ZEND_PARSE_PARAMETERS_START(1, 1) \
+            Z_PARAM_LONG(rgb) \
+        ZEND_PARSE_PARAMETERS_END(); \
+        if (rgb < -1 || rgb > 0xFFFFFF) { \
+            zend_value_error("FastChart\\Chart::" #name_ "() expects -1 or 0..0xFFFFFF"); \
+            RETURN_THROWS(); \
+        } \
+        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
+        self->field_ = rgb; \
+        RETURN_ZVAL(ZEND_THIS, 1, 0); \
+    }
+
+FASTCHART_TEXT_COLOR_SETTER(setTitleColor,      title_color)
+FASTCHART_TEXT_COLOR_SETTER(setAxisLabelColor,  axis_label_color)
+FASTCHART_TEXT_COLOR_SETTER(setAxisTitleColor,  axis_title_color)
+
+/* ----------------- per-axis fonts -------------------------------- */
+
+FASTCHART_FONT_OVERRIDE_SETTER(setXAxisFont,      x_axis_font_path,       x_axis_font_size)
+FASTCHART_FONT_OVERRIDE_SETTER(setYAxisFont,      y_axis_font_path,       y_axis_font_size)
+FASTCHART_FONT_OVERRIDE_SETTER(setXAxisTitleFont, x_axis_title_font_path, x_axis_title_font_size)
+FASTCHART_FONT_OVERRIDE_SETTER(setYAxisTitleFont, y_axis_title_font_path, y_axis_title_font_size)
+FASTCHART_FONT_OVERRIDE_SETTER(setAnnotationFont, annotation_font_path,   annotation_font_size)
+
+/* ----------------- text annotation ------------------------------- */
+
+ZEND_METHOD(FastChart_Chart, addTextAnnotation)
+{
+    zend_string *text;
+    zend_long x, y;
+    zend_long color = -1;
+    bool color_is_null = true;
+
+    ZEND_PARSE_PARAMETERS_START(3, 4)
+        Z_PARAM_STR(text)
+        Z_PARAM_LONG(x)
+        Z_PARAM_LONG(y)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG_OR_NULL(color, color_is_null)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
+        zend_value_error("FastChart\\Chart::addTextAnnotation() color must be 0..0xFFFFFF or null");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval *list_zv = zend_hash_str_find(Z_ARRVAL(self->config),
+                                       "text_annotations", sizeof("text_annotations") - 1);
+    if (!list_zv || Z_TYPE_P(list_zv) != IS_ARRAY) {
+        zval list;
+        array_init(&list);
+        list_zv = zend_hash_str_update(Z_ARRVAL(self->config),
+            "text_annotations", sizeof("text_annotations") - 1, &list);
+    }
+
+    zval entry;
+    array_init(&entry);
+    add_assoc_str(&entry, "text", zend_string_copy(text));
+    add_assoc_long(&entry, "x", x);
+    add_assoc_long(&entry, "y", y);
+    if (!color_is_null) add_assoc_long(&entry, "color", color);
+    add_next_index_zval(list_zv, &entry);
+
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- BarChart stack mode + floating ---------------- */
+
+ZEND_METHOD(FastChart_BarChart, setStackMode)
+{
+    zend_long m;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(m)
+    ZEND_PARSE_PARAMETERS_END();
+    if (m < 0 || m > FASTCHART_STACK_LAYER) {
+        zend_value_error("FastChart\\BarChart::setStackMode() expects STACK_SUM | STACK_BESIDE | STACK_LAYER");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->stack_mode = m;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_BarChart, setFloating)
+{
+    bool en;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(en)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->bar_floating = en;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 /* ----------------- combo overlay --------------------------------- */
 
 ZEND_METHOD(FastChart_Chart, addOverlaySeries)
@@ -1006,7 +1296,7 @@ ZEND_METHOD(FastChart_PieChart, setSliceLabelPosition)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(pos)
     ZEND_PARSE_PARAMETERS_END();
-    if (pos < FASTCHART_LABEL_NONE || pos > FASTCHART_LABEL_OUTSIDE) {
+    if (pos < FASTCHART_LABEL_NONE || pos > FASTCHART_LABEL_RIGHT) {
         zend_value_error("FastChart\\PieChart::setSliceLabelPosition() expects a LABEL_* class constant");
         RETURN_THROWS();
     }

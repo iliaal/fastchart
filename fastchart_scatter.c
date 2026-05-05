@@ -240,6 +240,7 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
     }
 
+    fastchart_draw_text_annotations(im, self, &pal);
     return 0;
 }
 

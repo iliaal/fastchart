@@ -157,6 +157,58 @@ typedef struct _fastchart_obj {
     /* Border-side bitmask (FASTCHART_BORDER_*). Default ALL. */
     zend_long border_sides;
 
+    /* Axis visibility. Both default true. */
+    bool x_axis_visible;
+    bool y_axis_visible;
+
+    /* sprintf format strings for tick labels. NULL = auto-format. */
+    zend_string *y_axis_label_format;
+    zend_string *x_axis_label_format;
+
+    /* Tick mode (FASTCHART_TICK_*). Default BOTH. */
+    zend_long tick_mode;
+
+    /* Bar fill width as percent of slot (1..100). 0 = use default. */
+    zend_long bar_width_pct;
+
+    /* Edge color for filled shapes. -1 = no outline. */
+    zend_long edge_color;
+
+    /* Render a horizontal shelf at y=0 when range crosses zero. */
+    bool zero_shelf;
+
+    /* X-axis label stride: render every Nth label. 1 = all. */
+    zend_long x_label_stride;
+
+    /* Secondary Y axis title. */
+    zend_string *y_axis_title2;
+
+    /* Thumbnail mode: shrink fonts and elide labels. */
+    bool thumbnail_mode;
+
+    /* BarChart stack mode (FASTCHART_STACK_*). Default SUM. */
+    zend_long stack_mode;
+
+    /* BarChart floating bars: each series entry is [min, max]. */
+    bool bar_floating;
+
+    /* Per-element text colors. -1 = fall through to text_color_override. */
+    zend_long title_color;
+    zend_long axis_label_color;
+    zend_long axis_title_color;
+
+    /* Per-axis font overrides. NULL path / 0 size = inherit. */
+    zend_string *x_axis_font_path;
+    zend_string *y_axis_font_path;
+    zend_string *x_axis_title_font_path;
+    zend_string *y_axis_title_font_path;
+    zend_string *annotation_font_path;
+    double x_axis_font_size;
+    double y_axis_font_size;
+    double x_axis_title_font_size;
+    double y_axis_title_font_size;
+    double annotation_font_size;
+
     zval data;
     zval config;
     zend_object std;
@@ -216,6 +268,21 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 /* Line interpolation. */
 #define FASTCHART_INTERP_LINEAR 0
 #define FASTCHART_INTERP_SMOOTH 1
+
+/* Tick mode bitmask: bit0 = labels, bit1 = points. */
+#define FASTCHART_TICK_NONE   0
+#define FASTCHART_TICK_LABELS 1
+#define FASTCHART_TICK_POINTS 2
+#define FASTCHART_TICK_BOTH   3
+
+/* BarChart stack mode. */
+#define FASTCHART_STACK_SUM    0
+#define FASTCHART_STACK_BESIDE 1
+#define FASTCHART_STACK_LAYER  2
+
+/* Pie label position extends LABEL_INSIDE/OUTSIDE/NONE. */
+#define FASTCHART_LABEL_LEFT  3
+#define FASTCHART_LABEL_RIGHT 4
 
 /* Forward-declare the only ext/gd public API we use (also declared in
  * fastchart.c at the call site). Mirrored verbatim from

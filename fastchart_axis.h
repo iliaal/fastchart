@@ -225,4 +225,10 @@ void fastchart_draw_v_annotations_time(gdImagePtr im, fastchart_obj *chart,
                                        const fastchart_palette *pal,
                                        long t_min, long t_max);
 
+/* Walk chart->config["text_annotations"] and render each free-floating
+ * label at the stored canvas pixel coordinates. Per-entry color
+ * defaults to pal->text. No-op if there are no annotations. */
+void fastchart_draw_text_annotations(gdImagePtr im, fastchart_obj *chart,
+                                     const fastchart_palette *pal);
+
 #endif /* FASTCHART_AXIS_H */

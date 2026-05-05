@@ -92,6 +92,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   layers a `'line'` or `'area'` overlay onto Line / Bar / Area /
   Stock charts (the GDChart `COMBO_*` equivalent). Options:
   `color`, `thickness`, `label`.
+- `setXAxisVisible(bool)` / `setYAxisVisible(bool)` toggle axis
+  line, ticks, and labels independently. Axis titles remain
+  controlled by `setXAxisTitle` / `setYAxisTitle`.
+- `setYAxisLabelFormat(string $sprintf)` and
+  `setXAxisLabelFormat(string)` override the auto-formatted tick
+  labels (e.g., `'$%.2f'`). Empty string reverts.
+- `setTickMode(int)` selects tick rendering: `TICK_NONE`,
+  `TICK_LABELS`, `TICK_POINTS`, `TICK_BOTH` (default).
+- `setBarWidth(int $percent)` — bar fill width as a percent of
+  slot width (1..100, default 100). Affects `BarChart` and
+  `StockChart` candle bodies.
+- `setEdgeColor(int $rgb)` draws an outline around filled shapes
+  (bars, area fills, pie slices). `-1` disables (default).
+- `setZeroShelf(bool)` paints a horizontal axis-color line at
+  `y=0` when the data range crosses zero.
+- `setXLabelStride(int $n)` renders only every Nth X-axis label
+  (1..1000). Multiplies on top of auto-density elision.
+- `setSecondaryYAxisTitle(string)` mirrors `setYAxisTitle` on the
+  right-hand secondary axis (rendered when `setSecondaryYAxis(true)`).
+- `setThumbnailMode(bool)` shrinks fonts and elides labels for
+  sparkline-size renders.
+- `setTitleColor(int)`, `setAxisLabelColor(int)`,
+  `setAxisTitleColor(int)` — per-element text color overrides
+  on top of `setTextColor` / theme. `-1` falls through.
+- `setXAxisFont`, `setYAxisFont`, `setXAxisTitleFont`,
+  `setYAxisTitleFont`, `setAnnotationFont` — per-axis-element
+  font (path + size) overrides. Inherit from `setAxisFont` /
+  `setFontPath` when null.
+- `addTextAnnotation(string $text, int $x, int $y, ?int $color = null)`
+  paints a free-floating label at canvas pixel coordinates.
+- `BarChart::setStackMode(int)` — `STACK_SUM` (default,
+  cumulative), `STACK_BESIDE` (alias for `setStacked(false)`),
+  `STACK_LAYER` (translucent bars at the same baseline).
+- `BarChart::setFloating(bool)` — switch the chart to
+  `[min, max]` data; bars draw between min and max instead of
+  from zero. Useful for Gantt-style ranges.
+- `PieChart::setSliceLabelPosition` extended with `LABEL_LEFT`
+  and `LABEL_RIGHT` — force all slice labels to one side with
+  leader lines, regardless of slice angle.
 
 - Initial scaffold. Builds against PHP 8.3+, depends on `ext/gd`,
   links libgd directly for drawing primitives.

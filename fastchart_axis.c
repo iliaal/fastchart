@@ -61,6 +61,25 @@ const char *fastchart_resolve_font(fastchart_obj *chart, const char *role)
     if (strcmp(role, "title") == 0 && chart->title_font_path) {
         return ZSTR_VAL(chart->title_font_path);
     }
+    if (strcmp(role, "xaxis") == 0) {
+        if (chart->x_axis_font_path) return ZSTR_VAL(chart->x_axis_font_path);
+        if (chart->axis_font_path)   return ZSTR_VAL(chart->axis_font_path);
+    }
+    if (strcmp(role, "yaxis") == 0) {
+        if (chart->y_axis_font_path) return ZSTR_VAL(chart->y_axis_font_path);
+        if (chart->axis_font_path)   return ZSTR_VAL(chart->axis_font_path);
+    }
+    if (strcmp(role, "xtitle") == 0) {
+        if (chart->x_axis_title_font_path) return ZSTR_VAL(chart->x_axis_title_font_path);
+        if (chart->axis_font_path)         return ZSTR_VAL(chart->axis_font_path);
+    }
+    if (strcmp(role, "ytitle") == 0) {
+        if (chart->y_axis_title_font_path) return ZSTR_VAL(chart->y_axis_title_font_path);
+        if (chart->axis_font_path)         return ZSTR_VAL(chart->axis_font_path);
+    }
+    if (strcmp(role, "annotation") == 0 && chart->annotation_font_path) {
+        return ZSTR_VAL(chart->annotation_font_path);
+    }
     if (strcmp(role, "axis") == 0 && chart->axis_font_path) {
         return ZSTR_VAL(chart->axis_font_path);
     }
@@ -73,16 +92,30 @@ const char *fastchart_resolve_font(fastchart_obj *chart, const char *role)
 double fastchart_resolve_font_size(fastchart_obj *chart, const char *role,
                                     double base_default)
 {
+    double sz = base_default;
     if (strcmp(role, "title") == 0 && chart->title_font_size > 0) {
-        return chart->title_font_size;
+        sz = chart->title_font_size;
+    } else if (strcmp(role, "xaxis") == 0) {
+        if      (chart->x_axis_font_size > 0) sz = chart->x_axis_font_size;
+        else if (chart->axis_font_size > 0)   sz = chart->axis_font_size;
+    } else if (strcmp(role, "yaxis") == 0) {
+        if      (chart->y_axis_font_size > 0) sz = chart->y_axis_font_size;
+        else if (chart->axis_font_size > 0)   sz = chart->axis_font_size;
+    } else if (strcmp(role, "xtitle") == 0) {
+        if      (chart->x_axis_title_font_size > 0) sz = chart->x_axis_title_font_size;
+        else if (chart->axis_font_size > 0)         sz = chart->axis_font_size;
+    } else if (strcmp(role, "ytitle") == 0) {
+        if      (chart->y_axis_title_font_size > 0) sz = chart->y_axis_title_font_size;
+        else if (chart->axis_font_size > 0)         sz = chart->axis_font_size;
+    } else if (strcmp(role, "annotation") == 0 && chart->annotation_font_size > 0) {
+        sz = chart->annotation_font_size;
+    } else if (strcmp(role, "axis") == 0 && chart->axis_font_size > 0) {
+        sz = chart->axis_font_size;
+    } else if (strcmp(role, "label") == 0 && chart->label_font_size > 0) {
+        sz = chart->label_font_size;
     }
-    if (strcmp(role, "axis") == 0 && chart->axis_font_size > 0) {
-        return chart->axis_font_size;
-    }
-    if (strcmp(role, "label") == 0 && chart->label_font_size > 0) {
-        return chart->label_font_size;
-    }
-    return base_default;
+    if (chart->thumbnail_mode) sz *= 0.6;
+    return sz;
 }
 
 /* ------------------------ polyline drawer ----------------------- */
@@ -533,17 +566,19 @@ void fastchart_draw_title(gdImagePtr im, fastchart_obj *chart,
                           const fastchart_palette *pal)
 {
     if (!chart->title || ZSTR_LEN(chart->title) == 0) return;
+    if (chart->thumbnail_mode) return;
     const char *font = fastchart_resolve_font(chart, "title");
     if (!font) return;
 
     double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
     double size = fastchart_resolve_font_size(chart, "title", base * 1.4);
+    int color = chart->title_color >= 0 ? (int)chart->title_color : pal->text;
 
     int W = gdImageSX(im);
     int cx = W / 2;
     int baseline = plot->y0 - TITLE_PADDING_BELOW;
 
-    fastchart_text_draw(im, font, size, pal->text, cx, baseline,
+    fastchart_text_draw(im, font, size, color, cx, baseline,
                         FASTCHART_ALIGN_CENTER, ZSTR_VAL(chart->title),
                         NULL, 0);
 }
@@ -565,18 +600,35 @@ static void format_tick_label(double value, double step, char *out, size_t out_n
     snprintf(out, out_n, "%.*f", decimals, value);
 }
 
+static void format_tick_label_user(double value, const zend_string *fmt,
+                                   char *out, size_t out_n)
+{
+    /* Trust the user's sprintf string; we already rejected embedded
+     * NULs at setter time. The callers always pass a small fixed
+     * buffer so a runaway format truncates rather than overruns. */
+    snprintf(out, out_n, ZSTR_VAL(fmt), value);
+}
+
 void fastchart_draw_y_axis(gdImagePtr im, fastchart_obj *chart,
                            const fastchart_rect *plot,
                            const fastchart_palette *pal,
                            const fastchart_value_range *range)
 {
+    if (!chart->y_axis_visible) return;
+
     /* Y axis line. */
     gdImageLine(im, plot->x0, plot->y0, plot->x0, plot->y1, pal->axis);
 
-    const char *font = fastchart_resolve_font(chart, "axis");
+    const char *font = fastchart_resolve_font(chart, "yaxis");
     if (!font) return;
     double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(chart, "axis", base);
+    double size = fastchart_resolve_font_size(chart, "yaxis", base);
+    int label_color = chart->axis_label_color >= 0 ? (int)chart->axis_label_color
+                                                   : pal->text;
+
+    bool draw_points = (chart->tick_mode & FASTCHART_TICK_POINTS) != 0;
+    bool draw_labels = (chart->tick_mode & FASTCHART_TICK_LABELS) != 0;
+    if (chart->thumbnail_mode) draw_labels = false;
 
     char buf[32];
     for (int i = 0; i < range->n_ticks; i++) {
@@ -587,16 +639,32 @@ void fastchart_draw_y_axis(gdImagePtr im, fastchart_obj *chart,
         gdImageLine(im, plot->x0 + 1, y, plot->x1, y, pal->grid);
 
         /* Tick mark on the axis. */
-        gdImageLine(im, plot->x0 - TICK_MARK_LEN, y,
-                        plot->x0 - 1, y, pal->axis);
+        if (draw_points) {
+            gdImageLine(im, plot->x0 - TICK_MARK_LEN, y,
+                            plot->x0 - 1, y, pal->axis);
+        }
+
+        if (!draw_labels) continue;
 
         /* Label, right-aligned just to the left of the tick. */
-        format_tick_label(v, range->tick_step, buf, sizeof(buf));
+        if (chart->y_axis_label_format) {
+            format_tick_label_user(v, chart->y_axis_label_format, buf, sizeof(buf));
+        } else {
+            format_tick_label(v, range->tick_step, buf, sizeof(buf));
+        }
         int label_x = plot->x0 - TICK_MARK_LEN - Y_LABEL_PADDING / 2;
         int label_y = y + (int)(size * 0.35);  /* baseline correction */
-        fastchart_text_draw(im, font, size, pal->text,
+        fastchart_text_draw(im, font, size, label_color,
                             label_x, label_y, FASTCHART_ALIGN_RIGHT,
                             buf, NULL, 0);
+    }
+
+    /* Zero shelf: when the data range crosses zero, draw a heavier
+     * horizontal axis-color line at y=0 to separate negative from
+     * positive values visually. */
+    if (chart->zero_shelf && range->min < 0.0 && range->max > 0.0) {
+        int zy = fastchart_y_to_pixel(0.0, range, plot);
+        gdImageLine(im, plot->x0 + 1, zy, plot->x1, zy, pal->axis);
     }
 }
 
@@ -605,26 +673,40 @@ void fastchart_draw_y_axis_right(gdImagePtr im, fastchart_obj *chart,
                                  const fastchart_palette *pal,
                                  const fastchart_value_range *range)
 {
+    if (!chart->y_axis_visible) return;
+
     /* Right axis line. */
     gdImageLine(im, plot->x1, plot->y0, plot->x1, plot->y1, pal->axis);
 
-    const char *font = fastchart_resolve_font(chart, "axis");
+    const char *font = fastchart_resolve_font(chart, "yaxis");
     if (!font) return;
     double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(chart, "axis", base);
+    double size = fastchart_resolve_font_size(chart, "yaxis", base);
+    int label_color = chart->axis_label_color >= 0 ? (int)chart->axis_label_color
+                                                   : pal->text;
+    bool draw_points = (chart->tick_mode & FASTCHART_TICK_POINTS) != 0;
+    bool draw_labels = (chart->tick_mode & FASTCHART_TICK_LABELS) != 0;
+    if (chart->thumbnail_mode) draw_labels = false;
 
     char buf[32];
     for (int i = 0; i < range->n_ticks; i++) {
         double v = range->ticks[i];
         int y = fastchart_y_to_pixel(v, range, plot);
 
-        gdImageLine(im, plot->x1 + 1, y,
-                        plot->x1 + TICK_MARK_LEN, y, pal->axis);
+        if (draw_points) {
+            gdImageLine(im, plot->x1 + 1, y,
+                            plot->x1 + TICK_MARK_LEN, y, pal->axis);
+        }
+        if (!draw_labels) continue;
 
-        format_tick_label(v, range->tick_step, buf, sizeof(buf));
+        if (chart->y_axis_label_format) {
+            format_tick_label_user(v, chart->y_axis_label_format, buf, sizeof(buf));
+        } else {
+            format_tick_label(v, range->tick_step, buf, sizeof(buf));
+        }
         int label_x = plot->x1 + TICK_MARK_LEN + Y_LABEL_PADDING / 2;
         int label_y = y + (int)(size * 0.35);
-        fastchart_text_draw(im, font, size, pal->text,
+        fastchart_text_draw(im, font, size, label_color,
                             label_x, label_y, FASTCHART_ALIGN_LEFT,
                             buf, NULL, 0);
     }
@@ -634,30 +716,55 @@ void fastchart_draw_axis_titles(gdImagePtr im, fastchart_obj *chart,
                                 const fastchart_rect *plot,
                                 const fastchart_palette *pal)
 {
-    const char *font = fastchart_resolve_font(chart, "axis");
-    if (!font) return;
+    if (chart->thumbnail_mode) return;
     double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(chart, "axis", base * 1.1);
+    int color = chart->axis_title_color >= 0 ? (int)chart->axis_title_color : pal->text;
 
     if (chart->x_axis_title && ZSTR_LEN(chart->x_axis_title) > 0) {
-        int H = gdImageSY(im);
-        int cx = (plot->x0 + plot->x1) / 2;
-        int baseline = H - MARGIN_BOTTOM_PAD - 2;
-        fastchart_text_draw(im, font, size, pal->text,
-                            cx, baseline, FASTCHART_ALIGN_CENTER,
-                            ZSTR_VAL(chart->x_axis_title), NULL, 0);
+        const char *font = fastchart_resolve_font(chart, "xtitle");
+        double size = fastchart_resolve_font_size(chart, "xtitle", base * 1.1);
+        if (font) {
+            int H = gdImageSY(im);
+            int cx = (plot->x0 + plot->x1) / 2;
+            int baseline = H - MARGIN_BOTTOM_PAD - 2;
+            fastchart_text_draw(im, font, size, color,
+                                cx, baseline, FASTCHART_ALIGN_CENTER,
+                                ZSTR_VAL(chart->x_axis_title), NULL, 0);
+        }
     }
 
     if (chart->y_axis_title && ZSTR_LEN(chart->y_axis_title) > 0) {
-        int cy = (plot->y0 + plot->y1) / 2;
-        int x = MARGIN_LEFT_PAD + (int)(size);
-        int tw = 0, th = 0;
-        if (fastchart_text_measure(font, size, ZSTR_VAL(chart->y_axis_title),
-                                   &tw, &th, NULL, 0) == 0) {
-            int y = cy + tw / 2;
-            fastchart_text_draw_rotated(im, font, size, pal->text,
-                                        x, y, FASTCHART_ALIGN_LEFT, 90.0,
-                                        ZSTR_VAL(chart->y_axis_title), NULL, 0);
+        const char *font = fastchart_resolve_font(chart, "ytitle");
+        double size = fastchart_resolve_font_size(chart, "ytitle", base * 1.1);
+        if (font) {
+            int cy = (plot->y0 + plot->y1) / 2;
+            int x = MARGIN_LEFT_PAD + (int)(size);
+            int tw = 0, th = 0;
+            if (fastchart_text_measure(font, size, ZSTR_VAL(chart->y_axis_title),
+                                       &tw, &th, NULL, 0) == 0) {
+                int y = cy + tw / 2;
+                fastchart_text_draw_rotated(im, font, size, color,
+                                            x, y, FASTCHART_ALIGN_LEFT, 90.0,
+                                            ZSTR_VAL(chart->y_axis_title), NULL, 0);
+            }
+        }
+    }
+
+    if (chart->y_axis_title2 && ZSTR_LEN(chart->y_axis_title2) > 0 && chart->secondary_y) {
+        const char *font = fastchart_resolve_font(chart, "ytitle");
+        double size = fastchart_resolve_font_size(chart, "ytitle", base * 1.1);
+        if (font) {
+            int cy = (plot->y0 + plot->y1) / 2;
+            int W = gdImageSX(im);
+            int x = W - MARGIN_LEFT_PAD - (int)(size);
+            int tw = 0, th = 0;
+            if (fastchart_text_measure(font, size, ZSTR_VAL(chart->y_axis_title2),
+                                       &tw, &th, NULL, 0) == 0) {
+                int y = cy - tw / 2;
+                fastchart_text_draw_rotated(im, font, size, color,
+                                            x, y, FASTCHART_ALIGN_LEFT, 270.0,
+                                            ZSTR_VAL(chart->y_axis_title2), NULL, 0);
+            }
         }
     }
 }
@@ -679,16 +786,23 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
                                        int n_categories,
                                        const char *const *labels)
 {
+    if (!chart->x_axis_visible) return;
+
     /* X axis line. */
     gdImageLine(im, plot->x0, plot->y1, plot->x1, plot->y1, pal->axis);
 
     if (n_categories <= 0) return;
-    const char *font = fastchart_resolve_font(chart, "label");
+    const char *font = fastchart_resolve_font(chart, "xaxis");
     if (!font) return;
 
     double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(chart, "label", base);
+    double size = fastchart_resolve_font_size(chart, "xaxis", base);
     int angle = (int)chart->x_axis_label_angle;
+    int label_color = chart->axis_label_color >= 0 ? (int)chart->axis_label_color
+                                                   : pal->text;
+    bool draw_points = (chart->tick_mode & FASTCHART_TICK_POINTS) != 0;
+    bool draw_labels = (chart->tick_mode & FASTCHART_TICK_LABELS) != 0;
+    if (chart->thumbnail_mode) draw_labels = false;
 
     int label_y;
     fastchart_align align;
@@ -704,17 +818,25 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
     }
 
     /* Stride caps horizontal labels to ~10; rotated labels are
-     * narrow enough that we can show all of them up to ~30. */
+     * narrow enough that we can show all of them up to ~30. The
+     * user's setXLabelStride() multiplies on top of the auto value,
+     * so passing 1 (default) doesn't fight the auto-density. */
     int max_visible = (angle == 0) ? 10 : 30;
     int stride = 1;
     if (n_categories > max_visible + 2) {
         stride = (n_categories + max_visible - 1) / max_visible;
     }
+    if (chart->x_label_stride > 1) {
+        stride *= (int)chart->x_label_stride;
+    }
 
     for (int i = 0; i < n_categories; i += stride) {
         int x = fastchart_x_categorical_center(plot, i, n_categories);
-        gdImageLine(im, x, plot->y1 + 1, x,
-                    plot->y1 + TICK_MARK_LEN, pal->axis);
+        if (draw_points) {
+            gdImageLine(im, x, plot->y1 + 1, x,
+                        plot->y1 + TICK_MARK_LEN, pal->axis);
+        }
+        if (!draw_labels) continue;
 
         char fallback[16];
         const char *txt;
@@ -725,10 +847,10 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
             txt = fallback;
         }
         if (angle == 0) {
-            fastchart_text_draw(im, font, size, pal->text,
+            fastchart_text_draw(im, font, size, label_color,
                                 x, label_y, align, txt, NULL, 0);
         } else {
-            fastchart_text_draw_rotated(im, font, size, pal->text,
+            fastchart_text_draw_rotated(im, font, size, label_color,
                                         x, label_y, align, (double)angle,
                                         txt, NULL, 0);
         }
@@ -1200,20 +1322,59 @@ void fastchart_draw_v_annotations_time(gdImagePtr im, fastchart_obj *chart,
     draw_v_annotations_with_mapper(im, chart, plot, pal, v_pos_time, &ctx);
 }
 
+void fastchart_draw_text_annotations(gdImagePtr im, fastchart_obj *chart,
+                                     const fastchart_palette *pal)
+{
+    zval *list_zv = zend_hash_str_find(Z_ARRVAL(chart->config),
+                                       "text_annotations",
+                                       sizeof("text_annotations") - 1);
+    if (!list_zv || Z_TYPE_P(list_zv) != IS_ARRAY) return;
+
+    const char *font = fastchart_resolve_font(chart, "annotation");
+    if (!font) return;
+    double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    double size = fastchart_resolve_font_size(chart, "annotation", base);
+
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(list_zv), entry) {
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        zval *t_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "text", sizeof("text") - 1);
+        zval *x_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "x", sizeof("x") - 1);
+        zval *y_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "y", sizeof("y") - 1);
+        if (!t_zv || !x_zv || !y_zv) continue;
+        if (Z_TYPE_P(t_zv) != IS_STRING) continue;
+
+        int x = (int)Z_LVAL_P(x_zv);
+        int y = (int)Z_LVAL_P(y_zv);
+        int color = pal->text;
+        zval *c_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "color", sizeof("color") - 1);
+        if (c_zv && Z_TYPE_P(c_zv) == IS_LONG) color = (int)Z_LVAL_P(c_zv);
+
+        fastchart_text_draw(im, font, size, color, x, y,
+                            FASTCHART_ALIGN_LEFT, Z_STRVAL_P(t_zv), NULL, 0);
+    } ZEND_HASH_FOREACH_END();
+}
+
 void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
                                 const fastchart_rect *plot,
                                 const fastchart_palette *pal,
                                 long t_min, long t_max)
 {
+    if (!chart->x_axis_visible) return;
     gdImageLine(im, plot->x0, plot->y1, plot->x1, plot->y1, pal->axis);
 
     if (t_max <= t_min) return;
-    const char *font = fastchart_resolve_font(chart, "label");
+    const char *font = fastchart_resolve_font(chart, "xaxis");
     if (!font) return;
 
     double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(chart, "label", base);
+    double size = fastchart_resolve_font_size(chart, "xaxis", base);
     int angle = (int)chart->x_axis_label_angle;
+    int label_color = chart->axis_label_color >= 0 ? (int)chart->axis_label_color
+                                                   : pal->text;
+    bool draw_points = (chart->tick_mode & FASTCHART_TICK_POINTS) != 0;
+    bool draw_labels = (chart->tick_mode & FASTCHART_TICK_LABELS) != 0;
+    if (chart->thumbnail_mode) draw_labels = false;
 
     int label_y;
     fastchart_align align;
@@ -1230,20 +1391,29 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
     for (int i = 0; i < N; i++) {
         long ts = t_min + (long)((double)(t_max - t_min) * i / (N - 1));
         int x = fastchart_x_time_to_pixel(plot, ts, t_min, t_max);
-        gdImageLine(im, x, plot->y1 + 1, x,
-                    plot->y1 + TICK_MARK_LEN, pal->axis);
+        if (draw_points) {
+            gdImageLine(im, x, plot->y1 + 1, x,
+                        plot->y1 + TICK_MARK_LEN, pal->axis);
+        }
+        if (!draw_labels) continue;
 
-        struct tm tm_buf;
-        time_t tt = (time_t)ts;
-        gmtime_r(&tt, &tm_buf);
-        char buf[16];
-        strftime(buf, sizeof(buf), "%Y-%m-%d", &tm_buf);
+        char buf[64];
+        if (chart->x_axis_label_format) {
+            /* Numeric format expects a double; pass the timestamp. */
+            format_tick_label_user((double)ts, chart->x_axis_label_format,
+                                   buf, sizeof(buf));
+        } else {
+            struct tm tm_buf;
+            time_t tt = (time_t)ts;
+            gmtime_r(&tt, &tm_buf);
+            strftime(buf, sizeof(buf), "%Y-%m-%d", &tm_buf);
+        }
 
         if (angle == 0) {
-            fastchart_text_draw(im, font, size, pal->text,
+            fastchart_text_draw(im, font, size, label_color,
                                 x, label_y, align, buf, NULL, 0);
         } else {
-            fastchart_text_draw_rotated(im, font, size, pal->text,
+            fastchart_text_draw_rotated(im, font, size, label_color,
                                         x, label_y, align, (double)angle,
                                         buf, NULL, 0);
         }

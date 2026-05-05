@@ -46,6 +46,21 @@ abstract class Chart
     public const int INTERP_LINEAR = 0;
     public const int INTERP_SMOOTH = 1;
 
+    /** Tick mode for setTickMode(). */
+    public const int TICK_NONE   = 0;
+    public const int TICK_LABELS = 1;
+    public const int TICK_POINTS = 2;
+    public const int TICK_BOTH   = 3;
+
+    /** Stacking mode for BarChart::setStackMode() / AreaChart. */
+    public const int STACK_SUM    = 0;
+    public const int STACK_BESIDE = 1;
+    public const int STACK_LAYER  = 2;
+
+    /** Pie slice-label positions (extends LABEL_INSIDE / OUTSIDE / NONE). */
+    public const int LABEL_LEFT  = 3;
+    public const int LABEL_RIGHT = 4;
+
     /**
      * Optionally pass canvas dimensions at construction so callers
      * can skip the `imagecreatetruecolor()` step entirely when they
@@ -196,6 +211,113 @@ abstract class Chart
      */
     public function addOverlaySeries(string $type, array $values, ?array $opts = null): static {}
 
+    /**
+     * Show or hide the X axis line, ticks, and labels entirely.
+     * Default true. The X-axis title remains independently controlled
+     * via setXAxisTitle().
+     */
+    public function setXAxisVisible(bool $visible): static {}
+
+    /**
+     * Show or hide the Y axis line, ticks, and labels entirely.
+     * Default true. The Y-axis title remains independently controlled
+     * via setYAxisTitle().
+     */
+    public function setYAxisVisible(bool $visible): static {}
+
+    /**
+     * sprintf format string for Y-axis tick labels (e.g., '$%.2f',
+     * '%d ms'). Empty string reverts to auto-formatting based on
+     * the tick step. Receives the numeric tick value as its sole
+     * argument.
+     */
+    public function setYAxisLabelFormat(string $format): static {}
+
+    /**
+     * sprintf format string for X-axis tick labels when the X axis
+     * is numeric (Stock charts, scatter). Empty string reverts to
+     * auto-formatting. No effect on category-axis charts -- use
+     * setCategoryLabels() instead.
+     */
+    public function setXAxisLabelFormat(string $format): static {}
+
+    /**
+     * Tick rendering mode: TICK_NONE suppresses both ticks and
+     * labels, TICK_LABELS draws only labels (no tick marks),
+     * TICK_POINTS draws only tick marks (no labels), TICK_BOTH
+     * (default) draws both.
+     */
+    public function setTickMode(int $mode): static {}
+
+    /**
+     * Bar fill width as a percent of the slot width (1..100).
+     * 100 means bars touch each other; the GDChart default was 75.
+     * Affects BarChart and StockChart candle bodies.
+     */
+    public function setBarWidth(int $percent): static {}
+
+    /**
+     * Edge (outline) color for filled shapes -- bars, area fills,
+     * pie slices. 24-bit RGB or -1 for no outline (default).
+     */
+    public function setEdgeColor(int $rgb): static {}
+
+    /**
+     * When the data range crosses zero, draw a horizontal "shelf"
+     * line at y=0 in axis color. Helps separate negative bars
+     * from positive ones visually. Default false.
+     */
+    public function setZeroShelf(bool $enabled): static {}
+
+    /**
+     * Render only every Nth X-axis label, starting from index 0.
+     * Useful when many category labels overlap. Pass 1 (default)
+     * to render all labels.
+     */
+    public function setXLabelStride(int $stride): static {}
+
+    /**
+     * Title for the secondary Y axis (when setSecondaryYAxis(true)).
+     * Rendered rotated 90deg to the right of the right-axis labels.
+     */
+    public function setSecondaryYAxisTitle(string $title): static {}
+
+    /**
+     * Thumbnail mode auto-shrinks fonts and elides labels for tiny
+     * preview renders. Useful for sparkline-style or grid-of-charts
+     * layouts. Default false.
+     */
+    public function setThumbnailMode(bool $enabled): static {}
+
+    /**
+     * Per-element text color overrides. Each takes a 24-bit RGB or
+     * -1 to fall through to setTextColor() / theme. setTitleColor
+     * is the chart title; setAxisLabelColor is tick labels;
+     * setAxisTitleColor is X/Y axis titles.
+     */
+    public function setTitleColor(int $rgb): static {}
+    public function setAxisLabelColor(int $rgb): static {}
+    public function setAxisTitleColor(int $rgb): static {}
+
+    /**
+     * Per-axis font overrides (path + size). Pass null path to
+     * inherit from setAxisFont() / setFontPath(). Pass null size
+     * to inherit from setAxisFont() / setFontSize().
+     */
+    public function setXAxisFont(?string $path = null, ?float $size = null): static {}
+    public function setYAxisFont(?string $path = null, ?float $size = null): static {}
+    public function setXAxisTitleFont(?string $path = null, ?float $size = null): static {}
+    public function setYAxisTitleFont(?string $path = null, ?float $size = null): static {}
+    public function setAnnotationFont(?string $path = null, ?float $size = null): static {}
+
+    /**
+     * Add a free-floating text annotation at canvas coordinates
+     * (`$x`, `$y` are pixel positions in the rendered image).
+     * Useful for callouts, watermarks, or labeled regions. Color
+     * defaults to the configured text color.
+     */
+    public function addTextAnnotation(string $text, int $x, int $y, ?int $color = null): static {}
+
     abstract public function draw(\GdImage $canvas): \GdImage;
 
     /** Render to PNG bytes at the configured size. */
@@ -262,6 +384,24 @@ final class BarChart extends Chart
 {
     public function setSeries(array $series): static {}
     public function setStacked(bool $stacked): static {}
+
+    /**
+     * Stacking algorithm for multi-series bars when stacked mode is
+     * on: STACK_SUM (default) cumulates bars vertically;
+     * STACK_LAYER overlays bars front-to-back at the same baseline
+     * with translucent fills; STACK_BESIDE is equivalent to
+     * setStacked(false) (side-by-side groups).
+     */
+    public function setStackMode(int $mode): static {}
+
+    /**
+     * Switch the chart to floating-bar mode: each series entry must
+     * be `[$min, $max]` rather than a scalar, and bars are drawn
+     * between min and max instead of from zero. Useful for Gantt-style
+     * timelines, salary-range plots, etc.
+     */
+    public function setFloating(bool $enabled): static {}
+
     public function draw(\GdImage $canvas): \GdImage {}
 }
 

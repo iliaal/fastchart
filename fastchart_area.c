@@ -245,6 +245,9 @@ int fastchart_area_render_to_image(fastchart_obj *self, gdImagePtr im)
             }
             if (n_pts >= 3) {
                 gdImageFilledPolygon(im, poly, n_pts, rgb_color);
+                if (self->edge_color >= 0) {
+                    gdImagePolygon(im, poly, n_pts, (int)self->edge_color);
+                }
             }
 
             /* Top-edge stroke for crisp boundary between layers. */
@@ -300,6 +303,9 @@ int fastchart_area_render_to_image(fastchart_obj *self, gdImagePtr im)
             if (n_pts >= 3) {
                 gdImageAlphaBlending(im, 1);
                 gdImageFilledPolygon(im, poly, n_pts, alpha_color);
+                if (self->edge_color >= 0) {
+                    gdImagePolygon(im, poly, n_pts, (int)self->edge_color);
+                }
                 gdImageAlphaBlending(im, 0);
             }
 
@@ -344,6 +350,7 @@ int fastchart_area_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
     }
 
+    fastchart_draw_text_annotations(im, self, &pal);
     return 0;
 }
 

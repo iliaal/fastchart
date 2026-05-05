@@ -116,6 +116,23 @@ static int read_value(HashTable *ht, int index, double *out)
     return fastchart_zval_to_double(v, out);
 }
 
+/* Read a [min, max] entry from a floating-bar series. Returns 0 on
+ * success, -1 if the entry is missing or not a 2-element numeric
+ * array. */
+static int read_range(HashTable *ht, int index, double *lo, double *hi)
+{
+    zval *v = zend_hash_index_find(ht, index);
+    if (!v || Z_TYPE_P(v) != IS_ARRAY) return -1;
+    HashTable *pair = Z_ARRVAL_P(v);
+    zval *zlo = zend_hash_index_find(pair, 0);
+    zval *zhi = zend_hash_index_find(pair, 1);
+    if (!zlo || !zhi) return -1;
+    if (fastchart_zval_to_double(zlo, lo) != 0) return -1;
+    if (fastchart_zval_to_double(zhi, hi) != 0) return -1;
+    if (*lo > *hi) { double tmp = *lo; *lo = *hi; *hi = tmp; }
+    return 0;
+}
+
 int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
 {
     fastchart_bar_series series[MAX_SERIES];
@@ -133,10 +150,35 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
                                        "stacked", sizeof("stacked") - 1);
         if (cfg && Z_TYPE_P(cfg) == IS_TRUE) stacked = true;
     }
+    /* setStackMode(STACK_LAYER) implies stacked-mode rendering with a
+     * shared baseline + translucent fills; STACK_BESIDE mirrors
+     * setStacked(false). */
+    bool stack_layer = (self->stack_mode == FASTCHART_STACK_LAYER);
+    if (self->stack_mode == FASTCHART_STACK_BESIDE) stacked = false;
+    if (stack_layer && n_series > 1) stacked = true;
+    bool floating = self->bar_floating;
 
     double dmin = 0, dmax = 0;
     int seen = 0;
-    if (stacked && n_series > 1) {
+    if (floating) {
+        /* Floating bars: each entry is [min, max]; the value range
+         * spans both ends with no zero-anchor (since the bar doesn't
+         * start at the baseline). */
+        for (int s = 0; s < n_series; s++) {
+            for (int i = 0; i < n_categories; i++) {
+                double lo, hi;
+                if (read_range(series[s].data, i, &lo, &hi) != 0) {
+                    if (self->strict) {
+                        zend_type_error("FastChart strict mode: floating-bar entries must be [min, max]");
+                        return -1;
+                    }
+                    continue;
+                }
+                if (!seen) { dmin = lo; dmax = hi; seen = 1; }
+                else { if (lo < dmin) dmin = lo; if (hi > dmax) dmax = hi; }
+            }
+        }
+    } else if (stacked && n_series > 1) {
         for (int i = 0; i < n_categories; i++) {
             double pos = 0, neg = 0;
             for (int s = 0; s < n_series; s++) {
@@ -178,8 +220,11 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
             "FastChart\\BarChart::draw() found no numeric values in the series");
         return -1;
     }
-    if (dmin > 0) dmin = 0;
-    if (dmax < 0) dmax = 0;
+    /* Floating bars don't anchor at zero. Regular bars do. */
+    if (!floating) {
+        if (dmin > 0) dmin = 0;
+        if (dmax < 0) dmax = 0;
+    }
 
     fastchart_value_range range;
     if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
@@ -234,10 +279,67 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
     int sub_w = slot_inner / sub_count;
     if (sub_w < 1) sub_w = 1;
 
+    /* setBarWidth(pct) shrinks the bar fill within its allocated
+     * sub-slot, centered, at pct/100 of the slot width. 100 = touch
+     * neighbors, 50 = half-width with breathing room. Applied to
+     * sub_w so per-series side-by-side bars all narrow together. */
+    int bar_pct = (int)self->bar_width_pct;
+    if (bar_pct <= 0) bar_pct = 100;
+    int draw_w = (sub_w * bar_pct + 50) / 100;
+    if (draw_w < 1) draw_w = 1;
+    int sub_inset = (sub_w - draw_w) / 2;
+
+    int edge = (int)self->edge_color;
+
+    /* Allocate translucent series colors once for STACK_LAYER mode. */
+    int layer_colors[MAX_SERIES] = {0};
+    if (stack_layer && n_series > 1) {
+        for (int s = 0; s < n_series; s++) {
+            int c = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+            int r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+            layer_colors[s] = gdImageColorAllocateAlpha(im, r, g, b, 64);
+        }
+        gdImageAlphaBlending(im, 1);
+    }
+
     for (int i = 0; i < n_categories; i++) {
         int slot_left = plot.x0 + i * slot_w + slot_pad;
 
-        if (stacked && n_series > 1) {
+        if (floating) {
+            /* Floating bar: each series carries [min, max] per slot;
+             * draw between min and max instead of from zero. */
+            for (int s = 0; s < n_series; s++) {
+                double lo, hi;
+                if (read_range(series[s].data, i, &lo, &hi) != 0) continue;
+                int series_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+                int color = per_point_color(series[s].colors, i, series_color, im);
+                int y_lo = fastchart_y_to_pixel(lo, &range, &plot);
+                int y_hi = fastchart_y_to_pixel(hi, &range, &plot);
+                int y0 = y_hi < y_lo ? y_hi : y_lo;
+                int y1 = y_hi < y_lo ? y_lo : y_hi;
+                int x0 = slot_left + s * sub_w + sub_inset;
+                int x1 = x0 + draw_w - 1;
+                if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
+                gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
+            }
+        } else if (stack_layer && n_series > 1) {
+            /* Layered: all series anchor at zero with translucent
+             * fills, painter overlay rather than cumulative. */
+            for (int s = 0; s < n_series; s++) {
+                double v;
+                if (read_value(series[s].data, i, &v) != 0) continue;
+                int color = layer_colors[s];
+                int y_v = fastchart_y_to_pixel(v, &range, &plot);
+                int y0 = y_v < zero_y ? y_v : zero_y;
+                int y1 = y_v < zero_y ? zero_y : y_v;
+                int x0 = slot_left + sub_inset;
+                int x1 = x0 + draw_w - 1;
+                if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
+                gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
+            }
+        } else if (stacked && n_series > 1) {
             double pos_acc = 0, neg_acc = 0;
             for (int s = 0; s < n_series; s++) {
                 double v;
@@ -255,10 +357,11 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
                 int y_b = fastchart_y_to_pixel(b, &range, &plot);
                 int y0 = y_a < y_b ? y_a : y_b;
                 int y1 = y_a < y_b ? y_b : y_a;
-                gdImageFilledRectangle(im,
-                    slot_left, y0,
-                    slot_left + slot_inner - 1, y1,
-                    color);
+                int x0 = slot_left + sub_inset;
+                int x1 = x0 + draw_w - 1;
+                if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
+                gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
             }
         } else {
             for (int s = 0; s < n_series; s++) {
@@ -268,13 +371,14 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
                 int color = per_point_color(series[s].colors, i, series_color, im);
                 int y_v = fastchart_y_to_pixel(v, &range, &plot);
 
-                int x0 = slot_left + s * sub_w;
-                int x1 = x0 + sub_w - 1;
+                int x0 = slot_left + s * sub_w + sub_inset;
+                int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
 
                 int y0 = y_v < zero_y ? y_v : zero_y;
                 int y1 = y_v < zero_y ? zero_y : y_v;
                 gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
             }
         }
     }
@@ -324,6 +428,7 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
     }
 
+    fastchart_draw_text_annotations(im, self, &pal);
     return 0;
 }
 
