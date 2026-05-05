@@ -378,6 +378,22 @@ static inline gdImagePtr fastchart_gd_image_from_zval(zval *canvas_zv)
     return (gdImagePtr)php_gd_libgdimageptr_from_zval_p(canvas_zv);
 }
 
+/* Read a string label from an array-shaped setter, dropping the
+ * value if it carries an embedded NUL. Public scalar setters reject
+ * embedded NUL with ValueError; per-element strings inside arrays
+ * (series labels, slice labels, gantt task names, category labels,
+ * overlay labels, etc.) take the silent-drop path because rejecting
+ * them with an exception would force every chart-type setter to
+ * walk the whole input array up front. The render-vs-stored
+ * divergence (gdImageStringFT truncates at \0, PHP keeps the full
+ * length) is what we're guarding against. */
+static inline const char *fastchart_label_or_null(const zval *zv)
+{
+    if (!zv || Z_TYPE_P(zv) != IS_STRING) return NULL;
+    if (memchr(Z_STRVAL_P(zv), 0, Z_STRLEN_P(zv)) != NULL) return NULL;
+    return Z_STRVAL_P(zv);
+}
+
 /* Per-chart drawing helpers extracted from each ZEND_METHOD draw()
  * so the renderPng/Jpeg/Webp shortcuts can reuse them without
  * routing through ext/gd's zval extraction. Each returns 0 on

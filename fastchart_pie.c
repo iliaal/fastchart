@@ -79,6 +79,9 @@ static int collect_pie_slices(zval *data_zv,
             double d;
             if (fastchart_zval_to_double(v, &d) != 0) continue;
             if (d <= 0.0 || !isfinite(d)) continue;
+            /* Drop slices whose key carries an embedded NUL: same
+             * divergence rationale as fastchart_label_or_null. */
+            if (k && memchr(ZSTR_VAL(k), 0, ZSTR_LEN(k)) != NULL) continue;
             out[*out_count].label = k ? ZSTR_VAL(k) : NULL;
             if (!k) {
                 snprintf(out[*out_count].idx_label,
@@ -108,8 +111,9 @@ static int collect_pie_slices(zval *data_zv,
             if (fastchart_zval_to_double(value_zv, &d) != 0) continue;
             if (d <= 0.0 || !isfinite(d)) continue;
 
-            if (label_zv && Z_TYPE_P(label_zv) == IS_STRING) {
-                out[*out_count].label = Z_STRVAL_P(label_zv);
+            const char *label = fastchart_label_or_null(label_zv);
+            if (label) {
+                out[*out_count].label = label;
                 out[*out_count].idx_label[0] = '\0';
             } else {
                 out[*out_count].label = NULL;
@@ -251,15 +255,13 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
         int slice_cx = cx, slice_cy = cy;
         if (explode_ht) {
             zval *off_zv = zend_hash_index_find(explode_ht, i);
-            if (off_zv) {
-                zend_long off = 0;
-                if (Z_TYPE_P(off_zv) == IS_LONG) off = Z_LVAL_P(off_zv);
-                else if (Z_TYPE_P(off_zv) == IS_DOUBLE) off = (long)Z_DVAL_P(off_zv);
-                if (off > 0) {
-                    double mid_rad = (start_deg + sweep / 2.0) * M_PI / 180.0;
-                    slice_cx = cx + (int)((double)off * cos(mid_rad));
-                    slice_cy = cy + (int)((double)off * sin(mid_rad));
-                }
+            zend_long off = 0;
+            /* fastchart_zval_to_long rejects non-finite and out-of-range
+             * doubles; raw (zend_long)Z_DVAL_P would be UB on Inf/NaN. */
+            if (off_zv && fastchart_zval_to_long(off_zv, &off) == 0 && off > 0) {
+                double mid_rad = (start_deg + sweep / 2.0) * M_PI / 180.0;
+                slice_cx = cx + (int)((double)off * cos(mid_rad));
+                slice_cy = cy + (int)((double)off * sin(mid_rad));
             }
         }
 

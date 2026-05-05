@@ -31,7 +31,7 @@
 typedef struct {
     HashTable *data;
     const char *label;
-    long color_override;   /* -1 = palette */
+    zend_long color_override;  /* -1 = palette */
 } radar_series_t;
 
 static int collect_radar_series(zval *data_zv,
@@ -60,7 +60,7 @@ static int collect_radar_series(zval *data_zv,
             if (*out_count >= max_series) break;
             out[*out_count].data = Z_ARRVAL_P(d);
             zval *l = zend_hash_str_find(Z_ARRVAL_P(s_zv), "label", sizeof("label") - 1);
-            out[*out_count].label = (l && Z_TYPE_P(l) == IS_STRING) ? Z_STRVAL_P(l) : NULL;
+            out[*out_count].label = fastchart_label_or_null(l);
             zval *c = zend_hash_str_find(Z_ARRVAL_P(s_zv), "color", sizeof("color") - 1);
             out[*out_count].color_override = (c && Z_TYPE_P(c) == IS_LONG &&
                 Z_LVAL_P(c) >= 0 && Z_LVAL_P(c) <= 0xFFFFFF) ? Z_LVAL_P(c) : -1;
@@ -164,7 +164,8 @@ int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im)
     if (font && labels_zv && Z_TYPE_P(labels_zv) == IS_ARRAY) {
         for (int i = 0; i < n_axes; i++) {
             zval *lv = zend_hash_index_find(Z_ARRVAL_P(labels_zv), i);
-            if (!lv || Z_TYPE_P(lv) != IS_STRING) continue;
+            const char *label = fastchart_label_or_null(lv);
+            if (!label) continue;
             int lx = cx + (int)((radius + 16) * cos_a[i]);
             int ly = cy + (int)((radius + 16) * sin_a[i]);
             fastchart_align align;
@@ -173,7 +174,7 @@ int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im)
             else align = FASTCHART_ALIGN_CENTER;
             fastchart_text_draw(im, font, size, pal.text,
                                 lx, ly + (int)(size * 0.35),
-                                align, Z_STRVAL_P(lv), NULL, 0);
+                                align, label, NULL, 0);
         }
     }
 
@@ -246,7 +247,10 @@ ZEND_METHOD(FastChart_RadarChart, draw)
     ZEND_PARSE_PARAMETERS_END();
 
     gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) RETURN_THROWS();
+    if (!im) {
+        zend_throw_error(NULL, "FastChart\\RadarChart::draw() received a closed or invalid GdImage");
+        RETURN_THROWS();
+    }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (fastchart_radar_render_to_image(self, im) != 0) {
         RETURN_THROWS();

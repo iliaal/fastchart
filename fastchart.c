@@ -21,6 +21,7 @@
 #include "Zend/zend_exceptions.h"
 #include "Zend/zend_smart_str.h"
 
+#include <limits.h>
 #include <math.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -597,6 +598,22 @@ ZEND_METHOD(FastChart_Chart, setStrict)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+/* Reject non-finite (NaN, Inf, -Inf) doubles at the setter boundary.
+ * Several public setters bound their value with comparison operators
+ * (`x >= lo && x <= hi`, `x < 0`, `min >= max`) which all return false
+ * for NaN, leaving the value to ride through to (int)cast — undefined
+ * behavior under C / Annex F. fastchart_zval_to_double already gates
+ * doubles arriving via array iteration; this helper covers the
+ * Z_PARAM_DOUBLE entry path. */
+static int fastchart_reject_non_finite(double v, const char *where)
+{
+    if (!isfinite(v)) {
+        zend_value_error("%s expects a finite numeric value", where);
+        return -1;
+    }
+    return 0;
+}
+
 /* Shared annotation pusher. `kind` is "h" or "v"; storage shape on
  * config is a list of dicts {kind, value, label?, color?}. */
 static void push_annotation(fastchart_obj *self, const char *kind,
@@ -639,6 +656,9 @@ ZEND_METHOD(FastChart_Chart, addHorizontalLine)
         Z_PARAM_LONG_OR_NULL(color, color_is_null)
     ZEND_PARSE_PARAMETERS_END();
 
+    if (fastchart_reject_non_finite(value, "FastChart\\Chart::addHorizontalLine()") != 0) {
+        RETURN_THROWS();
+    }
     if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
         zend_value_error("FastChart\\Chart::addHorizontalLine() color out of range; expected 0..0xFFFFFF");
         RETURN_THROWS();
@@ -667,6 +687,9 @@ ZEND_METHOD(FastChart_Chart, addVerticalLine)
         Z_PARAM_LONG_OR_NULL(color, color_is_null)
     ZEND_PARSE_PARAMETERS_END();
 
+    if (fastchart_reject_non_finite(position, "FastChart\\Chart::addVerticalLine()") != 0) {
+        RETURN_THROWS();
+    }
     if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
         zend_value_error("FastChart\\Chart::addVerticalLine() color out of range; expected 0..0xFFFFFF");
         RETURN_THROWS();
@@ -1165,6 +1188,10 @@ ZEND_METHOD(FastChart_Chart, addTextAnnotation)
         zend_value_error("FastChart\\Chart::addTextAnnotation() color must be 0..0xFFFFFF or null");
         RETURN_THROWS();
     }
+    if (x < INT_MIN || x > INT_MAX || y < INT_MIN || y > INT_MAX) {
+        zend_value_error("FastChart\\Chart::addTextAnnotation() x and y must fit in a 32-bit int");
+        RETURN_THROWS();
+    }
     if (memchr(ZSTR_VAL(text), 0, ZSTR_LEN(text)) != NULL) {
         zend_value_error("FastChart\\Chart::addTextAnnotation() text contains an embedded NUL");
         RETURN_THROWS();
@@ -1369,6 +1396,9 @@ ZEND_METHOD(FastChart_RadarChart, setMaxValue)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_DOUBLE(m)
     ZEND_PARSE_PARAMETERS_END();
+    if (fastchart_reject_non_finite(m, "FastChart\\RadarChart::setMaxValue()") != 0) {
+        RETURN_THROWS();
+    }
     if (m < 0.0) {
         zend_value_error("FastChart\\RadarChart::setMaxValue() must be non-negative");
         RETURN_THROWS();
@@ -1464,6 +1494,9 @@ ZEND_METHOD(FastChart_GaugeChart, setValue)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_DOUBLE(v)
     ZEND_PARSE_PARAMETERS_END();
+    if (fastchart_reject_non_finite(v, "FastChart\\GaugeChart::setValue()") != 0) {
+        RETURN_THROWS();
+    }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     self->gauge_value = v;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -1476,6 +1509,10 @@ ZEND_METHOD(FastChart_GaugeChart, setRange)
         Z_PARAM_DOUBLE(mn)
         Z_PARAM_DOUBLE(mx)
     ZEND_PARSE_PARAMETERS_END();
+    if (fastchart_reject_non_finite(mn, "FastChart\\GaugeChart::setRange()") != 0 ||
+        fastchart_reject_non_finite(mx, "FastChart\\GaugeChart::setRange()") != 0) {
+        RETURN_THROWS();
+    }
     if (mn >= mx) {
         zend_value_error("FastChart\\GaugeChart::setRange() requires min < max");
         RETURN_THROWS();
@@ -1777,6 +1814,9 @@ ZEND_METHOD(FastChart_PolarChart, setMaxRadius)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_DOUBLE(m)
     ZEND_PARSE_PARAMETERS_END();
+    if (fastchart_reject_non_finite(m, "FastChart\\PolarChart::setMaxRadius()") != 0) {
+        RETURN_THROWS();
+    }
     if (m < 0.0) {
         zend_value_error("FastChart\\PolarChart::setMaxRadius() must be non-negative");
         RETURN_THROWS();
@@ -1930,6 +1970,9 @@ ZEND_METHOD(FastChart_PieChart, setOtherThreshold)
         Z_PARAM_STR(label)
     ZEND_PARSE_PARAMETERS_END();
 
+    if (fastchart_reject_non_finite(percent, "FastChart\\PieChart::setOtherThreshold()") != 0) {
+        RETURN_THROWS();
+    }
     if (percent < 0.0 || percent >= 100.0) {
         zend_value_error("FastChart\\PieChart::setOtherThreshold() expects a percentage in [0.0, 100.0)");
         RETURN_THROWS();
@@ -2026,6 +2069,12 @@ ZEND_METHOD(FastChart_Chart, setYAxisRange)
         Z_PARAM_DOUBLE_OR_NULL(y_int, y_int_is_null)
     ZEND_PARSE_PARAMETERS_END();
 
+    if ((!y_min_is_null && fastchart_reject_non_finite(y_min, "FastChart\\Chart::setYAxisRange()") != 0) ||
+        (!y_max_is_null && fastchart_reject_non_finite(y_max, "FastChart\\Chart::setYAxisRange()") != 0) ||
+        (!y_int_is_null && fastchart_reject_non_finite(y_int, "FastChart\\Chart::setYAxisRange()") != 0)) {
+        RETURN_THROWS();
+    }
+
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
 
     if (!y_min_is_null && !y_max_is_null && y_min >= y_max) {
@@ -2102,7 +2151,7 @@ ZEND_METHOD(FastChart_PieChart, setSliceLabelFormat)
     }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (self->slice_label_format) zend_string_release(self->slice_label_format);
-    self->slice_label_format = zend_string_copy(fmt);
+    self->slice_label_format = ZSTR_LEN(fmt) == 0 ? NULL : zend_string_copy(fmt);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -2206,7 +2255,7 @@ static int encode_image(gdImagePtr im, int format, int quality,
         case 2: *out_bytes = gdImageWebpPtrEx(im, out_sz, quality); break;
         case 3: *out_bytes = gdImageGifPtr(im, out_sz); break;
         case 4:
-#ifdef gdImageAvifPtrEx
+#ifdef HAVE_GD_AVIF
             *out_bytes = gdImageAvifPtrEx(im, out_sz, quality, -1);
 #else
             zend_throw_exception(zend_ce_exception,
@@ -2458,6 +2507,9 @@ ZEND_METHOD(FastChart_PieChart, setDonutHoleRatio)
         Z_PARAM_DOUBLE(ratio)
     ZEND_PARSE_PARAMETERS_END();
 
+    if (fastchart_reject_non_finite(ratio, "FastChart\\PieChart::setDonutHoleRatio()") != 0) {
+        RETURN_THROWS();
+    }
     if (ratio < 0.0 || ratio >= 1.0) {
         zend_value_error("FastChart\\PieChart::setDonutHoleRatio() expects a value in [0.0, 1.0)");
         RETURN_THROWS();

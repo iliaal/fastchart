@@ -38,7 +38,7 @@ int fastchart_bubble_render_to_image(fastchart_obj *self, gdImagePtr im)
     double *xs = ecalloc(n, sizeof(double));
     double *ys = ecalloc(n, sizeof(double));
     double *ss = ecalloc(n, sizeof(double));
-    long   *cs = ecalloc(n, sizeof(long));
+    zend_long *cs = ecalloc(n, sizeof(zend_long));
     int    *has_color = ecalloc(n, sizeof(int));
     int collected = 0;
 
@@ -160,7 +160,10 @@ ZEND_METHOD(FastChart_BubbleChart, draw)
     ZEND_PARSE_PARAMETERS_END();
 
     gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) RETURN_THROWS();
+    if (!im) {
+        zend_throw_error(NULL, "FastChart\\BubbleChart::draw() received a closed or invalid GdImage");
+        RETURN_THROWS();
+    }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (fastchart_bubble_render_to_image(self, im) != 0) {
         RETURN_THROWS();

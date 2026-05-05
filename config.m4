@@ -38,6 +38,14 @@ if test "$PHP_FASTCHART" != "no"; then
     AC_MSG_ERROR([libgd was built without FreeType support; gdImageStringFT is unavailable. Rebuild libgd with --with-freetype.])
   ])
 
+  dnl AVIF support is optional. Older libgd builds and stripped distros
+  dnl ship without it; the renderer raises a runtime exception when
+  dnl AVIF is requested on a build that doesn't expose the symbol.
+  PHP_CHECK_LIBRARY(gd, gdImageAvifPtrEx,
+  [
+    AC_DEFINE(HAVE_GD_AVIF, 1, [libgd has AVIF / gdImageAvifPtrEx])
+  ],[])
+
   PHP_SUBST(FASTCHART_SHARED_LIBADD)
 
   dnl ext/gd must load before fastchart so php_gd_libgdimageptr_from_zval_p

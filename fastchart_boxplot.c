@@ -60,7 +60,7 @@ static int read_dict_box(HashTable *ht, fastchart_box *out)
     if (fastchart_zval_to_double(zmax, &out->max) != 0) return -1;
 
     zval *zlabel = zend_hash_str_find(ht, "label", sizeof("label") - 1);
-    out->label = (zlabel && Z_TYPE_P(zlabel) == IS_STRING) ? Z_STRVAL_P(zlabel) : NULL;
+    out->label = fastchart_label_or_null(zlabel);
 
     out->n_outliers = 0;
     zval *zout = zend_hash_str_find(ht, "outliers", sizeof("outliers") - 1);
@@ -144,7 +144,7 @@ int fastchart_boxplot_render_to_image(fastchart_obj *self, gdImagePtr im)
     for (int i = 0; i < n; i++) {
         if (cat_zv && Z_TYPE_P(cat_zv) == IS_ARRAY) {
             zval *lv = zend_hash_index_find(Z_ARRVAL_P(cat_zv), i);
-            if (lv && Z_TYPE_P(lv) == IS_STRING) labels[i] = Z_STRVAL_P(lv);
+            labels[i] = fastchart_label_or_null(lv);
         }
         if (!labels[i] && boxes[i].label) labels[i] = boxes[i].label;
     }
@@ -213,7 +213,10 @@ ZEND_METHOD(FastChart_BoxPlot, draw)
         Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
     ZEND_PARSE_PARAMETERS_END();
     gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) RETURN_THROWS();
+    if (!im) {
+        zend_throw_error(NULL, "FastChart\\BoxPlot::draw() received a closed or invalid GdImage");
+        RETURN_THROWS();
+    }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (fastchart_boxplot_render_to_image(self, im) != 0) {
         RETURN_THROWS();

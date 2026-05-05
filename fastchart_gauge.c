@@ -178,7 +178,10 @@ ZEND_METHOD(FastChart_GaugeChart, draw)
     ZEND_PARSE_PARAMETERS_END();
 
     gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) RETURN_THROWS();
+    if (!im) {
+        zend_throw_error(NULL, "FastChart\\GaugeChart::draw() received a closed or invalid GdImage");
+        RETURN_THROWS();
+    }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (fastchart_gauge_render_to_image(self, im) != 0) {
         RETURN_THROWS();

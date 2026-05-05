@@ -65,7 +65,7 @@ static int collect_tasks(zval *data_zv, fastchart_gantt_task *out, int max_tasks
         out[*out_count].n_deps = 0;
 
         zval *zn = zend_hash_str_find(ht, "name", sizeof("name") - 1);
-        out[*out_count].name = (zn && Z_TYPE_P(zn) == IS_STRING) ? Z_STRVAL_P(zn) : NULL;
+        out[*out_count].name = fastchart_label_or_null(zn);
 
         zval *zc = zend_hash_str_find(ht, "color", sizeof("color") - 1);
         out[*out_count].color = (zc && Z_TYPE_P(zc) == IS_LONG &&
@@ -244,7 +244,10 @@ ZEND_METHOD(FastChart_GanttChart, draw)
     ZEND_PARSE_PARAMETERS_END();
 
     gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) RETURN_THROWS();
+    if (!im) {
+        zend_throw_error(NULL, "FastChart\\GanttChart::draw() received a closed or invalid GdImage");
+        RETURN_THROWS();
+    }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (fastchart_gantt_render_to_image(self, im) != 0) {
         RETURN_THROWS();

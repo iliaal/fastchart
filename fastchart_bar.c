@@ -73,8 +73,7 @@ static int collect_bar_series(zval *data_zv,
             zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
                                                 "label", sizeof("label") - 1);
             out[*out_count].label =
-                (label_zv && Z_TYPE_P(label_zv) == IS_STRING)
-                    ? Z_STRVAL_P(label_zv) : NULL;
+                fastchart_label_or_null(label_zv);
 
             zval *colors_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
                                                  "colors", sizeof("colors") - 1);
@@ -259,7 +258,7 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
         label_ptrs = ecalloc((size_t)n_categories, sizeof(const char *));
         for (int i = 0; i < n_categories; i++) {
             zval *lv = zend_hash_index_find(Z_ARRVAL_P(labels_zv), i);
-            label_ptrs[i] = (lv && Z_TYPE_P(lv) == IS_STRING) ? Z_STRVAL_P(lv) : NULL;
+            label_ptrs[i] = fastchart_label_or_null(lv);
         }
     }
     fastchart_draw_x_axis_categorical(im, self, &plot, &pal, n_categories, label_ptrs);

@@ -31,7 +31,7 @@
 typedef struct {
     HashTable *data;
     const char *label;
-    long color_override;
+    zend_long color_override;
 } polar_series_t;
 
 static int collect_polar_series(zval *data_zv, polar_series_t *out, int max_series,
@@ -212,7 +212,10 @@ ZEND_METHOD(FastChart_PolarChart, draw)
         Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
     ZEND_PARSE_PARAMETERS_END();
     gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) RETURN_THROWS();
+    if (!im) {
+        zend_throw_error(NULL, "FastChart\\PolarChart::draw() received a closed or invalid GdImage");
+        RETURN_THROWS();
+    }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (fastchart_polar_render_to_image(self, im) != 0) {
         RETURN_THROWS();

@@ -89,8 +89,7 @@ static int collect_scatter_points(zval *data_zv,
 
             zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
                                                 "label", sizeof("label") - 1);
-            series_labels[s] = (label_zv && Z_TYPE_P(label_zv) == IS_STRING)
-                ? Z_STRVAL_P(label_zv) : NULL;
+            series_labels[s] = fastchart_label_or_null(label_zv);
 
             zval *pair;
             ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(data_key), pair) {

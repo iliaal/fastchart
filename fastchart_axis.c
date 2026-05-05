@@ -415,11 +415,16 @@ void fastchart_value_range_compute(double dmin, double dmax,
         }
     }
 
-    /* Pick a "nice" tick step using the 1/2/5 × 10^N progression. */
+    /* Pick a "nice" tick step using the 1/2/5 × 10^N progression.
+     * Bail to a [0, 1] fallback if any intermediate goes non-finite —
+     * extreme but finite input magnitudes (e.g. dmax - dmin near
+     * DBL_MAX) can push log10 / pow / division through Inf and the
+     * later (int)cast in the renderer would be UB. */
     double range = dmax - dmin;
     double rough_step = range / (double)(target_ticks - 1);
-    double mag = pow(10.0, floor(log10(rough_step)));
-    double norm = rough_step / mag;
+    double mag = isfinite(rough_step) && rough_step > 0
+        ? pow(10.0, floor(log10(rough_step))) : 1.0;
+    double norm = (isfinite(mag) && mag > 0) ? rough_step / mag : 1.0;
     double step;
     if      (norm < 1.5)  step = 1.0  * mag;
     else if (norm < 3.0)  step = 2.0  * mag;
@@ -429,6 +434,9 @@ void fastchart_value_range_compute(double dmin, double dmax,
 
     double nice_min = floor(dmin / step) * step;
     double nice_max = ceil(dmax / step) * step;
+    if (!isfinite(nice_min) || !isfinite(nice_max) || !isfinite(step) || step <= 0) {
+        nice_min = 0.0; nice_max = 1.0; step = 1.0;
+    }
 
     out->min = nice_min;
     out->max = nice_max;
@@ -1277,12 +1285,13 @@ void fastchart_draw_h_annotations(gdImagePtr im, fastchart_obj *chart,
         gdImageLine(im, plot->x0 + 1, y, plot->x1 - 1, y, gdStyled);
 
         zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "label", 5);
-        if (label_zv && Z_TYPE_P(label_zv) == IS_STRING && font) {
+        const char *label = fastchart_label_or_null(label_zv);
+        if (label && font) {
             int tx = plot->x1 - 6;
             int ty = y - 4;  /* sit just above the line */
             fastchart_text_draw(im, font, size, color,
                                 tx, ty, FASTCHART_ALIGN_RIGHT,
-                                Z_STRVAL_P(label_zv), NULL, 0);
+                                label, NULL, 0);
         }
     } ZEND_HASH_FOREACH_END();
 }
@@ -1355,13 +1364,14 @@ static void draw_v_annotations_with_mapper(gdImagePtr im, fastchart_obj *chart,
         gdImageLine(im, x, plot->y0 + 1, x, plot->y1 - 1, gdStyled);
 
         zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "label", 5);
-        if (label_zv && Z_TYPE_P(label_zv) == IS_STRING && font) {
+        const char *label = fastchart_label_or_null(label_zv);
+        if (label && font) {
             /* Place the label just below the top edge of the plot
              * area, centered on the annotation line. */
             int ty = plot->y0 + (int)(size * 1.2) + 2;
             fastchart_text_draw(im, font, size, color,
                                 x + 4, ty, FASTCHART_ALIGN_LEFT,
-                                Z_STRVAL_P(label_zv), NULL, 0);
+                                label, NULL, 0);
         }
     } ZEND_HASH_FOREACH_END();
 }
