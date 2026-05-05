@@ -75,7 +75,7 @@ extern zend_class_entry *fastchart_gd_image_ce;
  * touch base fields by their natural names without the per-type-
  * setters needing a base accessor. The std member sits at the end of
  * each per-type struct, and each class registers its own
- * zend_object_handlers with offset = XtOffsetOf(class_struct, std)
+ * zend_object_handlers with offset = offsetof(class_struct, std)
  * so Z_FASTCHART_OBJ_P below lands on the start of the user struct
  * (= the base layout) regardless of which subclass we're in. */
 #define FASTCHART_BASE_FIELDS \
