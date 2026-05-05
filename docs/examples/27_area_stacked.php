@@ -16,6 +16,7 @@ $data = [
 
 (new FastChart\AreaChart(640, 320))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Active users by tier (stacked)')
     ->setSeries($data)
     ->setCategoryLabels($labels)
@@ -25,6 +26,7 @@ $data = [
 
 (new FastChart\AreaChart(640, 320))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Active users by tier (overlay)')
     ->setSeries($data)
     ->setCategoryLabels($labels)

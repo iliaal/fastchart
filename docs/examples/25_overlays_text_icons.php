@@ -25,6 +25,7 @@ imagedestroy($icon);
 
 (new FastChart\LineChart(720, 380))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Daily traffic — overlay + text + icon annotations')
     ->setSeries([
         ['label' => 'Visitors',

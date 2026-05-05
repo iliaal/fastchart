@@ -6,6 +6,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\PieChart(560, 400))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Traffic source breakdown')
     ->setSlices([
         'Organic search' => 41,

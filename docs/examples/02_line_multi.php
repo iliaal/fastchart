@@ -6,6 +6,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\LineChart(640, 380))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Quarterly revenue by region')
     ->setXAxisTitle('Quarter')
     ->setYAxisTitle('Revenue ($M)')

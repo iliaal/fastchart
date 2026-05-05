@@ -49,6 +49,7 @@ $styles = [
 foreach ($styles as [$label, $style, $file]) {
     (new FastChart\StockChart(420, 240))
     ->setFontPath($font)
+    ->setDpi($dpi)
         ->setTitle("STYLE_$label")
         ->setOhlcv($rows)
         ->setCandleStyle($style)

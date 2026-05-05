@@ -14,6 +14,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\LineChart(720, 360))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Custom palette across every painted surface')
     ->setBackgroundColor(0x1A1F2C)
     ->setPlotBackgroundColor(0x232A3D)
@@ -41,6 +42,7 @@ require __DIR__ . '/_bootstrap.php';
  * for compositing into a parent canvas / web page. */
 (new FastChart\BarChart(720, 320))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Narrow bars with custom edge')
     ->setSeries([['data' => [22, 35, 28, 41, 38, 47, 52]]])
     ->setCategoryLabels(['Mon','Tue','Wed','Thu','Fri','Sat','Sun'])

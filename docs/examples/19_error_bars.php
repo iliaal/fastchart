@@ -7,6 +7,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\LineChart(640, 360))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Measured signal with confidence interval')
     ->setSeries([
         ['data' => [12.3, 14.1, 13.5, 15.8, 17.2, 18.9, 20.1, 19.4]],
@@ -18,6 +19,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\ScatterChart(640, 360))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Scatter sample with asymmetric uncertainty')
     ->setPoints([
         [1.0, 10.5], [2.0, 12.8], [3.0, 11.4], [4.0, 14.1],

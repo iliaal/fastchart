@@ -7,6 +7,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\BarChart(680, 380))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setOrientation(FastChart\BarChart::BAR_HORIZONTAL)
     ->setTitle('p95 latency by endpoint (ms)')
     ->setSeries([

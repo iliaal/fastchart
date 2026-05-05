@@ -14,6 +14,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\BarChart(640, 320))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Floating bars: forecast salary range by role')
     ->setFloating(true)   // must precede setSeries so the parser
                           // reads each entry as [min, max] not scalar
@@ -32,6 +33,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\BarChart(640, 320))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Layered stack: visual envelope of multiple series')
     ->setSeries([
         ['label' => 'Q1', 'data' => [42, 38, 51, 47, 55, 49]],

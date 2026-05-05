@@ -15,6 +15,7 @@ for ($a = 0; $a <= 360; $a += 15) {
 
 (new FastChart\PolarChart(520, 520))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Antenna gain pattern')
     ->setSeries([
         ['label' => 'Antenna A', 'data' => $pts_a],
