@@ -67,6 +67,29 @@ typedef struct _fastchart_obj {
     zend_string *title;
     zend_string *font_path;
     double font_size;
+
+    /* Per-instance palette overrides. -1 means "use theme default"
+     * for color slots. series_colors_n is the count of overrides
+     * (0..8); series_colors[i] is the override RGB for series i. */
+    zend_long bg_override;
+    zend_long plot_bg_override;
+    int series_colors_n;
+    int series_colors[8];
+
+    /* Strict mode: when set, non-numeric data raises \TypeError on
+     * draw() instead of being silently skipped. */
+    bool strict;
+
+    /* Legend placement, one of FASTCHART_LEGEND_*. */
+    zend_long legend_position;
+
+    /* Y-axis scale: 0 linear, 1 log10. */
+    zend_long y_axis_scale;
+
+    /* LineChart / ScatterChart marker overrides. -1 means default. */
+    zend_long marker_style;   /* FASTCHART_MARKER_* */
+    zend_long marker_size;    /* pixels */
+
     zval data;
     zval config;
     zend_object std;
@@ -85,6 +108,25 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define FASTCHART_THEME_LIGHT 0
 #define FASTCHART_THEME_DARK  1
 
+/* Marker styles. Match the const ints in fastchart.stub.php. */
+#define FASTCHART_MARKER_NONE    0
+#define FASTCHART_MARKER_CIRCLE  1
+#define FASTCHART_MARKER_SQUARE  2
+#define FASTCHART_MARKER_DIAMOND 3
+#define FASTCHART_MARKER_CROSS   4
+#define FASTCHART_MARKER_PLUS    5
+
+/* Legend placement. */
+#define FASTCHART_LEGEND_NONE         0
+#define FASTCHART_LEGEND_TOP_RIGHT    1
+#define FASTCHART_LEGEND_TOP_LEFT     2
+#define FASTCHART_LEGEND_BOTTOM_RIGHT 3
+#define FASTCHART_LEGEND_BOTTOM_LEFT  4
+
+/* Y-axis scale. */
+#define FASTCHART_SCALE_LINEAR 0
+#define FASTCHART_SCALE_LOG    1
+
 /* Forward-declare the only ext/gd public API we use (also declared in
  * fastchart.c at the call site). Mirrored verbatim from
  * ext/gd/php_gd.h since that header is not installed via make install. */
@@ -93,5 +135,16 @@ extern struct gdImageStruct *php_gd_libgdimageptr_from_zval_p(zval *zp);
 /* Pull the underlying gdImagePtr out of the caller-supplied canvas
  * zval. NULL on failure; the caller throws. */
 gdImagePtr fastchart_gd_image_from_zval(zval *canvas_zv);
+
+/* Per-chart drawing helpers extracted from each ZEND_METHOD draw()
+ * so the renderPng/Jpeg/Webp shortcuts can reuse them without
+ * routing through ext/gd's zval extraction. Each returns 0 on
+ * success, -1 on a draw-time error (a PHP exception is already
+ * pending). */
+int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im);
+int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im);
+int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im);
+int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im);
+int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im);
 
 #endif /* PHP_FASTCHART_H */

@@ -95,33 +95,17 @@ static int read_value(HashTable *ht, int index, double *out)
     return fastchart_zval_to_double(v, out);
 }
 
-ZEND_METHOD(FastChart_BarChart, draw)
+int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
 {
-    zval *canvas_zv;
-
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
-    ZEND_PARSE_PARAMETERS_END();
-
-    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\BarChart::draw() received a closed or invalid GdImage");
-        RETURN_THROWS();
-    }
-
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-
     fastchart_bar_series series[MAX_SERIES];
     int n_series = 0, n_categories = 0;
     if (collect_bar_series(&self->data, series, MAX_SERIES,
                            &n_series, &n_categories) != 0 || n_series == 0) {
         zend_throw_error(NULL,
             "FastChart\\BarChart::draw() requires setSeries() to have been called with non-empty data");
-        RETURN_THROWS();
+        return -1;
     }
 
-    /* stacked option: read from config, default false. Stacked only
-     * makes sense with >=2 series; with 1 it degenerates to grouped. */
     bool stacked = false;
     {
         zval *cfg = zend_hash_str_find(Z_ARRVAL(self->config),
@@ -129,8 +113,6 @@ ZEND_METHOD(FastChart_BarChart, draw)
         if (cfg && Z_TYPE_P(cfg) == IS_TRUE) stacked = true;
     }
 
-    /* Compute Y range. Stacked sums per-category positives separately
-     * from negatives; grouped takes per-bar min and max directly. */
     double dmin = 0, dmax = 0;
     int seen = 0;
     if (stacked && n_series > 1) {
@@ -138,7 +120,16 @@ ZEND_METHOD(FastChart_BarChart, draw)
             double pos = 0, neg = 0;
             for (int s = 0; s < n_series; s++) {
                 double v;
-                if (read_value(series[s].data, i, &v) != 0) continue;
+                if (read_value(series[s].data, i, &v) != 0) {
+                    if (self->strict) {
+                        zval *zv = zend_hash_index_find(series[s].data, i);
+                        if (zv && Z_TYPE_P(zv) != IS_LONG && Z_TYPE_P(zv) != IS_DOUBLE) {
+                            zend_type_error("FastChart strict mode: bar values must be numeric");
+                            return -1;
+                        }
+                    }
+                    continue;
+                }
                 if (v >= 0) pos += v; else neg += v;
             }
             if (!seen) { dmin = neg; dmax = pos; seen = 1; }
@@ -149,7 +140,13 @@ ZEND_METHOD(FastChart_BarChart, draw)
             zval *v;
             ZEND_HASH_FOREACH_VAL(series[s].data, v) {
                 double d;
-                if (fastchart_zval_to_double(v, &d) != 0) continue;
+                if (fastchart_zval_to_double(v, &d) != 0) {
+                    if (self->strict) {
+                        zend_type_error("FastChart strict mode: bar values must be numeric");
+                        return -1;
+                    }
+                    continue;
+                }
                 if (!seen) { dmin = dmax = d; seen = 1; }
                 else { if (d < dmin) dmin = d; if (d > dmax) dmax = d; }
             } ZEND_HASH_FOREACH_END();
@@ -158,21 +155,31 @@ ZEND_METHOD(FastChart_BarChart, draw)
     if (!seen) {
         zend_throw_error(NULL,
             "FastChart\\BarChart::draw() found no numeric values in the series");
-        RETURN_THROWS();
+        return -1;
     }
-    /* Bars look wrong without zero anchored, so widen the range to
-     * include 0 unless data already straddles it. */
     if (dmin > 0) dmin = 0;
     if (dmax < 0) dmax = 0;
 
     fastchart_value_range range;
-    fastchart_value_range_compute(dmin, dmax, 6, &range);
+    if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
+        if (dmin <= 0) {
+            zend_value_error("FastChart\\BarChart::draw(): log Y-axis requires strictly-positive data (bars anchor at 0)");
+            return -1;
+        }
+        if (fastchart_value_range_compute_log(dmin, dmax, &range) != 0) {
+            zend_value_error("FastChart\\BarChart::draw(): log Y-axis requires strictly-positive data");
+            return -1;
+        }
+    } else {
+        fastchart_value_range_compute(dmin, dmax, 6, &range);
+    }
 
     fastchart_rect plot;
     fastchart_compute_layout(self, im, 1, 1, &plot);
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(im, self, &pal);
 
     fastchart_draw_frame(im, self, &plot, &pal);
     fastchart_draw_title(im, self, &plot, &pal);
@@ -193,9 +200,6 @@ ZEND_METHOD(FastChart_BarChart, draw)
 
     int zero_y = fastchart_y_to_pixel(0.0, &range, &plot);
 
-    /* Per-category slot width. Group bars sit side-by-side inside the
-     * slot with a small margin. Slot width derives from the layout
-     * helper for label-placement consistency. */
     int slot_w = (plot.x1 - plot.x0) / (n_categories > 0 ? n_categories : 1);
     int slot_pad = slot_w / 6;
     if (slot_pad < 1) slot_pad = 1;
@@ -249,14 +253,13 @@ ZEND_METHOD(FastChart_BarChart, draw)
         }
     }
 
-    /* Re-stroke the zero baseline so it's visible against the grid. */
     if (range.min < 0 && range.max > 0) {
         gdImageLine(im, plot.x0, zero_y, plot.x1, zero_y, pal.axis);
     }
 
-    /* Legend: one row per labeled series. Single-series flat-list
-     * data has no labels, so the legend only shows up when the
-     * caller explicitly tagged each series with a 'label' key. */
+    fastchart_draw_h_annotations(im, self, &plot, &pal, &range);
+    fastchart_draw_v_annotations_categorical(im, self, &plot, &pal, n_categories);
+
     if (n_series >= 2) {
         int legend_colors[MAX_SERIES];
         const char *legend_labels[MAX_SERIES];
@@ -273,5 +276,26 @@ ZEND_METHOD(FastChart_BarChart, draw)
         }
     }
 
+    return 0;
+}
+
+ZEND_METHOD(FastChart_BarChart, draw)
+{
+    zval *canvas_zv;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
+    ZEND_PARSE_PARAMETERS_END();
+
+    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
+    if (!im) {
+        zend_throw_error(NULL, "FastChart\\BarChart::draw() received a closed or invalid GdImage");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (fastchart_bar_render_to_image(self, im) != 0) {
+        RETURN_THROWS();
+    }
     RETURN_ZVAL(canvas_zv, 1, 0);
 }

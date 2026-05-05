@@ -20,6 +20,7 @@
 #include "ext/standard/info.h"
 #include "Zend/zend_exceptions.h"
 
+#include <math.h>
 #include <sys/stat.h>
 
 #include "php_fastchart.h"
@@ -65,6 +66,17 @@ static zend_object *fastchart_create_object(zend_class_entry *ce)
     intern->theme  = FASTCHART_THEME_LIGHT;
     intern->title  = ZSTR_EMPTY_ALLOC();
     intern->font_size = FASTCHART_DEFAULT_FONT_SIZE;
+
+    intern->bg_override = -1;
+    intern->plot_bg_override = -1;
+    intern->series_colors_n = 0;
+    for (int i = 0; i < 8; i++) intern->series_colors[i] = -1;
+
+    intern->strict = false;
+    intern->legend_position = FASTCHART_LEGEND_TOP_RIGHT;
+    intern->y_axis_scale = FASTCHART_SCALE_LINEAR;
+    intern->marker_style = -1;  /* per-chart default applies */
+    intern->marker_size = -1;
 
     if (fastchart_default_font_path) {
         intern->font_path = zend_string_copy(fastchart_default_font_path);
@@ -276,6 +288,343 @@ ZEND_METHOD(FastChart_Chart, setCategoryLabels)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+/* ---------------- background / palette overrides ----------------- */
+
+static void store_color_override(zend_long *slot, zend_long rgb,
+                                 const char *who)
+{
+    if (rgb < -1 || rgb > 0xFFFFFF) {
+        zend_value_error("%s expects -1 (theme default) or 0..0xFFFFFF", who);
+        return;
+    }
+    *slot = rgb;
+}
+
+ZEND_METHOD(FastChart_Chart, setBackgroundColor)
+{
+    zend_long rgb;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(rgb)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    store_color_override(&self->bg_override, rgb,
+        "FastChart\\Chart::setBackgroundColor()");
+    if (EG(exception)) RETURN_THROWS();
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, setPlotBackgroundColor)
+{
+    zend_long rgb;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(rgb)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    store_color_override(&self->plot_bg_override, rgb,
+        "FastChart\\Chart::setPlotBackgroundColor()");
+    if (EG(exception)) RETURN_THROWS();
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, setSeriesColors)
+{
+    zval *colors;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(colors)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(colors);
+
+    int n = 0;
+    int parsed[8];
+    zval *v;
+    ZEND_HASH_FOREACH_VAL(ht, v) {
+        if (n >= 8) break;
+        if (Z_TYPE_P(v) != IS_LONG) {
+            zend_type_error("FastChart\\Chart::setSeriesColors() expects a list of 24-bit RGB ints");
+            RETURN_THROWS();
+        }
+        zend_long c = Z_LVAL_P(v);
+        if (c < 0 || c > 0xFFFFFF) {
+            zend_value_error("FastChart\\Chart::setSeriesColors() entry out of range; expected 0..0xFFFFFF");
+            RETURN_THROWS();
+        }
+        parsed[n++] = (int)c;
+    } ZEND_HASH_FOREACH_END();
+
+    self->series_colors_n = n;
+    for (int i = 0; i < n; i++) self->series_colors[i] = parsed[i];
+
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ---------------- legend / scale / strict / annotations ---------- */
+
+ZEND_METHOD(FastChart_Chart, setLegendPosition)
+{
+    zend_long pos;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(pos)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (pos < FASTCHART_LEGEND_NONE || pos > FASTCHART_LEGEND_BOTTOM_LEFT) {
+        zend_value_error("FastChart\\Chart::setLegendPosition() expects a LEGEND_* class constant");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->legend_position = pos;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, setYAxisScale)
+{
+    zend_long scale;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(scale)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (scale != FASTCHART_SCALE_LINEAR && scale != FASTCHART_SCALE_LOG) {
+        zend_value_error("FastChart\\Chart::setYAxisScale() expects a SCALE_* class constant");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->y_axis_scale = scale;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, setStrict)
+{
+    bool strict;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(strict)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->strict = strict;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* Shared annotation pusher. `kind` is "h" or "v"; storage shape on
+ * config is a list of dicts {kind, value, label?, color?}. */
+static void push_annotation(fastchart_obj *self, const char *kind,
+                            double value, zend_string *label,
+                            zend_long has_color, zend_long color)
+{
+    zval *list_zv = zend_hash_str_find(Z_ARRVAL(self->config),
+                                       "annotations", sizeof("annotations") - 1);
+    if (!list_zv || Z_TYPE_P(list_zv) != IS_ARRAY) {
+        zval list;
+        array_init(&list);
+        list_zv = zend_hash_str_update(Z_ARRVAL(self->config),
+            "annotations", sizeof("annotations") - 1, &list);
+    }
+
+    zval entry;
+    array_init(&entry);
+    add_assoc_string(&entry, "kind", (char *)kind);
+    add_assoc_double(&entry, "value", value);
+    if (label) {
+        add_assoc_str(&entry, "label", zend_string_copy(label));
+    }
+    if (has_color) {
+        add_assoc_long(&entry, "color", color);
+    }
+    add_next_index_zval(list_zv, &entry);
+}
+
+ZEND_METHOD(FastChart_Chart, addHorizontalLine)
+{
+    double value;
+    zend_string *label = NULL;
+    bool label_is_null = true;
+    zend_long color = 0;
+    bool color_is_null = true;
+
+    ZEND_PARSE_PARAMETERS_START(1, 3)
+        Z_PARAM_DOUBLE(value)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_STR_OR_NULL(label)
+        Z_PARAM_LONG_OR_NULL(color, color_is_null)
+    ZEND_PARSE_PARAMETERS_END();
+    label_is_null = (label == NULL);
+
+    if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
+        zend_value_error("FastChart\\Chart::addHorizontalLine() color out of range; expected 0..0xFFFFFF");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    push_annotation(self, "h", value,
+                    label_is_null ? NULL : label,
+                    !color_is_null, color);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, addVerticalLine)
+{
+    double position;
+    zend_string *label = NULL;
+    zend_long color = 0;
+    bool color_is_null = true;
+
+    ZEND_PARSE_PARAMETERS_START(1, 3)
+        Z_PARAM_DOUBLE(position)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_STR_OR_NULL(label)
+        Z_PARAM_LONG_OR_NULL(color, color_is_null)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
+        zend_value_error("FastChart\\Chart::addVerticalLine() color out of range; expected 0..0xFFFFFF");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    push_annotation(self, "v", position,
+                    label == NULL ? NULL : label,
+                    !color_is_null, color);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ---------------- LineChart / ScatterChart marker setters -------- */
+
+#define FASTCHART_MARKER_SETTERS(class_) \
+    ZEND_METHOD(class_, setMarkerStyle) \
+    { \
+        zend_long style; \
+        ZEND_PARSE_PARAMETERS_START(1, 1) \
+            Z_PARAM_LONG(style) \
+        ZEND_PARSE_PARAMETERS_END(); \
+        if (style < FASTCHART_MARKER_NONE || style > FASTCHART_MARKER_PLUS) { \
+            zend_value_error("setMarkerStyle() expects a MARKER_* class constant"); \
+            RETURN_THROWS(); \
+        } \
+        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
+        self->marker_style = style; \
+        RETURN_ZVAL(ZEND_THIS, 1, 0); \
+    } \
+    ZEND_METHOD(class_, setMarkerSize) \
+    { \
+        zend_long size; \
+        ZEND_PARSE_PARAMETERS_START(1, 1) \
+            Z_PARAM_LONG(size) \
+        ZEND_PARSE_PARAMETERS_END(); \
+        if (size < 1 || size > 32) { \
+            zend_value_error("setMarkerSize() expects a value in [1, 32]"); \
+            RETURN_THROWS(); \
+        } \
+        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
+        self->marker_size = size; \
+        RETURN_ZVAL(ZEND_THIS, 1, 0); \
+    }
+
+FASTCHART_MARKER_SETTERS(FastChart_LineChart)
+FASTCHART_MARKER_SETTERS(FastChart_ScatterChart)
+
+/* ----------------- renderPng / renderJpeg / renderWebp ----------- */
+
+/* Dispatch by class entry. Five concrete subclasses; a single
+ * if/else chain is fine -- this is per-render-call, not per-pixel.
+ * Returns 0 on success with a PHP exception possibly pending; -1
+ * if we hit an unknown class entry (defensive; should not happen
+ * because the abstract base is uninstantiable). */
+static int dispatch_render(fastchart_obj *self, zend_class_entry *ce, gdImagePtr im)
+{
+    if (ce == fastchart_line_chart_ce)    return fastchart_line_render_to_image(self, im);
+    if (ce == fastchart_bar_chart_ce)     return fastchart_bar_render_to_image(self, im);
+    if (ce == fastchart_pie_chart_ce)     return fastchart_pie_render_to_image(self, im);
+    if (ce == fastchart_scatter_chart_ce) return fastchart_scatter_render_to_image(self, im);
+    if (ce == fastchart_stock_chart_ce)   return fastchart_stock_render_to_image(self, im);
+    zend_throw_error(NULL, "FastChart: render dispatch found unknown class entry");
+    return -1;
+}
+
+/* `format`: 0 = PNG, 1 = JPEG, 2 = WebP. */
+static void render_to_string_helper(INTERNAL_FUNCTION_PARAMETERS, int format, zend_long quality)
+{
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+
+    if (self->width <= 0 || self->height <= 0) {
+        zend_throw_error(NULL, "FastChart: invalid canvas size; setSize() first");
+        RETURN_THROWS();
+    }
+
+    gdImagePtr im = gdImageCreateTrueColor((int)self->width, (int)self->height);
+    if (!im) {
+        zend_throw_error(NULL, "FastChart: gdImageCreateTrueColor() returned NULL");
+        RETURN_THROWS();
+    }
+
+    if (dispatch_render(self, Z_OBJCE_P(ZEND_THIS), im) != 0 || EG(exception)) {
+        gdImageDestroy(im);
+        RETURN_THROWS();
+    }
+
+    int sz = 0;
+    void *bytes = NULL;
+    if (format == 0) {
+        bytes = gdImagePngPtr(im, &sz);
+    } else if (format == 1) {
+        bytes = gdImageJpegPtr(im, &sz, (int)quality);
+    } else {
+        bytes = gdImageWebpPtrEx(im, &sz, (int)quality);
+    }
+
+    if (!bytes || sz <= 0) {
+        if (bytes) gdFree(bytes);
+        gdImageDestroy(im);
+        zend_throw_error(NULL, "FastChart: gd encoder produced no output");
+        RETURN_THROWS();
+    }
+
+    /* gdImage*Ptr buffers are gdMalloc'd; copy into a Zend string,
+     * then gdFree the libgd buffer. */
+    zend_string *out = zend_string_init((const char *)bytes, (size_t)sz, 0);
+    gdFree(bytes);
+    gdImageDestroy(im);
+
+    RETURN_STR(out);
+}
+
+ZEND_METHOD(FastChart_Chart, renderPng)
+{
+    ZEND_PARSE_PARAMETERS_NONE();
+    render_to_string_helper(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, renderJpeg)
+{
+    zend_long quality = 90;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(quality)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (quality < 1 || quality > 100) {
+        zend_value_error("FastChart\\Chart::renderJpeg() quality must be in [1, 100]");
+        RETURN_THROWS();
+    }
+    render_to_string_helper(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1, quality);
+}
+
+ZEND_METHOD(FastChart_Chart, renderWebp)
+{
+    zend_long quality = 90;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(quality)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (quality < 0 || quality > 100) {
+        zend_value_error("FastChart\\Chart::renderWebp() quality must be in [0, 100]");
+        RETURN_THROWS();
+    }
+    render_to_string_helper(INTERNAL_FUNCTION_PARAM_PASSTHRU, 2, quality);
+}
+
 /* ---------------- per-class setSeries family --------------------
  *
  * gen_stub emits a separate ZEND_METHOD entry per class even though
@@ -362,6 +711,91 @@ ZEND_METHOD(FastChart_StockChart, setVolumePane)
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     add_assoc_bool(&self->config, "volume_pane", enabled);
 
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
+{
+    zend_string *name;
+    zval *values;
+    HashTable *opts = NULL;
+
+    ZEND_PARSE_PARAMETERS_START(2, 3)
+        Z_PARAM_STR(name)
+        Z_PARAM_ARRAY(values)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_ARRAY_HT_OR_NULL(opts)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (ZSTR_LEN(name) == 0) {
+        zend_value_error("FastChart\\StockChart::addIndicatorPane() requires a non-empty name");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+
+    /* Indicator panes live as a list under config[indicator_panes].
+     * Each entry: {name, values: [...], color?, reference?, min?, max?}.
+     * Cap at 3 panes so the price+volume+indicator stack stays
+     * legible on a typical 600-700px tall canvas. */
+    zval *list_zv = zend_hash_str_find(Z_ARRVAL(self->config),
+                                       "indicator_panes",
+                                       sizeof("indicator_panes") - 1);
+    if (!list_zv || Z_TYPE_P(list_zv) != IS_ARRAY) {
+        zval list;
+        array_init(&list);
+        list_zv = zend_hash_str_update(Z_ARRVAL(self->config),
+            "indicator_panes", sizeof("indicator_panes") - 1, &list);
+    }
+    if (zend_hash_num_elements(Z_ARRVAL_P(list_zv)) >= 3) {
+        zend_value_error("FastChart\\StockChart::addIndicatorPane() supports at most 3 panes");
+        RETURN_THROWS();
+    }
+
+    zval entry;
+    array_init(&entry);
+    add_assoc_str(&entry, "name", zend_string_copy(name));
+
+    zval values_copy;
+    ZVAL_COPY(&values_copy, values);
+    add_assoc_zval(&entry, "values", &values_copy);
+
+    if (opts) {
+        zval *opt;
+        opt = zend_hash_str_find(opts, "color", sizeof("color") - 1);
+        if (opt && Z_TYPE_P(opt) == IS_LONG) {
+            zend_long c = Z_LVAL_P(opt);
+            if (c >= 0 && c <= 0xFFFFFF) {
+                add_assoc_long(&entry, "color", c);
+            }
+        }
+        opt = zend_hash_str_find(opts, "reference", sizeof("reference") - 1);
+        if (opt) {
+            double d;
+            if (Z_TYPE_P(opt) == IS_DOUBLE) d = Z_DVAL_P(opt);
+            else if (Z_TYPE_P(opt) == IS_LONG) d = (double)Z_LVAL_P(opt);
+            else d = NAN;
+            if (!isnan(d)) add_assoc_double(&entry, "reference", d);
+        }
+        opt = zend_hash_str_find(opts, "min", sizeof("min") - 1);
+        if (opt) {
+            double d;
+            if (Z_TYPE_P(opt) == IS_DOUBLE) d = Z_DVAL_P(opt);
+            else if (Z_TYPE_P(opt) == IS_LONG) d = (double)Z_LVAL_P(opt);
+            else d = NAN;
+            if (!isnan(d)) add_assoc_double(&entry, "min", d);
+        }
+        opt = zend_hash_str_find(opts, "max", sizeof("max") - 1);
+        if (opt) {
+            double d;
+            if (Z_TYPE_P(opt) == IS_DOUBLE) d = Z_DVAL_P(opt);
+            else if (Z_TYPE_P(opt) == IS_LONG) d = (double)Z_LVAL_P(opt);
+            else d = NAN;
+            if (!isnan(d)) add_assoc_double(&entry, "max", d);
+        }
+    }
+
+    add_next_index_zval(list_zv, &entry);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 

@@ -85,27 +85,13 @@ static int read_candle(zval *row, fastchart_candle *out)
     return 0;
 }
 
-ZEND_METHOD(FastChart_StockChart, draw)
+int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
 {
-    zval *canvas_zv;
-
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
-    ZEND_PARSE_PARAMETERS_END();
-
-    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\StockChart::draw() received a closed or invalid GdImage");
-        RETURN_THROWS();
-    }
-
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-
     if (Z_TYPE(self->data) != IS_ARRAY ||
         zend_hash_num_elements(Z_ARRVAL(self->data)) == 0) {
         zend_throw_error(NULL,
             "FastChart\\StockChart::draw() requires setOhlcv() with one or more rows");
-        RETURN_THROWS();
+        return -1;
     }
 
     fastchart_candle *candles = ecalloc(MAX_CANDLES, sizeof(fastchart_candle));
@@ -124,7 +110,7 @@ ZEND_METHOD(FastChart_StockChart, draw)
         efree(candles);
         zend_throw_error(NULL,
             "FastChart\\StockChart::draw() found no valid OHLC rows; expected [ts, o, h, l, c] or [ts, o, h, l, c, v]");
-        RETURN_THROWS();
+        return -1;
     }
 
     /* Sort by timestamp. Insertion sort -- caller is expected to feed
@@ -180,36 +166,89 @@ ZEND_METHOD(FastChart_StockChart, draw)
     fastchart_rect plot;
     fastchart_compute_layout(self, im, 1, 1, &plot);
 
+    /* Pane stacking: optional volume + up to 3 indicator panes
+     * stack below the price pane. Each sub-pane gets a fixed share
+     * of the available height. */
+    zval *cfg_panes = zend_hash_str_find(Z_ARRVAL(self->config),
+                                         "indicator_panes",
+                                         sizeof("indicator_panes") - 1);
+    int n_indicator_panes = 0;
+    if (cfg_panes && Z_TYPE_P(cfg_panes) == IS_ARRAY) {
+        n_indicator_panes = (int)zend_hash_num_elements(Z_ARRVAL_P(cfg_panes));
+        if (n_indicator_panes > 3) n_indicator_panes = 3;
+    }
+
     fastchart_rect price_pane = plot;
     fastchart_rect volume_pane = { 0, 0, 0, 0 };
-    if (show_volume) {
+    fastchart_rect indicator_panes[3] = {{0,0,0,0},{0,0,0,0},{0,0,0,0}};
+
+    {
         int total_h = plot.y1 - plot.y0;
         int gap = 6;
-        int volume_h = (int)(total_h * 0.22);
-        if (volume_h < 30) volume_h = 30;
-        price_pane.y1 = plot.y1 - volume_h - gap;
-        volume_pane.x0 = plot.x0;
-        volume_pane.x1 = plot.x1;
-        volume_pane.y0 = plot.y1 - volume_h;
-        volume_pane.y1 = plot.y1;
+        int sub_count = (show_volume ? 1 : 0) + n_indicator_panes;
+        if (sub_count > 0) {
+            int sub_share = (int)(total_h * 0.20);
+            if (sub_share < 30) sub_share = 30;
+            int sub_h_each = (sub_share * sub_count > total_h * 60 / 100)
+                ? (total_h * 60 / 100) / sub_count
+                : sub_share;
+            if (sub_h_each < 24) sub_h_each = 24;
+            int total_sub_h = sub_h_each * sub_count + gap * sub_count;
+            price_pane.y1 = plot.y1 - total_sub_h;
+
+            int cur_y = price_pane.y1 + gap;
+            int slot = 0;
+            if (show_volume) {
+                volume_pane.x0 = plot.x0;
+                volume_pane.x1 = plot.x1;
+                volume_pane.y0 = cur_y;
+                volume_pane.y1 = cur_y + sub_h_each - 1;
+                cur_y += sub_h_each + gap;
+                slot++;
+                (void)slot;
+            }
+            for (int p = 0; p < n_indicator_panes; p++) {
+                indicator_panes[p].x0 = plot.x0;
+                indicator_panes[p].x1 = plot.x1;
+                indicator_panes[p].y0 = cur_y;
+                indicator_panes[p].y1 = cur_y + sub_h_each - 1;
+                cur_y += sub_h_each + gap;
+            }
+        }
     }
 
     fastchart_value_range yrange;
-    fastchart_value_range_compute(y_min, y_max, 6, &yrange);
+    if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
+        if (fastchart_value_range_compute_log(y_min, y_max, &yrange) != 0) {
+            efree(candles);
+            zend_value_error("FastChart\\StockChart::draw(): log Y-axis requires strictly-positive prices");
+            return -1;
+        }
+    } else {
+        fastchart_value_range_compute(y_min, y_max, 6, &yrange);
+    }
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(im, self, &pal);
 
     fastchart_draw_frame(im, self, &plot, &pal);
 
-    /* If volume sub-pane is on, draw a separator line and an inner
-     * border. The price pane gets its own y-axis ticks; the volume
-     * pane is unlabeled (for v0.1) -- just colored bars. */
-    if (show_volume) {
+    /* Sub-pane borders. Each pane gets its own rectangle so the
+     * boundaries between price / volume / indicator are clear. */
+    if (show_volume || n_indicator_panes > 0) {
         gdImageRectangle(im, price_pane.x0, price_pane.y0,
                          price_pane.x1, price_pane.y1, pal.border);
+    }
+    if (show_volume) {
         gdImageRectangle(im, volume_pane.x0, volume_pane.y0,
                          volume_pane.x1, volume_pane.y1, pal.border);
+    }
+    for (int p = 0; p < n_indicator_panes; p++) {
+        gdImageRectangle(im,
+            indicator_panes[p].x0, indicator_panes[p].y0,
+            indicator_panes[p].x1, indicator_panes[p].y1,
+            pal.border);
     }
 
     fastchart_draw_title(im, self, &plot, &pal);
@@ -311,9 +350,121 @@ ZEND_METHOD(FastChart_StockChart, draw)
         }
     }
 
-    /* Legend for the SMA overlays (the candles themselves are
-     * self-explanatory red/green). One row per moving-average
-     * period, labeled "SMA(N)". */
+    /* Indicator panes. Each pane has its own y-range computed from
+     * the supplied values (bounded by optional 'min' and 'max' from
+     * the opts dict). Drawn as a 2px line; reference line if
+     * configured; pane name in the top-left corner. */
+    if (n_indicator_panes > 0) {
+        double size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+        const char *font = self->font_path ? ZSTR_VAL(self->font_path) : NULL;
+
+        int slot = 0;
+        zval *pane_zv;
+        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(cfg_panes), pane_zv) {
+            if (slot >= n_indicator_panes) break;
+            if (Z_TYPE_P(pane_zv) != IS_ARRAY) { slot++; continue; }
+
+            zval *values_zv = zend_hash_str_find(Z_ARRVAL_P(pane_zv),
+                                                 "values", sizeof("values") - 1);
+            zval *name_zv = zend_hash_str_find(Z_ARRVAL_P(pane_zv),
+                                               "name", sizeof("name") - 1);
+            if (!values_zv || Z_TYPE_P(values_zv) != IS_ARRAY) { slot++; continue; }
+
+            /* Read the first n values out of the array (parallel to
+             * candles). Missing or non-numeric entries become NaN
+             * so the line skips that segment. */
+            double *vals = ecalloc((size_t)n, sizeof(double));
+            int valid = 0;
+            double pmin = 0, pmax = 0;
+            HashTable *vht = Z_ARRVAL_P(values_zv);
+            for (int i = 0; i < n; i++) {
+                zval *vv = zend_hash_index_find(vht, i);
+                double d;
+                if (vv && fastchart_zval_to_double(vv, &d) == 0 && isfinite(d)) {
+                    vals[i] = d;
+                    if (valid == 0) { pmin = pmax = d; valid = 1; }
+                    else { if (d < pmin) pmin = d; if (d > pmax) pmax = d; }
+                } else {
+                    vals[i] = NAN;
+                }
+            }
+            if (!valid) { efree(vals); slot++; continue; }
+
+            /* Apply opts.min / opts.max clamps. */
+            zval *opt;
+            opt = zend_hash_str_find(Z_ARRVAL_P(pane_zv), "min", 3);
+            if (opt && Z_TYPE_P(opt) == IS_DOUBLE) pmin = Z_DVAL_P(opt);
+            opt = zend_hash_str_find(Z_ARRVAL_P(pane_zv), "max", 3);
+            if (opt && Z_TYPE_P(opt) == IS_DOUBLE) pmax = Z_DVAL_P(opt);
+
+            fastchart_value_range pr;
+            fastchart_value_range_compute(pmin, pmax, 4, &pr);
+
+            int color;
+            opt = zend_hash_str_find(Z_ARRVAL_P(pane_zv), "color", 5);
+            if (opt && Z_TYPE_P(opt) == IS_LONG) {
+                long c = Z_LVAL_P(opt);
+                color = gdImageColorAllocate(im,
+                    (int)((c >> 16) & 0xFF),
+                    (int)((c >>  8) & 0xFF),
+                    (int)( c        & 0xFF));
+            } else {
+                color = pal.series[(slot + 4) % FASTCHART_PALETTE_SERIES_N];
+            }
+
+            /* Reference line, if configured. */
+            opt = zend_hash_str_find(Z_ARRVAL_P(pane_zv), "reference", 9);
+            if (opt && Z_TYPE_P(opt) == IS_DOUBLE) {
+                double r = Z_DVAL_P(opt);
+                int ry = fastchart_y_to_pixel(r, &pr, &indicator_panes[slot]);
+                if (ry >= indicator_panes[slot].y0 && ry <= indicator_panes[slot].y1) {
+                    static int ref_style[8];
+                    for (int k = 0; k < 4; k++) ref_style[k] = pal.grid;
+                    for (int k = 4; k < 8; k++) ref_style[k] = gdTransparent;
+                    gdImageSetStyle(im, ref_style, 8);
+                    gdImageLine(im, indicator_panes[slot].x0 + 1, ry,
+                                    indicator_panes[slot].x1 - 1, ry, gdStyled);
+                }
+            }
+
+            /* Polyline through the values that map to actual times. */
+            gdImageSetThickness(im, 2);
+            gdImageSetAntiAliased(im, color);
+            int prev_x = 0, prev_y = 0;
+            int has_prev = 0;
+            for (int i = 0; i < n; i++) {
+                if (isnan(vals[i])) { has_prev = 0; continue; }
+                int x = fastchart_x_time_to_pixel(&indicator_panes[slot],
+                                                  candles[i].ts, t_min, t_max);
+                int y = fastchart_y_to_pixel(vals[i], &pr, &indicator_panes[slot]);
+                if (has_prev) {
+                    gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
+                }
+                prev_x = x;
+                prev_y = y;
+                has_prev = 1;
+            }
+            gdImageSetThickness(im, 1);
+
+            /* Pane name top-left of the pane. */
+            if (font && name_zv && Z_TYPE_P(name_zv) == IS_STRING) {
+                fastchart_text_draw(im, font, size * 0.9, color,
+                    indicator_panes[slot].x0 + 6,
+                    indicator_panes[slot].y0 + (int)(size * 1.1),
+                    FASTCHART_ALIGN_LEFT, Z_STRVAL_P(name_zv), NULL, 0);
+            }
+
+            efree(vals);
+            slot++;
+        } ZEND_HASH_FOREACH_END();
+    }
+
+    /* Annotations: only Y annotations apply within the price pane;
+     * X annotations apply across the whole chart. */
+    fastchart_draw_h_annotations(im, self, &price_pane, &pal, &yrange);
+    fastchart_draw_v_annotations_time(im, self, &plot, &pal, t_min, t_max);
+
+    /* Legend for the SMA overlays. */
     if (sma_count > 0) {
         int legend_colors[8];
         const char *legend_labels[8];
@@ -330,5 +481,26 @@ ZEND_METHOD(FastChart_StockChart, draw)
     }
 
     efree(candles);
+    return 0;
+}
+
+ZEND_METHOD(FastChart_StockChart, draw)
+{
+    zval *canvas_zv;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
+    ZEND_PARSE_PARAMETERS_END();
+
+    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
+    if (!im) {
+        zend_throw_error(NULL, "FastChart\\StockChart::draw() received a closed or invalid GdImage");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (fastchart_stock_render_to_image(self, im) != 0) {
+        RETURN_THROWS();
+    }
     RETURN_ZVAL(canvas_zv, 1, 0);
 }

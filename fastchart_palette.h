@@ -35,4 +35,15 @@ typedef struct {
  * in the palette struct. Idempotent: a second call re-allocates. */
 void fastchart_palette_init(gdImagePtr im, int theme, fastchart_palette *pal);
 
+/* Forward decl to avoid pulling php_fastchart.h here. */
+struct _fastchart_obj;
+
+/* Apply per-instance overrides (setBackgroundColor /
+ * setPlotBackgroundColor / setSeriesColors) on top of the
+ * theme-derived palette. Re-allocates the affected gd colors so
+ * the palette struct holds valid color indices for `im`. */
+void fastchart_palette_apply_overrides(gdImagePtr im,
+                                        const struct _fastchart_obj *chart,
+                                        fastchart_palette *pal);
+
 #endif /* FASTCHART_PALETTE_H */

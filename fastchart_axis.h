@@ -30,6 +30,7 @@ typedef struct {
     double max;
     double tick_step;
     int    n_ticks;
+    int    log_scale;       /* 0 linear, 1 base-10 log */
     double ticks[FASTCHART_MAX_TICKS];
 } fastchart_value_range;
 
@@ -46,6 +47,12 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
 void fastchart_value_range_compute(double dmin, double dmax,
                                    int target_ticks,
                                    fastchart_value_range *out);
+
+/* Log10 value range; ticks at powers of ten that bracket the data.
+ * Both `dmin` and `dmax` must be strictly positive. Returns 0 on
+ * success, -1 if dmin <= 0 (caller throws). */
+int fastchart_value_range_compute_log(double dmin, double dmax,
+                                       fastchart_value_range *out);
 
 /* Map a data y-value to a pixel y (gd: 0 at top). */
 int fastchart_y_to_pixel(double y,
@@ -99,17 +106,50 @@ int fastchart_zval_to_double(zval *zv, double *out);
 /* Coerce a zval to a long. Returns 0 on success, -1 on mismatch. */
 int fastchart_zval_to_long(zval *zv, long *out);
 
-/* Draw a legend in the top-right corner of the plot area: one row
- * per series with a color swatch and a label. `colors[i]` and
- * `labels[i]` are paired. A label may be NULL, in which case the
- * row is skipped. The legend has an opaque background so it
- * overdraws data underneath -- callers place this last. No-op if
- * n_entries < 1 or the chart has no font. */
+/* Draw a single point marker. `style` is one of FASTCHART_MARKER_*;
+ * `size` is the marker's enclosing diameter in pixels. NONE renders
+ * nothing. */
+void fastchart_draw_marker(gdImagePtr im, int x, int y,
+                           int style, int size, int color);
+
+/* Draw a legend in the position the chart's `legend_position`
+ * field selects (one of FASTCHART_LEGEND_*). One row per series
+ * with a color swatch and a label. `colors[i]` and `labels[i]`
+ * are paired. A label may be NULL, in which case the row is
+ * skipped. The legend has an opaque background so it overdraws
+ * data underneath -- callers place this last. No-op if
+ * n_entries < 1, the chart has no font, or position == LEGEND_NONE. */
 void fastchart_draw_legend(gdImagePtr im, fastchart_obj *chart,
                            const fastchart_rect *plot,
                            const fastchart_palette *pal,
                            int n_entries,
                            const int *colors,
                            const char *const *labels);
+
+/* Draw any horizontal-line annotations stored on the chart. The
+ * y-mapping uses the supplied value_range. Out-of-range
+ * annotations are silently clamped to the plot bounds. */
+void fastchart_draw_h_annotations(gdImagePtr im, fastchart_obj *chart,
+                                  const fastchart_rect *plot,
+                                  const fastchart_palette *pal,
+                                  const fastchart_value_range *yrange);
+
+/* Vertical annotation drawing variants -- one per X-coordinate
+ * system. `position` in the annotation is interpreted per the
+ * chart's X axis. */
+void fastchart_draw_v_annotations_categorical(gdImagePtr im, fastchart_obj *chart,
+                                              const fastchart_rect *plot,
+                                              const fastchart_palette *pal,
+                                              int n_categories);
+
+void fastchart_draw_v_annotations_continuous(gdImagePtr im, fastchart_obj *chart,
+                                             const fastchart_rect *plot,
+                                             const fastchart_palette *pal,
+                                             const fastchart_value_range *xrange);
+
+void fastchart_draw_v_annotations_time(gdImagePtr im, fastchart_obj *chart,
+                                       const fastchart_rect *plot,
+                                       const fastchart_palette *pal,
+                                       long t_min, long t_max);
 
 #endif /* FASTCHART_AXIS_H */

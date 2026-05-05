@@ -124,22 +124,8 @@ done:
     return 0;
 }
 
-ZEND_METHOD(FastChart_ScatterChart, draw)
+int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
 {
-    zval *canvas_zv;
-
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
-    ZEND_PARSE_PARAMETERS_END();
-
-    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\ScatterChart::draw() received a closed or invalid GdImage");
-        RETURN_THROWS();
-    }
-
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-
     static fastchart_scatter_point points[MAX_POINTS];
     const char *series_labels[MAX_SCATTER_SERIES] = { NULL };
     int n = 0, n_series = 0;
@@ -147,7 +133,7 @@ ZEND_METHOD(FastChart_ScatterChart, draw)
                                series_labels, &n_series) != 0 || n == 0) {
         zend_throw_error(NULL,
             "FastChart\\ScatterChart::draw() requires setPoints() with one or more [x, y] pairs");
-        RETURN_THROWS();
+        return -1;
     }
 
     /* Y range from data. */
@@ -161,11 +147,16 @@ ZEND_METHOD(FastChart_ScatterChart, draw)
     }
 
     fastchart_value_range yrange;
-    fastchart_value_range_compute(y_min, y_max, 6, &yrange);
+    if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
+        if (fastchart_value_range_compute_log(y_min, y_max, &yrange) != 0) {
+            zend_value_error("FastChart\\ScatterChart::draw(): log Y-axis requires strictly-positive Y values");
+            return -1;
+        }
+    } else {
+        fastchart_value_range_compute(y_min, y_max, 6, &yrange);
+    }
 
-    /* X range -- we use a value range too (similar nice-tick logic)
-     * for label placement, but we plot positions linearly across the
-     * range, not at categorical tick centers. */
+    /* X range. */
     fastchart_value_range xrange;
     fastchart_value_range_compute(x_min, x_max, 6, &xrange);
 
@@ -174,6 +165,7 @@ ZEND_METHOD(FastChart_ScatterChart, draw)
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(im, self, &pal);
 
     fastchart_draw_frame(im, self, &plot, &pal);
     fastchart_draw_title(im, self, &plot, &pal);
@@ -206,7 +198,14 @@ ZEND_METHOD(FastChart_ScatterChart, draw)
         }
     }
 
-    /* Plot the points. Filled disks; multi-series uses palette colors. */
+    /* Marker resolution: ScatterChart's default is a 7px circle. */
+    int marker_style = self->marker_style >= 0
+        ? (int)self->marker_style
+        : FASTCHART_MARKER_CIRCLE;
+    int marker_size = self->marker_size >= 1
+        ? (int)self->marker_size
+        : 7;
+
     for (int i = 0; i < n; i++) {
         double frac_x = (xrange.max - xrange.min) > 0
             ? (points[i].x - xrange.min) / (xrange.max - xrange.min)
@@ -215,8 +214,11 @@ ZEND_METHOD(FastChart_ScatterChart, draw)
         int py = fastchart_y_to_pixel(points[i].y, &yrange, &plot);
 
         int color = pal.series[points[i].series % FASTCHART_PALETTE_SERIES_N];
-        gdImageFilledEllipse(im, px, py, 7, 7, color);
+        fastchart_draw_marker(im, px, py, marker_style, marker_size, color);
     }
+
+    fastchart_draw_h_annotations(im, self, &plot, &pal, &yrange);
+    fastchart_draw_v_annotations_continuous(im, self, &plot, &pal, &xrange);
 
     if (n_series >= 2) {
         int legend_colors[MAX_SCATTER_SERIES];
@@ -234,5 +236,26 @@ ZEND_METHOD(FastChart_ScatterChart, draw)
         }
     }
 
+    return 0;
+}
+
+ZEND_METHOD(FastChart_ScatterChart, draw)
+{
+    zval *canvas_zv;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
+    ZEND_PARSE_PARAMETERS_END();
+
+    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
+    if (!im) {
+        zend_throw_error(NULL, "FastChart\\ScatterChart::draw() received a closed or invalid GdImage");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (fastchart_scatter_render_to_image(self, im) != 0) {
+        RETURN_THROWS();
+    }
     RETURN_ZVAL(canvas_zv, 1, 0);
 }

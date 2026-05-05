@@ -92,3 +92,34 @@ void fastchart_palette_init(gdImagePtr im, int theme, fastchart_palette *pal)
             series_src[i].r, series_src[i].g, series_src[i].b);
     }
 }
+
+void fastchart_palette_apply_overrides(gdImagePtr im,
+                                        const fastchart_obj *chart,
+                                        fastchart_palette *pal)
+{
+    if (chart->bg_override >= 0) {
+        pal->bg = gdImageColorAllocate(im,
+            (int)((chart->bg_override >> 16) & 0xFF),
+            (int)((chart->bg_override >>  8) & 0xFF),
+            (int)( chart->bg_override        & 0xFF));
+        /* If only the canvas bg is overridden, mirror to plot_bg
+         * so the plot area doesn't visually float on a different
+         * background. setPlotBackgroundColor() unsticks them. */
+        if (chart->plot_bg_override < 0) {
+            pal->plot_bg = pal->bg;
+        }
+    }
+    if (chart->plot_bg_override >= 0) {
+        pal->plot_bg = gdImageColorAllocate(im,
+            (int)((chart->plot_bg_override >> 16) & 0xFF),
+            (int)((chart->plot_bg_override >>  8) & 0xFF),
+            (int)( chart->plot_bg_override        & 0xFF));
+    }
+    for (int i = 0; i < chart->series_colors_n && i < FASTCHART_PALETTE_SERIES_N; i++) {
+        if (chart->series_colors[i] < 0) continue;
+        pal->series[i] = gdImageColorAllocate(im,
+            (chart->series_colors[i] >> 16) & 0xFF,
+            (chart->series_colors[i] >>  8) & 0xFF,
+             chart->series_colors[i]        & 0xFF);
+    }
+}

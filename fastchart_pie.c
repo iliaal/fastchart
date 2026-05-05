@@ -142,22 +142,8 @@ static int collect_pie_slices(zval *data_zv,
     return 0;
 }
 
-ZEND_METHOD(FastChart_PieChart, draw)
+int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
 {
-    zval *canvas_zv;
-
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
-    ZEND_PARSE_PARAMETERS_END();
-
-    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\PieChart::draw() received a closed or invalid GdImage");
-        RETURN_THROWS();
-    }
-
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-
     fastchart_pie_slice slices[MAX_SLICES];
     int n_slices = 0;
     double total = 0;
@@ -165,7 +151,7 @@ ZEND_METHOD(FastChart_PieChart, draw)
                            &n_slices, &total) != 0 || n_slices == 0) {
         zend_throw_error(NULL,
             "FastChart\\PieChart::draw() requires setSlices() with one or more positive values");
-        RETURN_THROWS();
+        return -1;
     }
 
     double donut = 0.0;
@@ -185,6 +171,7 @@ ZEND_METHOD(FastChart_PieChart, draw)
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(im, self, &pal);
 
     fastchart_draw_frame(im, self, &plot, &pal);
     fastchart_draw_title(im, self, &plot, &pal);
@@ -261,5 +248,26 @@ ZEND_METHOD(FastChart_PieChart, draw)
         }
     }
 
+    return 0;
+}
+
+ZEND_METHOD(FastChart_PieChart, draw)
+{
+    zval *canvas_zv;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
+    ZEND_PARSE_PARAMETERS_END();
+
+    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
+    if (!im) {
+        zend_throw_error(NULL, "FastChart\\PieChart::draw() received a closed or invalid GdImage");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (fastchart_pie_render_to_image(self, im) != 0) {
+        RETURN_THROWS();
+    }
     RETURN_ZVAL(canvas_zv, 1, 0);
 }

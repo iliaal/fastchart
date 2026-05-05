@@ -36,6 +36,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   least two series carry a `'label'` key, and for `StockChart`
   whenever moving averages are configured (labeled `SMA(N)`).
   Single-series flat-list inputs do not paint a one-row legend.
+- `Chart::setLegendPosition(int)` selects which corner of the
+  plot area the legend renders in:
+  `LEGEND_TOP_RIGHT` (default), `LEGEND_TOP_LEFT`,
+  `LEGEND_BOTTOM_RIGHT`, `LEGEND_BOTTOM_LEFT`, `LEGEND_NONE`.
+- `LineChart::setMarkerStyle(int)` and `setMarkerSize(int)`
+  (same on `ScatterChart`) — `MARKER_NONE`, `MARKER_CIRCLE`
+  (default), `MARKER_SQUARE`, `MARKER_DIAMOND`, `MARKER_CROSS`,
+  `MARKER_PLUS`. Size in [1, 32] pixels.
+- `Chart::setBackgroundColor(int)` and
+  `Chart::setPlotBackgroundColor(int)` override the canvas /
+  plot-area background per instance (24-bit `0xRRGGBB`, or `-1`
+  to revert). Setting only the canvas background propagates to
+  the plot background unless the plot setter is also called.
+- `Chart::setSeriesColors(array)` overrides up to 8 series
+  palette entries per instance.
+- `Chart::renderPng()`, `renderJpeg(int $quality = 90)`,
+  `renderWebp(int $quality = 90)` — render directly to a
+  binary string at the configured `setSize()` dimensions
+  without round-tripping through ext/gd's `imagepng()` /
+  `imagejpeg()` / `imagewebp()`. Returns 89 50 4E 47 / FF D8 /
+  RIFF…WEBP bytes ready to write to disk or stream to a client.
+- `Chart::setYAxisScale(int)` toggles between linear (default)
+  and base-10 logarithmic Y axis. Log scale requires
+  strictly-positive data; passing zero or negative values
+  raises `\ValueError` at `draw()` time. Bar charts under log
+  scale require all-positive data because their zero baseline
+  cannot be expressed.
+- `Chart::setStrict(bool)` switches non-numeric data from a
+  silent skip to a `\TypeError` on `draw()`. Off by default to
+  preserve existing tolerant behavior.
+- `Chart::addHorizontalLine(float $value, ?string $label, ?int $color)`
+  and `Chart::addVerticalLine(float $position, ?string $label, ?int $color)`
+  add dashed reference lines with optional labels. Vertical
+  position is interpreted by chart type: category index for
+  Line/Bar, numeric x for Scatter, Unix timestamp for Stock.
+  `null` color uses the theme axis color; otherwise 24-bit RGB.
+  Pie ignores annotations.
+- `StockChart::addIndicatorPane(string $name, array $values, ?array $opts = null)`
+  stacks an indicator sub-pane below price (and below volume if
+  `setVolumePane(true)` was also called). Up to 3 panes total.
+  `$opts` keys: `'color' => 0xRRGGBB`, `'reference' => float`
+  (horizontal reference line, e.g. RSI midline at 50),
+  `'min' => float`, `'max' => float` (clamp the pane's y-range).
+  Each pane has its own y-range computed from the values.
 - `LineChart::draw()` renders one or more series as connected
   segments with point markers. Accepts a flat numeric list for
   single-series, or a list of `['label' => ..., 'data' => [...]]`
