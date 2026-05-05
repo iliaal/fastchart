@@ -145,12 +145,27 @@ int fastchart_zval_to_long(zval *zv, zend_long *out);
 void fastchart_draw_marker(gdImagePtr im, int x, int y,
                            int style, int size, int color);
 
-/* Resolve which font path to use for an element. `role` is one of
- * "title" / "axis" / "label". Falls back to chart->font_path when no
- * per-element override is set. Returns NULL if no font is available. */
-const char *fastchart_resolve_font(fastchart_obj *chart, const char *role);
-double fastchart_resolve_font_size(fastchart_obj *chart, const char *role,
-                                    double base_default);
+/* Font roles map the calling site (axis tick / axis title / chart
+ * title / inline label / free annotation) to one of three setter
+ * buckets (title, axis, label). Keep the role enum separate from
+ * the bucket so font-size lookups can split later (e.g. yaxis !=
+ * xaxis) without touching every call site. */
+typedef enum {
+    FC_FONT_TITLE,
+    FC_FONT_AXIS,
+    FC_FONT_XAXIS,
+    FC_FONT_YAXIS,
+    FC_FONT_XTITLE,
+    FC_FONT_YTITLE,
+    FC_FONT_LABEL,
+    FC_FONT_ANNOTATION
+} fastchart_font_role;
+
+const char *fastchart_resolve_font(fastchart_obj *chart,
+                                   fastchart_font_role role);
+double fastchart_resolve_font_size(fastchart_obj *chart,
+                                   fastchart_font_role role,
+                                   double base_default);
 
 typedef struct {
     int x, y;

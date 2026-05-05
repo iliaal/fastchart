@@ -158,14 +158,14 @@ int fastchart_surface_render_to_image(fastchart_obj *self, gdImagePtr im)
                 gdImageRectangle(im, x0, y0, x1, y1, (int)self->edge_color);
             }
             if (self->surface_show_values) {
-                const char *font = fastchart_resolve_font(self, "label");
+                const char *font = fastchart_resolve_font(self, FC_FONT_LABEL);
                 if (font) {
                     const char *fmt = self->surface_value_format
                         ? ZSTR_VAL(self->surface_value_format) : "%g";
                     char buf[32];
                     snprintf(buf, sizeof(buf), fmt, v);
                     double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-                    double size = fastchart_resolve_font_size(self, "label", base * 0.8);
+                    double size = fastchart_resolve_font_size(self, FC_FONT_LABEL, base * 0.8);
                     int tx = (x0 + x1) / 2;
                     int ty = (y0 + y1) / 2 + (int)(size * 0.35);
                     int luma = ((rgb >> 16) & 0xFF) * 299

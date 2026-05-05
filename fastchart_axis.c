@@ -117,39 +117,41 @@ static const char *check_font_path(const zend_string *path)
     return s;
 }
 
-const char *fastchart_resolve_font(fastchart_obj *chart, const char *role)
+const char *fastchart_resolve_font(fastchart_obj *chart,
+                                   fastchart_font_role role)
 {
     const char *p;
-    if (strcmp(role, "title") == 0 &&
-            (p = check_font_path(chart->title_font_path))) {
-        return p;
-    }
-    if ((strcmp(role, "axis")   == 0 || strcmp(role, "xaxis")  == 0 ||
-         strcmp(role, "yaxis")  == 0 || strcmp(role, "xtitle") == 0 ||
-         strcmp(role, "ytitle") == 0) &&
-            (p = check_font_path(chart->axis_font_path))) {
-        return p;
-    }
-    if ((strcmp(role, "label") == 0 || strcmp(role, "annotation") == 0) &&
-            (p = check_font_path(chart->label_font_path))) {
-        return p;
+    switch (role) {
+        case FC_FONT_TITLE:
+            if ((p = check_font_path(chart->title_font_path))) return p;
+            break;
+        case FC_FONT_AXIS: case FC_FONT_XAXIS: case FC_FONT_YAXIS:
+        case FC_FONT_XTITLE: case FC_FONT_YTITLE:
+            if ((p = check_font_path(chart->axis_font_path))) return p;
+            break;
+        case FC_FONT_LABEL: case FC_FONT_ANNOTATION:
+            if ((p = check_font_path(chart->label_font_path))) return p;
+            break;
     }
     return check_font_path(chart->font_path);
 }
 
-double fastchart_resolve_font_size(fastchart_obj *chart, const char *role,
-                                    double base_default)
+double fastchart_resolve_font_size(fastchart_obj *chart,
+                                   fastchart_font_role role,
+                                   double base_default)
 {
     double sz = base_default;
-    if (strcmp(role, "title") == 0 && chart->title_font_size > 0) {
-        sz = chart->title_font_size;
-    } else if ((strcmp(role, "axis")   == 0 || strcmp(role, "xaxis")  == 0 ||
-                strcmp(role, "yaxis")  == 0 || strcmp(role, "xtitle") == 0 ||
-                strcmp(role, "ytitle") == 0) && chart->axis_font_size > 0) {
-        sz = chart->axis_font_size;
-    } else if ((strcmp(role, "label") == 0 || strcmp(role, "annotation") == 0)
-            && chart->label_font_size > 0) {
-        sz = chart->label_font_size;
+    switch (role) {
+        case FC_FONT_TITLE:
+            if (chart->title_font_size > 0) sz = chart->title_font_size;
+            break;
+        case FC_FONT_AXIS: case FC_FONT_XAXIS: case FC_FONT_YAXIS:
+        case FC_FONT_XTITLE: case FC_FONT_YTITLE:
+            if (chart->axis_font_size > 0) sz = chart->axis_font_size;
+            break;
+        case FC_FONT_LABEL: case FC_FONT_ANNOTATION:
+            if (chart->label_font_size > 0) sz = chart->label_font_size;
+            break;
     }
     if (chart->thumbnail_mode) sz *= 0.6;
     return sz;
@@ -626,10 +628,10 @@ void fastchart_draw_floating_title(gdImagePtr im, fastchart_obj *chart,
 {
     if (!chart->title || ZSTR_LEN(chart->title) == 0) return;
     if (chart->thumbnail_mode) return;
-    const char *font = fastchart_resolve_font(chart, "title");
+    const char *font = fastchart_resolve_font(chart, FC_FONT_TITLE);
     if (!font) return;
     double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(chart, "title", base * 1.4);
+    double size = fastchart_resolve_font_size(chart, FC_FONT_TITLE, base * 1.4);
     int color = chart->title_color >= 0 ? (int)chart->title_color : pal->text;
     fastchart_shadow_text(im, chart, font, size, cx, baseline, 0.0,
                           ZSTR_VAL(chart->title));
@@ -683,10 +685,10 @@ void fastchart_draw_y_axis(gdImagePtr im, fastchart_obj *chart,
     /* Y axis line. */
     gdImageLine(im, plot->x0, plot->y0, plot->x0, plot->y1, pal->axis);
 
-    const char *font = fastchart_resolve_font(chart, "yaxis");
+    const char *font = fastchart_resolve_font(chart, FC_FONT_YAXIS);
     if (!font) return;
     double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(chart, "yaxis", base);
+    double size = fastchart_resolve_font_size(chart, FC_FONT_YAXIS, base);
     int label_color = chart->axis_label_color >= 0 ? (int)chart->axis_label_color
                                                    : pal->text;
 
@@ -742,10 +744,10 @@ void fastchart_draw_y_axis_right(gdImagePtr im, fastchart_obj *chart,
     /* Right axis line. */
     gdImageLine(im, plot->x1, plot->y0, plot->x1, plot->y1, pal->axis);
 
-    const char *font = fastchart_resolve_font(chart, "yaxis");
+    const char *font = fastchart_resolve_font(chart, FC_FONT_YAXIS);
     if (!font) return;
     double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(chart, "yaxis", base);
+    double size = fastchart_resolve_font_size(chart, FC_FONT_YAXIS, base);
     int label_color = chart->axis_label_color >= 0 ? (int)chart->axis_label_color
                                                    : pal->text;
     bool draw_points = (chart->tick_mode & FASTCHART_TICK_POINTS) != 0;
@@ -785,8 +787,8 @@ void fastchart_draw_axis_titles(gdImagePtr im, fastchart_obj *chart,
     int color = chart->axis_title_color >= 0 ? (int)chart->axis_title_color : pal->text;
 
     if (chart->x_axis_title && ZSTR_LEN(chart->x_axis_title) > 0) {
-        const char *font = fastchart_resolve_font(chart, "xtitle");
-        double size = fastchart_resolve_font_size(chart, "xtitle", base * 1.1);
+        const char *font = fastchart_resolve_font(chart, FC_FONT_XTITLE);
+        double size = fastchart_resolve_font_size(chart, FC_FONT_XTITLE, base * 1.1);
         if (font) {
             int H = gdImageSY(im);
             int cx = (plot->x0 + plot->x1) / 2;
@@ -798,8 +800,8 @@ void fastchart_draw_axis_titles(gdImagePtr im, fastchart_obj *chart,
     }
 
     if (chart->y_axis_title && ZSTR_LEN(chart->y_axis_title) > 0) {
-        const char *font = fastchart_resolve_font(chart, "ytitle");
-        double size = fastchart_resolve_font_size(chart, "ytitle", base * 1.1);
+        const char *font = fastchart_resolve_font(chart, FC_FONT_YTITLE);
+        double size = fastchart_resolve_font_size(chart, FC_FONT_YTITLE, base * 1.1);
         if (font) {
             int cy = (plot->y0 + plot->y1) / 2;
             int x = MARGIN_LEFT_PAD + (int)(size);
@@ -815,8 +817,8 @@ void fastchart_draw_axis_titles(gdImagePtr im, fastchart_obj *chart,
     }
 
     if (chart->y_axis_title2 && ZSTR_LEN(chart->y_axis_title2) > 0 && chart->secondary_y) {
-        const char *font = fastchart_resolve_font(chart, "ytitle");
-        double size = fastchart_resolve_font_size(chart, "ytitle", base * 1.1);
+        const char *font = fastchart_resolve_font(chart, FC_FONT_YTITLE);
+        double size = fastchart_resolve_font_size(chart, FC_FONT_YTITLE, base * 1.1);
         if (font) {
             int cy = (plot->y0 + plot->y1) / 2;
             int W = gdImageSX(im);
@@ -856,11 +858,11 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
     gdImageLine(im, plot->x0, plot->y1, plot->x1, plot->y1, pal->axis);
 
     if (n_categories <= 0) return;
-    const char *font = fastchart_resolve_font(chart, "xaxis");
+    const char *font = fastchart_resolve_font(chart, FC_FONT_XAXIS);
     if (!font) return;
 
     double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(chart, "xaxis", base);
+    double size = fastchart_resolve_font_size(chart, FC_FONT_XAXIS, base);
     int angle = (int)chart->x_axis_label_angle;
     int label_color = chart->axis_label_color >= 0 ? (int)chart->axis_label_color
                                                    : pal->text;
@@ -1039,10 +1041,10 @@ void fastchart_draw_value_label(gdImagePtr im, fastchart_obj *chart,
 {
     if (!chart->show_values) return;
     if (!isfinite(value)) return;
-    const char *font = fastchart_resolve_font(chart, "label");
+    const char *font = fastchart_resolve_font(chart, FC_FONT_LABEL);
     if (!font) return;
     double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(chart, "label", base * 0.85);
+    double size = fastchart_resolve_font_size(chart, FC_FONT_LABEL, base * 0.85);
 
     const char *fmt = chart->value_format ? ZSTR_VAL(chart->value_format) : "%g";
     char buf[32];
@@ -1392,10 +1394,10 @@ void fastchart_draw_text_annotations(gdImagePtr im, fastchart_obj *chart,
                                        sizeof("text_annotations") - 1);
     if (!list_zv || Z_TYPE_P(list_zv) != IS_ARRAY) return;
 
-    const char *font = fastchart_resolve_font(chart, "annotation");
+    const char *font = fastchart_resolve_font(chart, FC_FONT_ANNOTATION);
     if (!font) return;
     double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(chart, "annotation", base);
+    double size = fastchart_resolve_font_size(chart, FC_FONT_ANNOTATION, base);
 
     zval *entry;
     ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(list_zv), entry) {
@@ -1426,11 +1428,11 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
     gdImageLine(im, plot->x0, plot->y1, plot->x1, plot->y1, pal->axis);
 
     if (t_max <= t_min) return;
-    const char *font = fastchart_resolve_font(chart, "xaxis");
+    const char *font = fastchart_resolve_font(chart, FC_FONT_XAXIS);
     if (!font) return;
 
     double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(chart, "xaxis", base);
+    double size = fastchart_resolve_font_size(chart, FC_FONT_XAXIS, base);
     int angle = (int)chart->x_axis_label_angle;
     int label_color = chart->axis_label_color >= 0 ? (int)chart->axis_label_color
                                                    : pal->text;

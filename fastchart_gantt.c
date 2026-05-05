@@ -135,10 +135,10 @@ int fastchart_gantt_render_to_image(fastchart_obj *self, gdImagePtr im)
     /* Reserve a left margin for task name labels. */
     int label_pad = 0;
     if (self->gantt_show_labels) {
-        const char *font = fastchart_resolve_font(self, "label");
+        const char *font = fastchart_resolve_font(self, FC_FONT_LABEL);
         if (font) {
             double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-            double size = fastchart_resolve_font_size(self, "label", base);
+            double size = fastchart_resolve_font_size(self, FC_FONT_LABEL, base);
             int max_w = 0;
             for (int i = 0; i < n_tasks; i++) {
                 if (!tasks[i].name) continue;
@@ -164,9 +164,9 @@ int fastchart_gantt_render_to_image(fastchart_obj *self, gdImagePtr im)
     if (bar_h < 3) bar_h = 3;
 
     /* Per-row track separator + bars. */
-    const char *font = fastchart_resolve_font(self, "label");
+    const char *font = fastchart_resolve_font(self, FC_FONT_LABEL);
     double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(self, "label", base);
+    double size = fastchart_resolve_font_size(self, FC_FONT_LABEL, base);
 
     for (int i = 0; i < n_tasks; i++) {
         int row_y0 = bars.y0 + i * row_h;

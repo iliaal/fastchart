@@ -367,8 +367,16 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 extern struct gdImageStruct *php_gd_libgdimageptr_from_zval_p(zval *zp);
 
 /* Pull the underlying gdImagePtr out of the caller-supplied canvas
- * zval. NULL on failure; the caller throws. */
-gdImagePtr fastchart_gd_image_from_zval(zval *canvas_zv);
+ * zval. NULL on failure; the caller throws. The IS_OBJECT pre-check
+ * is redundant against ext/gd's own type validation but avoids a
+ * call into ext/gd when the value is obviously wrong (e.g. NULL
+ * after a Z_PARAM_OBJECT_OF_CLASS that the caller forgot to
+ * RETURN_THROWS on). */
+static inline gdImagePtr fastchart_gd_image_from_zval(zval *canvas_zv)
+{
+    if (Z_TYPE_P(canvas_zv) != IS_OBJECT) return NULL;
+    return (gdImagePtr)php_gd_libgdimageptr_from_zval_p(canvas_zv);
+}
 
 /* Per-chart drawing helpers extracted from each ZEND_METHOD draw()
  * so the renderPng/Jpeg/Webp shortcuts can reuse them without

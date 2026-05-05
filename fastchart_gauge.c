@@ -132,14 +132,14 @@ int fastchart_gauge_render_to_image(fastchart_obj *self, gdImagePtr im)
     gdImageFilledEllipse(im, cx, cy, 12, 12, pal.text);
 
     /* Center value label. */
-    const char *font = fastchart_resolve_font(self, "label");
+    const char *font = fastchart_resolve_font(self, FC_FONT_LABEL);
     if (font) {
         const char *fmt = self->gauge_value_format
             ? ZSTR_VAL(self->gauge_value_format) : "%.1f";
         char buf[64];
         snprintf(buf, sizeof(buf), fmt, v);
         double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-        double size = fastchart_resolve_font_size(self, "label", base * 1.4);
+        double size = fastchart_resolve_font_size(self, FC_FONT_LABEL, base * 1.4);
         int tx = cx;
         int ty = cy + (int)(diameter * 0.35);
         fastchart_text_draw(im, font, size, pal.text, tx, ty,
@@ -154,7 +154,7 @@ int fastchart_gauge_render_to_image(fastchart_obj *self, gdImagePtr im)
         snprintf(minbuf, sizeof(minbuf), fmt, mn);
         snprintf(maxbuf, sizeof(maxbuf), fmt, mx);
         double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-        double size = fastchart_resolve_font_size(self, "label", base * 0.85);
+        double size = fastchart_resolve_font_size(self, FC_FONT_LABEL, base * 0.85);
         fastchart_text_draw(im, font, size, pal.text,
                             cx - radius, cy + (int)(size * 1.5),
                             FASTCHART_ALIGN_CENTER, minbuf, NULL, 0);

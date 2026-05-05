@@ -53,16 +53,6 @@ static zend_object_handlers fastchart_object_handlers;
  * setFontPath() before any text-rendering chart method. */
 static zend_string *fastchart_default_font_path = NULL;
 
-/* ---------------------- ext/gd interop helper ---------------------- */
-
-gdImagePtr fastchart_gd_image_from_zval(zval *canvas_zv)
-{
-    if (Z_TYPE_P(canvas_zv) != IS_OBJECT) {
-        return NULL;
-    }
-    return php_gd_libgdimageptr_from_zval_p(canvas_zv);
-}
-
 /* --------------------- object create / free / clone ---------------- */
 
 static zend_object *fastchart_create_object(zend_class_entry *ce)
@@ -498,27 +488,18 @@ ZEND_METHOD(FastChart_Chart, setCategoryLabels)
 
 /* ---------------- background / palette overrides ----------------- */
 
-static void store_color_override(zend_long *slot, zend_long rgb,
-                                 const char *who)
-{
-    if (rgb < -1 || rgb > 0xFFFFFF) {
-        zend_value_error("%s expects -1 (theme default) or 0..0xFFFFFF", who);
-        return;
-    }
-    *slot = rgb;
-}
-
 ZEND_METHOD(FastChart_Chart, setBackgroundColor)
 {
     zend_long rgb;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(rgb)
     ZEND_PARSE_PARAMETERS_END();
-
+    if (rgb < -1 || rgb > 0xFFFFFF) {
+        zend_value_error("FastChart\\Chart::setBackgroundColor() expects -1 (theme default) or 0..0xFFFFFF");
+        RETURN_THROWS();
+    }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    store_color_override(&self->bg_override, rgb,
-        "FastChart\\Chart::setBackgroundColor()");
-    if (EG(exception)) RETURN_THROWS();
+    self->bg_override = rgb;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -528,11 +509,12 @@ ZEND_METHOD(FastChart_Chart, setPlotBackgroundColor)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(rgb)
     ZEND_PARSE_PARAMETERS_END();
-
+    if (rgb < -1 || rgb > 0xFFFFFF) {
+        zend_value_error("FastChart\\Chart::setPlotBackgroundColor() expects -1 (theme default) or 0..0xFFFFFF");
+        RETURN_THROWS();
+    }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    store_color_override(&self->plot_bg_override, rgb,
-        "FastChart\\Chart::setPlotBackgroundColor()");
-    if (EG(exception)) RETURN_THROWS();
+    self->plot_bg_override = rgb;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 

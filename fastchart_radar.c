@@ -146,9 +146,9 @@ int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im)
     }
 
     /* Axis labels via setCategoryLabels. */
-    const char *font = fastchart_resolve_font(self, "label");
+    const char *font = fastchart_resolve_font(self, FC_FONT_LABEL);
     double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(self, "label", base);
+    double size = fastchart_resolve_font_size(self, FC_FONT_LABEL, base);
     zval *labels_zv = zend_hash_str_find(Z_ARRVAL(self->config),
         "category_labels", sizeof("category_labels") - 1);
     if (font && labels_zv && Z_TYPE_P(labels_zv) == IS_ARRAY) {
