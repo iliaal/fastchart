@@ -2531,11 +2531,27 @@ ZEND_METHOD(FastChart_ContourChart, setLevels)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(levels)
     ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval copy;
-    ZVAL_COPY(&copy, levels);
-    zend_hash_str_update(Z_ARRVAL(self->config), "contour_levels",
-                         sizeof("contour_levels") - 1, &copy);
+    fastchart_contour_obj *self = Z_FASTCHART_CONTOUR_OBJ_P(ZEND_THIS);
+    if (self->levels) { efree(self->levels); self->levels = NULL; }
+    self->level_count = 0;
+    HashTable *ht = Z_ARRVAL_P(levels);
+    int n = (int)zend_hash_num_elements(ht);
+    if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    self->levels = ecalloc((size_t)n, sizeof(double));
+    int k = 0;
+    zval *v;
+    ZEND_HASH_FOREACH_VAL(ht, v) {
+        if (k >= n) break;
+        double d;
+        if (fastchart_zval_to_double(v, &d) == 0 && isfinite(d)) {
+            self->levels[k++] = d;
+        }
+    } ZEND_HASH_FOREACH_END();
+    self->level_count = k;
+    if (k == 0) {
+        efree(self->levels);
+        self->levels = NULL;
+    }
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -3411,8 +3427,94 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
 /* Classes still on parse-at-draw-time keep using FASTCHART_SETTER_ARRAY
  * to stash the raw input on self->data. Their typed migration lands
  * in subsequent phases. */
-FASTCHART_SETTER_ARRAY(FastChart_SurfaceChart, setGrid,   data)
-FASTCHART_SETTER_ARRAY(FastChart_ContourChart, setGrid,   data)
+
+/* Parse a 2D PHP array into a typed fastchart_grid (row-major, NaN
+ * for missing/non-finite cells). Out is overwritten; caller frees
+ * grid->cells before calling. Returns 0 on success, -1 if the input
+ * is empty or its dimensions overflow size_t. */
+static int fastchart_parse_grid(zval *arr, fastchart_grid *out, const char *where)
+{
+    HashTable *ht = Z_ARRVAL_P(arr);
+    int rows = (int)zend_hash_num_elements(ht);
+    if (rows == 0) {
+        out->cells = NULL; out->rows = 0; out->cols = 0;
+        return 0;
+    }
+    int cols = 0;
+    zval *row;
+    ZEND_HASH_FOREACH_VAL(ht, row) {
+        if (Z_TYPE_P(row) != IS_ARRAY) continue;
+        int rlen = (int)zend_hash_num_elements(Z_ARRVAL_P(row));
+        if (rlen > cols) cols = rlen;
+    } ZEND_HASH_FOREACH_END();
+    if (cols == 0) {
+        out->cells = NULL; out->rows = 0; out->cols = 0;
+        return 0;
+    }
+    if ((size_t)cols > SIZE_MAX / sizeof(double) ||
+        (size_t)rows > (SIZE_MAX / sizeof(double)) / (size_t)cols) {
+        zend_value_error("%s grid dimensions overflow allocation", where);
+        return -1;
+    }
+    out->cells = emalloc((size_t)rows * (size_t)cols * sizeof(double));
+    out->rows = rows;
+    out->cols = cols;
+    int ri = 0;
+    ZEND_HASH_FOREACH_VAL(ht, row) {
+        if (Z_TYPE_P(row) != IS_ARRAY) {
+            for (int j = 0; j < cols; j++) out->cells[ri * cols + j] = NAN;
+            ri++;
+            continue;
+        }
+        int j = 0;
+        zval *cell;
+        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(row), cell) {
+            if (j >= cols) break;
+            double d;
+            if (fastchart_zval_to_double(cell, &d) == 0 && isfinite(d)) {
+                out->cells[ri * cols + j] = d;
+            } else {
+                out->cells[ri * cols + j] = NAN;
+            }
+            j++;
+        } ZEND_HASH_FOREACH_END();
+        for (; j < cols; j++) out->cells[ri * cols + j] = NAN;
+        ri++;
+    } ZEND_HASH_FOREACH_END();
+    return 0;
+}
+
+ZEND_METHOD(FastChart_SurfaceChart, setGrid)
+{
+    zval *arr;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(arr)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_surface_obj *self = Z_FASTCHART_SURFACE_OBJ_P(ZEND_THIS);
+    if (self->grid.cells) { efree(self->grid.cells); self->grid.cells = NULL; }
+    self->grid.rows = 0;
+    self->grid.cols = 0;
+    if (fastchart_parse_grid(arr, &self->grid, "FastChart\\SurfaceChart::setGrid()") != 0) {
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_ContourChart, setGrid)
+{
+    zval *arr;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(arr)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_contour_obj *self = Z_FASTCHART_CONTOUR_OBJ_P(ZEND_THIS);
+    if (self->grid.cells) { efree(self->grid.cells); self->grid.cells = NULL; }
+    self->grid.rows = 0;
+    self->grid.cols = 0;
+    if (fastchart_parse_grid(arr, &self->grid, "FastChart\\ContourChart::setGrid()") != 0) {
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
 ZEND_METHOD(FastChart_GanttChart, setTasks)
 {

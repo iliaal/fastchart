@@ -27,65 +27,14 @@
 
 int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im)
 {
-    HashTable *grid_ht = Z_TYPE(self->data) == IS_ARRAY ? Z_ARRVAL(self->data) : NULL;
-    if (!grid_ht || zend_hash_num_elements(grid_ht) == 0) {
+    if (!self->grid.cells || self->grid.rows == 0 || self->grid.cols == 0) {
         zend_throw_error(NULL,
             "FastChart\\SurfaceChart::draw() requires setGrid() with non-empty data");
         return -1;
     }
-
-    int rows = (int)zend_hash_num_elements(grid_ht);
-    int cols = 0;
-    zval *row;
-    ZEND_HASH_FOREACH_VAL(grid_ht, row) {
-        if (Z_TYPE_P(row) != IS_ARRAY) continue;
-        int rlen = (int)zend_hash_num_elements(Z_ARRVAL_P(row));
-        if (rlen > cols) cols = rlen;
-    } ZEND_HASH_FOREACH_END();
-
-    if (rows == 0 || cols == 0) {
-        zend_throw_error(NULL,
-            "FastChart\\SurfaceChart::draw() found no numeric cells");
-        return -1;
-    }
-
-    /* Materialize once into a flat double[rows*cols] (NAN for missing
-     * cells). The render loop indexes by arithmetic and the min/max
-     * scan and per-cell color lookup both read from the same buffer.
-     * Guard the size_t multiplication on 32-bit builds. */
-    if ((size_t)cols > SIZE_MAX / sizeof(double) ||
-        (size_t)rows > (SIZE_MAX / sizeof(double)) / (size_t)cols) {
-        zend_throw_error(NULL,
-            "FastChart\\SurfaceChart::draw() grid dimensions overflow allocation");
-        return -1;
-    }
-    double *grid = emalloc((size_t)rows * (size_t)cols * sizeof(double));
-    int ri = 0;
-    ZEND_HASH_FOREACH_VAL(grid_ht, row) {
-        if (Z_TYPE_P(row) != IS_ARRAY) {
-            for (int j = 0; j < cols; j++) grid[ri * cols + j] = NAN;
-            ri++;
-            continue;
-        }
-        int j = 0;
-        zval *cell;
-        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(row), cell) {
-            if (j >= cols) break;
-            double d;
-            /* Reject non-finite values so the LUT index
-             * (int)(t * 255 + 0.5) and the luma-based label-color
-             * pick can't trip on Inf / NaN propagating through
-             * (v - vmin) / span. */
-            if (fastchart_zval_to_double(cell, &d) == 0 && isfinite(d)) {
-                grid[ri * cols + j] = d;
-            } else {
-                grid[ri * cols + j] = NAN;
-            }
-            j++;
-        } ZEND_HASH_FOREACH_END();
-        for (; j < cols; j++) grid[ri * cols + j] = NAN;
-        ri++;
-    } ZEND_HASH_FOREACH_END();
+    double *grid = self->grid.cells;
+    int rows = self->grid.rows;
+    int cols = self->grid.cols;
 
     double vmin = 0, vmax = 0;
     int seen = 0;
@@ -98,7 +47,6 @@ int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im
         }
     }
     if (!seen) {
-        efree(grid);
         zend_throw_error(NULL,
             "FastChart\\SurfaceChart::draw() found no numeric cells");
         return -1;
@@ -185,7 +133,6 @@ int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im
             }
         }
     }
-    efree(grid);
 
     /* Outer frame around the heatmap. */
     int frame_x1 = margin_x + cols * cell_w - 1;

@@ -37,61 +37,6 @@
  * arithmetic instead of nested hash lookups, which were costing two
  * zend_hash_index_find calls per corner per cell per level. */
 
-static double *materialize_grid(zval *grid_zv, int *rows_out, int *cols_out)
-{
-    if (Z_TYPE_P(grid_zv) != IS_ARRAY) return NULL;
-    HashTable *grid = Z_ARRVAL_P(grid_zv);
-    int rows = (int)zend_hash_num_elements(grid);
-    int cols = 0;
-    zval *r;
-    ZEND_HASH_FOREACH_VAL(grid, r) {
-        if (Z_TYPE_P(r) != IS_ARRAY) continue;
-        int n = (int)zend_hash_num_elements(Z_ARRVAL_P(r));
-        if (n > cols) cols = n;
-    } ZEND_HASH_FOREACH_END();
-    if (rows < 2 || cols < 2) return NULL;
-    /* Guard the size_t multiplication on 32-bit builds: HashTable lets
-     * users push to 2^31 elements per dimension. memory_limit blocks
-     * before reaching this on 64-bit, but a 32-bit deployment with
-     * a generous memory_limit could wrap. */
-    if ((size_t)cols > SIZE_MAX / sizeof(double) ||
-        (size_t)rows > (SIZE_MAX / sizeof(double)) / (size_t)cols) {
-        return NULL;
-    }
-    double *flat = emalloc((size_t)rows * (size_t)cols * sizeof(double));
-    int i = 0;
-    ZEND_HASH_FOREACH_VAL(grid, r) {
-        if (Z_TYPE_P(r) != IS_ARRAY) {
-            for (int j = 0; j < cols; j++) flat[i * cols + j] = NAN;
-            i++;
-            continue;
-        }
-        int j = 0;
-        zval *c;
-        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(r), c) {
-            if (j >= cols) break;
-            double d;
-            /* Treat non-finite cells (Inf, NaN) as missing so the
-             * marching-squares math never sees them — `>=` against
-             * NaN, `Inf - Inf`, and casts to int after Inf
-             * arithmetic are all undefined or implementation-
-             * defined surface we don't want to step on. */
-            if (fastchart_zval_to_double(c, &d) == 0 && isfinite(d)) {
-                flat[i * cols + j] = d;
-            } else {
-                flat[i * cols + j] = NAN;
-            }
-            j++;
-        } ZEND_HASH_FOREACH_END();
-        for (; j < cols; j++) flat[i * cols + j] = NAN;
-        i++;
-    } ZEND_HASH_FOREACH_END();
-
-    *rows_out = rows;
-    *cols_out = cols;
-    return flat;
-}
-
 static void cell_to_pixel(int col, int row, double col_f, double row_f,
                           int x0, int y0, double cell_w, double cell_h,
                           int *px, int *py)
@@ -120,16 +65,16 @@ static double t_cross(double a, double b, double level)
 
 int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im)
 {
-    int rows = 0, cols = 0;
-    double *grid = materialize_grid(&self->data, &rows, &cols);
-    if (!grid) {
+    if (!self->grid.cells || self->grid.rows < 2 || self->grid.cols < 2) {
         zend_throw_error(NULL,
             "FastChart\\ContourChart::draw() requires setGrid() with at least a 2x2 grid");
         return -1;
     }
+    double *grid = self->grid.cells;
+    int rows = self->grid.rows;
+    int cols = self->grid.cols;
 #define G(i, j) grid[(i) * cols + (j)]
 
-    /* Find global min/max. */
     double vmin = 0, vmax = 0;
     int seen = 0;
     for (int i = 0; i < rows; i++) {
@@ -141,25 +86,17 @@ int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im
         }
     }
     if (!seen) {
-        efree(grid);
         zend_throw_error(NULL,
             "FastChart\\ContourChart::draw() found no numeric values");
         return -1;
     }
 
-    /* Levels: user-supplied or 5 evenly spaced between min and max. */
+    /* Levels: user-supplied via setLevels (typed) or 5 evenly spaced. */
     double levels[16];
     int n_levels = 0;
-    zval *lvls_zv = zend_hash_str_find(Z_ARRVAL(self->config),
-        "contour_levels", sizeof("contour_levels") - 1);
-    if (lvls_zv && Z_TYPE_P(lvls_zv) == IS_ARRAY &&
-        zend_hash_num_elements(Z_ARRVAL_P(lvls_zv)) > 0) {
-        zval *v;
-        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(lvls_zv), v) {
-            if (n_levels >= 16) break;
-            double d;
-            if (fastchart_zval_to_double(v, &d) == 0) levels[n_levels++] = d;
-        } ZEND_HASH_FOREACH_END();
+    if (self->levels && self->level_count > 0) {
+        n_levels = self->level_count > 16 ? 16 : self->level_count;
+        for (int k = 0; k < n_levels; k++) levels[k] = self->levels[k];
     }
     if (n_levels == 0) {
         n_levels = 5;
@@ -313,7 +250,6 @@ int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im
     fastchart_draw_floating_title(im, (fastchart_obj *)self, &pal, W / 2, 24);
 
     fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
-    efree(grid);
     return 0;
 #undef G
 }
