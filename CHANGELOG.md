@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `StockChart::setCandleStyle` — three new presentation styles:
+  `STYLE_HOLLOW` (TradingView-style: outlined bullish bodies,
+  filled bearish), `STYLE_VOLUME` (body width scales with the bar's
+  volume relative to the rolling-average volume; requires the OHLCV
+  row to carry a volume column), and `STYLE_VECTOR` (six-color
+  scheme based on direction × volume strength, using the same
+  climax / rising / neutral algorithm as the pinescript "Vector
+  Candles" indicator: climax = vol ≥ 2× avg or vol×range ≥ rolling
+  max; rising = vol ≥ 1.5× avg; otherwise neutral).
 - `FastChart\GanttChart` — project-management timeline chart. Tasks
   carry `'name'`, `'start'` (Unix ts), `'end'` (Unix ts), optional
   `'color'`, `'milestone'` (diamond at end instead of bar), and

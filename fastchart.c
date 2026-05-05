@@ -1918,7 +1918,7 @@ ZEND_METHOD(FastChart_StockChart, setCandleStyle)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(style)
     ZEND_PARSE_PARAMETERS_END();
-    if (style < FASTCHART_STYLE_CANDLE || style > FASTCHART_STYLE_I_CAP) {
+    if (style < FASTCHART_STYLE_CANDLE || style > FASTCHART_STYLE_VECTOR) {
         zend_value_error("FastChart\\StockChart::setCandleStyle() expects a STYLE_* class constant");
         RETURN_THROWS();
     }

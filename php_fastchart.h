@@ -324,6 +324,9 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define FASTCHART_STYLE_BAR     1
 #define FASTCHART_STYLE_DIAMOND 2
 #define FASTCHART_STYLE_I_CAP   3
+#define FASTCHART_STYLE_HOLLOW  4
+#define FASTCHART_STYLE_VOLUME  5
+#define FASTCHART_STYLE_VECTOR  6
 
 /* Border side bitmask. */
 #define FASTCHART_BORDER_NONE   0

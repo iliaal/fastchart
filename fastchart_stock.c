@@ -272,6 +272,80 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
     if (half_w < 1) half_w = 1;
 
     int candle_style = (int)self->candle_style;
+
+    /* Vector-candle precompute: 4-tuple per bar (volume strength
+     * category) using the same algorithm as the pinescript "Vector
+     * Candles" indicator. baseT is the rolling window for both the
+     * volume average and the climax-volume max. va[i]: 0 = neutral,
+     * 2 = rising (vol >= 1.5x avg), 1 = climax (vol >= 2x avg OR
+     * volume*range >= max(volume*range over baseT)). For volume-
+     * scaled bodies (STYLE_VOLUME) we just need the avg. */
+    const int baseT = 10;
+    int *va = NULL;
+    double *vol_scale = NULL;
+    if (candle_style == FASTCHART_STYLE_VECTOR) {
+        va = ecalloc(n, sizeof(int));
+        for (int i = 0; i < n; i++) {
+            if (!candles[i].has_volume) { va[i] = 0; continue; }
+            double sum = 0;
+            int cnt = 0;
+            for (int k = 1; k <= baseT && i - k >= 0; k++) {
+                if (!candles[i - k].has_volume) continue;
+                sum += candles[i - k].volume;
+                cnt++;
+            }
+            double avg = cnt > 0 ? sum / cnt : candles[i].volume;
+            double climax = candles[i].volume * (candles[i].high - candles[i].low);
+            double climax_max = 0;
+            for (int k = 1; k <= baseT && i - k >= 0; k++) {
+                if (!candles[i - k].has_volume) continue;
+                double c = candles[i - k].volume *
+                    (candles[i - k].high - candles[i - k].low);
+                if (c > climax_max) climax_max = c;
+            }
+            if (avg > 0 && (candles[i].volume >= avg * 2 || climax >= climax_max)) {
+                va[i] = 1;
+            } else if (avg > 0 && candles[i].volume >= avg * 1.5) {
+                va[i] = 2;
+            } else {
+                va[i] = 0;
+            }
+        }
+    } else if (candle_style == FASTCHART_STYLE_VOLUME) {
+        vol_scale = ecalloc(n, sizeof(double));
+        for (int i = 0; i < n; i++) {
+            if (!candles[i].has_volume) { vol_scale[i] = 1.0; continue; }
+            double sum = 0;
+            int cnt = 0;
+            for (int k = 1; k <= baseT && i - k >= 0; k++) {
+                if (!candles[i - k].has_volume) continue;
+                sum += candles[i - k].volume;
+                cnt++;
+            }
+            double avg = cnt > 0 ? sum / cnt : candles[i].volume;
+            double r = avg > 0 ? candles[i].volume / avg : 1.0;
+            /* Cap to [0.2x, 2.0x] of the base body width so a single
+             * monster-volume bar doesn't blow the layout. */
+            if (r < 0.2) r = 0.2;
+            if (r > 2.0) r = 2.0;
+            vol_scale[i] = r;
+        }
+    }
+
+    /* Vector-candle palette: 6 colors for direction × strength. The
+     * pinescript defaults are lime/cyan for bullish strong/rising and
+     * red/fuchsia for bearish strong/rising. Neutral falls back to
+     * the theme's up/down colors so a vector chart with no high-vol
+     * bars looks like a normal candle chart. */
+    int v_bull_strong  = 0, v_bull_rising = 0;
+    int v_bear_strong  = 0, v_bear_rising = 0;
+    if (candle_style == FASTCHART_STYLE_VECTOR) {
+        v_bull_strong  = gdImageColorAllocate(im, 0x00, 0xE6, 0x40); /* lime */
+        v_bull_rising  = gdImageColorAllocate(im, 0x05, 0xFF, 0xFB); /* cyan */
+        v_bear_strong  = gdImageColorAllocate(im, 0xE3, 0x00, 0x00); /* red */
+        v_bear_rising  = gdImageColorAllocate(im, 0xFF, 0x00, 0xFF); /* fuchsia */
+    }
+
     for (int i = 0; i < n; i++) {
         int x = fastchart_x_time_to_pixel(&price_pane,
                                           candles[i].ts, t_min, t_max);
@@ -282,6 +356,24 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
 
         int up = candles[i].close >= candles[i].open;
         int color = up ? pal.up : pal.down;
+        if (candle_style == FASTCHART_STYLE_VECTOR) {
+            if (up) {
+                color = (va[i] == 1) ? v_bull_strong
+                      : (va[i] == 2) ? v_bull_rising
+                      : pal.up;
+            } else {
+                color = (va[i] == 1) ? v_bear_strong
+                      : (va[i] == 2) ? v_bear_rising
+                      : pal.down;
+            }
+        }
+
+        /* Per-bar half-width: VOLUME mode scales by volume / avg. */
+        int hw = half_w;
+        if (candle_style == FASTCHART_STYLE_VOLUME && vol_scale) {
+            hw = (int)((double)half_w * vol_scale[i] + 0.5);
+            if (hw < 1) hw = 1;
+        }
 
         switch (candle_style) {
             case FASTCHART_STYLE_BAR:
@@ -313,6 +405,55 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
                 gdImageLine(im, x - half_w, y_low,  x + half_w, y_low,  color);
                 break;
 
+            case FASTCHART_STYLE_HOLLOW: {
+                /* Bullish: outline-only (hollow) body. Bearish: filled.
+                 * Wick always drawn. TradingView-style hollow candles. */
+                gdImageLine(im, x, y_high, x, y_low, color);
+                int y_top = up ? y_close : y_open;
+                int y_bot = up ? y_open  : y_close;
+                if (y_top == y_bot) {
+                    gdImageLine(im, x - half_w, y_top, x + half_w, y_top, color);
+                } else if (up) {
+                    gdImageRectangle(im, x - half_w, y_top,
+                                     x + half_w, y_bot, color);
+                } else {
+                    gdImageFilledRectangle(im, x - half_w, y_top,
+                                           x + half_w, y_bot, color);
+                }
+                break;
+            }
+
+            case FASTCHART_STYLE_VOLUME: {
+                /* Standard candle, but the body width scales by
+                 * volume / rolling-avg. Wick stays at the cell center. */
+                gdImageLine(im, x, y_high, x, y_low, color);
+                int y_top = up ? y_close : y_open;
+                int y_bot = up ? y_open  : y_close;
+                if (y_top == y_bot) {
+                    gdImageLine(im, x - hw, y_top, x + hw, y_top, color);
+                } else {
+                    gdImageFilledRectangle(im, x - hw, y_top,
+                                           x + hw, y_bot, color);
+                }
+                break;
+            }
+
+            case FASTCHART_STYLE_VECTOR: {
+                /* Filled candle body with vector-derived color. The
+                 * color was already selected above based on the
+                 * volume-strength category. */
+                gdImageLine(im, x, y_high, x, y_low, color);
+                int y_top = up ? y_close : y_open;
+                int y_bot = up ? y_open  : y_close;
+                if (y_top == y_bot) {
+                    gdImageLine(im, x - half_w, y_top, x + half_w, y_top, color);
+                } else {
+                    gdImageFilledRectangle(im, x - half_w, y_top,
+                                           x + half_w, y_bot, color);
+                }
+                break;
+            }
+
             case FASTCHART_STYLE_CANDLE:
             default: {
                 /* High-low wick + filled body. Doji (open == close)
@@ -330,6 +471,8 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
             }
         }
     }
+    if (va) efree(va);
+    if (vol_scale) efree(vol_scale);
 
     /* SMA overlays. Each period gets a series color and a 2px line.
      * gdAntiAliased smooths the diagonals; set the AA color per

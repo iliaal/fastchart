@@ -33,6 +33,9 @@ abstract class Chart
     public const int STYLE_BAR     = 1;
     public const int STYLE_DIAMOND = 2;
     public const int STYLE_I_CAP   = 3;
+    public const int STYLE_HOLLOW  = 4;
+    public const int STYLE_VOLUME  = 5;
+    public const int STYLE_VECTOR  = 6;
 
     /** Border-side bitmask for setBorderSides(). OR them together. */
     public const int BORDER_NONE   = 0;
@@ -549,13 +552,23 @@ final class StockChart extends Chart
     public function setVolumeColors(array $colors): static {}
 
     /**
-     * OHLC presentation style. `STYLE_CANDLE` (default) draws a
-     * filled body with a high-low wick. `STYLE_BAR` draws a
-     * vertical line with a left tick at the open and a right tick
-     * at the close (classic Western HLC bar). `STYLE_DIAMOND`
-     * draws a diamond at the close with a high-low wick.
-     * `STYLE_I_CAP` draws the wick with horizontal caps at high
-     * and low.
+     * OHLC presentation style.
+     *   - `STYLE_CANDLE` (default) — filled body + high-low wick.
+     *   - `STYLE_BAR` — vertical wick + left tick at open + right
+     *     tick at close (classic Western HLC bar).
+     *   - `STYLE_DIAMOND` — diamond at close + high-low wick.
+     *   - `STYLE_I_CAP` — wick with horizontal caps at high and low.
+     *   - `STYLE_HOLLOW` — outlined-only body for bullish bars,
+     *     filled body for bearish bars (TradingView convention).
+     *   - `STYLE_VOLUME` — body width scales with the bar's volume
+     *     relative to the rolling-average volume (requires the OHLCV
+     *     row to carry a volume column).
+     *   - `STYLE_VECTOR` — six-color scheme based on (direction) ×
+     *     (volume strength: climax / rising / neutral). Uses the
+     *     same algorithm as the pinescript "Vector Candles"
+     *     indicator: climax when volume >= 2× avg or
+     *     volume × (high-low) >= the running max; rising when volume
+     *     >= 1.5× avg; otherwise neutral. Requires a volume column.
      */
     public function setCandleStyle(int $style): static {}
 
