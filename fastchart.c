@@ -3412,8 +3412,93 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
  * to stash the raw input on self->data. Their typed migration lands
  * in subsequent phases. */
 FASTCHART_SETTER_ARRAY(FastChart_SurfaceChart, setGrid,   data)
-FASTCHART_SETTER_ARRAY(FastChart_GanttChart,   setTasks,  data)
 FASTCHART_SETTER_ARRAY(FastChart_ContourChart, setGrid,   data)
+
+ZEND_METHOD(FastChart_GanttChart, setTasks)
+{
+    zval *arr;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(arr)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_gantt_obj *self = Z_FASTCHART_GANTT_OBJ_P(ZEND_THIS);
+    if (self->tasks) {
+        for (int i = 0; i < self->task_count; i++) {
+            fc_efree_opt(self->tasks[i].name);
+            fc_efree_opt(self->tasks[i].deps);
+        }
+        efree(self->tasks);
+        self->tasks = NULL;
+    }
+    self->task_count = 0;
+
+    HashTable *ht = Z_ARRVAL_P(arr);
+    int n = (int)zend_hash_num_elements(ht);
+    if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    if (n > FASTCHART_MAX_GANTT_TASKS) n = FASTCHART_MAX_GANTT_TASKS;
+    self->tasks = ecalloc((size_t)n, sizeof(fastchart_gantt_task));
+    int slot = 0;
+
+    zval *t;
+    ZEND_HASH_FOREACH_VAL(ht, t) {
+        if (slot >= n) break;
+        if (Z_TYPE_P(t) != IS_ARRAY) continue;
+        HashTable *th = Z_ARRVAL_P(t);
+        zval *zs = zend_hash_str_find(th, "start", 5);
+        zval *ze = zend_hash_str_find(th, "end",   3);
+        if (!zs || !ze) continue;
+        zend_long s, e;
+        if (fastchart_zval_to_long(zs, &s) != 0) continue;
+        if (fastchart_zval_to_long(ze, &e) != 0) continue;
+        if (e < s) { zend_long tmp = s; s = e; e = tmp; }
+
+        fastchart_gantt_task *out = &self->tasks[slot];
+        out->start = s;
+        out->end = e;
+        out->name = NULL;
+        out->color_rgb = -1;
+        out->is_milestone = false;
+        out->deps = NULL;
+        out->n_deps = 0;
+
+        zval *zn = zend_hash_str_find(th, "name", 4);
+        out->name = fc_strdup_opt(fastchart_label_or_null(zn));
+
+        zval *zc = zend_hash_str_find(th, "color", 5);
+        if (zc && Z_TYPE_P(zc) == IS_LONG) {
+            zend_long c = Z_LVAL_P(zc);
+            if (c >= 0 && c <= 0xFFFFFF) out->color_rgb = (int)c;
+        }
+        zval *zm = zend_hash_str_find(th, "milestone", 9);
+        out->is_milestone =
+            (zm && (Z_TYPE_P(zm) == IS_TRUE ||
+                    (Z_TYPE_P(zm) == IS_LONG && Z_LVAL_P(zm) != 0)));
+        zval *zd = zend_hash_str_find(th, "depends", 7);
+        if (zd && Z_TYPE_P(zd) == IS_ARRAY) {
+            int dn = (int)zend_hash_num_elements(Z_ARRVAL_P(zd));
+            if (dn > 0) {
+                out->deps = ecalloc((size_t)dn, sizeof(int));
+                int k = 0;
+                zval *dv;
+                ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(zd), dv) {
+                    if (k >= dn) break;
+                    if (Z_TYPE_P(dv) == IS_LONG) {
+                        out->deps[k++] = (int)Z_LVAL_P(dv);
+                    }
+                } ZEND_HASH_FOREACH_END();
+                out->n_deps = k;
+                if (k == 0) { efree(out->deps); out->deps = NULL; }
+            }
+        }
+        slot++;
+    } ZEND_HASH_FOREACH_END();
+    self->task_count = slot;
+    if (slot == 0) {
+        efree(self->tasks);
+        self->tasks = NULL;
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
 ZEND_METHOD(FastChart_RadarChart, setSeries)
 {

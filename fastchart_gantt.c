@@ -26,91 +26,19 @@
 #include <time.h>
 #include <math.h>
 
-#define MAX_TASKS 256
-
-
-static int collect_tasks(zval *data_zv, fastchart_gantt_task *out, int max_tasks,
-                         int *out_count, zend_long *out_min, zend_long *out_max)
-{
-    *out_count = 0;
-    *out_min = 0; *out_max = 0;
-    int seen = 0;
-    if (Z_TYPE_P(data_zv) != IS_ARRAY) return -1;
-
-    zval *t;
-    ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(data_zv), t) {
-        if (Z_TYPE_P(t) != IS_ARRAY) continue;
-        if (*out_count >= max_tasks) break;
-        HashTable *ht = Z_ARRVAL_P(t);
-        zval *zs = zend_hash_str_find(ht, "start", sizeof("start") - 1);
-        zval *ze = zend_hash_str_find(ht, "end",   sizeof("end") - 1);
-        if (!zs || !ze) continue;
-        zend_long s, e;
-        if (fastchart_zval_to_long(zs, &s) != 0) continue;
-        if (fastchart_zval_to_long(ze, &e) != 0) continue;
-        if (e < s) { zend_long tmp = s; s = e; e = tmp; }
-
-        out[*out_count].start = s;
-        out[*out_count].end   = e;
-        out[*out_count].deps  = NULL;
-        out[*out_count].n_deps = 0;
-
-        zval *zn = zend_hash_str_find(ht, "name", sizeof("name") - 1);
-        /* Borrowed pointer; valid only for the lifetime of this draw
-         * call. The free_tasks helper deliberately does not free it.
-         * Phase 4 of the typed-storage migration replaces this with
-         * an owned copy parsed at setTasks(). */
-        out[*out_count].name = (char *)fastchart_label_or_null(zn);
-
-        zval *zc = zend_hash_str_find(ht, "color", sizeof("color") - 1);
-        out[*out_count].color_rgb = (int) (zc && Z_TYPE_P(zc) == IS_LONG &&
-            Z_LVAL_P(zc) >= 0 && Z_LVAL_P(zc) <= 0xFFFFFF) ? Z_LVAL_P(zc) : -1;
-
-        zval *zm = zend_hash_str_find(ht, "milestone", sizeof("milestone") - 1);
-        out[*out_count].is_milestone =
-            (zm && (Z_TYPE_P(zm) == IS_TRUE ||
-                    (Z_TYPE_P(zm) == IS_LONG && Z_LVAL_P(zm) != 0)));
-
-        zval *zd = zend_hash_str_find(ht, "depends", sizeof("depends") - 1);
-        if (zd && Z_TYPE_P(zd) == IS_ARRAY) {
-            int n = (int)zend_hash_num_elements(Z_ARRVAL_P(zd));
-            if (n > 0) {
-                out[*out_count].deps = ecalloc(n, sizeof(int));
-                int k = 0;
-                zval *dv;
-                ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(zd), dv) {
-                    if (Z_TYPE_P(dv) == IS_LONG) {
-                        out[*out_count].deps[k++] = (int)Z_LVAL_P(dv);
-                    }
-                } ZEND_HASH_FOREACH_END();
-                out[*out_count].n_deps = k;
-            }
-        }
-
-        if (!seen) { *out_min = s; *out_max = e; seen = 1; }
-        else { if (s < *out_min) *out_min = s; if (e > *out_max) *out_max = e; }
-        (*out_count)++;
-    } ZEND_HASH_FOREACH_END();
-    return seen ? 0 : -1;
-}
-
-static void free_tasks(fastchart_gantt_task *tasks, int n)
-{
-    for (int i = 0; i < n; i++) {
-        if (tasks[i].deps) efree(tasks[i].deps);
-    }
-}
-
 int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
 {
-    fastchart_gantt_task tasks[MAX_TASKS];
-    int n_tasks = 0;
-    zend_long t_min = 0, t_max = 0;
-    if (collect_tasks(&self->data, tasks, MAX_TASKS,
-                      &n_tasks, &t_min, &t_max) != 0 || n_tasks == 0) {
+    if (self->task_count == 0) {
         zend_throw_error(NULL,
             "FastChart\\GanttChart::draw() requires setTasks() with non-empty data");
         return -1;
+    }
+    fastchart_gantt_task *tasks = self->tasks;
+    int n_tasks = self->task_count;
+    zend_long t_min = tasks[0].start, t_max = tasks[0].end;
+    for (int i = 1; i < n_tasks; i++) {
+        if (tasks[i].start < t_min) t_min = tasks[i].start;
+        if (tasks[i].end   > t_max) t_max = tasks[i].end;
     }
 
     if (self->gantt_has_range) {
@@ -226,7 +154,7 @@ int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
         }
     }
 
-    free_tasks(tasks, n_tasks);
+    
     fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
     return 0;
 }
