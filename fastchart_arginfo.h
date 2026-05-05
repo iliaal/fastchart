@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: fe19d40ce228242dbd2c864292b7273b415235f1 */
+ * Stub hash: d44bffea784a2e645b15c2b884aeb4b5d2d6b847 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -168,6 +168,11 @@ ZEND_END_ARG_INFO()
 #define arginfo_class_FastChart_Chart_setAxisLabelColor arginfo_class_FastChart_Chart_setBackgroundColor
 
 #define arginfo_class_FastChart_Chart_setAxisTitleColor arginfo_class_FastChart_Chart_setBackgroundColor
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setColorRamp, 0, 2, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, low, IS_LONG, 0)
+	ZEND_ARG_TYPE_INFO(0, high, IS_LONG, 0)
+ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_addTextAnnotation, 0, 3, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, text, IS_STRING, 0)
@@ -345,11 +350,6 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_SurfaceChart_set
 	ZEND_ARG_TYPE_INFO(0, grid, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_SurfaceChart_setColorRamp, 0, 2, IS_STATIC, 0)
-	ZEND_ARG_TYPE_INFO(0, low, IS_LONG, 0)
-	ZEND_ARG_TYPE_INFO(0, high, IS_LONG, 0)
-ZEND_END_ARG_INFO()
-
 #define arginfo_class_FastChart_SurfaceChart_setShowCellValues arginfo_class_FastChart_Chart_setShowValues
 
 #define arginfo_class_FastChart_SurfaceChart_draw arginfo_class_FastChart_Chart_draw
@@ -410,8 +410,6 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_ContourChart_setFilled arginfo_class_FastChart_RadarChart_setFilled
 
-#define arginfo_class_FastChart_ContourChart_setColorRamp arginfo_class_FastChart_SurfaceChart_setColorRamp
-
 #define arginfo_class_FastChart_ContourChart_draw arginfo_class_FastChart_Chart_draw
 
 ZEND_METHOD(FastChart_Chart, __construct);
@@ -463,6 +461,7 @@ ZEND_METHOD(FastChart_Chart, setThumbnailMode);
 ZEND_METHOD(FastChart_Chart, setTitleColor);
 ZEND_METHOD(FastChart_Chart, setAxisLabelColor);
 ZEND_METHOD(FastChart_Chart, setAxisTitleColor);
+ZEND_METHOD(FastChart_Chart, setColorRamp);
 ZEND_METHOD(FastChart_Chart, addTextAnnotation);
 ZEND_METHOD(FastChart_Chart, setLineStyle);
 ZEND_METHOD(FastChart_Chart, setGradientFill);
@@ -516,7 +515,6 @@ ZEND_METHOD(FastChart_RadarChart, draw);
 ZEND_METHOD(FastChart_BubbleChart, setPoints);
 ZEND_METHOD(FastChart_BubbleChart, draw);
 ZEND_METHOD(FastChart_SurfaceChart, setGrid);
-ZEND_METHOD(FastChart_SurfaceChart, setColorRamp);
 ZEND_METHOD(FastChart_SurfaceChart, setShowCellValues);
 ZEND_METHOD(FastChart_SurfaceChart, draw);
 ZEND_METHOD(FastChart_GaugeChart, setValue);
@@ -538,7 +536,6 @@ ZEND_METHOD(FastChart_PolarChart, draw);
 ZEND_METHOD(FastChart_ContourChart, setGrid);
 ZEND_METHOD(FastChart_ContourChart, setLevels);
 ZEND_METHOD(FastChart_ContourChart, setFilled);
-ZEND_METHOD(FastChart_ContourChart, setColorRamp);
 ZEND_METHOD(FastChart_ContourChart, draw);
 
 static const zend_function_entry class_FastChart_Chart_methods[] = {
@@ -591,6 +588,7 @@ static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, setTitleColor, arginfo_class_FastChart_Chart_setTitleColor, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setAxisLabelColor, arginfo_class_FastChart_Chart_setAxisLabelColor, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setAxisTitleColor, arginfo_class_FastChart_Chart_setAxisTitleColor, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setColorRamp, arginfo_class_FastChart_Chart_setColorRamp, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, addTextAnnotation, arginfo_class_FastChart_Chart_addTextAnnotation, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setLineStyle, arginfo_class_FastChart_Chart_setLineStyle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setGradientFill, arginfo_class_FastChart_Chart_setGradientFill, ZEND_ACC_PUBLIC)
@@ -681,7 +679,6 @@ static const zend_function_entry class_FastChart_BubbleChart_methods[] = {
 
 static const zend_function_entry class_FastChart_SurfaceChart_methods[] = {
 	ZEND_ME(FastChart_SurfaceChart, setGrid, arginfo_class_FastChart_SurfaceChart_setGrid, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_SurfaceChart, setColorRamp, arginfo_class_FastChart_SurfaceChart_setColorRamp, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_SurfaceChart, setShowCellValues, arginfo_class_FastChart_SurfaceChart_setShowCellValues, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_SurfaceChart, draw, arginfo_class_FastChart_SurfaceChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
@@ -723,7 +720,6 @@ static const zend_function_entry class_FastChart_ContourChart_methods[] = {
 	ZEND_ME(FastChart_ContourChart, setGrid, arginfo_class_FastChart_ContourChart_setGrid, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ContourChart, setLevels, arginfo_class_FastChart_ContourChart_setLevels, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ContourChart, setFilled, arginfo_class_FastChart_ContourChart_setFilled, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_ContourChart, setColorRamp, arginfo_class_FastChart_ContourChart_setColorRamp, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ContourChart, draw, arginfo_class_FastChart_ContourChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };

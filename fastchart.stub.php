@@ -319,6 +319,14 @@ abstract class Chart
     public function setAxisTitleColor(int $rgb): static {}
 
     /**
+     * Two-stop color ramp (low value -> high value). 24-bit RGB ints.
+     * Used by chart families that map a numeric range to a continuous
+     * color (SurfaceChart, ContourChart). Default cool blue -> warm
+     * red. No-op on chart types that don't paint a color ramp.
+     */
+    public function setColorRamp(int $low, int $high): static {}
+
+    /**
      * Add a free-floating text annotation at canvas coordinates
      * (`$x`, `$y` are pixel positions in the rendered image).
      * Useful for callouts, watermarks, or labeled regions. Color
@@ -617,12 +625,6 @@ final class SurfaceChart extends Chart
     public function setGrid(array $grid): static {}
 
     /**
-     * Two-stop color ramp (low value -> high value). 24-bit RGB ints.
-     * Default cool blue -> warm red.
-     */
-    public function setColorRamp(int $low, int $high): static {}
-
-    /**
      * Show the numeric value inside each cell. Default false.
      */
     public function setShowCellValues(bool $show, string $format = '%g'): static {}
@@ -751,8 +753,6 @@ final class ContourChart extends Chart
      * Default true. Pass false for line-only contours.
      */
     public function setFilled(bool $filled): static {}
-
-    public function setColorRamp(int $low, int $high): static {}
 
     public function draw(\GdImage $canvas): \GdImage {}
 }

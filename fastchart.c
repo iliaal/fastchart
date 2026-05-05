@@ -586,17 +586,22 @@ ZEND_METHOD(FastChart_Chart, setYAxisScale)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-ZEND_METHOD(FastChart_Chart, setStrict)
-{
-    bool strict;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_BOOL(strict)
-    ZEND_PARSE_PARAMETERS_END();
+/* Field-assignment bool setter: stash a bool param into a struct
+ * field. Defined here so every bool setter in this file (including
+ * the early setStrict) can use it. */
+#define FASTCHART_BOOL_SETTER(class_, name_, field_) \
+    ZEND_METHOD(class_, name_) \
+    { \
+        bool v; \
+        ZEND_PARSE_PARAMETERS_START(1, 1) \
+            Z_PARAM_BOOL(v) \
+        ZEND_PARSE_PARAMETERS_END(); \
+        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
+        self->field_ = v; \
+        RETURN_ZVAL(ZEND_THIS, 1, 0); \
+    }
 
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->strict = strict;
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
+FASTCHART_BOOL_SETTER(FastChart_Chart, setStrict, strict)
 
 /* Reject non-finite (NaN, Inf, -Inf) doubles at the setter boundary.
  * Several public setters bound their value with comparison operators
@@ -903,16 +908,7 @@ ZEND_METHOD(FastChart_Chart, setShowValues)
 
 /* ----------------- transparent bg + bg image --------------------- */
 
-ZEND_METHOD(FastChart_Chart, setTransparentBackground)
-{
-    bool en;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_BOOL(en)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->transparent_bg = en;
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
+FASTCHART_BOOL_SETTER(FastChart_Chart, setTransparentBackground, transparent_bg)
 
 ZEND_METHOD(FastChart_Chart, setBackgroundImage)
 {
@@ -1003,29 +999,8 @@ ZEND_METHOD(FastChart_Chart, setBorderSides)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ----------------- axis visibility -------------------------------- */
-
-ZEND_METHOD(FastChart_Chart, setXAxisVisible)
-{
-    bool v;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_BOOL(v)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->x_axis_visible = v;
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
-
-ZEND_METHOD(FastChart_Chart, setYAxisVisible)
-{
-    bool v;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_BOOL(v)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->y_axis_visible = v;
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
+FASTCHART_BOOL_SETTER(FastChart_Chart, setXAxisVisible, x_axis_visible)
+FASTCHART_BOOL_SETTER(FastChart_Chart, setYAxisVisible, y_axis_visible)
 
 /* ----------------- axis label format ----------------------------- */
 
@@ -1102,16 +1077,7 @@ ZEND_METHOD(FastChart_Chart, setEdgeColor)
 
 /* ----------------- zero shelf ------------------------------------ */
 
-ZEND_METHOD(FastChart_Chart, setZeroShelf)
-{
-    bool en;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_BOOL(en)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->zero_shelf = en;
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
+FASTCHART_BOOL_SETTER(FastChart_Chart, setZeroShelf, zero_shelf)
 
 /* ----------------- x-label stride -------------------------------- */
 
@@ -1150,22 +1116,34 @@ ZEND_METHOD(FastChart_Chart, setSecondaryYAxisTitle)
 
 /* ----------------- thumbnail mode -------------------------------- */
 
-ZEND_METHOD(FastChart_Chart, setThumbnailMode)
-{
-    bool en;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_BOOL(en)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->thumbnail_mode = en;
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
+FASTCHART_BOOL_SETTER(FastChart_Chart, setThumbnailMode, thumbnail_mode)
 
 /* ----------------- per-element text colors ----------------------- */
 
 FASTCHART_COLOR_OVERRIDE_SETTER(setTitleColor,     title_color)
 FASTCHART_COLOR_OVERRIDE_SETTER(setAxisLabelColor, axis_label_color)
 FASTCHART_COLOR_OVERRIDE_SETTER(setAxisTitleColor, axis_title_color)
+
+/* color_ramp_low/high lives on the shared object struct so we can
+ * accept setColorRamp on any Chart subclass. Only the chart families
+ * that paint a continuous numeric range (SurfaceChart, ContourChart)
+ * actually read it; setting it on a LineChart is a harmless no-op. */
+ZEND_METHOD(FastChart_Chart, setColorRamp)
+{
+    zend_long lo, hi;
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_LONG(lo)
+        Z_PARAM_LONG(hi)
+    ZEND_PARSE_PARAMETERS_END();
+    if (lo < 0 || lo > 0xFFFFFF || hi < 0 || hi > 0xFFFFFF) {
+        zend_value_error("FastChart\\Chart::setColorRamp() colors must be 0..0xFFFFFF");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->color_ramp_low = lo;
+    self->color_ramp_high = hi;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
 /* ----------------- text annotation ------------------------------- */
 
@@ -1235,16 +1213,7 @@ ZEND_METHOD(FastChart_BarChart, setStackMode)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-ZEND_METHOD(FastChart_BarChart, setFloating)
-{
-    bool en;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_BOOL(en)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->bar_floating = en;
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
+FASTCHART_BOOL_SETTER(FastChart_BarChart, setFloating, bar_floating)
 
 /* ----------------- line style ----------------------------------- */
 
@@ -1378,18 +1347,6 @@ FASTCHART_ERROR_BARS_SETTER(FastChart_ScatterChart)
 
 /* ----------------- RadarChart setters --------------------------- */
 
-ZEND_METHOD(FastChart_RadarChart, setSeries)
-{
-    zval *data;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_ARRAY(data)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval_ptr_dtor(&self->data);
-    ZVAL_COPY(&self->data, data);
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
-
 ZEND_METHOD(FastChart_RadarChart, setMaxValue)
 {
     double m;
@@ -1408,61 +1365,10 @@ ZEND_METHOD(FastChart_RadarChart, setMaxValue)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-ZEND_METHOD(FastChart_RadarChart, setFilled)
-{
-    bool f;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_BOOL(f)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->radar_filled = f;
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
-
-/* ----------------- BubbleChart setters -------------------------- */
-
-ZEND_METHOD(FastChart_BubbleChart, setPoints)
-{
-    zval *data;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_ARRAY(data)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval_ptr_dtor(&self->data);
-    ZVAL_COPY(&self->data, data);
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
+FASTCHART_BOOL_SETTER(FastChart_RadarChart, setFilled, radar_filled)
 
 /* ----------------- SurfaceChart setters ------------------------- */
 
-ZEND_METHOD(FastChart_SurfaceChart, setGrid)
-{
-    zval *data;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_ARRAY(data)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval_ptr_dtor(&self->data);
-    ZVAL_COPY(&self->data, data);
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
-
-ZEND_METHOD(FastChart_SurfaceChart, setColorRamp)
-{
-    zend_long lo, hi;
-    ZEND_PARSE_PARAMETERS_START(2, 2)
-        Z_PARAM_LONG(lo)
-        Z_PARAM_LONG(hi)
-    ZEND_PARSE_PARAMETERS_END();
-    if (lo < 0 || lo > 0xFFFFFF || hi < 0 || hi > 0xFFFFFF) {
-        zend_value_error("FastChart\\SurfaceChart::setColorRamp() colors must be 0..0xFFFFFF");
-        RETURN_THROWS();
-    }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->color_ramp_low = lo;
-    self->color_ramp_high = hi;
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
 
 ZEND_METHOD(FastChart_SurfaceChart, setShowCellValues)
 {
@@ -1719,18 +1625,6 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
 
 /* ----------------- GanttChart setters --------------------------- */
 
-ZEND_METHOD(FastChart_GanttChart, setTasks)
-{
-    zval *tasks;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_ARRAY(tasks)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval_ptr_dtor(&self->data);
-    ZVAL_COPY(&self->data, tasks);
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
-
 ZEND_METHOD(FastChart_GanttChart, setTimeRange)
 {
     zend_long start = 0, end = 0;
@@ -1754,30 +1648,9 @@ ZEND_METHOD(FastChart_GanttChart, setTimeRange)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-ZEND_METHOD(FastChart_GanttChart, setShowTaskLabels)
-{
-    bool s;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_BOOL(s)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->gantt_show_labels = s;
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
+FASTCHART_BOOL_SETTER(FastChart_GanttChart, setShowTaskLabels, gantt_show_labels)
 
 /* ----------------- BoxPlot setters ------------------------------ */
-
-ZEND_METHOD(FastChart_BoxPlot, setBoxes)
-{
-    zval *data;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_ARRAY(data)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval_ptr_dtor(&self->data);
-    ZVAL_COPY(&self->data, data);
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
 
 ZEND_METHOD(FastChart_BoxPlot, setBoxWidth)
 {
@@ -1795,18 +1668,6 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxWidth)
 }
 
 /* ----------------- PolarChart setters --------------------------- */
-
-ZEND_METHOD(FastChart_PolarChart, setSeries)
-{
-    zval *data;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_ARRAY(data)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval_ptr_dtor(&self->data);
-    ZVAL_COPY(&self->data, data);
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
 
 ZEND_METHOD(FastChart_PolarChart, setMaxRadius)
 {
@@ -1826,30 +1687,9 @@ ZEND_METHOD(FastChart_PolarChart, setMaxRadius)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-ZEND_METHOD(FastChart_PolarChart, setFilled)
-{
-    bool f;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_BOOL(f)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->polar_filled = f;
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
+FASTCHART_BOOL_SETTER(FastChart_PolarChart, setFilled, polar_filled)
 
 /* ----------------- ContourChart setters ------------------------- */
-
-ZEND_METHOD(FastChart_ContourChart, setGrid)
-{
-    zval *data;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_ARRAY(data)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval_ptr_dtor(&self->data);
-    ZVAL_COPY(&self->data, data);
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
 
 ZEND_METHOD(FastChart_ContourChart, setLevels)
 {
@@ -1865,33 +1705,7 @@ ZEND_METHOD(FastChart_ContourChart, setLevels)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-ZEND_METHOD(FastChart_ContourChart, setFilled)
-{
-    bool f;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_BOOL(f)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->contour_filled = f;
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
-
-ZEND_METHOD(FastChart_ContourChart, setColorRamp)
-{
-    zend_long lo, hi;
-    ZEND_PARSE_PARAMETERS_START(2, 2)
-        Z_PARAM_LONG(lo)
-        Z_PARAM_LONG(hi)
-    ZEND_PARSE_PARAMETERS_END();
-    if (lo < 0 || lo > 0xFFFFFF || hi < 0 || hi > 0xFFFFFF) {
-        zend_value_error("FastChart\\ContourChart::setColorRamp() colors must be 0..0xFFFFFF");
-        RETURN_THROWS();
-    }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->color_ramp_low = lo;
-    self->color_ramp_high = hi;
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
+FASTCHART_BOOL_SETTER(FastChart_ContourChart, setFilled, contour_filled)
 
 /* ----------------- combo overlay --------------------------------- */
 
@@ -2097,16 +1911,7 @@ ZEND_METHOD(FastChart_Chart, setYAxisRange)
 
 /* ---------------- secondary Y axis -------------------------------- */
 
-ZEND_METHOD(FastChart_Chart, setSecondaryYAxis)
-{
-    bool en;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_BOOL(en)
-    ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->secondary_y = en;
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
+FASTCHART_BOOL_SETTER(FastChart_Chart, setSecondaryYAxis, secondary_y)
 
 /* ---------------- pie label / explode ----------------------------- */
 
@@ -2484,6 +2289,13 @@ FASTCHART_SETTER_ARRAY(FastChart_BarChart,     setSeries, data)
 FASTCHART_SETTER_ARRAY(FastChart_PieChart,     setSlices, data)
 FASTCHART_SETTER_ARRAY(FastChart_ScatterChart, setPoints, data)
 FASTCHART_SETTER_ARRAY(FastChart_StockChart,   setOhlcv,  data)
+FASTCHART_SETTER_ARRAY(FastChart_RadarChart,   setSeries, data)
+FASTCHART_SETTER_ARRAY(FastChart_BubbleChart,  setPoints, data)
+FASTCHART_SETTER_ARRAY(FastChart_SurfaceChart, setGrid,   data)
+FASTCHART_SETTER_ARRAY(FastChart_GanttChart,   setTasks,  data)
+FASTCHART_SETTER_ARRAY(FastChart_BoxPlot,      setBoxes,  data)
+FASTCHART_SETTER_ARRAY(FastChart_PolarChart,   setSeries, data)
+FASTCHART_SETTER_ARRAY(FastChart_ContourChart, setGrid,   data)
 
 ZEND_METHOD(FastChart_BarChart, setStacked)
 {
