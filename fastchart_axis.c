@@ -25,6 +25,27 @@
 #include "fastchart_text.h"
 #include "fastchart_effects.h"
 
+/* Portable thread-safe gmtime + UTC mktime. POSIX provides
+ * gmtime_r and timegm; MSVC ships gmtime_s (arg order swapped)
+ * and _mkgmtime. Wrap so the rest of the file stays uniform. */
+static inline void fc_gmtime(time_t t, struct tm *out)
+{
+#if defined(_WIN32) && !defined(__MINGW32__)
+    gmtime_s(out, &t);
+#else
+    gmtime_r(&t, out);
+#endif
+}
+
+static inline time_t fc_timegm(struct tm *tm)
+{
+#if defined(_WIN32) && !defined(__MINGW32__)
+    return _mkgmtime(tm);
+#else
+    return timegm(tm);
+#endif
+}
+
 #define MARGIN_RIGHT_PAD       12
 #define MARGIN_TOP_PAD          8
 #define MARGIN_BOTTOM_PAD      10
@@ -1434,7 +1455,7 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
         long every = chart->date_axis_every;
         struct tm tm_buf;
         time_t tt = (time_t)t_min;
-        gmtime_r(&tt, &tm_buf);
+        fc_gmtime(tt, &tm_buf);
         /* Snap start to the unit boundary at-or-after t_min. */
         switch (chart->date_axis_unit) {
             case FASTCHART_DATE_DAY:
@@ -1463,7 +1484,7 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
                 tm_buf.tm_mon = 0;
                 break;
         }
-        time_t cur = timegm(&tm_buf);
+        time_t cur = fc_timegm(&tm_buf);
         if (cur < t_min) {
             /* Advance one unit so we always start inside the range. */
             switch (chart->date_axis_unit) {
@@ -1473,7 +1494,7 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
                 case FASTCHART_DATE_QUARTER: tm_buf.tm_mon  += 3; break;
                 case FASTCHART_DATE_YEAR:    tm_buf.tm_year += 1; break;
             }
-            cur = timegm(&tm_buf);
+            cur = fc_timegm(&tm_buf);
         }
 
         int n_emitted = 0;
@@ -1490,7 +1511,7 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
                                            buf, sizeof(buf));
                 } else {
                     struct tm tm_lbl;
-                    gmtime_r(&cur, &tm_lbl);
+                    fc_gmtime(cur, &tm_lbl);
                     const char *fmt;
                     switch (chart->date_axis_unit) {
                         case FASTCHART_DATE_YEAR:    fmt = "%Y";       break;
@@ -1525,7 +1546,7 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
                     case FASTCHART_DATE_YEAR:    tm_buf.tm_year += 1; break;
                 }
             }
-            cur = timegm(&tm_buf);
+            cur = fc_timegm(&tm_buf);
             n_emitted++;
         }
         return;
@@ -1550,7 +1571,7 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
         } else {
             struct tm tm_buf;
             time_t tt = (time_t)ts;
-            gmtime_r(&tt, &tm_buf);
+            fc_gmtime(tt, &tm_buf);
             strftime(buf, sizeof(buf), "%Y-%m-%d", &tm_buf);
         }
 
