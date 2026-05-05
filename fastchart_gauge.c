@@ -22,6 +22,7 @@
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 #include "fastchart_effects.h"
+#include "fastchart_aa.h"
 
 #include <math.h>
 
@@ -42,16 +43,61 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
     fastchart_palette_init(im, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
+    /* Stamp DPI on the canvas — feeds gdImage's resolution
+     * metadata + FreeType hinting via fastchart_text_draw's
+     * gdImageStringFTEx call. Renderers that go through
+     * fastchart_compute_layout already get this; this one
+     * does not, so the call is local. */
+    if (((fastchart_obj *)self)->dpi > 0) {
+        gdImageSetResolution(im, (unsigned int)((fastchart_obj *)self)->dpi,
+                              (unsigned int)((fastchart_obj *)self)->dpi);
+    }
+
     int W = gdImageSX(im);
     int H = gdImageSY(im);
     gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, pal.bg);
 
-    int top = (self->title && ZSTR_LEN(self->title) > 0) ? 32 : 12;
-    int cx = W / 2;
-    int cy = top + (H - top) * 3 / 4;
-    int radius = (W < (H - top) * 2 ? W : (H - top) * 2) / 2 - 30;
+    /* Reserve title height proportional to font size, not a hardcoded
+     * 32px constant. At larger canvas + larger font (1200x800 with
+     * setFontSize(22)), 32px clipped the ascender against the canvas
+     * top. Measure the title's actual height; fall back to scaling
+     * from the base font size if measurement fails. */
+    double base_size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    double title_size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_TITLE, base_size * 1.4);
+    int title_baseline = 12;
+    int top = 12;
+    if (self->title && ZSTR_LEN(self->title) > 0) {
+        const char *tfont = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_TITLE);
+        int th = (int)(title_size * 1.0);  /* fallback */
+        if (tfont) {
+            int measured_h = 0;
+            if (fastchart_text_measure(im, tfont, title_size, ZSTR_VAL(self->title),
+                                       NULL, &measured_h, NULL, 0) == 0) {
+                th = measured_h;
+            }
+        }
+        title_baseline = th + 10;
+        top = title_baseline + 12;
+    }
+
+    /* Compute the gauge geometry from the available area. The body is
+     * a top-half semicircle of radius `radius`; the bottom-tick labels
+     * (0% / 100%) sit just under the cy line and need ~size*1.5 below.
+     * Vertically centre the body+labels block inside [top, H]. */
+    int label_pad = (int)(base_size * 1.5) + 8;
+    int avail_h = H - top - label_pad;
+    int avail_w = W - 60;  /* 30px side padding for 0%/100% labels */
+    int radius = (avail_w / 2 < avail_h ? avail_w / 2 : avail_h);
     if (radius < 40) radius = 40;
     int diameter = radius * 2;
+    int cx = W / 2;
+    /* Centre the (radius + label_pad) block vertically in [top, H]:
+     *   block_top  = top + (avail_h_total - block_h) / 2
+     *   cy         = block_top + radius
+     *   avail_h_total = H - top, block_h = radius + label_pad
+     */
+    int block_h = radius + label_pad;
+    int cy = top + ((H - top) - block_h) / 2 + radius;
 
     double mn = self->gauge_min;
     double mx = self->gauge_max;
@@ -62,9 +108,19 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
      * (right). Zones are pre-parsed into typed C state by setZones. */
     int default_color = pal.series[0];
 
+    /* Coverage-based AA via NanoSVG rasterizer. The libgd polygon-AA
+     * helper (fastchart_filled_wedge_aa in fastchart_effects.c) only
+     * adds a 1px AA outline on top of a hard-edged fill — visually
+     * subtle. NanoSVG rasterizes the entire shape with fractional
+     * coverage per pixel, which is what makes Cairo / Skia / browser
+     * canvas output look smooth. The temp rasterizer is allocated
+     * once and reused for all wedges in this draw. */
+    fastchart_aa_ctx *aa = fastchart_aa_open();
+
     if (self->zones && self->n_zones > 0) {
         /* Background fill (a thin ring, drawn as a fat arc). */
-        fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
+        if (aa) fastchart_aa_filled_wedge(aa, im, cx, cy, diameter, 180, 360, pal.grid);
+        else    fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
         for (int i = 0; i < self->n_zones; i++) {
             const fastchart_gauge_zone *zn = &self->zones[i];
             int color = default_color;
@@ -90,17 +146,19 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
             int end   = (int)(180 + frac_b * 180);
             if (start > end) { int t = start; start = end; end = t; }
             if (end <= start) continue;  /* empty zone, skip */
-            fastchart_filled_wedge_aa(im, cx, cy, diameter, start, end, color);
+            if (aa) fastchart_aa_filled_wedge(aa, im, cx, cy, diameter, start, end, color);
+            else    fastchart_filled_wedge_aa(im, cx, cy, diameter, start, end, color);
         }
     } else {
         /* Single-color sweep from min to value, with the rest in grid color. */
-        fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
+        if (aa) fastchart_aa_filled_wedge(aa, im, cx, cy, diameter, 180, 360, pal.grid);
+        else    fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
         double aV = gauge_value_to_deg(v, mn, mx);
         int start = 180;
         int end = 180 + (int)(180 - aV);
         if (end > start) {
-            fastchart_filled_wedge_aa(im, cx, cy, diameter,
-                                      start, end, default_color);
+            if (aa) fastchart_aa_filled_wedge(aa, im, cx, cy, diameter, start, end, default_color);
+            else    fastchart_filled_wedge_aa(im, cx, cy, diameter, start, end, default_color);
         }
     }
 
@@ -118,16 +176,29 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
     double rad = aV * M_PI / 180.0;
     int nx = cx + (int)((double)(radius - 6) * cos(rad));
     int ny = cy - (int)((double)(radius - 6) * sin(rad));
-    /* Two-pass needle: thick non-AA gives weight, then a 1px AA spine
-     * on top sharpens the perceived edge. libgd's thick-line + AA paths
-     * are mutually exclusive, so combining them like this is the only
-     * way to get both visual properties at angled needle positions. */
-    gdImageSetThickness(im, 3);
-    gdImageLine(im, cx, cy, nx, ny, pal.text);
-    gdImageSetThickness(im, 1);
-    gdImageSetAntiAliased(im, pal.text);
-    gdImageLine(im, cx, cy, nx, ny, gdAntiAliased);
-    gdImageFilledEllipse(im, cx, cy, 12, 12, pal.text);
+    /* Needle thickness scales with the gauge size so the line stays
+     * visible at a 1200x800 canvas without dominating a 480x320 one.
+     * NanoSVG strokes the line with proper coverage AA — replaces the
+     * libgd "thick non-AA + 1px AA spine" hack which left visible
+     * staircase along diagonals at high resolution. */
+    double needle_thickness = (double)diameter / 200.0 + 2.0;
+    if (needle_thickness < 3.0) needle_thickness = 3.0;
+    if (aa) {
+        fastchart_aa_stroke_line(aa, im, cx, cy, nx, ny,
+                                 needle_thickness, pal.text);
+    } else {
+        gdImageSetThickness(im, (int)needle_thickness);
+        gdImageLine(im, cx, cy, nx, ny, pal.text);
+        gdImageSetThickness(im, 1);
+        gdImageSetAntiAliased(im, pal.text);
+        gdImageLine(im, cx, cy, nx, ny, gdAntiAliased);
+    }
+    /* Hub: scale with diameter so it doesn't look tiny on a large canvas. */
+    int hub = diameter / 60;
+    if (hub < 8) hub = 8;
+    gdImageFilledEllipse(im, cx, cy, hub, hub, pal.text);
+
+    fastchart_aa_close(aa);
 
     /* Center value label. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
@@ -161,8 +232,9 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
                             FASTCHART_ALIGN_CENTER, maxbuf, NULL, 0);
     }
 
-    /* Title. */
-    fastchart_draw_floating_title(im, (fastchart_obj *)self, &pal, W / 2, 24);
+    /* Title. Baseline scales with the title font size so the ascender
+     * stays inside the canvas at any canvas/font scale. */
+    fastchart_draw_floating_title(im, (fastchart_obj *)self, &pal, W / 2, title_baseline);
 
     fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
     return 0;
