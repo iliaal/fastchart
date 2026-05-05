@@ -25,7 +25,7 @@
 #include <math.h>
 
 /* Bubble: each entry is [x, y, size] or [x, y, size, rgb_color]. */
-int fastchart_bubble_render_to_image(fastchart_obj *self, gdImagePtr im)
+int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
 {
     HashTable *ht = Z_TYPE(self->data) == IS_ARRAY ? Z_ARRVAL(self->data) : NULL;
     if (!ht || zend_hash_num_elements(ht) == 0) {
@@ -86,21 +86,21 @@ int fastchart_bubble_render_to_image(fastchart_obj *self, gdImagePtr im)
 
     fastchart_value_range yrange;
     fastchart_value_range_compute(ymin, ymax, 6, &yrange);
-    fastchart_value_range_apply_override(self, &yrange);
+    fastchart_value_range_apply_override((fastchart_obj *)self, &yrange);
 
     fastchart_value_range xrange;
     fastchart_value_range_compute(xmin, xmax, 6, &xrange);
 
     fastchart_rect plot;
-    fastchart_compute_layout(self, im, 1, 1, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, &plot);
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, self, &pal);
+    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
-    fastchart_draw_frame(im, self, &plot, &pal);
-    fastchart_draw_title(im, self, &plot, &pal);
-    fastchart_draw_y_axis(im, self, &plot, &pal, &yrange);
+    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_y_axis(im, (fastchart_obj *)self, &plot, &pal, &yrange);
 
     /* Categorical x labels would mismatch the continuous data; draw a
      * lightweight numeric scale by reusing the time axis path with
@@ -109,7 +109,7 @@ int fastchart_bubble_render_to_image(fastchart_obj *self, gdImagePtr im)
     if (self->x_axis_visible) {
         gdImageLine(im, plot.x0, plot.y1, plot.x1, plot.y1, pal.axis);
     }
-    fastchart_draw_axis_titles(im, self, &plot, &pal);
+    fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
 
     /* Map size to radius: max bubble = ~5% of plot width. */
     double plot_w = plot.x1 - plot.x0;
@@ -149,7 +149,7 @@ int fastchart_bubble_render_to_image(fastchart_obj *self, gdImagePtr im)
             alpha = palette_alpha[idx];
         }
 
-        fastchart_shadow_filled_arc(im, self, px, py, rad * 2, 0, 360);
+        fastchart_shadow_filled_arc(im, (fastchart_obj *)self, px, py, rad * 2, 0, 360);
         gdImageFilledEllipse(im, px, py, rad * 2, rad * 2, alpha);
         int edge = self->edge_color >= 0 ? (int)self->edge_color : color;
         gdImageEllipse(im, px, py, rad * 2, rad * 2, edge);
@@ -158,8 +158,8 @@ int fastchart_bubble_render_to_image(fastchart_obj *self, gdImagePtr im)
 
     efree(xs); efree(ys); efree(ss); efree(cs); efree(has_color);
 
-    fastchart_draw_h_annotations(im, self, &plot, &pal, &yrange);
-    fastchart_draw_text_annotations(im, self, &pal);
+    fastchart_draw_h_annotations(im, (fastchart_obj *)self, &plot, &pal, &yrange);
+    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
     return 0;
 }
 
@@ -175,7 +175,7 @@ ZEND_METHOD(FastChart_BubbleChart, draw)
         zend_throw_error(NULL, "FastChart\\BubbleChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_bubble_obj *self = Z_FASTCHART_BUBBLE_OBJ_P(ZEND_THIS);
     if (fastchart_bubble_render_to_image(self, im) != 0) {
         RETURN_THROWS();
     }

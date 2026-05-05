@@ -36,11 +36,11 @@ static double gauge_value_to_deg(double v, double mn, double mx)
     return 180.0 - frac * 180.0;
 }
 
-int fastchart_gauge_render_to_image(fastchart_obj *self, gdImagePtr im)
+int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
 {
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, self, &pal);
+    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
     int W = gdImageSX(im);
     int H = gdImageSY(im);
@@ -132,14 +132,14 @@ int fastchart_gauge_render_to_image(fastchart_obj *self, gdImagePtr im)
     gdImageFilledEllipse(im, cx, cy, 12, 12, pal.text);
 
     /* Center value label. */
-    const char *font = fastchart_resolve_font(self, FC_FONT_LABEL);
+    const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     if (font) {
         const char *fmt = self->gauge_value_format
             ? ZSTR_VAL(self->gauge_value_format) : "%.1f";
         char buf[64];
         snprintf(buf, sizeof(buf), fmt, v);
         double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-        double size = fastchart_resolve_font_size(self, FC_FONT_LABEL, base * 1.4);
+        double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base * 1.4);
         int tx = cx;
         int ty = cy + (int)(diameter * 0.35);
         fastchart_text_draw(im, font, size, pal.text, tx, ty,
@@ -154,7 +154,7 @@ int fastchart_gauge_render_to_image(fastchart_obj *self, gdImagePtr im)
         snprintf(minbuf, sizeof(minbuf), fmt, mn);
         snprintf(maxbuf, sizeof(maxbuf), fmt, mx);
         double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-        double size = fastchart_resolve_font_size(self, FC_FONT_LABEL, base * 0.85);
+        double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base * 0.85);
         fastchart_text_draw(im, font, size, pal.text,
                             cx - radius, cy + (int)(size * 1.5),
                             FASTCHART_ALIGN_CENTER, minbuf, NULL, 0);
@@ -164,9 +164,9 @@ int fastchart_gauge_render_to_image(fastchart_obj *self, gdImagePtr im)
     }
 
     /* Title. */
-    fastchart_draw_floating_title(im, self, &pal, W / 2, 24);
+    fastchart_draw_floating_title(im, (fastchart_obj *)self, &pal, W / 2, 24);
 
-    fastchart_draw_text_annotations(im, self, &pal);
+    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
     return 0;
 }
 
@@ -182,7 +182,7 @@ ZEND_METHOD(FastChart_GaugeChart, draw)
         zend_throw_error(NULL, "FastChart\\GaugeChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_gauge_obj *self = Z_FASTCHART_GAUGE_OBJ_P(ZEND_THIS);
     if (fastchart_gauge_render_to_image(self, im) != 0) {
         RETURN_THROWS();
     }

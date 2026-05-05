@@ -84,7 +84,7 @@ static int read_candle(zval *row, fastchart_candle *out)
     return 0;
 }
 
-int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
+int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
 {
     if (Z_TYPE(self->data) != IS_ARRAY ||
         zend_hash_num_elements(Z_ARRVAL(self->data)) == 0) {
@@ -163,7 +163,7 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
     /* Layout: full plot rect, then split into price + volume panes
      * if volume is enabled. Volume gets the bottom 22% of the plot. */
     fastchart_rect plot;
-    fastchart_compute_layout(self, im, 1, 1, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, &plot);
 
     /* Pane stacking: optional volume + up to 3 indicator panes
      * stack below the price pane. Each sub-pane gets a fixed share
@@ -225,14 +225,14 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
     } else {
         fastchart_value_range_compute(y_min, y_max, 6, &yrange);
-        fastchart_value_range_apply_override(self, &yrange);
+        fastchart_value_range_apply_override((fastchart_obj *)self, &yrange);
     }
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, self, &pal);
+    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
-    fastchart_draw_frame(im, self, &plot, &pal);
+    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
 
     /* Sub-pane borders. Each pane gets its own rectangle so the
      * boundaries between price / volume / indicator are clear. */
@@ -251,10 +251,10 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
             pal.border);
     }
 
-    fastchart_draw_title(im, self, &plot, &pal);
-    fastchart_draw_y_axis(im, self, &price_pane, &pal, &yrange);
-    fastchart_draw_x_axis_time(im, self, &plot, &pal, t_min, t_max);
-    fastchart_draw_axis_titles(im, self, &plot, &pal);
+    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_y_axis(im, (fastchart_obj *)self, &price_pane, &pal, &yrange);
+    fastchart_draw_x_axis_time(im, (fastchart_obj *)self, &plot, &pal, t_min, t_max);
+    fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
 
     /* Candle width: divide the available x-span into (n + 1) cells
      * and use ~70% as the body width. Wicks always sit at the
@@ -585,7 +585,7 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
      * configured; pane name in the top-left corner. */
     if (n_indicator_panes > 0) {
         double size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-        const char *font = fastchart_resolve_font(self, FC_FONT_LABEL);
+        const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
 
         int slot = 0;
         zval *pane_zv;
@@ -697,15 +697,15 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
     {
         zend_long *ts_arr = ecalloc((size_t)n, sizeof(zend_long));
         for (int i = 0; i < n; i++) ts_arr[i] = candles[i].ts;
-        fastchart_draw_overlays_time(im, self, &price_pane, &pal, &yrange,
+        fastchart_draw_overlays_time(im, (fastchart_obj *)self, &price_pane, &pal, &yrange,
                                       t_min, t_max, ts_arr, n);
         efree(ts_arr);
     }
 
     /* Annotations: only Y annotations apply within the price pane;
      * X annotations apply across the whole chart. */
-    fastchart_draw_h_annotations(im, self, &price_pane, &pal, &yrange);
-    fastchart_draw_v_annotations_time(im, self, &plot, &pal, t_min, t_max);
+    fastchart_draw_h_annotations(im, (fastchart_obj *)self, &price_pane, &pal, &yrange);
+    fastchart_draw_v_annotations_time(im, (fastchart_obj *)self, &plot, &pal, t_min, t_max);
 
     /* Legend for the SMA overlays. */
     if (sma_count > 0) {
@@ -718,12 +718,12 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
             snprintf(slot, 16, "SMA(%d)", sma_periods[s]);
             legend_labels[s] = slot;
         }
-        fastchart_draw_legend(im, self, &price_pane, &pal,
+        fastchart_draw_legend(im, (fastchart_obj *)self, &price_pane, &pal,
                               sma_count, legend_colors, legend_labels);
         efree(legend_label_storage);
     }
 
-    fastchart_draw_text_annotations(im, self, &pal);
+    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
     efree(candles);
     return 0;
 }
@@ -742,7 +742,7 @@ ZEND_METHOD(FastChart_StockChart, draw)
         RETURN_THROWS();
     }
 
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
     if (fastchart_stock_render_to_image(self, im) != 0) {
         RETURN_THROWS();
     }

@@ -182,7 +182,7 @@ static int compute_y_range(fastchart_line_series *series, int n_series,
 
 #define MAX_SERIES 8
 
-int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
+int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im)
 {
     fastchart_line_series series[MAX_SERIES];
     int n_series = 0, max_len = 0;
@@ -232,24 +232,24 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
     } else {
         fastchart_value_range_compute(dmin_l, dmax_l, 6, &range_l);
-        fastchart_value_range_apply_override(self, &range_l);
+        fastchart_value_range_apply_override((fastchart_obj *)self, &range_l);
     }
     if (n_right > 0) {
         fastchart_value_range_compute(dmin_r, dmax_r, 6, &range_r);
     }
 
     fastchart_rect plot;
-    fastchart_compute_layout(self, im, 1, 1, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, &plot);
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, self, &pal);
+    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
-    fastchart_draw_frame(im, self, &plot, &pal);
-    fastchart_draw_title(im, self, &plot, &pal);
-    fastchart_draw_y_axis(im, self, &plot, &pal, &range_l);
+    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_y_axis(im, (fastchart_obj *)self, &plot, &pal, &range_l);
     if (n_right > 0) {
-        fastchart_draw_y_axis_right(im, self, &plot, &pal, &range_r);
+        fastchart_draw_y_axis_right(im, (fastchart_obj *)self, &plot, &pal, &range_r);
     }
 
     /* Category labels: borrowed pointers into still-rooted PHP
@@ -264,10 +264,10 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
             label_ptrs[i] = fastchart_label_or_null(lv);
         }
     }
-    fastchart_draw_x_axis_categorical(im, self, &plot, &pal, max_len, label_ptrs);
+    fastchart_draw_x_axis_categorical(im, (fastchart_obj *)self, &plot, &pal, max_len, label_ptrs);
     if (label_ptrs) efree(label_ptrs);
 
-    fastchart_draw_axis_titles(im, self, &plot, &pal);
+    fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
 
     int marker_style = self->marker_style >= 0
         ? (int)self->marker_style
@@ -342,7 +342,7 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
 
         /* Polyline (linear or smooth depending on chart->line_interpolation). */
-        fastchart_draw_polyline(im, self, pts, n, color, 2, true);
+        fastchart_draw_polyline(im, (fastchart_obj *)self, pts, n, color, 2, true);
 
         /* Markers + value labels at each valid point. */
         for (int i = 0; i < n; i++) {
@@ -362,7 +362,7 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
             }
             fastchart_draw_marker(im, pts[i].x, pts[i].y,
                                   marker_style, marker_size, marker_color);
-            fastchart_draw_value_label(im, self, &pal,
+            fastchart_draw_value_label(im, (fastchart_obj *)self, &pal,
                                        pts[i].x, pts[i].y, values[i]);
         }
 
@@ -374,20 +374,20 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
     }
 
     /* Combo overlays go on top of the primary data. */
-    fastchart_draw_overlays_categorical(im, self, &plot, &pal,
+    fastchart_draw_overlays_categorical(im, (fastchart_obj *)self, &plot, &pal,
                                          &range_l,
                                          n_right > 0 ? &range_r : NULL,
                                          max_len);
 
-    fastchart_draw_h_annotations(im, self, &plot, &pal, &range_l);
-    fastchart_draw_v_annotations_categorical(im, self, &plot, &pal, max_len);
+    fastchart_draw_h_annotations(im, (fastchart_obj *)self, &plot, &pal, &range_l);
+    fastchart_draw_v_annotations_categorical(im, (fastchart_obj *)self, &plot, &pal, max_len);
 
     if (legend_count >= 1 && n_series >= 2) {
-        fastchart_draw_legend(im, self, &plot, &pal,
+        fastchart_draw_legend(im, (fastchart_obj *)self, &plot, &pal,
                               legend_count, legend_colors, legend_labels);
     }
 
-    fastchart_draw_text_annotations(im, self, &pal);
+    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
 
     return 0;
 }
@@ -406,7 +406,7 @@ ZEND_METHOD(FastChart_LineChart, draw)
         RETURN_THROWS();
     }
 
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_line_obj *self = Z_FASTCHART_LINE_OBJ_P(ZEND_THIS);
     if (fastchart_line_render_to_image(self, im) != 0) {
         RETURN_THROWS();
     }

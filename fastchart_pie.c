@@ -146,7 +146,7 @@ static int collect_pie_slices(zval *data_zv,
     return 0;
 }
 
-int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
+int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
 {
     fastchart_pie_slice slices[MAX_SLICES];
     int n_slices = 0;
@@ -202,14 +202,14 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
     fastchart_rect plot;
     /* No axes for pie charts -- pass 0/0 so layout reserves space
      * only for the title. */
-    fastchart_compute_layout(self, im, 0, 0, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, im, 0, 0, &plot);
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, self, &pal);
+    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
-    fastchart_draw_frame(im, self, &plot, &pal);
-    fastchart_draw_title(im, self, &plot, &pal);
+    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
 
     /* Pie geometry: largest disk that fits, centered in the plot
      * rect, with a margin reserved for label leaders / outside text. */
@@ -265,7 +265,7 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
             }
         }
 
-        fastchart_shadow_filled_arc(im, self, slice_cx, slice_cy, diameter,
+        fastchart_shadow_filled_arc(im, (fastchart_obj *)self, slice_cx, slice_cy, diameter,
                                     (int)floor(start_deg),
                                     (int)ceil(start_deg + sweep));
         gdImageFilledArc(im, slice_cx, slice_cy, diameter, diameter,
@@ -293,7 +293,7 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
      * NONE. Format string defaults to "%.0f%%"; the user-supplied
      * format receives the percentage as the sole sprintf argument. */
     const char *font = (self->slice_label_position != FASTCHART_LABEL_NONE)
-        ? fastchart_resolve_font(self, FC_FONT_LABEL) : NULL;
+        ? fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL) : NULL;
     if (font) {
         const char *fmt = self->slice_label_format
             ? ZSTR_VAL(self->slice_label_format)
@@ -364,7 +364,7 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
     }
 
-    fastchart_draw_text_annotations(im, self, &pal);
+    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
     efree(slice_colors);
     return 0;
 }
@@ -383,7 +383,7 @@ ZEND_METHOD(FastChart_PieChart, draw)
         RETURN_THROWS();
     }
 
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
     if (fastchart_pie_render_to_image(self, im) != 0) {
         RETURN_THROWS();
     }

@@ -25,7 +25,7 @@
 
 #include <math.h>
 
-int fastchart_surface_render_to_image(fastchart_obj *self, gdImagePtr im)
+int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im)
 {
     HashTable *grid_ht = Z_TYPE(self->data) == IS_ARRAY ? Z_ARRVAL(self->data) : NULL;
     if (!grid_ht || zend_hash_num_elements(grid_ht) == 0) {
@@ -106,7 +106,7 @@ int fastchart_surface_render_to_image(fastchart_obj *self, gdImagePtr im)
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, self, &pal);
+    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
     int W = gdImageSX(im);
     int H = gdImageSY(im);
@@ -159,20 +159,20 @@ int fastchart_surface_render_to_image(fastchart_obj *self, gdImagePtr im)
             int y0 = top + y_idx * cell_h;
             int x1 = x0 + cell_w - 1;
             int y1 = y0 + cell_h - 1;
-            fastchart_shadow_filled_rectangle(im, self, x0, y0, x1, y1);
+            fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
             gdImageFilledRectangle(im, x0, y0, x1, y1, color);
             if (self->edge_color >= 0) {
                 gdImageRectangle(im, x0, y0, x1, y1, (int)self->edge_color);
             }
             if (self->surface_show_values) {
-                const char *font = fastchart_resolve_font(self, FC_FONT_LABEL);
+                const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
                 if (font) {
                     const char *fmt = self->surface_value_format
                         ? ZSTR_VAL(self->surface_value_format) : "%g";
                     char buf[32];
                     snprintf(buf, sizeof(buf), fmt, v);
                     double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-                    double size = fastchart_resolve_font_size(self, FC_FONT_LABEL, base * 0.8);
+                    double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base * 0.8);
                     int tx = (x0 + x1) / 2;
                     int ty = (y0 + y1) / 2 + (int)(size * 0.35);
                     int luma = ((rgb >> 16) & 0xFF) * 299
@@ -200,9 +200,9 @@ int fastchart_surface_render_to_image(fastchart_obj *self, gdImagePtr im)
         gdImageLine(im, frame_x1, top, frame_x1, frame_y1, pal.border);
 
     /* Title. */
-    fastchart_draw_floating_title(im, self, &pal, W / 2, 24);
+    fastchart_draw_floating_title(im, (fastchart_obj *)self, &pal, W / 2, 24);
 
-    fastchart_draw_text_annotations(im, self, &pal);
+    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
     return 0;
 }
 
@@ -218,7 +218,7 @@ ZEND_METHOD(FastChart_SurfaceChart, draw)
         zend_throw_error(NULL, "FastChart\\SurfaceChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_surface_obj *self = Z_FASTCHART_SURFACE_OBJ_P(ZEND_THIS);
     if (fastchart_surface_render_to_image(self, im) != 0) {
         RETURN_THROWS();
     }

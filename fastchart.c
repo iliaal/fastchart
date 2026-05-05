@@ -46,220 +46,320 @@ zend_class_entry *fastchart_polar_chart_ce;
 zend_class_entry *fastchart_contour_chart_ce;
 zend_class_entry *fastchart_gd_image_ce = NULL;
 
-static zend_object_handlers fastchart_object_handlers;
-
 /* Auto-detected default font path. Probed at MINIT, used as the
  * initial font_path on every newly-allocated chart instance. NULL
  * if no probe candidate exists on the system; users must then call
  * setFontPath() before any text-rendering chart method. */
 static zend_string *fastchart_default_font_path = NULL;
 
-static zend_object *fastchart_create_object(zend_class_entry *ce)
+/* Per-class object_handlers. Each chart class's std offset varies
+ * because per-type fields shift std's position within its struct.
+ * Holding a separate handlers struct per class lets the shared
+ * Z_FASTCHART_OBJ_P walk back from any zend_object* via
+ * obj->handlers->offset to land on the start of the user struct
+ * (= the common-initial-sequence base layout) regardless of which
+ * subclass we're in. */
+static zend_object_handlers fastchart_line_handlers;
+static zend_object_handlers fastchart_area_handlers;
+static zend_object_handlers fastchart_bar_handlers;
+static zend_object_handlers fastchart_pie_handlers;
+static zend_object_handlers fastchart_scatter_handlers;
+static zend_object_handlers fastchart_stock_handlers;
+static zend_object_handlers fastchart_radar_handlers;
+static zend_object_handlers fastchart_bubble_handlers;
+static zend_object_handlers fastchart_surface_handlers;
+static zend_object_handlers fastchart_gauge_handlers;
+static zend_object_handlers fastchart_gantt_handlers;
+static zend_object_handlers fastchart_boxplot_handlers;
+static zend_object_handlers fastchart_polar_handlers;
+static zend_object_handlers fastchart_contour_handlers;
+
+/* Base lifecycle. Operates on the common-initial-sequence layout —
+ * any fastchart_X_obj* aliases as fastchart_obj* for these reads /
+ * writes since base fields share offsets across all per-type structs. */
+static void fastchart_base_init_defaults(fastchart_obj *b)
 {
-    fastchart_obj *intern = zend_object_alloc(sizeof(fastchart_obj), ce);
+    b->width  = FASTCHART_DEFAULT_WIDTH;
+    b->height = FASTCHART_DEFAULT_HEIGHT;
+    b->theme  = FASTCHART_THEME_LIGHT;
+    b->title  = ZSTR_EMPTY_ALLOC();
+    b->font_size = FASTCHART_DEFAULT_FONT_SIZE;
 
-    zend_object_std_init(&intern->std, ce);
-    object_properties_init(&intern->std, ce);
+    b->bg_override = -1;
+    b->plot_bg_override = -1;
+    b->series_colors_n = 0;
+    for (int i = 0; i < 8; i++) b->series_colors[i] = -1;
 
-    intern->width  = FASTCHART_DEFAULT_WIDTH;
-    intern->height = FASTCHART_DEFAULT_HEIGHT;
-    intern->theme  = FASTCHART_THEME_LIGHT;
-    intern->title  = ZSTR_EMPTY_ALLOC();
-    intern->font_size = FASTCHART_DEFAULT_FONT_SIZE;
+    b->strict = false;
+    b->legend_position = FASTCHART_LEGEND_TOP_RIGHT;
+    b->y_axis_scale = FASTCHART_SCALE_LINEAR;
+    b->marker_style = -1;
+    b->marker_size = -1;
 
-    intern->bg_override = -1;
-    intern->plot_bg_override = -1;
-    intern->series_colors_n = 0;
-    for (int i = 0; i < 8; i++) intern->series_colors[i] = -1;
+    b->x_axis_title = NULL;
+    b->y_axis_title = NULL;
+    b->x_axis_label_angle = 0;
 
-    intern->strict = false;
-    intern->legend_position = FASTCHART_LEGEND_TOP_RIGHT;
-    intern->y_axis_scale = FASTCHART_SCALE_LINEAR;
-    intern->marker_style = -1;  /* per-chart default applies */
-    intern->marker_size = -1;
+    b->has_y_min = false;
+    b->has_y_max = false;
+    b->has_y_interval = false;
+    b->y_min = 0;
+    b->y_max = 0;
+    b->y_interval = 0;
 
-    intern->x_axis_title = NULL;
-    intern->y_axis_title = NULL;
-    intern->x_axis_label_angle = 0;
+    b->secondary_y = false;
 
-    intern->has_y_min = false;
-    intern->has_y_max = false;
-    intern->has_y_interval = false;
-    intern->y_min = 0;
-    intern->y_max = 0;
-    intern->y_interval = 0;
+    b->axis_color_override   = -1;
+    b->grid_color_override   = -1;
+    b->border_color_override = -1;
+    b->text_color_override   = -1;
 
-    intern->secondary_y = false;
-    intern->candle_style = FASTCHART_STYLE_CANDLE;
-    intern->slice_label_position = FASTCHART_LABEL_INSIDE;
-    intern->slice_label_format = NULL;
-    intern->area_alpha = 64;
+    b->title_font_path = NULL;
+    b->axis_font_path  = NULL;
+    b->label_font_path = NULL;
+    b->title_font_size = 0.0;
+    b->axis_font_size  = 0.0;
+    b->label_font_size = 0.0;
 
-    intern->axis_color_override   = -1;
-    intern->grid_color_override   = -1;
-    intern->border_color_override = -1;
-    intern->text_color_override   = -1;
+    b->show_values = false;
+    b->value_format = NULL;
 
-    intern->title_font_path = NULL;
-    intern->axis_font_path  = NULL;
-    intern->label_font_path = NULL;
-    intern->title_font_size = 0.0;
-    intern->axis_font_size  = 0.0;
-    intern->label_font_size = 0.0;
+    b->transparent_bg = false;
+    b->bg_image_path = NULL;
 
-    intern->show_values = false;
-    intern->value_format = NULL;
+    b->line_interpolation = FASTCHART_INTERP_LINEAR;
 
-    intern->pie_other_threshold = 0.0;
-    intern->pie_other_label = NULL;
+    b->has_plot_rect = false;
+    b->plot_x0 = b->plot_y0 = b->plot_x1 = b->plot_y1 = 0;
 
-    intern->transparent_bg = false;
-    intern->bg_image_path = NULL;
+    b->border_sides = FASTCHART_BORDER_ALL;
 
-    intern->line_interpolation = FASTCHART_INTERP_LINEAR;
+    b->x_axis_visible = true;
+    b->y_axis_visible = true;
+    b->y_axis_label_format = NULL;
+    b->x_axis_label_format = NULL;
+    b->tick_mode = FASTCHART_TICK_BOTH;
+    b->bar_width_pct = 0;
+    b->edge_color = -1;
+    b->zero_shelf = false;
+    b->x_label_stride = 1;
+    b->y_axis_title2 = NULL;
+    b->thumbnail_mode = false;
+    b->title_color = -1;
+    b->axis_label_color = -1;
+    b->axis_title_color = -1;
 
-    intern->has_plot_rect = false;
-    intern->plot_x0 = intern->plot_y0 = intern->plot_x1 = intern->plot_y1 = 0;
+    b->line_style = FASTCHART_LINE_SOLID;
+    b->gradient_from = -1;
+    b->gradient_to = -1;
+    b->gradient_dir = FASTCHART_GRADIENT_VERTICAL;
+    b->has_drop_shadow = false;
+    b->shadow_dx = 3;
+    b->shadow_dy = 3;
+    b->shadow_color = 0x000000;
+    b->shadow_alpha = 64;
+    b->color_ramp_low = 0x1f77b4;
+    b->color_ramp_high = 0xd62728;
+    b->date_axis_unit = FASTCHART_DATE_DAY;
+    b->date_axis_every = 0;
 
-    intern->border_sides = FASTCHART_BORDER_ALL;
+    b->font_path = fastchart_default_font_path
+        ? zend_string_copy(fastchart_default_font_path) : NULL;
 
-    intern->x_axis_visible = true;
-    intern->y_axis_visible = true;
-    intern->y_axis_label_format = NULL;
-    intern->x_axis_label_format = NULL;
-    intern->tick_mode = FASTCHART_TICK_BOTH;
-    intern->bar_width_pct = 0;
-    intern->edge_color = -1;
-    intern->zero_shelf = false;
-    intern->x_label_stride = 1;
-    intern->y_axis_title2 = NULL;
-    intern->thumbnail_mode = false;
-    intern->stack_mode = FASTCHART_STACK_SUM;
-    intern->bar_floating = false;
-    intern->title_color = -1;
-    intern->axis_label_color = -1;
-    intern->axis_title_color = -1;
+    array_init(&b->data);
+    array_init(&b->config);
+}
 
-    intern->line_style = FASTCHART_LINE_SOLID;
-    intern->gradient_from = -1;
-    intern->gradient_to = -1;
-    intern->gradient_dir = FASTCHART_GRADIENT_VERTICAL;
-    intern->has_drop_shadow = false;
-    intern->shadow_dx = 3;
-    intern->shadow_dy = 3;
-    intern->shadow_color = 0x000000;
-    intern->shadow_alpha = 64;          /* 50% opaque in gd's 0..127 space */
-    intern->trend_line = false;
-    intern->trend_line_color = -1;
-    intern->radar_max = 0.0;
-    intern->radar_filled = true;
-    intern->color_ramp_low = 0x1f77b4;  /* default cool blue */
-    intern->color_ramp_high = 0xd62728; /* default warm red */
-    intern->surface_show_values = false;
-    intern->surface_value_format = NULL;
-    intern->gauge_value = 0.0;
-    intern->gauge_min = 0.0;
-    intern->gauge_max = 100.0;
-    intern->gauge_value_format = NULL;
-    intern->trend_degree = 1;
-    intern->date_axis_unit = FASTCHART_DATE_DAY;
-    intern->date_axis_every = 0;        /* 0 = auto */
-    intern->gantt_show_labels = true;
-    intern->gantt_has_range = false;
-    intern->gantt_range_start = 0;
-    intern->gantt_range_end = 0;
-    intern->box_width_pct = 60;
-    intern->polar_max_radius = 0.0;     /* 0 = auto */
-    intern->polar_filled = true;
-    intern->contour_filled = true;
+#define FASTCHART_BASE_OWNED_STR(F) \
+    F(title) F(font_path) F(x_axis_title) F(y_axis_title) \
+    F(title_font_path) F(axis_font_path) F(label_font_path) \
+    F(value_format) F(bg_image_path) F(y_axis_label_format) \
+    F(x_axis_label_format) F(y_axis_title2)
 
-    if (fastchart_default_font_path) {
-        intern->font_path = zend_string_copy(fastchart_default_font_path);
-    } else {
-        intern->font_path = NULL;
+static void fastchart_base_release_owned(fastchart_obj *b)
+{
+#define FC_RELEASE(field) if (b->field) zend_string_release(b->field);
+    FASTCHART_BASE_OWNED_STR(FC_RELEASE)
+#undef FC_RELEASE
+    zval_ptr_dtor(&b->data);
+    zval_ptr_dtor(&b->config);
+}
+
+static void fastchart_base_addref_owned(fastchart_obj *b)
+{
+#define FC_ADDREF(field) if (b->field) zend_string_addref(b->field);
+    FASTCHART_BASE_OWNED_STR(FC_ADDREF)
+#undef FC_ADDREF
+    Z_TRY_ADDREF(b->data);
+    Z_TRY_ADDREF(b->config);
+}
+
+/* Per-class init / release / clone-addref helpers. No-ops for
+ * classes with empty per-type segments. */
+static void fastchart_line_init_extras(fastchart_line_obj *o)        { (void)o; }
+static void fastchart_line_release_extras(fastchart_line_obj *o)     { (void)o; }
+static void fastchart_line_addref_extras(fastchart_line_obj *o)      { (void)o; }
+
+static void fastchart_area_init_extras(fastchart_area_obj *o)        { o->area_alpha = 64; }
+static void fastchart_area_release_extras(fastchart_area_obj *o)     { (void)o; }
+static void fastchart_area_addref_extras(fastchart_area_obj *o)      { (void)o; }
+
+static void fastchart_bar_init_extras(fastchart_bar_obj *o)
+{
+    o->stack_mode = FASTCHART_STACK_SUM;
+    o->bar_floating = false;
+}
+static void fastchart_bar_release_extras(fastchart_bar_obj *o)       { (void)o; }
+static void fastchart_bar_addref_extras(fastchart_bar_obj *o)        { (void)o; }
+
+static void fastchart_pie_init_extras(fastchart_pie_obj *o)
+{
+    o->slice_label_position = FASTCHART_LABEL_INSIDE;
+    o->slice_label_format = NULL;
+    o->pie_other_threshold = 0.0;
+    o->pie_other_label = NULL;
+}
+static void fastchart_pie_release_extras(fastchart_pie_obj *o)
+{
+    if (o->slice_label_format) zend_string_release(o->slice_label_format);
+    if (o->pie_other_label)    zend_string_release(o->pie_other_label);
+}
+static void fastchart_pie_addref_extras(fastchart_pie_obj *o)
+{
+    if (o->slice_label_format) zend_string_addref(o->slice_label_format);
+    if (o->pie_other_label)    zend_string_addref(o->pie_other_label);
+}
+
+static void fastchart_scatter_init_extras(fastchart_scatter_obj *o)
+{
+    o->trend_line = false;
+    o->trend_line_color = -1;
+    o->trend_degree = 1;
+}
+static void fastchart_scatter_release_extras(fastchart_scatter_obj *o) { (void)o; }
+static void fastchart_scatter_addref_extras(fastchart_scatter_obj *o)  { (void)o; }
+
+static void fastchart_stock_init_extras(fastchart_stock_obj *o)        { o->candle_style = FASTCHART_STYLE_CANDLE; }
+static void fastchart_stock_release_extras(fastchart_stock_obj *o)     { (void)o; }
+static void fastchart_stock_addref_extras(fastchart_stock_obj *o)      { (void)o; }
+
+static void fastchart_radar_init_extras(fastchart_radar_obj *o)
+{
+    o->radar_max = 0.0;
+    o->radar_filled = true;
+}
+static void fastchart_radar_release_extras(fastchart_radar_obj *o)     { (void)o; }
+static void fastchart_radar_addref_extras(fastchart_radar_obj *o)      { (void)o; }
+
+static void fastchart_bubble_init_extras(fastchart_bubble_obj *o)      { (void)o; }
+static void fastchart_bubble_release_extras(fastchart_bubble_obj *o)   { (void)o; }
+static void fastchart_bubble_addref_extras(fastchart_bubble_obj *o)    { (void)o; }
+
+static void fastchart_surface_init_extras(fastchart_surface_obj *o)
+{
+    o->surface_show_values = false;
+    o->surface_value_format = NULL;
+}
+static void fastchart_surface_release_extras(fastchart_surface_obj *o)
+{
+    if (o->surface_value_format) zend_string_release(o->surface_value_format);
+}
+static void fastchart_surface_addref_extras(fastchart_surface_obj *o)
+{
+    if (o->surface_value_format) zend_string_addref(o->surface_value_format);
+}
+
+static void fastchart_gauge_init_extras(fastchart_gauge_obj *o)
+{
+    o->gauge_value = 0.0;
+    o->gauge_min = 0.0;
+    o->gauge_max = 100.0;
+    o->gauge_value_format = NULL;
+}
+static void fastchart_gauge_release_extras(fastchart_gauge_obj *o)
+{
+    if (o->gauge_value_format) zend_string_release(o->gauge_value_format);
+}
+static void fastchart_gauge_addref_extras(fastchart_gauge_obj *o)
+{
+    if (o->gauge_value_format) zend_string_addref(o->gauge_value_format);
+}
+
+static void fastchart_gantt_init_extras(fastchart_gantt_obj *o)
+{
+    o->gantt_show_labels = true;
+    o->gantt_has_range = false;
+    o->gantt_range_start = 0;
+    o->gantt_range_end = 0;
+}
+static void fastchart_gantt_release_extras(fastchart_gantt_obj *o)     { (void)o; }
+static void fastchart_gantt_addref_extras(fastchart_gantt_obj *o)      { (void)o; }
+
+static void fastchart_boxplot_init_extras(fastchart_boxplot_obj *o)    { o->box_width_pct = 60; }
+static void fastchart_boxplot_release_extras(fastchart_boxplot_obj *o) { (void)o; }
+static void fastchart_boxplot_addref_extras(fastchart_boxplot_obj *o)  { (void)o; }
+
+static void fastchart_polar_init_extras(fastchart_polar_obj *o)
+{
+    o->polar_max_radius = 0.0;
+    o->polar_filled = true;
+}
+static void fastchart_polar_release_extras(fastchart_polar_obj *o)     { (void)o; }
+static void fastchart_polar_addref_extras(fastchart_polar_obj *o)      { (void)o; }
+
+static void fastchart_contour_init_extras(fastchart_contour_obj *o)    { o->contour_filled = true; }
+static void fastchart_contour_release_extras(fastchart_contour_obj *o) { (void)o; }
+static void fastchart_contour_addref_extras(fastchart_contour_obj *o)  { (void)o; }
+
+/* Generates the create / free / clone trio for one chart class.
+ * The handlers struct must already exist in static scope; MINIT
+ * memcpy's std_object_handlers into it and sets offset / dtor. */
+#define FASTCHART_DEFINE_LIFECYCLE(name, T)                                      \
+    static zend_object *fastchart_##name##_create_object(zend_class_entry *ce)   \
+    {                                                                            \
+        T *intern = zend_object_alloc(sizeof(T), ce);                            \
+        zend_object_std_init(&intern->std, ce);                                  \
+        object_properties_init(&intern->std, ce);                                \
+        fastchart_base_init_defaults((fastchart_obj *)intern);                   \
+        fastchart_##name##_init_extras(intern);                                  \
+        intern->std.handlers = &fastchart_##name##_handlers;                     \
+        return &intern->std;                                                     \
+    }                                                                            \
+    static void fastchart_##name##_free_object(zend_object *object)              \
+    {                                                                            \
+        T *intern = (T *)((char *)object - fastchart_##name##_handlers.offset);  \
+        fastchart_base_release_owned((fastchart_obj *)intern);                   \
+        fastchart_##name##_release_extras(intern);                               \
+        zend_object_std_dtor(&intern->std);                                      \
+    }                                                                            \
+    static zend_object *fastchart_##name##_clone_object(zend_object *src_obj)    \
+    {                                                                            \
+        T *src = (T *)((char *)src_obj - fastchart_##name##_handlers.offset);    \
+        zend_object *dst_obj = fastchart_##name##_create_object(src_obj->ce);    \
+        T *dst = (T *)((char *)dst_obj - fastchart_##name##_handlers.offset);    \
+        fastchart_base_release_owned((fastchart_obj *)dst);                      \
+        fastchart_##name##_release_extras(dst);                                  \
+        memcpy(dst, src, offsetof(T, std));                                      \
+        fastchart_base_addref_owned((fastchart_obj *)dst);                       \
+        fastchart_##name##_addref_extras(dst);                                   \
+        zend_objects_clone_members(&dst->std, &src->std);                        \
+        return &dst->std;                                                        \
     }
 
-    array_init(&intern->data);
-    array_init(&intern->config);
-
-    intern->std.handlers = &fastchart_object_handlers;
-    return &intern->std;
-}
-
-static void fastchart_free_object(zend_object *object)
-{
-    fastchart_obj *intern = fastchart_obj_from_zend(object);
-
-    if (intern->title)              zend_string_release(intern->title);
-    if (intern->font_path)          zend_string_release(intern->font_path);
-    if (intern->x_axis_title)       zend_string_release(intern->x_axis_title);
-    if (intern->y_axis_title)       zend_string_release(intern->y_axis_title);
-    if (intern->slice_label_format) zend_string_release(intern->slice_label_format);
-    if (intern->title_font_path)    zend_string_release(intern->title_font_path);
-    if (intern->axis_font_path)     zend_string_release(intern->axis_font_path);
-    if (intern->label_font_path)    zend_string_release(intern->label_font_path);
-    if (intern->value_format)       zend_string_release(intern->value_format);
-    if (intern->pie_other_label)    zend_string_release(intern->pie_other_label);
-    if (intern->bg_image_path)      zend_string_release(intern->bg_image_path);
-    if (intern->y_axis_label_format) zend_string_release(intern->y_axis_label_format);
-    if (intern->x_axis_label_format) zend_string_release(intern->x_axis_label_format);
-    if (intern->y_axis_title2)      zend_string_release(intern->y_axis_title2);
-    if (intern->surface_value_format) zend_string_release(intern->surface_value_format);
-    if (intern->gauge_value_format)   zend_string_release(intern->gauge_value_format);
-    zval_ptr_dtor(&intern->data);
-    zval_ptr_dtor(&intern->config);
-
-    zend_object_std_dtor(&intern->std);
-}
-
-/* Deep-copy the C-level state when PHP's `clone $chart` runs.
- * zend_objects_clone_members handles the std property table, but
- * the extension stores its actual state in C struct fields
- * (zend_string* paths, two zvals, scalars) that the std clone
- * doesn't see. Without this handler, the destination object aliases
- * the source's owned pointers — the first setter on either side
- * releases a string the other still references.
- *
- * Strategy: start from a fresh, fully-initialized object via
- * fastchart_create_object, drop its own owned references, then
- * memcpy the source struct over the trailing fields and re-bump
- * every refcounted slot. */
-#define FASTCHART_FOREACH_OWNED_STR(F) \
-    F(title) F(font_path) F(x_axis_title) F(y_axis_title) \
-    F(slice_label_format) F(title_font_path) F(axis_font_path) \
-    F(label_font_path) F(value_format) F(pie_other_label) \
-    F(bg_image_path) F(y_axis_label_format) F(x_axis_label_format) \
-    F(y_axis_title2) F(surface_value_format) F(gauge_value_format)
-
-static zend_object *fastchart_clone_object(zend_object *src_obj)
-{
-    fastchart_obj *src = fastchart_obj_from_zend(src_obj);
-    zend_object *dst_obj = fastchart_create_object(src_obj->ce);
-    fastchart_obj *dst = fastchart_obj_from_zend(dst_obj);
-
-    /* Drop refs the create_object handler took (title, font_path)
-     * plus the empty data/config zvals, before overwriting. */
-#define FC_RELEASE(field) if (dst->field) zend_string_release(dst->field);
-    FASTCHART_FOREACH_OWNED_STR(FC_RELEASE)
-#undef FC_RELEASE
-    zval_ptr_dtor(&dst->data);
-    zval_ptr_dtor(&dst->config);
-
-    /* Bulk-copy the POD-and-aliased-pointer block. `std` is last in
-     * the struct; offsetof(fastchart_obj, std) is exactly the size
-     * of everything we need. */
-    memcpy(dst, src, offsetof(fastchart_obj, std));
-
-    /* Re-own each shared pointer. */
-#define FC_ADDREF(field) if (dst->field) zend_string_addref(dst->field);
-    FASTCHART_FOREACH_OWNED_STR(FC_ADDREF)
-#undef FC_ADDREF
-    Z_TRY_ADDREF(dst->data);
-    Z_TRY_ADDREF(dst->config);
-
-    zend_objects_clone_members(&dst->std, &src->std);
-    return &dst->std;
-}
+FASTCHART_DEFINE_LIFECYCLE(line,    fastchart_line_obj)
+FASTCHART_DEFINE_LIFECYCLE(area,    fastchart_area_obj)
+FASTCHART_DEFINE_LIFECYCLE(bar,     fastchart_bar_obj)
+FASTCHART_DEFINE_LIFECYCLE(pie,     fastchart_pie_obj)
+FASTCHART_DEFINE_LIFECYCLE(scatter, fastchart_scatter_obj)
+FASTCHART_DEFINE_LIFECYCLE(stock,   fastchart_stock_obj)
+FASTCHART_DEFINE_LIFECYCLE(radar,   fastchart_radar_obj)
+FASTCHART_DEFINE_LIFECYCLE(bubble,  fastchart_bubble_obj)
+FASTCHART_DEFINE_LIFECYCLE(surface, fastchart_surface_obj)
+FASTCHART_DEFINE_LIFECYCLE(gauge,   fastchart_gauge_obj)
+FASTCHART_DEFINE_LIFECYCLE(gantt,   fastchart_gantt_obj)
+FASTCHART_DEFINE_LIFECYCLE(boxplot, fastchart_boxplot_obj)
+FASTCHART_DEFINE_LIFECYCLE(polar,   fastchart_polar_obj)
+FASTCHART_DEFINE_LIFECYCLE(contour, fastchart_contour_obj)
 
 /* Common locations for a sans-serif TTF that ships by default on the
  * platforms PIE supports. Probed in order; the first existing path
@@ -588,6 +688,20 @@ ZEND_METHOD(FastChart_Chart, setYAxisScale)
         ZEND_PARSE_PARAMETERS_END(); \
         fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
         self->field_ = v; \
+        RETURN_ZVAL(ZEND_THIS, 1, 0); \
+    }
+
+/* Same shape as FASTCHART_BOOL_SETTER but lets the caller pick the
+ * per-type accessor (Z_FASTCHART_BAR_OBJ_P, Z_FASTCHART_RADAR_OBJ_P,
+ * etc) for setters that write to a per-type struct field. */
+#define FASTCHART_BOOL_SETTER_AS(class_, name_, accessor_, field_) \
+    ZEND_METHOD(class_, name_) \
+    { \
+        bool v; \
+        ZEND_PARSE_PARAMETERS_START(1, 1) \
+            Z_PARAM_BOOL(v) \
+        ZEND_PARSE_PARAMETERS_END(); \
+        accessor_(ZEND_THIS)->field_ = v; \
         RETURN_ZVAL(ZEND_THIS, 1, 0); \
     }
 
@@ -1158,12 +1272,12 @@ ZEND_METHOD(FastChart_BarChart, setStackMode)
         zend_value_error("FastChart\\BarChart::setStackMode() expects STACK_SUM | STACK_BESIDE | STACK_LAYER");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_bar_obj *self = Z_FASTCHART_BAR_OBJ_P(ZEND_THIS);
     self->stack_mode = m;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-FASTCHART_BOOL_SETTER(FastChart_BarChart, setFloating, bar_floating)
+FASTCHART_BOOL_SETTER_AS(FastChart_BarChart, setFloating, Z_FASTCHART_BAR_OBJ_P, bar_floating)
 
 ZEND_METHOD(FastChart_Chart, setLineStyle)
 {
@@ -1275,7 +1389,7 @@ ZEND_METHOD(FastChart_ScatterChart, setTrendLine)
         zend_value_error("FastChart\\ScatterChart::setTrendLine() degree must be in [1, 3]");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_scatter_obj *self = Z_FASTCHART_SCATTER_OBJ_P(ZEND_THIS);
     self->trend_line = en;
     self->trend_line_color = color_is_null ? -1 : color;
     self->trend_degree = degree;
@@ -1313,12 +1427,12 @@ ZEND_METHOD(FastChart_RadarChart, setMaxValue)
         zend_value_error("FastChart\\RadarChart::setMaxValue() must be non-negative");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_radar_obj *self = Z_FASTCHART_RADAR_OBJ_P(ZEND_THIS);
     self->radar_max = m;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-FASTCHART_BOOL_SETTER(FastChart_RadarChart, setFilled, radar_filled)
+FASTCHART_BOOL_SETTER_AS(FastChart_RadarChart, setFilled, Z_FASTCHART_RADAR_OBJ_P, radar_filled)
 
 
 ZEND_METHOD(FastChart_SurfaceChart, setShowCellValues)
@@ -1334,7 +1448,7 @@ ZEND_METHOD(FastChart_SurfaceChart, setShowCellValues)
         fastchart_validate_double_format(fmt, "setShowCellValues") != 0) {
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_surface_obj *self = Z_FASTCHART_SURFACE_OBJ_P(ZEND_THIS);
     self->surface_show_values = show;
     if (fmt) {
         if (self->surface_value_format) zend_string_release(self->surface_value_format);
@@ -1352,7 +1466,7 @@ ZEND_METHOD(FastChart_GaugeChart, setValue)
     if (fastchart_reject_non_finite(v, "FastChart\\GaugeChart::setValue()") != 0) {
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_gauge_obj *self = Z_FASTCHART_GAUGE_OBJ_P(ZEND_THIS);
     self->gauge_value = v;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
@@ -1372,7 +1486,7 @@ ZEND_METHOD(FastChart_GaugeChart, setRange)
         zend_value_error("FastChart\\GaugeChart::setRange() requires min < max");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_gauge_obj *self = Z_FASTCHART_GAUGE_OBJ_P(ZEND_THIS);
     self->gauge_min = mn;
     self->gauge_max = mx;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -1402,7 +1516,7 @@ ZEND_METHOD(FastChart_GaugeChart, setValueFormat)
         fastchart_validate_double_format(fmt, "GaugeChart::setValueFormat") != 0) {
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_gauge_obj *self = Z_FASTCHART_GAUGE_OBJ_P(ZEND_THIS);
     if (self->gauge_value_format) zend_string_release(self->gauge_value_format);
     self->gauge_value_format = ZSTR_LEN(fmt) == 0 ? NULL : zend_string_copy(fmt);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -1589,14 +1703,14 @@ ZEND_METHOD(FastChart_GanttChart, setTimeRange)
         zend_value_error("FastChart\\GanttChart::setTimeRange() requires start < end");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_gantt_obj *self = Z_FASTCHART_GANTT_OBJ_P(ZEND_THIS);
     self->gantt_has_range = has_range;
     self->gantt_range_start = start_is_null ? 0 : start;
     self->gantt_range_end   = end_is_null   ? 0 : end;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-FASTCHART_BOOL_SETTER(FastChart_GanttChart, setShowTaskLabels, gantt_show_labels)
+FASTCHART_BOOL_SETTER_AS(FastChart_GanttChart, setShowTaskLabels, Z_FASTCHART_GANTT_OBJ_P, gantt_show_labels)
 
 ZEND_METHOD(FastChart_BoxPlot, setBoxWidth)
 {
@@ -1608,7 +1722,7 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxWidth)
         zend_value_error("FastChart\\BoxPlot::setBoxWidth() expects a percent in [1, 100]");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_boxplot_obj *self = Z_FASTCHART_BOXPLOT_OBJ_P(ZEND_THIS);
     self->box_width_pct = pct;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
@@ -1626,12 +1740,12 @@ ZEND_METHOD(FastChart_PolarChart, setMaxRadius)
         zend_value_error("FastChart\\PolarChart::setMaxRadius() must be non-negative");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_polar_obj *self = Z_FASTCHART_POLAR_OBJ_P(ZEND_THIS);
     self->polar_max_radius = m;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-FASTCHART_BOOL_SETTER(FastChart_PolarChart, setFilled, polar_filled)
+FASTCHART_BOOL_SETTER_AS(FastChart_PolarChart, setFilled, Z_FASTCHART_POLAR_OBJ_P, polar_filled)
 
 ZEND_METHOD(FastChart_ContourChart, setLevels)
 {
@@ -1647,7 +1761,7 @@ ZEND_METHOD(FastChart_ContourChart, setLevels)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-FASTCHART_BOOL_SETTER(FastChart_ContourChart, setFilled, contour_filled)
+FASTCHART_BOOL_SETTER_AS(FastChart_ContourChart, setFilled, Z_FASTCHART_CONTOUR_OBJ_P, contour_filled)
 
 ZEND_METHOD(FastChart_Chart, addOverlaySeries)
 {
@@ -1734,7 +1848,7 @@ ZEND_METHOD(FastChart_PieChart, setOtherThreshold)
         RETURN_THROWS();
     }
 
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
     self->pie_other_threshold = percent;
     if (self->pie_other_label) zend_string_release(self->pie_other_label);
     self->pie_other_label = label ? zend_string_copy(label) : NULL;
@@ -1867,7 +1981,7 @@ ZEND_METHOD(FastChart_PieChart, setSliceLabelPosition)
         zend_value_error("FastChart\\PieChart::setSliceLabelPosition() expects a LABEL_* class constant");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
     self->slice_label_position = pos;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
@@ -1882,7 +1996,7 @@ ZEND_METHOD(FastChart_PieChart, setSliceLabelFormat)
         fastchart_validate_double_format(fmt, "PieChart::setSliceLabelFormat") != 0) {
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
     if (self->slice_label_format) zend_string_release(self->slice_label_format);
     self->slice_label_format = ZSTR_LEN(fmt) == 0 ? NULL : zend_string_copy(fmt);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -1898,7 +2012,7 @@ ZEND_METHOD(FastChart_StockChart, setCandleStyle)
         zend_value_error("FastChart\\StockChart::setCandleStyle() expects a STYLE_* class constant");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
     self->candle_style = style;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
@@ -1937,7 +2051,7 @@ ZEND_METHOD(FastChart_AreaChart, setFillOpacity)
         zend_value_error("FastChart\\AreaChart::setFillOpacity() expects a value in [0, 127]");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_area_obj *self = Z_FASTCHART_AREA_OBJ_P(ZEND_THIS);
     self->area_alpha = alpha;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
@@ -1947,22 +2061,26 @@ ZEND_METHOD(FastChart_AreaChart, setFillOpacity)
  * Returns 0 on success with a PHP exception possibly pending; -1
  * if we hit an unknown class entry (defensive; should not happen
  * because the abstract base is uninstantiable). */
+/* Dispatch by class entry. self points at the start of the per-type
+ * struct; we cast to the specific type for each renderer. The cast
+ * is safe because Z_FASTCHART_OBJ_P landed on the start of whatever
+ * subclass the user actually instantiated. */
 static int dispatch_render(fastchart_obj *self, zend_class_entry *ce, gdImagePtr im)
 {
-    if (ce == fastchart_line_chart_ce)    return fastchart_line_render_to_image(self, im);
-    if (ce == fastchart_area_chart_ce)    return fastchart_area_render_to_image(self, im);
-    if (ce == fastchart_bar_chart_ce)     return fastchart_bar_render_to_image(self, im);
-    if (ce == fastchart_pie_chart_ce)     return fastchart_pie_render_to_image(self, im);
-    if (ce == fastchart_scatter_chart_ce) return fastchart_scatter_render_to_image(self, im);
-    if (ce == fastchart_stock_chart_ce)   return fastchart_stock_render_to_image(self, im);
-    if (ce == fastchart_radar_chart_ce)   return fastchart_radar_render_to_image(self, im);
-    if (ce == fastchart_bubble_chart_ce)  return fastchart_bubble_render_to_image(self, im);
-    if (ce == fastchart_surface_chart_ce) return fastchart_surface_render_to_image(self, im);
-    if (ce == fastchart_gauge_chart_ce)   return fastchart_gauge_render_to_image(self, im);
-    if (ce == fastchart_gantt_chart_ce)   return fastchart_gantt_render_to_image(self, im);
-    if (ce == fastchart_box_plot_ce)      return fastchart_boxplot_render_to_image(self, im);
-    if (ce == fastchart_polar_chart_ce)   return fastchart_polar_render_to_image(self, im);
-    if (ce == fastchart_contour_chart_ce) return fastchart_contour_render_to_image(self, im);
+    if (ce == fastchart_line_chart_ce)    return fastchart_line_render_to_image((fastchart_line_obj *)self, im);
+    if (ce == fastchart_area_chart_ce)    return fastchart_area_render_to_image((fastchart_area_obj *)self, im);
+    if (ce == fastchart_bar_chart_ce)     return fastchart_bar_render_to_image((fastchart_bar_obj *)self, im);
+    if (ce == fastchart_pie_chart_ce)     return fastchart_pie_render_to_image((fastchart_pie_obj *)self, im);
+    if (ce == fastchart_scatter_chart_ce) return fastchart_scatter_render_to_image((fastchart_scatter_obj *)self, im);
+    if (ce == fastchart_stock_chart_ce)   return fastchart_stock_render_to_image((fastchart_stock_obj *)self, im);
+    if (ce == fastchart_radar_chart_ce)   return fastchart_radar_render_to_image((fastchart_radar_obj *)self, im);
+    if (ce == fastchart_bubble_chart_ce)  return fastchart_bubble_render_to_image((fastchart_bubble_obj *)self, im);
+    if (ce == fastchart_surface_chart_ce) return fastchart_surface_render_to_image((fastchart_surface_obj *)self, im);
+    if (ce == fastchart_gauge_chart_ce)   return fastchart_gauge_render_to_image((fastchart_gauge_obj *)self, im);
+    if (ce == fastchart_gantt_chart_ce)   return fastchart_gantt_render_to_image((fastchart_gantt_obj *)self, im);
+    if (ce == fastchart_box_plot_ce)      return fastchart_boxplot_render_to_image((fastchart_boxplot_obj *)self, im);
+    if (ce == fastchart_polar_chart_ce)   return fastchart_polar_render_to_image((fastchart_polar_obj *)self, im);
+    if (ce == fastchart_contour_chart_ce) return fastchart_contour_render_to_image((fastchart_contour_obj *)self, im);
     zend_throw_error(NULL, "FastChart: render dispatch found unknown class entry");
     return -1;
 }
@@ -2378,59 +2496,79 @@ ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
 
 PHP_MINIT_FUNCTION(fastchart)
 {
-    memcpy(&fastchart_object_handlers, &std_object_handlers, sizeof(zend_object_handlers));
-    fastchart_object_handlers.offset    = offsetof(fastchart_obj, std);
-    fastchart_object_handlers.free_obj  = fastchart_free_object;
-    fastchart_object_handlers.clone_obj = fastchart_clone_object;
-    /* Wire dtor explicitly. The std default already routes here, but
-     * making it explicit means a future class with __destruct touching
-     * C state can't accidentally inherit a stale handler chain. */
-    fastchart_object_handlers.dtor_obj  = zend_objects_destroy_object;
+    /* Per-class handlers init. Each handlers struct gets its own
+     * std offset matching its per-type struct layout, plus the
+     * class's free / clone hooks. */
+#define FASTCHART_INIT_HANDLERS(name, T) do {                                            \
+        memcpy(&fastchart_##name##_handlers, &std_object_handlers,                       \
+               sizeof(zend_object_handlers));                                            \
+        fastchart_##name##_handlers.offset    = XtOffsetOf(T, std);                      \
+        fastchart_##name##_handlers.free_obj  = fastchart_##name##_free_object;          \
+        fastchart_##name##_handlers.clone_obj = fastchart_##name##_clone_object;         \
+        fastchart_##name##_handlers.dtor_obj  = zend_objects_destroy_object;             \
+    } while (0)
+    FASTCHART_INIT_HANDLERS(line,    fastchart_line_obj);
+    FASTCHART_INIT_HANDLERS(area,    fastchart_area_obj);
+    FASTCHART_INIT_HANDLERS(bar,     fastchart_bar_obj);
+    FASTCHART_INIT_HANDLERS(pie,     fastchart_pie_obj);
+    FASTCHART_INIT_HANDLERS(scatter, fastchart_scatter_obj);
+    FASTCHART_INIT_HANDLERS(stock,   fastchart_stock_obj);
+    FASTCHART_INIT_HANDLERS(radar,   fastchart_radar_obj);
+    FASTCHART_INIT_HANDLERS(bubble,  fastchart_bubble_obj);
+    FASTCHART_INIT_HANDLERS(surface, fastchart_surface_obj);
+    FASTCHART_INIT_HANDLERS(gauge,   fastchart_gauge_obj);
+    FASTCHART_INIT_HANDLERS(gantt,   fastchart_gantt_obj);
+    FASTCHART_INIT_HANDLERS(boxplot, fastchart_boxplot_obj);
+    FASTCHART_INIT_HANDLERS(polar,   fastchart_polar_obj);
+    FASTCHART_INIT_HANDLERS(contour, fastchart_contour_obj);
+#undef FASTCHART_INIT_HANDLERS
 
+    /* Abstract base class: never instantiated directly, so it does
+     * not need its own create_object. The per-class create handlers
+     * below take over for every concrete subclass. */
     fastchart_chart_ce = register_class_FastChart_Chart();
-    fastchart_chart_ce->create_object = fastchart_create_object;
 
     fastchart_line_chart_ce    = register_class_FastChart_LineChart(fastchart_chart_ce);
-    fastchart_line_chart_ce->create_object = fastchart_create_object;
+    fastchart_line_chart_ce->create_object = fastchart_line_create_object;
 
     fastchart_area_chart_ce    = register_class_FastChart_AreaChart(fastchart_chart_ce);
-    fastchart_area_chart_ce->create_object = fastchart_create_object;
+    fastchart_area_chart_ce->create_object = fastchart_area_create_object;
 
     fastchart_bar_chart_ce     = register_class_FastChart_BarChart(fastchart_chart_ce);
-    fastchart_bar_chart_ce->create_object = fastchart_create_object;
+    fastchart_bar_chart_ce->create_object = fastchart_bar_create_object;
 
     fastchart_pie_chart_ce     = register_class_FastChart_PieChart(fastchart_chart_ce);
-    fastchart_pie_chart_ce->create_object = fastchart_create_object;
+    fastchart_pie_chart_ce->create_object = fastchart_pie_create_object;
 
     fastchart_scatter_chart_ce = register_class_FastChart_ScatterChart(fastchart_chart_ce);
-    fastchart_scatter_chart_ce->create_object = fastchart_create_object;
+    fastchart_scatter_chart_ce->create_object = fastchart_scatter_create_object;
 
     fastchart_stock_chart_ce   = register_class_FastChart_StockChart(fastchart_chart_ce);
-    fastchart_stock_chart_ce->create_object = fastchart_create_object;
+    fastchart_stock_chart_ce->create_object = fastchart_stock_create_object;
 
     fastchart_radar_chart_ce   = register_class_FastChart_RadarChart(fastchart_chart_ce);
-    fastchart_radar_chart_ce->create_object = fastchart_create_object;
+    fastchart_radar_chart_ce->create_object = fastchart_radar_create_object;
 
     fastchart_bubble_chart_ce  = register_class_FastChart_BubbleChart(fastchart_chart_ce);
-    fastchart_bubble_chart_ce->create_object = fastchart_create_object;
+    fastchart_bubble_chart_ce->create_object = fastchart_bubble_create_object;
 
     fastchart_surface_chart_ce = register_class_FastChart_SurfaceChart(fastchart_chart_ce);
-    fastchart_surface_chart_ce->create_object = fastchart_create_object;
+    fastchart_surface_chart_ce->create_object = fastchart_surface_create_object;
 
     fastchart_gauge_chart_ce   = register_class_FastChart_GaugeChart(fastchart_chart_ce);
-    fastchart_gauge_chart_ce->create_object = fastchart_create_object;
+    fastchart_gauge_chart_ce->create_object = fastchart_gauge_create_object;
 
     fastchart_gantt_chart_ce   = register_class_FastChart_GanttChart(fastchart_chart_ce);
-    fastchart_gantt_chart_ce->create_object = fastchart_create_object;
+    fastchart_gantt_chart_ce->create_object = fastchart_gantt_create_object;
 
     fastchart_box_plot_ce      = register_class_FastChart_BoxPlot(fastchart_chart_ce);
-    fastchart_box_plot_ce->create_object = fastchart_create_object;
+    fastchart_box_plot_ce->create_object = fastchart_boxplot_create_object;
 
     fastchart_polar_chart_ce   = register_class_FastChart_PolarChart(fastchart_chart_ce);
-    fastchart_polar_chart_ce->create_object = fastchart_create_object;
+    fastchart_polar_chart_ce->create_object = fastchart_polar_create_object;
 
     fastchart_contour_chart_ce = register_class_FastChart_ContourChart(fastchart_chart_ce);
-    fastchart_contour_chart_ce->create_object = fastchart_create_object;
+    fastchart_contour_chart_ce->create_object = fastchart_contour_create_object;
 
     fastchart_gd_image_ce = zend_hash_str_find_ptr(CG(class_table),
         "gdimage", sizeof("gdimage") - 1);

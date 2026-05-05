@@ -74,7 +74,7 @@ static int collect_polar_series(zval *data_zv, polar_series_t *out, int max_seri
     return 0;
 }
 
-int fastchart_polar_render_to_image(fastchart_obj *self, gdImagePtr im)
+int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
 {
     polar_series_t series[MAX_POLAR_SERIES];
     int n_series = 0;
@@ -104,7 +104,7 @@ int fastchart_polar_render_to_image(fastchart_obj *self, gdImagePtr im)
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, self, &pal);
+    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
     int W = gdImageSX(im);
     int H = gdImageSY(im);
@@ -167,7 +167,7 @@ int fastchart_polar_render_to_image(fastchart_obj *self, gdImagePtr im)
             int bb = gdImageBlue(im, color);
             int alpha = gdImageColorAllocateAlpha(im, rr, gg, bb, 90);
             gdImageAlphaBlending(im, 1);
-            fastchart_shadow_filled_polygon(im, self, poly, n_pts);
+            fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
             gdImageFilledPolygon(im, poly, n_pts, alpha);
             gdImageAlphaBlending(im, 0);
         }
@@ -193,15 +193,15 @@ int fastchart_polar_render_to_image(fastchart_obj *self, gdImagePtr im)
     }
 
     /* Title. */
-    fastchart_draw_floating_title(im, self, &pal, W / 2, 24);
+    fastchart_draw_floating_title(im, (fastchart_obj *)self, &pal, W / 2, 24);
 
     if (legend_count > 0) {
         fastchart_rect plot = { 10, top, W - 10, H - 10 };
-        fastchart_draw_legend(im, self, &plot, &pal,
+        fastchart_draw_legend(im, (fastchart_obj *)self, &plot, &pal,
                               legend_count, legend_colors, legend_labels);
     }
 
-    fastchart_draw_text_annotations(im, self, &pal);
+    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
     return 0;
 }
 
@@ -216,7 +216,7 @@ ZEND_METHOD(FastChart_PolarChart, draw)
         zend_throw_error(NULL, "FastChart\\PolarChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_polar_obj *self = Z_FASTCHART_POLAR_OBJ_P(ZEND_THIS);
     if (fastchart_polar_render_to_image(self, im) != 0) {
         RETURN_THROWS();
     }

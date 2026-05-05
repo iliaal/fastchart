@@ -88,7 +88,7 @@ static double read_d(HashTable *ht, int i)
     return d < 0 ? 0.0 : d;
 }
 
-int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im)
+int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
 {
     radar_series_t series[MAX_RADAR_SERIES];
     int n_series = 0, n_axes = 0;
@@ -112,7 +112,7 @@ int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im)
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, self, &pal);
+    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
     int W = gdImageSX(im);
     int H = gdImageSY(im);
@@ -156,9 +156,9 @@ int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im)
     }
 
     /* Axis labels via setCategoryLabels. */
-    const char *font = fastchart_resolve_font(self, FC_FONT_LABEL);
+    const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(self, FC_FONT_LABEL, base);
+    double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base);
     zval *labels_zv = zend_hash_str_find(Z_ARRVAL(self->config),
         "category_labels", sizeof("category_labels") - 1);
     if (font && labels_zv && Z_TYPE_P(labels_zv) == IS_ARRAY) {
@@ -205,7 +205,7 @@ int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im)
             int bb = gdImageBlue(im, color);
             int alpha = gdImageColorAllocateAlpha(im, rr, gg, bb, 90);
             gdImageAlphaBlending(im, 1);
-            fastchart_shadow_filled_polygon(im, self, poly, n_axes);
+            fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_axes);
             gdImageFilledPolygon(im, poly, n_axes, alpha);
             gdImageAlphaBlending(im, 0);
         }
@@ -225,17 +225,17 @@ int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im)
     }
 
     /* Title at top center. */
-    fastchart_draw_floating_title(im, self, &pal, W / 2, 24);
+    fastchart_draw_floating_title(im, (fastchart_obj *)self, &pal, W / 2, 24);
 
     /* Legend: reuse the standard helper with a synthetic "plot rect"
      * spanning the entire canvas so positioning works. */
     if (legend_count > 0) {
         fastchart_rect plot = { 10, title_h, W - 10, H - 10 };
-        fastchart_draw_legend(im, self, &plot, &pal,
+        fastchart_draw_legend(im, (fastchart_obj *)self, &plot, &pal,
                               legend_count, legend_colors, legend_labels);
     }
 
-    fastchart_draw_text_annotations(im, self, &pal);
+    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
     return 0;
 }
 
@@ -251,7 +251,7 @@ ZEND_METHOD(FastChart_RadarChart, draw)
         zend_throw_error(NULL, "FastChart\\RadarChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_radar_obj *self = Z_FASTCHART_RADAR_OBJ_P(ZEND_THIS);
     if (fastchart_radar_render_to_image(self, im) != 0) {
         RETURN_THROWS();
     }

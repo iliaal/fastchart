@@ -118,7 +118,7 @@ static double t_cross(double a, double b, double level)
     return t;
 }
 
-int fastchart_contour_render_to_image(fastchart_obj *self, gdImagePtr im)
+int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im)
 {
     int rows = 0, cols = 0;
     double *grid = materialize_grid(&self->data, &rows, &cols);
@@ -170,7 +170,7 @@ int fastchart_contour_render_to_image(fastchart_obj *self, gdImagePtr im)
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, self, &pal);
+    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
     int W = gdImageSX(im);
     int H = gdImageSY(im);
@@ -310,9 +310,9 @@ int fastchart_contour_render_to_image(fastchart_obj *self, gdImagePtr im)
         gdImageLine(im, x1, y0, x1, y1, pal.border);
 
     /* Title. */
-    fastchart_draw_floating_title(im, self, &pal, W / 2, 24);
+    fastchart_draw_floating_title(im, (fastchart_obj *)self, &pal, W / 2, 24);
 
-    fastchart_draw_text_annotations(im, self, &pal);
+    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
     efree(grid);
     return 0;
 #undef G
@@ -329,7 +329,7 @@ ZEND_METHOD(FastChart_ContourChart, draw)
         zend_throw_error(NULL, "FastChart\\ContourChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_contour_obj *self = Z_FASTCHART_CONTOUR_OBJ_P(ZEND_THIS);
     if (fastchart_contour_render_to_image(self, im) != 0) {
         RETURN_THROWS();
     }

@@ -106,7 +106,7 @@ static void free_tasks(fastchart_gantt_task *tasks, int n)
     }
 }
 
-int fastchart_gantt_render_to_image(fastchart_obj *self, gdImagePtr im)
+int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
 {
     fastchart_gantt_task tasks[MAX_TASKS];
     int n_tasks = 0;
@@ -126,18 +126,18 @@ int fastchart_gantt_render_to_image(fastchart_obj *self, gdImagePtr im)
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, self, &pal);
+    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
     fastchart_rect plot;
-    fastchart_compute_layout(self, im, 1, 1, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, &plot);
 
     /* Reserve a left margin for task name labels. */
     int label_pad = 0;
     if (self->gantt_show_labels) {
-        const char *font = fastchart_resolve_font(self, FC_FONT_LABEL);
+        const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
         if (font) {
             double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-            double size = fastchart_resolve_font_size(self, FC_FONT_LABEL, base);
+            double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base);
             int max_w = 0;
             for (int i = 0; i < n_tasks; i++) {
                 if (!tasks[i].name) continue;
@@ -152,9 +152,9 @@ int fastchart_gantt_render_to_image(fastchart_obj *self, gdImagePtr im)
     fastchart_rect bars = plot;
     bars.x0 += label_pad;
 
-    fastchart_draw_frame(im, self, &plot, &pal);
-    fastchart_draw_title(im, self, &plot, &pal);
-    fastchart_draw_x_axis_time(im, self, &bars, &pal, t_min, t_max);
+    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_x_axis_time(im, (fastchart_obj *)self, &bars, &pal, t_min, t_max);
 
     int rows = n_tasks;
     int row_h = (bars.y1 - bars.y0) / (rows > 0 ? rows : 1);
@@ -163,9 +163,9 @@ int fastchart_gantt_render_to_image(fastchart_obj *self, gdImagePtr im)
     if (bar_h < 3) bar_h = 3;
 
     /* Per-row track separator + bars. */
-    const char *font = fastchart_resolve_font(self, FC_FONT_LABEL);
+    const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(self, FC_FONT_LABEL, base);
+    double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base);
 
     for (int i = 0; i < n_tasks; i++) {
         int row_y0 = bars.y0 + i * row_h;
@@ -191,14 +191,14 @@ int fastchart_gantt_render_to_image(fastchart_obj *self, gdImagePtr im)
                 { x_end,           row_yc + s/2 },
                 { x_end - s/2,     row_yc       },
             };
-            fastchart_shadow_filled_polygon(im, self, diamond, 4);
+            fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, diamond, 4);
             gdImageFilledPolygon(im, diamond, 4, color);
             if (self->edge_color >= 0) gdImagePolygon(im, diamond, 4, (int)self->edge_color);
         } else {
             int y0 = row_yc - bar_h / 2;
             int y1 = row_yc + bar_h / 2;
-            fastchart_shadow_filled_rectangle(im, self, x_start, y0, x_end, y1);
-            if (!fastchart_gradient_filled_rectangle(im, self, x_start, y0, x_end, y1)) {
+            fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x_start, y0, x_end, y1);
+            if (!fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, x_start, y0, x_end, y1)) {
                 gdImageFilledRectangle(im, x_start, y0, x_end, y1, color);
             }
             if (self->edge_color >= 0) gdImageRectangle(im, x_start, y0, x_end, y1, (int)self->edge_color);
@@ -232,7 +232,7 @@ int fastchart_gantt_render_to_image(fastchart_obj *self, gdImagePtr im)
     }
 
     free_tasks(tasks, n_tasks);
-    fastchart_draw_text_annotations(im, self, &pal);
+    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
     return 0;
 }
 
@@ -248,7 +248,7 @@ ZEND_METHOD(FastChart_GanttChart, draw)
         zend_throw_error(NULL, "FastChart\\GanttChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_gantt_obj *self = Z_FASTCHART_GANTT_OBJ_P(ZEND_THIS);
     if (fastchart_gantt_render_to_image(self, im) != 0) {
         RETURN_THROWS();
     }

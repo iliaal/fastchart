@@ -64,219 +64,224 @@ extern zend_class_entry *fastchart_contour_chart_ce;
  * path of zend_lookup_class is unsafe at MINIT. */
 extern zend_class_entry *fastchart_gd_image_ce;
 
-/* Shared object struct, one shape across all five chart subclasses.
- * Type-specific state is parked in the `data` and `config` zvals
- * during the setter calls; each draw() implementation reads back
- * what it expects from those slots. */
-typedef struct _fastchart_obj {
-    zend_long width;
-    zend_long height;
-    zend_long theme;
-    zend_string *title;
-    zend_string *font_path;
-    double font_size;
+/* Per-class object layout. Every chart subclass owns its own struct
+ * laid out as { FASTCHART_BASE_FIELDS, <per-type fields>, zend_object std }
+ * so per-class create/free/clone handlers can size and initialize the
+ * exact memory their class needs. The shared FASTCHART_BASE_FIELDS
+ * macro ensures every per-type struct presents the same field layout
+ * at offset 0; that common-initial-sequence lets base setters and
+ * shared helpers cast any per-type pointer to fastchart_obj* and
+ * touch base fields by their natural names without the per-type-
+ * setters needing a base accessor. The std member sits at the end of
+ * each per-type struct, and each class registers its own
+ * zend_object_handlers with offset = XtOffsetOf(class_struct, std)
+ * so Z_FASTCHART_OBJ_P below lands on the start of the user struct
+ * (= the base layout) regardless of which subclass we're in. */
+#define FASTCHART_BASE_FIELDS \
+    zend_long width; \
+    zend_long height; \
+    zend_long theme; \
+    zend_string *title; \
+    zend_string *font_path; \
+    double font_size; \
+    zend_long bg_override; \
+    zend_long plot_bg_override; \
+    int series_colors_n; \
+    int series_colors[8]; \
+    bool strict; \
+    zend_long legend_position; \
+    zend_long y_axis_scale; \
+    zend_long marker_style; \
+    zend_long marker_size; \
+    zend_string *x_axis_title; \
+    zend_string *y_axis_title; \
+    zend_long x_axis_label_angle; \
+    bool has_y_min; \
+    bool has_y_max; \
+    bool has_y_interval; \
+    double y_min; \
+    double y_max; \
+    double y_interval; \
+    bool secondary_y; \
+    zend_long axis_color_override; \
+    zend_long grid_color_override; \
+    zend_long border_color_override; \
+    zend_long text_color_override; \
+    zend_string *title_font_path; \
+    zend_string *axis_font_path; \
+    zend_string *label_font_path; \
+    double title_font_size; \
+    double axis_font_size; \
+    double label_font_size; \
+    bool show_values; \
+    zend_string *value_format; \
+    bool transparent_bg; \
+    zend_string *bg_image_path; \
+    zend_long line_interpolation; \
+    bool has_plot_rect; \
+    int plot_x0; \
+    int plot_y0; \
+    int plot_x1; \
+    int plot_y1; \
+    zend_long border_sides; \
+    bool x_axis_visible; \
+    bool y_axis_visible; \
+    zend_string *y_axis_label_format; \
+    zend_string *x_axis_label_format; \
+    zend_long tick_mode; \
+    zend_long bar_width_pct; \
+    zend_long edge_color; \
+    bool zero_shelf; \
+    zend_long x_label_stride; \
+    zend_string *y_axis_title2; \
+    bool thumbnail_mode; \
+    zend_long title_color; \
+    zend_long axis_label_color; \
+    zend_long axis_title_color; \
+    zend_long line_style; \
+    zend_long gradient_from; \
+    zend_long gradient_to; \
+    zend_long gradient_dir; \
+    bool has_drop_shadow; \
+    zend_long shadow_dx; \
+    zend_long shadow_dy; \
+    zend_long shadow_color; \
+    zend_long shadow_alpha; \
+    zend_long color_ramp_low; \
+    zend_long color_ramp_high; \
+    zend_long date_axis_unit; \
+    zend_long date_axis_every; \
+    zval data; \
+    zval config;
 
-    /* Per-instance palette overrides. -1 means "use theme default"
-     * for color slots. series_colors_n is the count of overrides
-     * (0..8); series_colors[i] is the override RGB for series i. */
-    zend_long bg_override;
-    zend_long plot_bg_override;
-    int series_colors_n;
-    int series_colors[8];
+/* Base view type. fastchart_obj* is what base setters and shared
+ * helpers receive. It deliberately omits zend_object std — concrete
+ * instances always belong to one of the per-type structs below, and
+ * the embedded std lives at the end of those. */
+typedef struct _fastchart_obj { FASTCHART_BASE_FIELDS } fastchart_obj;
 
-    /* Strict mode: when set, non-numeric data raises \TypeError on
-     * draw() instead of being silently skipped. */
-    bool strict;
+/* Per-type structs. Each adds the class-specific fields (or none)
+ * plus the zend_object std at the end. */
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    zend_object std;
+} fastchart_line_obj;
 
-    /* Legend placement, one of FASTCHART_LEGEND_*. */
-    zend_long legend_position;
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    zend_long area_alpha;
+    zend_object std;
+} fastchart_area_obj;
 
-    /* Y-axis scale: 0 linear, 1 log10. */
-    zend_long y_axis_scale;
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    zend_long stack_mode;
+    bool bar_floating;
+    zend_object std;
+} fastchart_bar_obj;
 
-    /* LineChart / ScatterChart marker overrides. -1 means default. */
-    zend_long marker_style;   /* FASTCHART_MARKER_* */
-    zend_long marker_size;    /* pixels */
-
-    /* Axis titles. NULL when unset. */
-    zend_string *x_axis_title;
-    zend_string *y_axis_title;
-
-    /* X-axis label rotation in degrees: 0, 45, or 90. */
-    zend_long x_axis_label_angle;
-
-    /* Forced Y-axis range. has_y_min / has_y_max / has_y_interval
-     * track whether the value is meaningful (since 0.0 is a legal
-     * forced bound). */
-    bool has_y_min;
-    bool has_y_max;
-    bool has_y_interval;
-    double y_min;
-    double y_max;
-    double y_interval;
-
-    /* Secondary Y axis on the right side of the plot. */
-    bool secondary_y;
-
-    /* StockChart candle presentation style. */
-    zend_long candle_style;
-
-    /* PieChart label rendering mode + sprintf format string. */
+typedef struct {
+    FASTCHART_BASE_FIELDS
     zend_long slice_label_position;
     zend_string *slice_label_format;
-
-    /* AreaChart fill alpha (0..127, libgd convention). */
-    zend_long area_alpha;
-
-    /* Per-element color overrides. -1 = use theme palette. */
-    zend_long axis_color_override;
-    zend_long grid_color_override;
-    zend_long border_color_override;
-    zend_long text_color_override;
-
-    /* Per-element font overrides. NULL path / 0.0 size = default. */
-    zend_string *title_font_path;
-    zend_string *axis_font_path;
-    zend_string *label_font_path;
-    double title_font_size;
-    double axis_font_size;
-    double label_font_size;
-
-    /* Numeric value labels next to data points. */
-    bool show_values;
-    zend_string *value_format;
-
-    /* PieChart "Other" slice aggregation threshold (percent of total). */
     double pie_other_threshold;
     zend_string *pie_other_label;
+    zend_object std;
+} fastchart_pie_obj;
 
-    /* Background features. */
-    bool transparent_bg;
-    zend_string *bg_image_path;
-
-    /* Line interpolation mode (FASTCHART_INTERP_*). */
-    zend_long line_interpolation;
-
-    /* Hard plot rectangle. has_plot_rect = false means auto-layout. */
-    bool has_plot_rect;
-    int plot_x0, plot_y0, plot_x1, plot_y1;
-
-    /* Border-side bitmask (FASTCHART_BORDER_*). Default ALL. */
-    zend_long border_sides;
-
-    /* Axis visibility. Both default true. */
-    bool x_axis_visible;
-    bool y_axis_visible;
-
-    /* sprintf format strings for tick labels. NULL = auto-format. */
-    zend_string *y_axis_label_format;
-    zend_string *x_axis_label_format;
-
-    /* Tick mode (FASTCHART_TICK_*). Default BOTH. */
-    zend_long tick_mode;
-
-    /* Bar fill width as percent of slot (1..100). 0 = use default. */
-    zend_long bar_width_pct;
-
-    /* Edge color for filled shapes. -1 = no outline. */
-    zend_long edge_color;
-
-    /* Render a horizontal shelf at y=0 when range crosses zero. */
-    bool zero_shelf;
-
-    /* X-axis label stride: render every Nth label. 1 = all. */
-    zend_long x_label_stride;
-
-    /* Secondary Y axis title. */
-    zend_string *y_axis_title2;
-
-    /* Thumbnail mode: shrink fonts and elide labels. */
-    bool thumbnail_mode;
-
-    /* BarChart stack mode (FASTCHART_STACK_*). Default SUM. */
-    zend_long stack_mode;
-
-    /* BarChart floating bars: each series entry is [min, max]. */
-    bool bar_floating;
-
-    /* Per-element text colors. -1 = fall through to text_color_override. */
-    zend_long title_color;
-    zend_long axis_label_color;
-    zend_long axis_title_color;
-
-
-    /* Line dash style (FASTCHART_LINE_*). Default SOLID. */
-    zend_long line_style;
-
-    /* Gradient fill: enabled when gradient_from >= 0. */
-    zend_long gradient_from;
-    zend_long gradient_to;
-    zend_long gradient_dir;     /* FASTCHART_GRADIENT_* */
-
-    /* Drop shadow: enabled when has_drop_shadow == true. */
-    bool has_drop_shadow;
-    zend_long shadow_dx;
-    zend_long shadow_dy;
-    zend_long shadow_color;     /* 24-bit RGB */
-    zend_long shadow_alpha;     /* 0..127 (gd convention) */
-
-    /* ScatterChart trend line. -1 color = use series color. */
+typedef struct {
+    FASTCHART_BASE_FIELDS
     bool trend_line;
     zend_long trend_line_color;
+    zend_long trend_degree;
+    zend_object std;
+} fastchart_scatter_obj;
 
-    /* RadarChart-specific config. */
-    double radar_max;           /* 0 = auto */
-    bool radar_filled;          /* default true */
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    zend_long candle_style;
+    zend_object std;
+} fastchart_stock_obj;
 
-    /* Shared by SurfaceChart::setColorRamp() and
-     * ContourChart::setColorRamp() — same semantics, same defaults. */
-    zend_long color_ramp_low;
-    zend_long color_ramp_high;
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    double radar_max;
+    bool radar_filled;
+    zend_object std;
+} fastchart_radar_obj;
 
-    /* SurfaceChart-specific config. */
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    zend_object std;
+} fastchart_bubble_obj;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
     bool surface_show_values;
     zend_string *surface_value_format;
+    zend_object std;
+} fastchart_surface_obj;
 
-    /* GaugeChart-specific config. */
+typedef struct {
+    FASTCHART_BASE_FIELDS
     double gauge_value;
     double gauge_min;
     double gauge_max;
     zend_string *gauge_value_format;
+    zend_object std;
+} fastchart_gauge_obj;
 
-    /* Trend line: degree of polynomial fit (1 = linear). */
-    zend_long trend_degree;
-
-    /* Calendar-aware date axis stride. unit FASTCHART_DATE_*; every
-     * 0 = auto-density (the legacy behavior). */
-    zend_long date_axis_unit;
-    zend_long date_axis_every;
-
-    /* GanttChart specific. */
+typedef struct {
+    FASTCHART_BASE_FIELDS
     bool gantt_show_labels;
     bool gantt_has_range;
     zend_long gantt_range_start;
     zend_long gantt_range_end;
+    zend_object std;
+} fastchart_gantt_obj;
 
-    /* BoxPlot specific. */
+typedef struct {
+    FASTCHART_BASE_FIELDS
     zend_long box_width_pct;
+    zend_object std;
+} fastchart_boxplot_obj;
 
-    /* PolarChart specific. */
+typedef struct {
+    FASTCHART_BASE_FIELDS
     double polar_max_radius;
     bool polar_filled;
-
-    /* ContourChart specific. */
-    bool contour_filled;
-
-    zval data;
-    zval config;
     zend_object std;
-} fastchart_obj;
+} fastchart_polar_obj;
 
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    bool contour_filled;
+    zend_object std;
+} fastchart_contour_obj;
+
+/* Walk back from zend_object* to the start of the containing per-type
+ * struct using each class's handlers->offset. Cast to fastchart_obj*
+ * is the common-initial-sequence access — base fields land at the
+ * same offsets in every per-type struct. */
 static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
-    return (fastchart_obj *)((char *)(obj) - offsetof(fastchart_obj, std));
+    return (fastchart_obj *)((char *)(obj) - obj->handlers->offset);
 }
 
-#define Z_FASTCHART_OBJ_P(zv) fastchart_obj_from_zend(Z_OBJ_P(zv))
+#define Z_FASTCHART_OBJ_P(zv)         fastchart_obj_from_zend(Z_OBJ_P(zv))
+#define Z_FASTCHART_LINE_OBJ_P(zv)    ((fastchart_line_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_AREA_OBJ_P(zv)    ((fastchart_area_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_BAR_OBJ_P(zv)     ((fastchart_bar_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_PIE_OBJ_P(zv)     ((fastchart_pie_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_SCATTER_OBJ_P(zv) ((fastchart_scatter_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_STOCK_OBJ_P(zv)   ((fastchart_stock_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_RADAR_OBJ_P(zv)   ((fastchart_radar_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_BUBBLE_OBJ_P(zv)  ((fastchart_bubble_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_SURFACE_OBJ_P(zv) ((fastchart_surface_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_GAUGE_OBJ_P(zv)   ((fastchart_gauge_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_GANTT_OBJ_P(zv)   ((fastchart_gantt_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_BOXPLOT_OBJ_P(zv) ((fastchart_boxplot_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_POLAR_OBJ_P(zv)   ((fastchart_polar_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_CONTOUR_OBJ_P(zv) ((fastchart_contour_obj *)Z_FASTCHART_OBJ_P(zv))
 
 #define FASTCHART_DEFAULT_WIDTH      800
 #define FASTCHART_DEFAULT_HEIGHT     600
@@ -399,19 +404,19 @@ static inline const char *fastchart_label_or_null(const zval *zv)
  * routing through ext/gd's zval extraction. Each returns 0 on
  * success, -1 on a draw-time error (a PHP exception is already
  * pending). */
-int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im);
-int fastchart_area_render_to_image(fastchart_obj *self, gdImagePtr im);
-int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im);
-int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im);
-int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im);
-int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im);
-int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im);
-int fastchart_bubble_render_to_image(fastchart_obj *self, gdImagePtr im);
-int fastchart_surface_render_to_image(fastchart_obj *self, gdImagePtr im);
-int fastchart_gauge_render_to_image(fastchart_obj *self, gdImagePtr im);
-int fastchart_gantt_render_to_image(fastchart_obj *self, gdImagePtr im);
-int fastchart_boxplot_render_to_image(fastchart_obj *self, gdImagePtr im);
-int fastchart_polar_render_to_image(fastchart_obj *self, gdImagePtr im);
-int fastchart_contour_render_to_image(fastchart_obj *self, gdImagePtr im);
+int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im);
+int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im);
+int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im);
+int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im);
+int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im);
+int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im);
+int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im);
+int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im);
+int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im);
+int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im);
+int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im);
+int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im);
+int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im);
+int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im);
 
 #endif /* PHP_FASTCHART_H */

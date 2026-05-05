@@ -122,7 +122,7 @@ done:
     return 0;
 }
 
-int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
+int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im)
 {
     /* Per-call scratch. The previous file-static buffer made render
      * non-reentrant — broken under ZTS or any SAPI that runs two
@@ -157,7 +157,7 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
     } else {
         fastchart_value_range_compute(y_min, y_max, 6, &yrange);
-        fastchart_value_range_apply_override(self, &yrange);
+        fastchart_value_range_apply_override((fastchart_obj *)self, &yrange);
     }
 
     /* X range. */
@@ -165,22 +165,22 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
     fastchart_value_range_compute(x_min, x_max, 6, &xrange);
 
     fastchart_rect plot;
-    fastchart_compute_layout(self, im, 1, 1, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, &plot);
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, self, &pal);
+    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
-    fastchart_draw_frame(im, self, &plot, &pal);
-    fastchart_draw_title(im, self, &plot, &pal);
-    fastchart_draw_y_axis(im, self, &plot, &pal, &yrange);
+    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_y_axis(im, (fastchart_obj *)self, &plot, &pal, &yrange);
 
     /* Custom X axis: continuous numeric ticks from xrange. Reuse the
      * categorical axis line + tick infrastructure by drawing the line
      * and emitting ticks at xrange values. */
     gdImageLine(im, plot.x0, plot.y1, plot.x1, plot.y1, pal.axis);
     const char *font = xrange.n_ticks > 0
-        ? fastchart_resolve_font(self, FC_FONT_AXIS) : NULL;
+        ? fastchart_resolve_font((fastchart_obj *)self, FC_FONT_AXIS) : NULL;
     if (font) {
         double size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
         int label_y = plot.y1 + 4 + (int)(size * 1.2);
@@ -203,7 +203,7 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
     }
 
-    fastchart_draw_axis_titles(im, self, &plot, &pal);
+    fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
 
     /* Marker resolution: ScatterChart's default is a 7px circle. */
     int marker_style = self->marker_style >= 0
@@ -262,7 +262,7 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
         }
 
         fastchart_draw_marker(im, px, py, marker_style, marker_size, color);
-        fastchart_draw_value_label(im, self, &pal, px, py, points[i].y);
+        fastchart_draw_value_label(im, (fastchart_obj *)self, &pal, px, py, points[i].y);
     }
 
     /* Trend line: least-squares fit. Linear (degree=1) uses the
@@ -383,8 +383,8 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
         no_fit: ;
     }
 
-    fastchart_draw_h_annotations(im, self, &plot, &pal, &yrange);
-    fastchart_draw_v_annotations_continuous(im, self, &plot, &pal, &xrange);
+    fastchart_draw_h_annotations(im, (fastchart_obj *)self, &plot, &pal, &yrange);
+    fastchart_draw_v_annotations_continuous(im, (fastchart_obj *)self, &plot, &pal, &xrange);
 
     if (n_series >= 2) {
         int legend_colors[MAX_SCATTER_SERIES];
@@ -397,12 +397,12 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
             legend_count++;
         }
         if (legend_count > 0) {
-            fastchart_draw_legend(im, self, &plot, &pal,
+            fastchart_draw_legend(im, (fastchart_obj *)self, &plot, &pal,
                                   legend_count, legend_colors, legend_labels);
         }
     }
 
-    fastchart_draw_text_annotations(im, self, &pal);
+    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
 
     /* Build the image-map area list for points that carry an
      * 'href' / 'tooltip' key. We re-walk the source data because
@@ -503,7 +503,7 @@ ZEND_METHOD(FastChart_ScatterChart, draw)
         RETURN_THROWS();
     }
 
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    fastchart_scatter_obj *self = Z_FASTCHART_SCATTER_OBJ_P(ZEND_THIS);
     if (fastchart_scatter_render_to_image(self, im) != 0) {
         RETURN_THROWS();
     }
