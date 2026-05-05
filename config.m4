@@ -15,15 +15,27 @@ if test "$PHP_FASTCHART" != "no"; then
 
   dnl libgd is required: ext/gd exposes only php_gd_libgdimageptr_from_zval_p()
   dnl so we link libgd directly to call the drawing primitives (gdImageLine,
-  dnl gdImageFilledRectangle, gdImageFTBBox, etc.) on the GdImagePtr we pull
-  dnl out of caller-supplied \GdImage zvals. The dynamic linker dedupes
-  dnl libgd.so.3 so ext/gd and fastchart share one copy in the address space.
+  dnl gdImageFilledRectangle, gdImageFilledArc, gdImageStringFT, etc.) on the
+  dnl gdImagePtr we pull out of caller-supplied \GdImage zvals. The dynamic
+  dnl linker dedupes libgd.so.3 so ext/gd and fastchart share one copy in
+  dnl the address space.
+  dnl
+  dnl gdImageStringFT (TTF text rendering) requires libgd to be built with
+  dnl FreeType support. The probe checks for the symbol's presence; libgd
+  dnl on Debian/Ubuntu/RHEL stable all ship --with-freetype by default.
   PHP_CHECK_LIBRARY(gd, gdImageCreateTrueColor,
   [
     PHP_ADD_LIBRARY(gd, 1, FASTCHART_SHARED_LIBADD)
     AC_DEFINE(HAVE_LIBGD, 1, [Have libgd])
   ],[
     AC_MSG_ERROR([libgd not found. Install libgd-dev (Debian/Ubuntu) or gd-devel (RHEL).])
+  ])
+
+  PHP_CHECK_LIBRARY(gd, gdImageStringFT,
+  [
+    AC_DEFINE(HAVE_GD_FREETYPE, 1, [libgd has FreeType / gdImageStringFT])
+  ],[
+    AC_MSG_ERROR([libgd was built without FreeType support; gdImageStringFT is unavailable. Rebuild libgd with --with-freetype.])
   ])
 
   PHP_SUBST(FASTCHART_SHARED_LIBADD)
@@ -33,7 +45,15 @@ if test "$PHP_FASTCHART" != "no"; then
   dnl registered before any FastChart method dereferences a passed canvas.
   PHP_ADD_EXTENSION_DEP(fastchart, gd)
 
-  WRAPPER_SOURCES="fastchart.c"
+  WRAPPER_SOURCES="fastchart.c \
+    fastchart_palette.c \
+    fastchart_text.c \
+    fastchart_axis.c \
+    fastchart_line.c \
+    fastchart_bar.c \
+    fastchart_pie.c \
+    fastchart_scatter.c \
+    fastchart_stock.c"
 
   dnl -Wall -Wextra are on by default so wrapper regressions get caught
   dnl in every local build; --enable-fastchart-dev upgrades warnings to

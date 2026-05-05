@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 52ba6d350dd2dc6bf8d3a25e6c97866a273d4f76 */
+ * Stub hash: 206fc1089f4ff900e2c1fd6e023078cdb0a84549 */
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_version, 0, 0, IS_STRING, 0)
 ZEND_END_ARG_INFO()
@@ -15,6 +15,14 @@ ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setTheme, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, theme, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setFontPath, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, path, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setFontSize, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, size, IS_DOUBLE, 0)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_FastChart_Chart_draw, 0, 1, GdImage, 0)
@@ -69,6 +77,8 @@ ZEND_METHOD(FastChart_Chart, version);
 ZEND_METHOD(FastChart_Chart, setSize);
 ZEND_METHOD(FastChart_Chart, setTitle);
 ZEND_METHOD(FastChart_Chart, setTheme);
+ZEND_METHOD(FastChart_Chart, setFontPath);
+ZEND_METHOD(FastChart_Chart, setFontSize);
 ZEND_METHOD(FastChart_LineChart, setSeries);
 ZEND_METHOD(FastChart_LineChart, draw);
 ZEND_METHOD(FastChart_BarChart, setSeries);
@@ -89,6 +99,8 @@ static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, setSize, arginfo_class_FastChart_Chart_setSize, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setTitle, arginfo_class_FastChart_Chart_setTitle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setTheme, arginfo_class_FastChart_Chart_setTheme, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setFontPath, arginfo_class_FastChart_Chart_setFontPath, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setFontSize, arginfo_class_FastChart_Chart_setFontSize, ZEND_ACC_PUBLIC)
 	ZEND_RAW_FENTRY("draw", NULL, arginfo_class_FastChart_Chart_draw, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
 	ZEND_FE_END
 };

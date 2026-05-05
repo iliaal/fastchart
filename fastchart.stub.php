@@ -35,6 +35,23 @@ abstract class Chart
     public function setTheme(int $theme): static {}
 
     /**
+     * Set the TTF font file used for titles, axis labels, and value
+     * tags. Required for any chart that renders text -- pass an
+     * absolute path to a `.ttf` (or `.otf`) file that the calling
+     * process can read. fastchart probes a small list of well-known
+     * paths at MINIT (DejaVuSans on Linux, Helvetica on macOS) and
+     * uses the first hit as the default; setFontPath() overrides
+     * that default per-instance.
+     */
+    public function setFontPath(string $path): static {}
+
+    /**
+     * Set the base font size in points. Title and axis labels scale
+     * relative to this. Default: 10.0.
+     */
+    public function setFontSize(float $size): static {}
+
+    /**
      * Render the chart into the caller-supplied GD canvas and return
      * the same canvas for chaining. The canvas is mutated in place;
      * existing pixels under the plot area are overwritten. Caller

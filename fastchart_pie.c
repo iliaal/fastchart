@@ -1,0 +1,239 @@
+/*
+  +----------------------------------------------------------------------+
+  | Copyright (c) 1997-2026 The PHP Group                                |
+  +----------------------------------------------------------------------+
+  | This source file is subject to version 3.01 of the PHP license,     |
+  | that is bundled with this package in the file LICENSE, and is       |
+  | available through the world-wide-web at the following url:          |
+  | http://www.php.net/license/3_01.txt                                 |
+  +----------------------------------------------------------------------+
+  | Author: Ilia Alshanetsky <ilia@ilia.ws>                              |
+  +----------------------------------------------------------------------+
+*/
+
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "php.h"
+#include "Zend/zend_exceptions.h"
+
+#include "php_fastchart.h"
+#include "fastchart_palette.h"
+#include "fastchart_axis.h"
+#include "fastchart_text.h"
+
+#define MAX_SLICES 32
+
+typedef struct {
+    const char *label;     /* may be NULL */
+    char        idx_label[16];  /* fallback "0" / "1" / etc. */
+    double      value;     /* > 0 only -- nonpositive slices skipped */
+} fastchart_pie_slice;
+
+/* Accept two shapes for the slice array:
+ *   1. ['label' => value, 'label2' => value, ...]  (associative map)
+ *   2. [['label' => 'X', 'value' => 1.5], ...]     (list of dicts)
+ *
+ * Detection: if every key is a string and every value is numeric,
+ * it's shape 1. Otherwise shape 2 (drop entries that don't conform). */
+
+static int collect_pie_slices(zval *data_zv,
+                              fastchart_pie_slice *out, int max_slices,
+                              int *out_count, double *out_total)
+{
+    *out_count = 0;
+    *out_total = 0;
+    if (Z_TYPE_P(data_zv) != IS_ARRAY) return -1;
+    HashTable *ht = Z_ARRVAL_P(data_zv);
+    int n = (int)zend_hash_num_elements(ht);
+    if (n == 0) return 0;
+
+    /* Decide shape by sampling first element. */
+    int shape_assoc = 1;
+    {
+        zend_string *k;
+        zend_ulong h;
+        zval *v;
+        ZEND_HASH_FOREACH_KEY_VAL(ht, h, k, v) {
+            (void)h;
+            if (!k || (Z_TYPE_P(v) != IS_LONG && Z_TYPE_P(v) != IS_DOUBLE)) {
+                shape_assoc = 0;
+            }
+            break;
+        } ZEND_HASH_FOREACH_END();
+    }
+
+    if (shape_assoc) {
+        zend_string *k;
+        zend_ulong h;
+        zval *v;
+        ZEND_HASH_FOREACH_KEY_VAL(ht, h, k, v) {
+            (void)h;
+            if (*out_count >= max_slices) break;
+            double d;
+            if (fastchart_zval_to_double(v, &d) != 0) continue;
+            if (d <= 0.0 || !isfinite(d)) continue;
+            out[*out_count].label = k ? ZSTR_VAL(k) : NULL;
+            if (!k) {
+                snprintf(out[*out_count].idx_label,
+                         sizeof(out[*out_count].idx_label),
+                         "%d", *out_count);
+            } else {
+                out[*out_count].idx_label[0] = '\0';
+            }
+            out[*out_count].value = d;
+            *out_total += d;
+            (*out_count)++;
+        } ZEND_HASH_FOREACH_END();
+    } else {
+        zval *entry;
+        ZEND_HASH_FOREACH_VAL(ht, entry) {
+            if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+            if (*out_count >= max_slices) break;
+
+            zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
+                                                "label", sizeof("label") - 1);
+            zval *value_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
+                                                "value", sizeof("value") - 1);
+            if (!value_zv) continue;
+
+            double d;
+            if (fastchart_zval_to_double(value_zv, &d) != 0) continue;
+            if (d <= 0.0 || !isfinite(d)) continue;
+
+            if (label_zv && Z_TYPE_P(label_zv) == IS_STRING) {
+                out[*out_count].label = Z_STRVAL_P(label_zv);
+                out[*out_count].idx_label[0] = '\0';
+            } else {
+                out[*out_count].label = NULL;
+                snprintf(out[*out_count].idx_label,
+                         sizeof(out[*out_count].idx_label),
+                         "%d", *out_count);
+            }
+            out[*out_count].value = d;
+            *out_total += d;
+            (*out_count)++;
+        } ZEND_HASH_FOREACH_END();
+    }
+
+    return 0;
+}
+
+ZEND_METHOD(FastChart_PieChart, draw)
+{
+    zval *canvas_zv;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
+    ZEND_PARSE_PARAMETERS_END();
+
+    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
+    if (!im) {
+        zend_throw_error(NULL, "FastChart\\PieChart::draw() received a closed or invalid GdImage");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+
+    fastchart_pie_slice slices[MAX_SLICES];
+    int n_slices = 0;
+    double total = 0;
+    if (collect_pie_slices(&self->data, slices, MAX_SLICES,
+                           &n_slices, &total) != 0 || n_slices == 0) {
+        zend_throw_error(NULL,
+            "FastChart\\PieChart::draw() requires setSlices() with one or more positive values");
+        RETURN_THROWS();
+    }
+
+    double donut = 0.0;
+    {
+        zval *cfg = zend_hash_str_find(Z_ARRVAL(self->config),
+                                       "donut_hole_ratio",
+                                       sizeof("donut_hole_ratio") - 1);
+        if (cfg) fastchart_zval_to_double(cfg, &donut);
+    }
+    if (donut < 0) donut = 0;
+    if (donut >= 1.0) donut = 0.95;
+
+    fastchart_rect plot;
+    /* No axes for pie charts -- pass 0/0 so layout reserves space
+     * only for the title. */
+    fastchart_compute_layout(self, im, 0, 0, &plot);
+
+    fastchart_palette pal;
+    fastchart_palette_init(im, (int)self->theme, &pal);
+
+    fastchart_draw_frame(im, self, &plot, &pal);
+    fastchart_draw_title(im, self, &plot, &pal);
+
+    /* Pie geometry: largest disk that fits, centered in the plot
+     * rect, with a margin reserved for label leaders / outside text. */
+    int cx = (plot.x0 + plot.x1) / 2;
+    int cy = (plot.y0 + plot.y1) / 2;
+    int avail_w = (plot.x1 - plot.x0);
+    int avail_h = (plot.y1 - plot.y0);
+    int diameter = (avail_w < avail_h ? avail_w : avail_h) - 60;
+    if (diameter < 40) diameter = 40;
+
+    /* Slices via gdImageFilledArc. gdPie produces a filled wedge;
+     * gdNoFill + gdEdged outlines without filling. We draw the wedge
+     * with gdPie + a thin outline pass for slice separation. */
+    double start_deg = -90.0;  /* 12 o'clock */
+    for (int i = 0; i < n_slices; i++) {
+        double sweep = 360.0 * (slices[i].value / total);
+        int color = pal.series[i % FASTCHART_PALETTE_SERIES_N];
+
+        gdImageFilledArc(im, cx, cy, diameter, diameter,
+                         (int)floor(start_deg), (int)ceil(start_deg + sweep),
+                         color, gdPie);
+        gdImageFilledArc(im, cx, cy, diameter, diameter,
+                         (int)floor(start_deg), (int)ceil(start_deg + sweep),
+                         pal.border, gdNoFill | gdEdged);
+        start_deg += sweep;
+    }
+
+    /* Donut overdraw: paint a plot-bg-colored disk over the center. */
+    if (donut > 0) {
+        int hole = (int)((double)diameter * donut);
+        if (hole < 4) hole = 4;
+        gdImageFilledEllipse(im, cx, cy, hole, hole, pal.plot_bg);
+    }
+
+    /* Slice labels: percentage at the slice's mid-angle, on a radius
+     * that lands midway between the donut hole edge and the outer
+     * edge (or 70% of outer for solid pies). Skip if no font. */
+    if (self->font_path) {
+        double label_radius_frac = donut > 0
+            ? (donut + 1.0) / 2.0
+            : 0.7;
+        double label_r = (diameter / 2.0) * label_radius_frac;
+        double size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+        const char *font = ZSTR_VAL(self->font_path);
+
+        start_deg = -90.0;
+        for (int i = 0; i < n_slices; i++) {
+            double sweep = 360.0 * (slices[i].value / total);
+            double mid_rad = (start_deg + sweep / 2.0) * M_PI / 180.0;
+            int lx = cx + (int)(label_r * cos(mid_rad));
+            int ly = cy + (int)(label_r * sin(mid_rad));
+
+            /* Skip labels for tiny slices to avoid overlap clutter. */
+            if (sweep >= 8.0) {
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%.0f%%",
+                         100.0 * slices[i].value / total);
+                fastchart_text_draw(im, font, size, pal.text,
+                                    lx, ly + (int)(size * 0.35),
+                                    FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+            }
+            start_deg += sweep;
+        }
+    }
+
+    RETURN_ZVAL(canvas_zv, 1, 0);
+}

@@ -20,18 +20,10 @@
 #include "ext/standard/info.h"
 #include "Zend/zend_exceptions.h"
 
+#include <sys/stat.h>
+
 #include "php_fastchart.h"
 #include "fastchart_arginfo.h"
-
-#include <gd.h>
-
-/* Forward-declare the only ext/gd public API we use. ext/gd does not
- * install php_gd.h via `make install` (the file lives in php-src but
- * is not in any extension's php_HEADERS list), so a third-party
- * extension cannot `#include "ext/gd/php_gd.h"` against a system PHP
- * install. The signature has been stable on PHP-8.x; mirror it here
- * verbatim from ext/gd/php_gd.h. */
-extern struct gdImageStruct *php_gd_libgdimageptr_from_zval_p(zval *zp);
 
 zend_class_entry *fastchart_chart_ce;
 zend_class_entry *fastchart_line_chart_ce;
@@ -39,15 +31,27 @@ zend_class_entry *fastchart_bar_chart_ce;
 zend_class_entry *fastchart_pie_chart_ce;
 zend_class_entry *fastchart_scatter_chart_ce;
 zend_class_entry *fastchart_stock_chart_ce;
-
-/* Cached at MINIT via zend_lookup_class. ext/gd defines gd_image_ce
- * as a file-static global with no PHPAPI export, so we cannot link
- * against the symbol; we resolve the class entry by name at startup
- * once ext/gd's MINIT has registered it (PHP_ADD_EXTENSION_DEP in
- * config.m4 guarantees that ordering). */
-static zend_class_entry *fastchart_gd_image_ce = NULL;
+zend_class_entry *fastchart_gd_image_ce = NULL;
 
 static zend_object_handlers fastchart_object_handlers;
+
+/* Auto-detected default font path. Probed at MINIT, used as the
+ * initial font_path on every newly-allocated chart instance. NULL
+ * if no probe candidate exists on the system; users must then call
+ * setFontPath() before any text-rendering chart method. */
+static zend_string *fastchart_default_font_path = NULL;
+
+/* ---------------------- ext/gd interop helper ---------------------- */
+
+gdImagePtr fastchart_gd_image_from_zval(zval *canvas_zv)
+{
+    if (Z_TYPE_P(canvas_zv) != IS_OBJECT) {
+        return NULL;
+    }
+    return php_gd_libgdimageptr_from_zval_p(canvas_zv);
+}
+
+/* --------------------- object create / free / clone ---------------- */
 
 static zend_object *fastchart_create_object(zend_class_entry *ce)
 {
@@ -58,8 +62,16 @@ static zend_object *fastchart_create_object(zend_class_entry *ce)
 
     intern->width  = FASTCHART_DEFAULT_WIDTH;
     intern->height = FASTCHART_DEFAULT_HEIGHT;
-    intern->theme  = 0;
+    intern->theme  = FASTCHART_THEME_LIGHT;
     intern->title  = ZSTR_EMPTY_ALLOC();
+    intern->font_size = FASTCHART_DEFAULT_FONT_SIZE;
+
+    if (fastchart_default_font_path) {
+        intern->font_path = zend_string_copy(fastchart_default_font_path);
+    } else {
+        intern->font_path = NULL;
+    }
+
     array_init(&intern->data);
     array_init(&intern->config);
 
@@ -74,25 +86,55 @@ static void fastchart_free_object(zend_object *object)
     if (intern->title) {
         zend_string_release(intern->title);
     }
+    if (intern->font_path) {
+        zend_string_release(intern->font_path);
+    }
     zval_ptr_dtor(&intern->data);
     zval_ptr_dtor(&intern->config);
 
     zend_object_std_dtor(&intern->std);
 }
 
-/* Cloning would deep-copy data/config and bump the title refcount.
- * Disabled until the v0.1 drawing logic lands so we don't expose a
- * half-cooked clone path through the abstract base. */
 #define fastchart_clone_object NULL
 
-/* ---------- shared helpers used by the concrete-class methods ---------- */
+/* --------------------- font default detection ---------------------- */
 
-static fastchart_obj *fastchart_this(zval *this_zv)
+/* Common locations for a sans-serif TTF that ships by default on the
+ * platforms PIE supports. Probed in order; the first existing path
+ * becomes the auto-detected default. setFontPath() overrides per
+ * instance. The list is intentionally short -- adding a path here is
+ * an ABI-stable choice the extension makes about which install layout
+ * to assume.
+ *
+ *   Debian / Ubuntu:    /usr/share/fonts/truetype/dejavu/...
+ *   Fedora / RHEL:      /usr/share/fonts/dejavu-sans-fonts/...
+ *   Arch:               /usr/share/fonts/TTF/...
+ *   Alpine:             /usr/share/fonts/TTF/...
+ *   macOS:              /Library/Fonts/... (system) or /System/Library/Fonts/... */
+static const char *DEFAULT_FONT_CANDIDATES[] = {
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/Library/Fonts/Arial.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+    NULL,
+};
+
+static zend_string *fastchart_probe_default_font(void)
 {
-    return fastchart_obj_from_zend(Z_OBJ_P(this_zv));
+    struct stat st;
+    for (int i = 0; DEFAULT_FONT_CANDIDATES[i]; i++) {
+        if (stat(DEFAULT_FONT_CANDIDATES[i], &st) == 0 && S_ISREG(st.st_mode)) {
+            return zend_string_init(DEFAULT_FONT_CANDIDATES[i],
+                                    strlen(DEFAULT_FONT_CANDIDATES[i]),
+                                    1 /* persistent */);
+        }
+    }
+    return NULL;
 }
 
-/* ---------- FastChart\Chart (abstract) ---------- */
+/* ---------------- FastChart\Chart base method bodies --------------- */
 
 ZEND_METHOD(FastChart_Chart, version)
 {
@@ -118,7 +160,7 @@ ZEND_METHOD(FastChart_Chart, setSize)
         RETURN_THROWS();
     }
 
-    fastchart_obj *self = fastchart_this(ZEND_THIS);
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     self->width  = width;
     self->height = height;
 
@@ -133,7 +175,7 @@ ZEND_METHOD(FastChart_Chart, setTitle)
         Z_PARAM_STR(title)
     ZEND_PARSE_PARAMETERS_END();
 
-    fastchart_obj *self = fastchart_this(ZEND_THIS);
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (self->title) {
         zend_string_release(self->title);
     }
@@ -150,84 +192,96 @@ ZEND_METHOD(FastChart_Chart, setTheme)
         Z_PARAM_LONG(theme)
     ZEND_PARSE_PARAMETERS_END();
 
-    if (theme != 0 && theme != 1) {
+    if (theme != FASTCHART_THEME_LIGHT && theme != FASTCHART_THEME_DARK) {
         zend_value_error("FastChart\\Chart::setTheme() expects a THEME_* class constant");
         RETURN_THROWS();
     }
 
-    fastchart_obj *self = fastchart_this(ZEND_THIS);
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     self->theme = theme;
 
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ---------- shared draw stub ----------
- *
- * Every concrete subclass's draw() routes through this for the
- * scaffold cycle: validate the GdImage, return it untouched. v0.1
- * replaces the per-class entry points with type-specific drawing
- * implementations (axis, palette, plot routines per chart family). */
-static void fastchart_draw_stub(INTERNAL_FUNCTION_PARAMETERS)
+ZEND_METHOD(FastChart_Chart, setFontPath)
 {
-    zval *canvas_zv;
+    zend_string *path;
 
     ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
+        Z_PARAM_STR(path)
     ZEND_PARSE_PARAMETERS_END();
 
-    /* Cross-check that ext/gd will accept the zval: the helper returns
-     * the underlying gdImagePtr or NULL for a closed/invalid GdImage.
-     * Throw a clean exception now rather than letting drawing code
-     * later segfault on a NULL pointer. */
-    gdImagePtr im = php_gd_libgdimageptr_from_zval_p(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\Chart::draw() received a closed or invalid GdImage");
+    if (ZSTR_LEN(path) == 0) {
+        zend_value_error("FastChart\\Chart::setFontPath() requires a non-empty path");
+        RETURN_THROWS();
+    }
+    /* Embedded NUL gates: this path will travel into FreeType's stat()
+     * via libgd; reject before it gets there so we don't open a path
+     * the user cannot have intended. */
+    if (memchr(ZSTR_VAL(path), 0, ZSTR_LEN(path)) != NULL) {
+        zend_value_error("FastChart\\Chart::setFontPath() path contains an embedded NUL");
+        RETURN_THROWS();
+    }
+    if (php_check_open_basedir(ZSTR_VAL(path))) {
+        /* php_check_open_basedir already raised a warning. Don't throw,
+         * just no-op the setter so callers under open_basedir are not
+         * forced to wrap every set in a try/catch. */
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (self->font_path) {
+        zend_string_release(self->font_path);
+    }
+    self->font_path = zend_string_copy(path);
+
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, setFontSize)
+{
+    double size;
+
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_DOUBLE(size)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (!(size >= 1.0 && size <= 200.0)) {
+        zend_value_error("FastChart\\Chart::setFontSize() expects a value in [1.0, 200.0]");
         RETURN_THROWS();
     }
 
-    /* Scaffold: no drawing yet. v0.1 dispatches by class entry to the
-     * per-type implementations. */
-    RETURN_ZVAL(canvas_zv, 1, 0);
-}
-
-/* ---------- FastChart\LineChart ---------- */
-
-ZEND_METHOD(FastChart_LineChart, setSeries)
-{
-    zval *series;
-
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_ARRAY(series)
-    ZEND_PARSE_PARAMETERS_END();
-
-    fastchart_obj *self = fastchart_this(ZEND_THIS);
-    zval_ptr_dtor(&self->data);
-    ZVAL_COPY(&self->data, series);
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->font_size = size;
 
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-ZEND_METHOD(FastChart_LineChart, draw)
-{
-    fastchart_draw_stub(INTERNAL_FUNCTION_PARAM_PASSTHRU);
-}
+/* ---------------- per-class setSeries family --------------------
+ *
+ * gen_stub emits a separate ZEND_METHOD entry per class even though
+ * the bodies are identical, so we cannot collapse them into one
+ * shared ZEND_FUNCTION. They all just stash the array on `data`. */
 
-/* ---------- FastChart\BarChart ---------- */
+#define FASTCHART_SETTER_ARRAY(class_, method_, slot_, name_) \
+    ZEND_METHOD(class_, method_) \
+    { \
+        zval *arr; \
+        ZEND_PARSE_PARAMETERS_START(1, 1) \
+            Z_PARAM_ARRAY(arr) \
+        ZEND_PARSE_PARAMETERS_END(); \
+        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
+        zval_ptr_dtor(&self->slot_); \
+        ZVAL_COPY(&self->slot_, arr); \
+        (void)name_; \
+        RETURN_ZVAL(ZEND_THIS, 1, 0); \
+    }
 
-ZEND_METHOD(FastChart_BarChart, setSeries)
-{
-    zval *series;
-
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_ARRAY(series)
-    ZEND_PARSE_PARAMETERS_END();
-
-    fastchart_obj *self = fastchart_this(ZEND_THIS);
-    zval_ptr_dtor(&self->data);
-    ZVAL_COPY(&self->data, series);
-
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
+FASTCHART_SETTER_ARRAY(FastChart_LineChart,    setSeries, data, "setSeries")
+FASTCHART_SETTER_ARRAY(FastChart_BarChart,     setSeries, data, "setSeries")
+FASTCHART_SETTER_ARRAY(FastChart_PieChart,     setSlices, data, "setSlices")
+FASTCHART_SETTER_ARRAY(FastChart_ScatterChart, setPoints, data, "setPoints")
+FASTCHART_SETTER_ARRAY(FastChart_StockChart,   setOhlcv,  data, "setOhlcv")
 
 ZEND_METHOD(FastChart_BarChart, setStacked)
 {
@@ -237,30 +291,8 @@ ZEND_METHOD(FastChart_BarChart, setStacked)
         Z_PARAM_BOOL(stacked)
     ZEND_PARSE_PARAMETERS_END();
 
-    fastchart_obj *self = fastchart_this(ZEND_THIS);
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     add_assoc_bool(&self->config, "stacked", stacked);
-
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
-
-ZEND_METHOD(FastChart_BarChart, draw)
-{
-    fastchart_draw_stub(INTERNAL_FUNCTION_PARAM_PASSTHRU);
-}
-
-/* ---------- FastChart\PieChart ---------- */
-
-ZEND_METHOD(FastChart_PieChart, setSlices)
-{
-    zval *slices;
-
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_ARRAY(slices)
-    ZEND_PARSE_PARAMETERS_END();
-
-    fastchart_obj *self = fastchart_this(ZEND_THIS);
-    zval_ptr_dtor(&self->data);
-    ZVAL_COPY(&self->data, slices);
 
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
@@ -278,52 +310,8 @@ ZEND_METHOD(FastChart_PieChart, setDonutHoleRatio)
         RETURN_THROWS();
     }
 
-    fastchart_obj *self = fastchart_this(ZEND_THIS);
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     add_assoc_double(&self->config, "donut_hole_ratio", ratio);
-
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
-
-ZEND_METHOD(FastChart_PieChart, draw)
-{
-    fastchart_draw_stub(INTERNAL_FUNCTION_PARAM_PASSTHRU);
-}
-
-/* ---------- FastChart\ScatterChart ---------- */
-
-ZEND_METHOD(FastChart_ScatterChart, setPoints)
-{
-    zval *points;
-
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_ARRAY(points)
-    ZEND_PARSE_PARAMETERS_END();
-
-    fastchart_obj *self = fastchart_this(ZEND_THIS);
-    zval_ptr_dtor(&self->data);
-    ZVAL_COPY(&self->data, points);
-
-    RETURN_ZVAL(ZEND_THIS, 1, 0);
-}
-
-ZEND_METHOD(FastChart_ScatterChart, draw)
-{
-    fastchart_draw_stub(INTERNAL_FUNCTION_PARAM_PASSTHRU);
-}
-
-/* ---------- FastChart\StockChart ---------- */
-
-ZEND_METHOD(FastChart_StockChart, setOhlcv)
-{
-    zval *ohlcv;
-
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_ARRAY(ohlcv)
-    ZEND_PARSE_PARAMETERS_END();
-
-    fastchart_obj *self = fastchart_this(ZEND_THIS);
-    zval_ptr_dtor(&self->data);
-    ZVAL_COPY(&self->data, ohlcv);
 
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
@@ -336,7 +324,7 @@ ZEND_METHOD(FastChart_StockChart, setMovingAverages)
         Z_PARAM_ARRAY(periods)
     ZEND_PARSE_PARAMETERS_END();
 
-    fastchart_obj *self = fastchart_this(ZEND_THIS);
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     zval periods_copy;
     ZVAL_COPY(&periods_copy, periods);
     add_assoc_zval(&self->config, "moving_averages", &periods_copy);
@@ -352,18 +340,13 @@ ZEND_METHOD(FastChart_StockChart, setVolumePane)
         Z_PARAM_BOOL(enabled)
     ZEND_PARSE_PARAMETERS_END();
 
-    fastchart_obj *self = fastchart_this(ZEND_THIS);
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     add_assoc_bool(&self->config, "volume_pane", enabled);
 
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-ZEND_METHOD(FastChart_StockChart, draw)
-{
-    fastchart_draw_stub(INTERNAL_FUNCTION_PARAM_PASSTHRU);
-}
-
-/* ---------- module entry ---------- */
+/* --------------------------- module entry ------------------------- */
 
 PHP_MINIT_FUNCTION(fastchart)
 {
@@ -390,13 +373,6 @@ PHP_MINIT_FUNCTION(fastchart)
     fastchart_stock_chart_ce   = register_class_FastChart_StockChart(fastchart_chart_ce);
     fastchart_stock_chart_ce->create_object = fastchart_create_object;
 
-    /* Resolve \GdImage from ext/gd. PHP_ADD_EXTENSION_DEP(fastchart, gd)
-     * orders ext/gd's MINIT before ours, so the class is in the table
-     * by the time we look it up. We hit CG(class_table) directly with
-     * the lowercased name -- zend_lookup_class() goes through the
-     * autoloader chain which is not safe to invoke at MINIT, and
-     * zend_string_init at MINIT would have to be persistent to avoid
-     * leaking through the request-scope allocator. */
     fastchart_gd_image_ce = zend_hash_str_find_ptr(CG(class_table),
         "gdimage", sizeof("gdimage") - 1);
 
@@ -406,6 +382,19 @@ PHP_MINIT_FUNCTION(fastchart)
         return FAILURE;
     }
 
+    fastchart_default_font_path = fastchart_probe_default_font();
+    /* A NULL probe result is not fatal -- users can still call
+     * setFontPath() per-instance. The text helpers no-op on NULL. */
+
+    return SUCCESS;
+}
+
+PHP_MSHUTDOWN_FUNCTION(fastchart)
+{
+    if (fastchart_default_font_path) {
+        zend_string_release(fastchart_default_font_path);
+        fastchart_default_font_path = NULL;
+    }
     return SUCCESS;
 }
 
@@ -414,7 +403,11 @@ PHP_MINFO_FUNCTION(fastchart)
     php_info_print_table_start();
     php_info_print_table_row(2, "fastchart support", "enabled");
     php_info_print_table_row(2, "fastchart version", PHP_FASTCHART_VERSION);
-    php_info_print_table_row(2, "Backend", "ext/gd + libgd");
+    php_info_print_table_row(2, "Backend", "ext/gd + libgd + FreeType");
+    php_info_print_table_row(2, "Default font",
+        fastchart_default_font_path
+            ? ZSTR_VAL(fastchart_default_font_path)
+            : "(not auto-detected, setFontPath() required)");
     php_info_print_table_end();
 }
 
@@ -423,7 +416,7 @@ zend_module_entry fastchart_module_entry = {
     "fastchart",
     NULL,                       /* function_entries */
     PHP_MINIT(fastchart),
-    NULL,                       /* MSHUTDOWN */
+    PHP_MSHUTDOWN(fastchart),
     NULL,                       /* RINIT */
     NULL,                       /* RSHUTDOWN */
     PHP_MINFO(fastchart),
