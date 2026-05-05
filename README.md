@@ -2,10 +2,13 @@
 
 Native C PHP extension for fast chart generation. Renders line, area,
 bar, scatter, bubble, pie, candlestick (stock), radar, polar, surface,
-contour, gauge, gantt, and box-plot charts. Output goes through
-[ext/gd](https://www.php.net/manual/en/book.image.php), so the same
-canvas can be saved as PNG, JPEG, WebP, or AVIF — or composited with
-arbitrary GD draw calls before export.
+contour, gauge, gantt, and box-plot charts. Built-in `renderToFile()`
+/ `renderPng()` / `renderJpeg()` / `renderWebp()` / `renderAvif()`
+helpers cover the common case; `draw($canvas)` hands rendering onto a
+caller-owned `\GdImage` for compositing several charts onto one image
+or stamping arbitrary
+[ext/gd](https://www.php.net/manual/en/book.image.php) draw calls
+on top.
 
 ![Stock chart with moving averages](docs/examples/07_stock_candle_ma.png)
 
