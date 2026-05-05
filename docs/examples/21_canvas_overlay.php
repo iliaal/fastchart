@@ -28,15 +28,24 @@ for ($i = 0; $i < 60; $i++) {
     $price  = $close;
 }
 
+/* Allocate the user canvas at the same physical size we want — note
+ * that setDpi() is intentionally omitted on the chart side. With a
+ * caller-owned canvas, fastchart can't resize the image to match the
+ * DPI scale, so calling setDpi(200) here would make labels overflow
+ * the fixed 720×420 area. setDpi only makes sense on render*() paths
+ * where fastchart owns the canvas. */
 $im = imagecreatetruecolor(720, 420);
 
 /* Step 1: render the chart into our caller-owned canvas. */
 (new FastChart\StockChart(720, 420))
     ->setFontPath($font)
-    ->setDpi($dpi)
     ->setTitle('ACME — internal preview')
     ->setOhlcv($rows)
     ->addMovingAverage(20)
+    /* Calendar-aware stride keeps labels from overlapping each other
+     * along the X axis; otherwise 60 daily ticks would render with
+     * ~10px between dates and the "2023-11-14" strings would stack. */
+    ->setDateAxisStride(FastChart\Chart::DATE_WEEK, 2)
     ->draw($im);
 
 /* Step 2: overlay a translucent "DRAFT" watermark using gd's
