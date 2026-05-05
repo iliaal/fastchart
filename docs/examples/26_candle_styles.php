@@ -53,5 +53,12 @@ foreach ($styles as [$label, $style, $file]) {
         ->setTitle("STYLE_$label")
         ->setOhlcv($rows)
         ->setCandleStyle($style)
+        /* Stride the date axis to one tick per week — at 420×240
+         * with 30 trading days we'd otherwise pack 8+ date labels
+         * into a narrow strip and the "2023-11-14" strings would
+         * collide. setDateAxisStride is the chart-aware way to
+         * thin the labels (rotation just trades one collision for
+         * another at 45°). */
+        ->setDateAxisStride(FastChart\Chart::DATE_WEEK)
         ->renderToFile(__DIR__ . '/' . $file);
 }
