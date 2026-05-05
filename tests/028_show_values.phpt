@@ -9,7 +9,7 @@ $text_color = 0x222222;  // light theme text
 
 // LineChart: values appear above markers.
 $bytes = (new FastChart\LineChart(800, 400))
-    ->setShowValues(true, '%d')
+    ->setShowValues(true, '%.0f')
     ->setSeries([10, 25, 18, 42, 33])
     ->renderPng();
 $im = imagecreatefromstring($bytes);

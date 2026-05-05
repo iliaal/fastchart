@@ -587,6 +587,32 @@ void fastchart_draw_title(gdImagePtr im, fastchart_obj *chart,
     int cx = W / 2;
     int baseline = plot->y0 - TITLE_PADDING_BELOW;
 
+    /* Drop shadow underneath, before the actual text. No-op when the
+     * chart hasn't called setDropShadow(). */
+    fastchart_shadow_text(im, chart, font, size, cx, baseline, 0.0,
+                          ZSTR_VAL(chart->title));
+    fastchart_text_draw(im, font, size, color, cx, baseline,
+                        FASTCHART_ALIGN_CENTER, ZSTR_VAL(chart->title),
+                        NULL, 0);
+}
+
+/* Reusable for charts that don't compute a fastchart_rect plot
+ * (radar / gauge / surface / polar / contour use a simple
+ * "centered at top of canvas" layout). Pass the canvas-coord
+ * baseline directly. */
+void fastchart_draw_floating_title(gdImagePtr im, fastchart_obj *chart,
+                                   const fastchart_palette *pal,
+                                   int cx, int baseline)
+{
+    if (!chart->title || ZSTR_LEN(chart->title) == 0) return;
+    if (chart->thumbnail_mode) return;
+    const char *font = fastchart_resolve_font(chart, "title");
+    if (!font) return;
+    double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    double size = fastchart_resolve_font_size(chart, "title", base * 1.4);
+    int color = chart->title_color >= 0 ? (int)chart->title_color : pal->text;
+    fastchart_shadow_text(im, chart, font, size, cx, baseline, 0.0,
+                          ZSTR_VAL(chart->title));
     fastchart_text_draw(im, font, size, color, cx, baseline,
                         FASTCHART_ALIGN_CENTER, ZSTR_VAL(chart->title),
                         NULL, 0);

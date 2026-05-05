@@ -39,7 +39,7 @@ echo "red_zone: ",    $has($im, 0xcc4444, 400, 300) ? "yes" : "no", "\n";
 $bytes3 = (new FastChart\GaugeChart(400, 300))
     ->setRange(0, 100)
     ->setValue(62.5)
-    ->setValueFormat('%d%%')
+    ->setValueFormat('%.0f%%')
     ->renderPng();
 echo "format: ", strlen($bytes3) > 1024 ? "ok" : "bad", "\n";
 

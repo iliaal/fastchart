@@ -758,6 +758,79 @@ FASTCHART_FONT_OVERRIDE_SETTER(setTitleFont, title_font_path, title_font_size)
 FASTCHART_FONT_OVERRIDE_SETTER(setAxisFont,  axis_font_path,  axis_font_size)
 FASTCHART_FONT_OVERRIDE_SETTER(setLabelFont, label_font_path, label_font_size)
 
+/* ----------------- format-string validation ---------------------- */
+
+/* Validate a user-supplied sprintf format string for safe use against
+ * a single double argument. Allows literal text plus exactly one
+ * conversion directive of the f/F/e/E/g/G family (with optional
+ * flags / width / precision). Rejects %s (wrong-arg-type crash),
+ * %n (write-where), %d/%i/%x/etc. (wrong-type), embedded NULs, and
+ * format strings with zero or more than one numeric conversion.
+ *
+ * Returns 0 on success, -1 with an exception thrown on failure.
+ * `where` is the method name shown in the error. Empty format
+ * strings (length 0) are treated as the "clear / use default"
+ * sentinel and accepted without further checks. */
+static int fastchart_validate_double_format(const zend_string *fmt, const char *where)
+{
+    if (!fmt || ZSTR_LEN(fmt) == 0) return 0;
+
+    const char *p = ZSTR_VAL(fmt);
+    size_t len = ZSTR_LEN(fmt);
+    if (memchr(p, 0, len) != NULL) {
+        zend_value_error("FastChart\\Chart::%s() format contains an embedded NUL", where);
+        return -1;
+    }
+
+    int n_conversions = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (p[i] != '%') continue;
+        if (i + 1 < len && p[i + 1] == '%') {  /* literal %% */
+            i++;
+            continue;
+        }
+        i++;  /* skip the % */
+        /* Skip flags */
+        while (i < len && (p[i] == '-' || p[i] == '+' || p[i] == ' ' ||
+                            p[i] == '#' || p[i] == '0' || p[i] == '\'')) i++;
+        /* Skip width */
+        while (i < len && p[i] >= '0' && p[i] <= '9') i++;
+        /* Skip precision */
+        if (i < len && p[i] == '.') {
+            i++;
+            while (i < len && p[i] >= '0' && p[i] <= '9') i++;
+        }
+        /* Reject length modifiers (l, ll, h, etc. -- they imply
+         * non-double arg types). */
+        if (i < len && (p[i] == 'l' || p[i] == 'L' || p[i] == 'h' ||
+                        p[i] == 'j' || p[i] == 'z' || p[i] == 't')) {
+            zend_value_error("FastChart\\Chart::%s() length modifiers are not allowed in format strings", where);
+            return -1;
+        }
+        /* Conversion specifier must be one of the double family. */
+        if (i >= len) {
+            zend_value_error("FastChart\\Chart::%s() format ends with an incomplete conversion", where);
+            return -1;
+        }
+        char c = p[i];
+        if (c != 'f' && c != 'F' && c != 'e' && c != 'E' && c != 'g' && c != 'G') {
+            zend_value_error("FastChart\\Chart::%s() format must use one numeric conversion (f/F/e/E/g/G), got '%%%c'", where, c);
+            return -1;
+        }
+        n_conversions++;
+        if (n_conversions > 1) {
+            zend_value_error("FastChart\\Chart::%s() format must contain exactly one numeric conversion", where);
+            return -1;
+        }
+    }
+
+    if (n_conversions == 0) {
+        zend_value_error("FastChart\\Chart::%s() format must contain exactly one numeric conversion", where);
+        return -1;
+    }
+    return 0;
+}
+
 /* ----------------- show values ----------------------------------- */
 
 ZEND_METHOD(FastChart_Chart, setShowValues)
@@ -769,6 +842,12 @@ ZEND_METHOD(FastChart_Chart, setShowValues)
         Z_PARAM_OPTIONAL
         Z_PARAM_STR(fmt)
     ZEND_PARSE_PARAMETERS_END();
+
+    if (fmt && ZSTR_LEN(fmt) > 0) {
+        if (fastchart_validate_double_format(fmt, "setShowValues") != 0) {
+            RETURN_THROWS();
+        }
+    }
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     self->show_values = show;
@@ -912,8 +991,8 @@ ZEND_METHOD(FastChart_Chart, setYAxisVisible)
         ZEND_PARSE_PARAMETERS_START(1, 1) \
             Z_PARAM_STR(fmt) \
         ZEND_PARSE_PARAMETERS_END(); \
-        if (ZSTR_LEN(fmt) > 0 && memchr(ZSTR_VAL(fmt), 0, ZSTR_LEN(fmt))) { \
-            zend_value_error("FastChart\\Chart::" #name_ "() format contains an embedded NUL"); \
+        if (ZSTR_LEN(fmt) > 0 && \
+            fastchart_validate_double_format(fmt, #name_) != 0) { \
             RETURN_THROWS(); \
         } \
         fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
@@ -1358,6 +1437,10 @@ ZEND_METHOD(FastChart_SurfaceChart, setShowCellValues)
         Z_PARAM_OPTIONAL
         Z_PARAM_STR(fmt)
     ZEND_PARSE_PARAMETERS_END();
+    if (fmt && ZSTR_LEN(fmt) > 0 &&
+        fastchart_validate_double_format(fmt, "setShowCellValues") != 0) {
+        RETURN_THROWS();
+    }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     self->surface_show_values = show;
     if (fmt) {
@@ -1417,8 +1500,8 @@ ZEND_METHOD(FastChart_GaugeChart, setValueFormat)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_STR(fmt)
     ZEND_PARSE_PARAMETERS_END();
-    if (ZSTR_LEN(fmt) > 0 && memchr(ZSTR_VAL(fmt), 0, ZSTR_LEN(fmt))) {
-        zend_value_error("FastChart\\GaugeChart::setValueFormat() format contains an embedded NUL");
+    if (ZSTR_LEN(fmt) > 0 &&
+        fastchart_validate_double_format(fmt, "GaugeChart::setValueFormat") != 0) {
         RETURN_THROWS();
     }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
@@ -1475,11 +1558,23 @@ ZEND_METHOD(FastChart_Chart, getImageMap)
     }
 
     smart_str out = {0};
+
+    /* Map name: HTML5 imagemap names allow letters, digits, '-' and '_'.
+     * Anything else gets stripped to keep the output well-formed and
+     * prevent attribute-injection through a crafted name. */
     smart_str_appends(&out, "<map name=\"");
-    if (ZEND_NUM_ARGS() < 1 || !name || ZSTR_LEN(name) == 0) {
-        smart_str_appends(&out, "fastchart");
-    } else {
-        smart_str_append(&out, name);
+    const char *map_name = "fastchart";
+    size_t map_name_len = sizeof("fastchart") - 1;
+    if (ZEND_NUM_ARGS() >= 1 && name && ZSTR_LEN(name) > 0) {
+        map_name = ZSTR_VAL(name);
+        map_name_len = ZSTR_LEN(name);
+    }
+    for (size_t i = 0; i < map_name_len; i++) {
+        char c = map_name[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_') {
+            smart_str_appendc(&out, c);
+        }
     }
     smart_str_appends(&out, "\">");
 
@@ -1492,16 +1587,62 @@ ZEND_METHOD(FastChart_Chart, getImageMap)
         zval *zh = zend_hash_str_find(Z_ARRVAL_P(entry), "href", sizeof("href") - 1);
         zval *zt = zend_hash_str_find(Z_ARRVAL_P(entry), "title", sizeof("title") - 1);
         if (!zx || !zy || !zr || !zh) continue;
+        if (Z_TYPE_P(zh) != IS_STRING) continue;
+
+        /* Scheme allowlist: dangerous URL schemes (javascript:, data:,
+         * vbscript:) are rejected. Relative paths, fragments, and
+         * mailto: are allowed alongside http(s). Reject the whole
+         * <area> entry on a bad scheme rather than emit a sanitized
+         * one -- callers can audit their input. */
+        const char *href_str = Z_STRVAL_P(zh);
+        size_t href_len = Z_STRLEN_P(zh);
+        bool href_ok = false;
+        if (href_len == 0) {
+            href_ok = true;
+        } else if (href_str[0] == '/' || href_str[0] == '#') {
+            href_ok = true;
+        } else if (zend_binary_strncasecmp(href_str, href_len, "http://",  7,  7) == 0 ||
+                   zend_binary_strncasecmp(href_str, href_len, "https://", 8,  8) == 0 ||
+                   zend_binary_strncasecmp(href_str, href_len, "mailto:",  7,  7) == 0) {
+            href_ok = true;
+        }
+        if (!href_ok) continue;
+
         char buf[256];
         int n = snprintf(buf, sizeof(buf),
-            "<area shape=\"circle\" coords=\"%ld,%ld,%ld\" href=\"",
-            (long)Z_LVAL_P(zx), (long)Z_LVAL_P(zy), (long)Z_LVAL_P(zr));
+            "<area shape=\"circle\" coords=\"" ZEND_LONG_FMT "," ZEND_LONG_FMT "," ZEND_LONG_FMT "\" href=\"",
+            Z_LVAL_P(zx), Z_LVAL_P(zy), Z_LVAL_P(zr));
         smart_str_appendl(&out, buf, n);
-        if (Z_TYPE_P(zh) == IS_STRING) smart_str_append(&out, Z_STR_P(zh));
+
+        /* HTML-escape the href value: &, <, >, " each become their
+         * entity form. Single quotes don't need escaping inside a
+         * double-quoted attribute. */
+        for (size_t i = 0; i < href_len; i++) {
+            char c = href_str[i];
+            switch (c) {
+                case '&':  smart_str_appends(&out, "&amp;");  break;
+                case '<':  smart_str_appends(&out, "&lt;");   break;
+                case '>':  smart_str_appends(&out, "&gt;");   break;
+                case '"':  smart_str_appends(&out, "&quot;"); break;
+                default:   smart_str_appendc(&out, c);
+            }
+        }
         smart_str_appends(&out, "\"");
+
         if (zt && Z_TYPE_P(zt) == IS_STRING) {
             smart_str_appends(&out, " title=\"");
-            smart_str_append(&out, Z_STR_P(zt));
+            const char *t_str = Z_STRVAL_P(zt);
+            size_t t_len = Z_STRLEN_P(zt);
+            for (size_t i = 0; i < t_len; i++) {
+                char c = t_str[i];
+                switch (c) {
+                    case '&':  smart_str_appends(&out, "&amp;");  break;
+                    case '<':  smart_str_appends(&out, "&lt;");   break;
+                    case '>':  smart_str_appends(&out, "&gt;");   break;
+                    case '"':  smart_str_appends(&out, "&quot;"); break;
+                    default:   smart_str_appendc(&out, c);
+                }
+            }
             smart_str_appends(&out, "\"");
         }
         smart_str_appends(&out, ">");
@@ -1904,6 +2045,10 @@ ZEND_METHOD(FastChart_PieChart, setSliceLabelFormat)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_STR(fmt)
     ZEND_PARSE_PARAMETERS_END();
+    if (ZSTR_LEN(fmt) > 0 &&
+        fastchart_validate_double_format(fmt, "PieChart::setSliceLabelFormat") != 0) {
+        RETURN_THROWS();
+    }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (self->slice_label_format) zend_string_release(self->slice_label_format);
     self->slice_label_format = zend_string_copy(fmt);

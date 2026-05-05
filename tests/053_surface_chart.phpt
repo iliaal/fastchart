@@ -37,7 +37,7 @@ echo "high_is_reddish: ", ($hr > $hb ? "yes" : "no ($hr,$hb)"), "\n";
 // Show cell values on a small grid.
 $bytes2 = (new FastChart\SurfaceChart(400, 300))
     ->setGrid([[1, 2], [3, 4]])
-    ->setShowCellValues(true, '%d')
+    ->setShowCellValues(true, '%.0f')
     ->renderPng();
 echo "with_values: ", strlen($bytes2) > 1024 ? "ok" : "bad", "\n";
 

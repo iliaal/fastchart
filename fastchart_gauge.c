@@ -164,14 +164,7 @@ int fastchart_gauge_render_to_image(fastchart_obj *self, gdImagePtr im)
     }
 
     /* Title. */
-    if (self->title && ZSTR_LEN(self->title) > 0 && font && !self->thumbnail_mode) {
-        double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-        double size = fastchart_resolve_font_size(self, "title", base * 1.4);
-        int color = self->title_color >= 0 ? (int)self->title_color : pal.text;
-        fastchart_shadow_text(im, self, font, size, W / 2, 24, 0.0, ZSTR_VAL(self->title));
-        fastchart_text_draw(im, font, size, color, W / 2, 24,
-                            FASTCHART_ALIGN_CENTER, ZSTR_VAL(self->title), NULL, 0);
-    }
+    fastchart_draw_floating_title(im, self, &pal, W / 2, 24);
 
     fastchart_draw_text_annotations(im, self, &pal);
     return 0;

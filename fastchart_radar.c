@@ -216,15 +216,7 @@ int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im)
     }
 
     /* Title at top center. */
-    if (self->title && ZSTR_LEN(self->title) > 0 && font && !self->thumbnail_mode) {
-        double title_size = fastchart_resolve_font_size(self, "title", base * 1.4);
-        int title_color = self->title_color >= 0 ? (int)self->title_color : pal.text;
-        fastchart_shadow_text(im, self, font, title_size,
-                              W / 2, 24, 0.0, ZSTR_VAL(self->title));
-        fastchart_text_draw(im, font, title_size, title_color,
-                            W / 2, 24, FASTCHART_ALIGN_CENTER,
-                            ZSTR_VAL(self->title), NULL, 0);
-    }
+    fastchart_draw_floating_title(im, self, &pal, W / 2, 24);
 
     /* Legend: reuse the standard helper with a synthetic "plot rect"
      * spanning the entire canvas so positioning works. */

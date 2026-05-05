@@ -33,7 +33,7 @@ for ($i = 0; $i < 5; $i++) {
 }
 $bytes_x = (new FastChart\StockChart(600, 400))
     ->setOhlcv($rows)
-    ->setXAxisLabelFormat('%d')
+    ->setXAxisLabelFormat('%.0f')
     ->renderPng();
 echo "x_format_renders: ", strlen($bytes_x) > 1024 ? "ok" : "bad", "\n";
 ?>

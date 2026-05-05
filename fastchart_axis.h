@@ -71,10 +71,19 @@ void fastchart_draw_frame(gdImagePtr im, fastchart_obj *chart,
                           const fastchart_rect *plot,
                           const fastchart_palette *pal);
 
-/* Draw the title above the plot area (no-op if title is empty). */
+/* Draw the title above the plot area (no-op if title is empty).
+ * Includes drop-shadow underneath when the chart has setDropShadow()
+ * configured. */
 void fastchart_draw_title(gdImagePtr im, fastchart_obj *chart,
                           const fastchart_rect *plot,
                           const fastchart_palette *pal);
+
+/* Like fastchart_draw_title but takes the title baseline directly
+ * (no plot rect). Used by charts with a non-rectangular layout
+ * (radar, gauge, polar, surface, contour). Includes drop-shadow. */
+void fastchart_draw_floating_title(gdImagePtr im, fastchart_obj *chart,
+                                   const fastchart_palette *pal,
+                                   int cx, int baseline);
 
 /* Draw the Y axis: vertical line, tick marks, labels (one per tick),
  * and horizontal grid lines. */
