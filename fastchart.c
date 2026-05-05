@@ -23,7 +23,6 @@
 
 #include <math.h>
 #include <string.h>
-#include <strings.h>
 #include <sys/stat.h>
 
 #include "php_fastchart.h"
@@ -640,7 +639,6 @@ ZEND_METHOD(FastChart_Chart, addHorizontalLine)
 {
     double value;
     zend_string *label = NULL;
-    bool label_is_null = true;
     zend_long color = 0;
     bool color_is_null = true;
 
@@ -650,7 +648,6 @@ ZEND_METHOD(FastChart_Chart, addHorizontalLine)
         Z_PARAM_STR_OR_NULL(label)
         Z_PARAM_LONG_OR_NULL(color, color_is_null)
     ZEND_PARSE_PARAMETERS_END();
-    label_is_null = (label == NULL);
 
     if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
         zend_value_error("FastChart\\Chart::addHorizontalLine() color out of range; expected 0..0xFFFFFF");
@@ -658,9 +655,7 @@ ZEND_METHOD(FastChart_Chart, addHorizontalLine)
     }
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    push_annotation(self, "h", value,
-                    label_is_null ? NULL : label,
-                    !color_is_null, color);
+    push_annotation(self, "h", value, label, !color_is_null, color);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -1144,25 +1139,9 @@ ZEND_METHOD(FastChart_Chart, setThumbnailMode)
 
 /* ----------------- per-element text colors ----------------------- */
 
-#define FASTCHART_TEXT_COLOR_SETTER(name_, field_) \
-    ZEND_METHOD(FastChart_Chart, name_) \
-    { \
-        zend_long rgb; \
-        ZEND_PARSE_PARAMETERS_START(1, 1) \
-            Z_PARAM_LONG(rgb) \
-        ZEND_PARSE_PARAMETERS_END(); \
-        if (rgb < -1 || rgb > 0xFFFFFF) { \
-            zend_value_error("FastChart\\Chart::" #name_ "() expects -1 or 0..0xFFFFFF"); \
-            RETURN_THROWS(); \
-        } \
-        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
-        self->field_ = rgb; \
-        RETURN_ZVAL(ZEND_THIS, 1, 0); \
-    }
-
-FASTCHART_TEXT_COLOR_SETTER(setTitleColor,      title_color)
-FASTCHART_TEXT_COLOR_SETTER(setAxisLabelColor,  axis_label_color)
-FASTCHART_TEXT_COLOR_SETTER(setAxisTitleColor,  axis_title_color)
+FASTCHART_COLOR_OVERRIDE_SETTER(setTitleColor,     title_color)
+FASTCHART_COLOR_OVERRIDE_SETTER(setAxisLabelColor, axis_label_color)
+FASTCHART_COLOR_OVERRIDE_SETTER(setAxisTitleColor, axis_title_color)
 
 /* ----------------- text annotation ------------------------------- */
 

@@ -288,9 +288,9 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
 
     /* Title: measure ascender height + a bit of padding. */
     if (chart->title && ZSTR_LEN(chart->title) > 0 && font) {
-        int tw, th;
+        int th;
         if (fastchart_text_measure(font, size * 1.4, ZSTR_VAL(chart->title),
-                                   &tw, &th, NULL, 0) == 0) {
+                                   NULL, &th, NULL, 0) == 0) {
             top += th + TITLE_PADDING_BELOW;
         }
     }
@@ -299,9 +299,9 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
      * actual label width is data-dependent; we pick a conservative
      * "999999" sample so layout is stable across data ranges. */
     if (has_y_axis && font) {
-        int lw, lh;
+        int lw;
         if (fastchart_text_measure(font, size, "999999",
-                                   &lw, &lh, NULL, 0) == 0) {
+                                   &lw, NULL, NULL, 0) == 0) {
             left += lw + TICK_MARK_LEN + Y_LABEL_PADDING;
         }
     }
@@ -309,10 +309,9 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
     /* Y-axis title: rotated 90deg on the left of the y-axis labels.
      * The title's height becomes its visible width after rotation. */
     if (has_y_axis && chart->y_axis_title && font) {
-        int tw, th;
+        int th;
         if (fastchart_text_measure(font, size * 1.1, ZSTR_VAL(chart->y_axis_title),
-                                   &tw, &th, NULL, 0) == 0) {
-            (void)tw;
+                                   NULL, &th, NULL, 0) == 0) {
             left += th + 8;
         }
     }
@@ -320,9 +319,9 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
     /* Secondary Y axis: mirror the left-side reservation on the
      * right edge. */
     if (has_y_axis && chart->secondary_y && font) {
-        int lw, lh;
+        int lw;
         if (fastchart_text_measure(font, size, "999999",
-                                   &lw, &lh, NULL, 0) == 0) {
+                                   &lw, NULL, NULL, 0) == 0) {
             right += lw + TICK_MARK_LEN + Y_LABEL_PADDING;
         }
     }
@@ -595,36 +594,11 @@ void fastchart_draw_frame(gdImagePtr im, fastchart_obj *chart,
         gdImageLine(im, plot->x1, plot->y0, plot->x1, plot->y1, pal->border);
 }
 
-void fastchart_draw_title(gdImagePtr im, fastchart_obj *chart,
-                          const fastchart_rect *plot,
-                          const fastchart_palette *pal)
-{
-    if (!chart->title || ZSTR_LEN(chart->title) == 0) return;
-    if (chart->thumbnail_mode) return;
-    const char *font = fastchart_resolve_font(chart, "title");
-    if (!font) return;
-
-    double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-    double size = fastchart_resolve_font_size(chart, "title", base * 1.4);
-    int color = chart->title_color >= 0 ? (int)chart->title_color : pal->text;
-
-    int W = gdImageSX(im);
-    int cx = W / 2;
-    int baseline = plot->y0 - TITLE_PADDING_BELOW;
-
-    /* Drop shadow underneath, before the actual text. No-op when the
-     * chart hasn't called setDropShadow(). */
-    fastchart_shadow_text(im, chart, font, size, cx, baseline, 0.0,
-                          ZSTR_VAL(chart->title));
-    fastchart_text_draw(im, font, size, color, cx, baseline,
-                        FASTCHART_ALIGN_CENTER, ZSTR_VAL(chart->title),
-                        NULL, 0);
-}
-
-/* Reusable for charts that don't compute a fastchart_rect plot
- * (radar / gauge / surface / polar / contour use a simple
- * "centered at top of canvas" layout). Pass the canvas-coord
- * baseline directly. */
+/* Centered title at canvas-coord baseline. Used by charts with
+ * non-rectangular layouts (radar / gauge / surface / polar /
+ * contour) that pass the baseline directly, and by the
+ * plot-relative variant below which derives the baseline from
+ * `plot->y0`. */
 void fastchart_draw_floating_title(gdImagePtr im, fastchart_obj *chart,
                                    const fastchart_palette *pal,
                                    int cx, int baseline)
@@ -641,6 +615,15 @@ void fastchart_draw_floating_title(gdImagePtr im, fastchart_obj *chart,
     fastchart_text_draw(im, font, size, color, cx, baseline,
                         FASTCHART_ALIGN_CENTER, ZSTR_VAL(chart->title),
                         NULL, 0);
+}
+
+void fastchart_draw_title(gdImagePtr im, fastchart_obj *chart,
+                          const fastchart_rect *plot,
+                          const fastchart_palette *pal)
+{
+    fastchart_draw_floating_title(im, chart, pal,
+                                  gdImageSX(im) / 2,
+                                  plot->y0 - TITLE_PADDING_BELOW);
 }
 
 /* ------------------------------- y axis --------------------------- */
@@ -1134,8 +1117,6 @@ void fastchart_draw_overlays_categorical(gdImagePtr im, fastchart_obj *chart,
              * for log scale). Translucent fill so layered overlays
              * stay readable. */
             int zero_y = fastchart_y_to_pixel(rng->log_scale ? rng->min : 0.0, rng, plot);
-            int r = (color >> 16) & 0xFF, g = (color >> 8) & 0xFF, b = color & 0xFF;
-            (void)r; (void)g; (void)b;
             int alpha_color = gdImageColorAllocateAlpha(im,
                 gdImageRed(im, color), gdImageGreen(im, color), gdImageBlue(im, color), 80);
 
