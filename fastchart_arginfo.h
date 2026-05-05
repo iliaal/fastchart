@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: fbfabb8f143cb5f290438cdde309debb0af14388 */
+ * Stub hash: fac5d1524eab2c6bacd63e7757e6f0d5e2143c92 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -314,6 +314,11 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_setOh
 	ZEND_ARG_TYPE_INFO(0, ohlcv, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_addMovingAverage, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, period, IS_LONG, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, type, IS_LONG, 0, "FastChart\\StockChart::MA_SMA")
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_setMovingAverages, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, periods, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
@@ -505,6 +510,7 @@ ZEND_METHOD(FastChart_ScatterChart, setErrorBars);
 ZEND_METHOD(FastChart_ScatterChart, getImageMap);
 ZEND_METHOD(FastChart_ScatterChart, draw);
 ZEND_METHOD(FastChart_StockChart, setOhlcv);
+ZEND_METHOD(FastChart_StockChart, addMovingAverage);
 ZEND_METHOD(FastChart_StockChart, setMovingAverages);
 ZEND_METHOD(FastChart_StockChart, setVolumePane);
 ZEND_METHOD(FastChart_StockChart, setVolumeColors);
@@ -658,6 +664,7 @@ static const zend_function_entry class_FastChart_ScatterChart_methods[] = {
 
 static const zend_function_entry class_FastChart_StockChart_methods[] = {
 	ZEND_ME(FastChart_StockChart, setOhlcv, arginfo_class_FastChart_StockChart_setOhlcv, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_StockChart, addMovingAverage, arginfo_class_FastChart_StockChart_addMovingAverage, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, setMovingAverages, arginfo_class_FastChart_StockChart_setMovingAverages, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, setVolumePane, arginfo_class_FastChart_StockChart_setVolumePane, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, setVolumeColors, arginfo_class_FastChart_StockChart_setVolumeColors, ZEND_ACC_PUBLIC)
@@ -1106,6 +1113,18 @@ static zend_class_entry *register_class_FastChart_StockChart(zend_class_entry *c
 
 	INIT_NS_CLASS_ENTRY(ce, "FastChart", "StockChart", class_FastChart_StockChart_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	zval const_MA_SMA_value;
+	ZVAL_LONG(&const_MA_SMA_value, 0);
+	zend_string *const_MA_SMA_name = zend_string_init_interned("MA_SMA", sizeof("MA_SMA") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_MA_SMA_name, &const_MA_SMA_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_MA_SMA_name);
+
+	zval const_MA_EMA_value;
+	ZVAL_LONG(&const_MA_EMA_value, 1);
+	zend_string *const_MA_EMA_name = zend_string_init_interned("MA_EMA", sizeof("MA_EMA") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_MA_EMA_name, &const_MA_EMA_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_MA_EMA_name);
 
 	return class_entry;
 }

@@ -544,8 +544,33 @@ final class ScatterChart extends Chart
 
 final class StockChart extends Chart
 {
+    /** Moving-average kind passed to addMovingAverage(). */
+    const int MA_SMA = 0;
+    const int MA_EMA = 1;
+
     public function setOhlcv(array $ohlcv): static {}
+
+    /**
+     * Add a single moving-average overlay over the close price.
+     * `$period` is the window length in bars (>= 2). `$type` selects
+     * the smoothing kind: `MA_SMA` for the simple moving average
+     * (arithmetic mean of the last $period closes) or `MA_EMA` for
+     * the exponential moving average (alpha = 2 / (period + 1),
+     * seeded with the first $period closes).
+     *
+     * Up to 8 overlays per chart; further calls raise ValueError.
+     * Mix freely: `addMovingAverage(20, MA_SMA)` plus
+     * `addMovingAverage(12, MA_EMA)` is the typical setup.
+     */
+    public function addMovingAverage(int $period, int $type = StockChart::MA_SMA): static {}
+
+    /**
+     * Bulk shortcut for adding several SMA overlays. Equivalent to
+     * clearing the overlay list and calling `addMovingAverage($p,
+     * MA_SMA)` for each period in `$periods`.
+     */
     public function setMovingAverages(array $periods): static {}
+
     public function setVolumePane(bool $enabled): static {}
 
     /**

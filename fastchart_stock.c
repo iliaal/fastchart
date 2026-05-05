@@ -54,13 +54,18 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
 
     bool show_volume = self->volume_pane && any_volume;
 
-    /* SMA periods were validated as >= 2 in setMovingAverages(); cap
-     * each here to <= n so the inner sliding-window loop is bounded. */
+    /* MA periods were validated as >= 2 in addMovingAverage() /
+     * setMovingAverages(); cap each here to <= n so the inner
+     * sliding-window or EMA recurrence stays bounded. Carry the type
+     * tag (MA_SMA / MA_EMA) along to the draw loop. */
     int sma_periods[FASTCHART_MAX_SMA];
+    int sma_types[FASTCHART_MAX_SMA];
     int sma_count = 0;
     for (int i = 0; i < self->sma_count; i++) {
         if (self->sma_periods[i] <= n) {
-            sma_periods[sma_count++] = self->sma_periods[i];
+            sma_periods[sma_count] = self->sma_periods[i];
+            sma_types[sma_count] = self->sma_types[i];
+            sma_count++;
         }
     }
 
@@ -380,38 +385,59 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
     if (va) efree(va);
     if (vol_scale) efree(vol_scale);
 
-    /* SMA overlays. Each period gets a series color and a 2px line.
+    /* MA overlays. Each period gets a series color and a 2px line.
      * gdAntiAliased smooths the diagonals; set the AA color per
-     * overlay since gd carries one AA color across calls. */
+     * overlay since gd carries one AA color across calls. SMA uses
+     * a sliding-window sum, EMA uses the standard alpha = 2/(p+1)
+     * recurrence seeded with the SMA of the first period closes. */
     if (sma_count > 0) {
         gdImageSetThickness(im, 2);
         for (int s = 0; s < sma_count; s++) {
             int period = sma_periods[s];
+            int type = sma_types[s];
             int color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
             gdImageSetAntiAliased(im, color);
             int prev_x = 0, prev_y = 0;
             int has_prev = 0;
 
-            /* Sliding-window sum: each step subtracts the value
-             * leaving the window and adds the new one — O(n) over
-             * the whole series, vs O(n*period) for the naive
-             * recomputation. */
-            double sum = 0;
-            for (int k = 0; k < period && k < n; k++) sum += candles[k].close;
-            double inv_p = 1.0 / (double)period;
-
-            for (int i = period - 1; i < n; i++) {
-                if (i >= period) sum += candles[i].close - candles[i - period].close;
-                double avg = sum * inv_p;
-                int x = fastchart_x_time_to_pixel(&price_pane,
-                                                  candles[i].ts, t_min, t_max);
-                int y = fastchart_y_to_pixel(avg, &yrange, &price_pane);
-                if (has_prev) {
-                    gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
+            if (type == FASTCHART_MA_EMA) {
+                /* Seed EMA with SMA over the first `period` closes
+                 * so the warm-up region has a stable starting value
+                 * (raw EMA seeded with closes[0] would over-weight
+                 * the first bar for the first ~period steps). */
+                double sum = 0;
+                for (int k = 0; k < period; k++) sum += candles[k].close;
+                double ema = sum / (double)period;
+                double alpha = 2.0 / ((double)period + 1.0);
+                for (int i = period - 1; i < n; i++) {
+                    if (i >= period) {
+                        ema = alpha * candles[i].close + (1.0 - alpha) * ema;
+                    }
+                    int x = fastchart_x_time_to_pixel(&price_pane,
+                                                      candles[i].ts, t_min, t_max);
+                    int y = fastchart_y_to_pixel(ema, &yrange, &price_pane);
+                    if (has_prev) {
+                        gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
+                    }
+                    prev_x = x; prev_y = y; has_prev = 1;
                 }
-                prev_x = x;
-                prev_y = y;
-                has_prev = 1;
+            } else {
+                /* SMA via sliding-window sum: O(n) per overlay
+                 * regardless of period. */
+                double sum = 0;
+                for (int k = 0; k < period && k < n; k++) sum += candles[k].close;
+                double inv_p = 1.0 / (double)period;
+                for (int i = period - 1; i < n; i++) {
+                    if (i >= period) sum += candles[i].close - candles[i - period].close;
+                    double avg = sum * inv_p;
+                    int x = fastchart_x_time_to_pixel(&price_pane,
+                                                      candles[i].ts, t_min, t_max);
+                    int y = fastchart_y_to_pixel(avg, &yrange, &price_pane);
+                    if (has_prev) {
+                        gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
+                    }
+                    prev_x = x; prev_y = y; has_prev = 1;
+                }
             }
         }
         gdImageSetThickness(im, 1);
@@ -561,7 +587,9 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
         for (int s = 0; s < sma_count; s++) {
             legend_colors[s] = pal.series[s % FASTCHART_PALETTE_SERIES_N];
             char *slot = legend_label_storage + s * 16;
-            snprintf(slot, 16, "SMA(%d)", sma_periods[s]);
+            snprintf(slot, 16, "%s(%d)",
+                     sma_types[s] == FASTCHART_MA_EMA ? "EMA" : "SMA",
+                     sma_periods[s]);
             legend_labels[s] = slot;
         }
         fastchart_draw_legend(im, (fastchart_obj *)self, &price_pane, &pal,

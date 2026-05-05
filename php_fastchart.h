@@ -367,6 +367,7 @@ typedef struct {
     int *volume_colors;                 /* malloc'd, parallel to candles up to volume_colors_count; -1 = use up/down default */
     int volume_colors_count;
     int sma_periods[FASTCHART_MAX_SMA];
+    int sma_types[FASTCHART_MAX_SMA];   /* 0 = SMA, 1 = EMA */
     int sma_count;
     fastchart_indicator_pane indicator_panes[FASTCHART_MAX_INDICATOR_PANES];
     int indicator_pane_count;
@@ -508,6 +509,10 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define FASTCHART_STYLE_HOLLOW  4
 #define FASTCHART_STYLE_VOLUME  5
 #define FASTCHART_STYLE_VECTOR  6
+
+/* StockChart moving-average kind. */
+#define FASTCHART_MA_SMA 0
+#define FASTCHART_MA_EMA 1
 
 /* Border side bitmask. */
 #define FASTCHART_BORDER_NONE   0

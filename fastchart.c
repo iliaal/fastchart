@@ -592,6 +592,7 @@ static void fastchart_stock_init_extras(fastchart_stock_obj *o)
     o->volume_colors = NULL;
     o->volume_colors_count = 0;
     o->sma_count = 0;
+    for (int i = 0; i < FASTCHART_MAX_SMA; i++) o->sma_types[i] = FASTCHART_MA_SMA;
     o->indicator_pane_count = 0;
     for (int i = 0; i < FASTCHART_MAX_INDICATOR_PANES; i++) {
         o->indicator_panes[i].name = NULL;
@@ -3915,6 +3916,37 @@ ZEND_METHOD(FastChart_PieChart, setDonutHoleRatio)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+ZEND_METHOD(FastChart_StockChart, addMovingAverage)
+{
+    zend_long period;
+    zend_long type = FASTCHART_MA_SMA;
+    ZEND_PARSE_PARAMETERS_START(1, 2)
+        Z_PARAM_LONG(period)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(type)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (period < 2 || period > INT_MAX) {
+        zend_value_error("FastChart\\StockChart::addMovingAverage() period must be >= 2");
+        RETURN_THROWS();
+    }
+    if (type != FASTCHART_MA_SMA && type != FASTCHART_MA_EMA) {
+        zend_value_error("FastChart\\StockChart::addMovingAverage() type must be MA_SMA or MA_EMA");
+        RETURN_THROWS();
+    }
+
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    if (self->sma_count >= FASTCHART_MAX_SMA) {
+        zend_value_error("FastChart\\StockChart::addMovingAverage() supports at most %d overlays",
+                         FASTCHART_MAX_SMA);
+        RETURN_THROWS();
+    }
+    self->sma_periods[self->sma_count] = (int)period;
+    self->sma_types[self->sma_count] = (int)type;
+    self->sma_count++;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 ZEND_METHOD(FastChart_StockChart, setMovingAverages)
 {
     zval *periods;
@@ -3930,7 +3962,9 @@ ZEND_METHOD(FastChart_StockChart, setMovingAverages)
         if (self->sma_count >= FASTCHART_MAX_SMA) break;
         zend_long pp;
         if (fastchart_zval_to_long(p, &pp) == 0 && pp >= 2 && pp <= INT_MAX) {
-            self->sma_periods[self->sma_count++] = (int)pp;
+            self->sma_periods[self->sma_count] = (int)pp;
+            self->sma_types[self->sma_count] = FASTCHART_MA_SMA;
+            self->sma_count++;
         }
     } ZEND_HASH_FOREACH_END();
     RETURN_ZVAL(ZEND_THIS, 1, 0);
