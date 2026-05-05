@@ -2446,7 +2446,8 @@ ZEND_METHOD(FastChart_ScatterChart, setTrendLine)
  *                                      coerced to NaN (no error bar)
  * Returns 0 on success; never fails for shape — bad cells silently
  * become NaN slots. Caller frees out_lo / out_hi via efree(). */
-static int fastchart_parse_error_bars(zval *errs, double **out_lo,
+static int fastchart_parse_error_bars(zval *errs, uint32_t cap,
+                                      double **out_lo,
                                       double **out_hi, int *out_n)
 {
     HashTable *ht = Z_ARRVAL_P(errs);
@@ -2457,12 +2458,11 @@ static int fastchart_parse_error_bars(zval *errs, double **out_lo,
         *out_n = 0;
         return 0;
     }
-    /* Cap at the per-series point limit so error-bar arrays can't
-     * blow past the bounds the rest of the series-data parsers
-     * enforce. setErrorBars data is per-point, so the appropriate
-     * cap is FASTCHART_MAX_POINTS_PER_SERIES — extra entries beyond
-     * that simply have no data point to attach to. */
-    if (n > FASTCHART_MAX_POINTS_PER_SERIES) n = FASTCHART_MAX_POINTS_PER_SERIES;
+    /* Cap is per-chart-type: line series cap at FASTCHART_MAX_POINTS_PER_SERIES
+     * (2048), scatter at FASTCHART_MAX_SCATTER_POINTS (4096). The earlier
+     * unconditional FASTCHART_MAX_POINTS_PER_SERIES cap silently dropped
+     * scatter error bars at indices 2048..4095. */
+    if (n > cap) n = cap;
     double *lo = emalloc((size_t)n * sizeof(double));
     double *hi = emalloc((size_t)n * sizeof(double));
 
@@ -2507,7 +2507,8 @@ ZEND_METHOD(FastChart_LineChart, setErrorBars)
     self->err_lo = NULL;
     self->err_hi = NULL;
     self->err_n = 0;
-    fastchart_parse_error_bars(errs, &self->err_lo, &self->err_hi, &self->err_n);
+    fastchart_parse_error_bars(errs, FASTCHART_MAX_POINTS_PER_SERIES,
+                               &self->err_lo, &self->err_hi, &self->err_n);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -2523,7 +2524,8 @@ ZEND_METHOD(FastChart_ScatterChart, setErrorBars)
     self->err_lo = NULL;
     self->err_hi = NULL;
     self->err_n = 0;
-    fastchart_parse_error_bars(errs, &self->err_lo, &self->err_hi, &self->err_n);
+    fastchart_parse_error_bars(errs, FASTCHART_MAX_SCATTER_POINTS,
+                               &self->err_lo, &self->err_hi, &self->err_n);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -3862,14 +3864,24 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         zend_value_error("FastChart\\Chart::renderToFile() could not infer format from extension; expected .png/.jpg/.jpeg/.webp/.gif/.avif");
         RETURN_THROWS();
     }
-    /* Match the per-format render*() validators: WebP and AVIF accept
-     * quality 0 (smallest, lowest fidelity); only the JPEG encoder
-     * treats 0 as degenerate. The libgd encoder folds 0 into "best
-     * compression" for PNG too. Allow 0 across formats here so
-     * renderToFile is consistent with renderWebp() / renderAvif(). */
-    if (quality < 0 || quality > 100) {
-        zend_value_error("FastChart\\Chart::renderToFile() quality must be in [0, 100]");
-        RETURN_THROWS();
+    /* Format-conditional quality validation. JPEG quality 0 is
+     * degenerate (max compression, near-unrecognisable output) and
+     * matches what renderJpeg() rejects, so reject it here too.
+     * WebP and AVIF treat 0 as a valid "smallest size, lowest
+     * fidelity" setting and renderWebp / renderAvif accept it.
+     * PNG and GIF ignore the argument entirely (libgd doesn't expose
+     * a per-call zlib level for PngPtr / GifPtr) but we still
+     * sanity-check the range. */
+    if (format == 1) {  /* JPEG */
+        if (quality < 1 || quality > 100) {
+            zend_value_error("FastChart\\Chart::renderToFile() JPEG quality must be in [1, 100]");
+            RETURN_THROWS();
+        }
+    } else {  /* PNG / WebP / GIF / AVIF */
+        if (quality < 0 || quality > 100) {
+            zend_value_error("FastChart\\Chart::renderToFile() quality must be in [0, 100]");
+            RETURN_THROWS();
+        }
     }
     if (php_check_open_basedir(ZSTR_VAL(path))) {
         RETURN_THROWS();
