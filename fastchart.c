@@ -54,8 +54,6 @@ static zend_object_handlers fastchart_object_handlers;
  * setFontPath() before any text-rendering chart method. */
 static zend_string *fastchart_default_font_path = NULL;
 
-/* --------------------- object create / free / clone ---------------- */
-
 static zend_object *fastchart_create_object(zend_class_entry *ce)
 {
     fastchart_obj *intern = zend_object_alloc(sizeof(fastchart_obj), ce);
@@ -263,8 +261,6 @@ static zend_object *fastchart_clone_object(zend_object *src_obj)
     return &dst->std;
 }
 
-/* --------------------- font default detection ---------------------- */
-
 /* Common locations for a sans-serif TTF that ships by default on the
  * platforms PIE supports. Probed in order; the first existing path
  * becomes the auto-detected default. setFontPath() overrides per
@@ -299,8 +295,6 @@ static zend_string *fastchart_probe_default_font(void)
     }
     return NULL;
 }
-
-/* ---------------- FastChart\Chart base method bodies --------------- */
 
 ZEND_METHOD(FastChart_Chart, __construct)
 {
@@ -487,8 +481,6 @@ ZEND_METHOD(FastChart_Chart, setCategoryLabels)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ---------------- background / palette overrides ----------------- */
-
 ZEND_METHOD(FastChart_Chart, setBackgroundColor)
 {
     zend_long rgb;
@@ -551,8 +543,6 @@ ZEND_METHOD(FastChart_Chart, setSeriesColors)
 
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* ---------------- legend / scale / strict / annotations ---------- */
 
 ZEND_METHOD(FastChart_Chart, setLegendPosition)
 {
@@ -709,8 +699,6 @@ ZEND_METHOD(FastChart_Chart, addVerticalLine)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ---------------- LineChart / ScatterChart marker setters -------- */
-
 #define FASTCHART_MARKER_SETTERS(class_) \
     ZEND_METHOD(class_, setMarkerStyle) \
     { \
@@ -744,8 +732,6 @@ ZEND_METHOD(FastChart_Chart, addVerticalLine)
 FASTCHART_MARKER_SETTERS(FastChart_LineChart)
 FASTCHART_MARKER_SETTERS(FastChart_ScatterChart)
 
-/* ----------------- per-element color overrides ------------------ */
-
 #define FASTCHART_COLOR_OVERRIDE_SETTER(name_, field_) \
     ZEND_METHOD(FastChart_Chart, name_) \
     { \
@@ -766,8 +752,6 @@ FASTCHART_COLOR_OVERRIDE_SETTER(setAxisColor,   axis_color_override)
 FASTCHART_COLOR_OVERRIDE_SETTER(setGridColor,   grid_color_override)
 FASTCHART_COLOR_OVERRIDE_SETTER(setBorderColor, border_color_override)
 FASTCHART_COLOR_OVERRIDE_SETTER(setTextColor,   text_color_override)
-
-/* ----------------- per-element font overrides -------------------- */
 
 #define FASTCHART_FONT_OVERRIDE_SETTER(name_, path_field_, size_field_) \
     ZEND_METHOD(FastChart_Chart, name_) \
@@ -805,8 +789,6 @@ FASTCHART_COLOR_OVERRIDE_SETTER(setTextColor,   text_color_override)
 FASTCHART_FONT_OVERRIDE_SETTER(setTitleFont, title_font_path, title_font_size)
 FASTCHART_FONT_OVERRIDE_SETTER(setAxisFont,  axis_font_path,  axis_font_size)
 FASTCHART_FONT_OVERRIDE_SETTER(setLabelFont, label_font_path, label_font_size)
-
-/* ----------------- format-string validation ---------------------- */
 
 /* Validate a user-supplied sprintf format string for safe use against
  * a single double argument. Allows literal text plus exactly one
@@ -879,8 +861,6 @@ static int fastchart_validate_double_format(const zend_string *fmt, const char *
     return 0;
 }
 
-/* ----------------- show values ----------------------------------- */
-
 ZEND_METHOD(FastChart_Chart, setShowValues)
 {
     bool show;
@@ -905,8 +885,6 @@ ZEND_METHOD(FastChart_Chart, setShowValues)
     }
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* ----------------- transparent bg + bg image --------------------- */
 
 FASTCHART_BOOL_SETTER(FastChart_Chart, setTransparentBackground, transparent_bg)
 
@@ -933,8 +911,6 @@ ZEND_METHOD(FastChart_Chart, setBackgroundImage)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ----------------- line interpolation ---------------------------- */
-
 ZEND_METHOD(FastChart_Chart, setLineInterpolation)
 {
     zend_long mode;
@@ -949,8 +925,6 @@ ZEND_METHOD(FastChart_Chart, setLineInterpolation)
     self->line_interpolation = mode;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* ----------------- hard plot rectangle --------------------------- */
 
 ZEND_METHOD(FastChart_Chart, setPlotRect)
 {
@@ -982,8 +956,6 @@ ZEND_METHOD(FastChart_Chart, setPlotRect)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ----------------- border sides ---------------------------------- */
-
 ZEND_METHOD(FastChart_Chart, setBorderSides)
 {
     zend_long sides;
@@ -1001,8 +973,6 @@ ZEND_METHOD(FastChart_Chart, setBorderSides)
 
 FASTCHART_BOOL_SETTER(FastChart_Chart, setXAxisVisible, x_axis_visible)
 FASTCHART_BOOL_SETTER(FastChart_Chart, setYAxisVisible, y_axis_visible)
-
-/* ----------------- axis label format ----------------------------- */
 
 #define FASTCHART_LABEL_FORMAT_SETTER(name_, field_) \
     ZEND_METHOD(FastChart_Chart, name_) \
@@ -1024,8 +994,6 @@ FASTCHART_BOOL_SETTER(FastChart_Chart, setYAxisVisible, y_axis_visible)
 FASTCHART_LABEL_FORMAT_SETTER(setYAxisLabelFormat, y_axis_label_format)
 FASTCHART_LABEL_FORMAT_SETTER(setXAxisLabelFormat, x_axis_label_format)
 
-/* ----------------- tick mode ------------------------------------- */
-
 ZEND_METHOD(FastChart_Chart, setTickMode)
 {
     zend_long m;
@@ -1040,8 +1008,6 @@ ZEND_METHOD(FastChart_Chart, setTickMode)
     self->tick_mode = m;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* ----------------- bar width ------------------------------------- */
 
 ZEND_METHOD(FastChart_Chart, setBarWidth)
 {
@@ -1058,8 +1024,6 @@ ZEND_METHOD(FastChart_Chart, setBarWidth)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ----------------- edge color ------------------------------------ */
-
 ZEND_METHOD(FastChart_Chart, setEdgeColor)
 {
     zend_long rgb;
@@ -1075,11 +1039,7 @@ ZEND_METHOD(FastChart_Chart, setEdgeColor)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ----------------- zero shelf ------------------------------------ */
-
 FASTCHART_BOOL_SETTER(FastChart_Chart, setZeroShelf, zero_shelf)
-
-/* ----------------- x-label stride -------------------------------- */
 
 ZEND_METHOD(FastChart_Chart, setXLabelStride)
 {
@@ -1095,8 +1055,6 @@ ZEND_METHOD(FastChart_Chart, setXLabelStride)
     self->x_label_stride = n;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* ----------------- secondary y axis title ------------------------ */
 
 ZEND_METHOD(FastChart_Chart, setSecondaryYAxisTitle)
 {
@@ -1114,11 +1072,7 @@ ZEND_METHOD(FastChart_Chart, setSecondaryYAxisTitle)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ----------------- thumbnail mode -------------------------------- */
-
 FASTCHART_BOOL_SETTER(FastChart_Chart, setThumbnailMode, thumbnail_mode)
-
-/* ----------------- per-element text colors ----------------------- */
 
 FASTCHART_COLOR_OVERRIDE_SETTER(setTitleColor,     title_color)
 FASTCHART_COLOR_OVERRIDE_SETTER(setAxisLabelColor, axis_label_color)
@@ -1144,8 +1098,6 @@ ZEND_METHOD(FastChart_Chart, setColorRamp)
     self->color_ramp_high = hi;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* ----------------- text annotation ------------------------------- */
 
 ZEND_METHOD(FastChart_Chart, addTextAnnotation)
 {
@@ -1196,8 +1148,6 @@ ZEND_METHOD(FastChart_Chart, addTextAnnotation)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ----------------- BarChart stack mode + floating ---------------- */
-
 ZEND_METHOD(FastChart_BarChart, setStackMode)
 {
     zend_long m;
@@ -1215,8 +1165,6 @@ ZEND_METHOD(FastChart_BarChart, setStackMode)
 
 FASTCHART_BOOL_SETTER(FastChart_BarChart, setFloating, bar_floating)
 
-/* ----------------- line style ----------------------------------- */
-
 ZEND_METHOD(FastChart_Chart, setLineStyle)
 {
     zend_long s;
@@ -1231,8 +1179,6 @@ ZEND_METHOD(FastChart_Chart, setLineStyle)
     self->line_style = s;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* ----------------- gradient fill -------------------------------- */
 
 ZEND_METHOD(FastChart_Chart, setGradientFill)
 {
@@ -1261,8 +1207,6 @@ ZEND_METHOD(FastChart_Chart, setGradientFill)
     self->gradient_dir = dir;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* ----------------- drop shadow ---------------------------------- */
 
 ZEND_METHOD(FastChart_Chart, setDropShadow)
 {
@@ -1294,7 +1238,20 @@ ZEND_METHOD(FastChart_Chart, setDropShadow)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ----------------- ScatterChart::setTrendLine ------------------- */
+ZEND_METHOD(FastChart_Chart, setShadowAlpha)
+{
+    zend_long alpha;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(alpha)
+    ZEND_PARSE_PARAMETERS_END();
+    if (alpha < 0 || alpha > 127) {
+        zend_value_error("FastChart\\Chart::setShadowAlpha() expects 0..127 (libgd alpha)");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->shadow_alpha = alpha;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
 ZEND_METHOD(FastChart_ScatterChart, setTrendLine)
 {
@@ -1325,8 +1282,6 @@ ZEND_METHOD(FastChart_ScatterChart, setTrendLine)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ----------------- error bars ----------------------------------- */
-
 #define FASTCHART_ERROR_BARS_SETTER(class_) \
     ZEND_METHOD(class_, setErrorBars) \
     { \
@@ -1344,8 +1299,6 @@ ZEND_METHOD(FastChart_ScatterChart, setTrendLine)
 
 FASTCHART_ERROR_BARS_SETTER(FastChart_LineChart)
 FASTCHART_ERROR_BARS_SETTER(FastChart_ScatterChart)
-
-/* ----------------- RadarChart setters --------------------------- */
 
 ZEND_METHOD(FastChart_RadarChart, setMaxValue)
 {
@@ -1366,8 +1319,6 @@ ZEND_METHOD(FastChart_RadarChart, setMaxValue)
 }
 
 FASTCHART_BOOL_SETTER(FastChart_RadarChart, setFilled, radar_filled)
-
-/* ----------------- SurfaceChart setters ------------------------- */
 
 
 ZEND_METHOD(FastChart_SurfaceChart, setShowCellValues)
@@ -1391,8 +1342,6 @@ ZEND_METHOD(FastChart_SurfaceChart, setShowCellValues)
     }
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* ----------------- GaugeChart setters --------------------------- */
 
 ZEND_METHOD(FastChart_GaugeChart, setValue)
 {
@@ -1459,8 +1408,6 @@ ZEND_METHOD(FastChart_GaugeChart, setValueFormat)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ----------------- date axis stride ----------------------------- */
-
 ZEND_METHOD(FastChart_Chart, setDateAxisStride)
 {
     zend_long unit, every = 1;
@@ -1482,8 +1429,6 @@ ZEND_METHOD(FastChart_Chart, setDateAxisStride)
     self->date_axis_every = every;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* ----------------- image map ------------------------------------ */
 
 /* Walk a flat list of points (Scatter/Bubble shape) and emit
  * <area> entries for those that carry an 'href' / 'tooltip' key.
@@ -1562,6 +1507,11 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
         if (href_len == 0) {
             href_ok = true;
         } else if (href_str[0] == '/' || href_str[0] == '#') {
+            /* Single leading '/' covers absolute paths (/foo) and the
+             * legacy protocol-relative form (//host/path), which the
+             * browser resolves against the page scheme. The XSS surface
+             * is the same as an explicit https:// since the scheme is
+             * inherited, not chosen by the link. */
             href_ok = true;
         } else if (zend_binary_strncasecmp(href_str, href_len, "http://",  7,  7) == 0 ||
                    zend_binary_strncasecmp(href_str, href_len, "https://", 8,  8) == 0 ||
@@ -1623,8 +1573,6 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
     RETURN_STR(out.s);
 }
 
-/* ----------------- GanttChart setters --------------------------- */
-
 ZEND_METHOD(FastChart_GanttChart, setTimeRange)
 {
     zend_long start = 0, end = 0;
@@ -1650,8 +1598,6 @@ ZEND_METHOD(FastChart_GanttChart, setTimeRange)
 
 FASTCHART_BOOL_SETTER(FastChart_GanttChart, setShowTaskLabels, gantt_show_labels)
 
-/* ----------------- BoxPlot setters ------------------------------ */
-
 ZEND_METHOD(FastChart_BoxPlot, setBoxWidth)
 {
     zend_long pct;
@@ -1666,8 +1612,6 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxWidth)
     self->box_width_pct = pct;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* ----------------- PolarChart setters --------------------------- */
 
 ZEND_METHOD(FastChart_PolarChart, setMaxRadius)
 {
@@ -1689,8 +1633,6 @@ ZEND_METHOD(FastChart_PolarChart, setMaxRadius)
 
 FASTCHART_BOOL_SETTER(FastChart_PolarChart, setFilled, polar_filled)
 
-/* ----------------- ContourChart setters ------------------------- */
-
 ZEND_METHOD(FastChart_ContourChart, setLevels)
 {
     zval *levels;
@@ -1706,8 +1648,6 @@ ZEND_METHOD(FastChart_ContourChart, setLevels)
 }
 
 FASTCHART_BOOL_SETTER(FastChart_ContourChart, setFilled, contour_filled)
-
-/* ----------------- combo overlay --------------------------------- */
 
 ZEND_METHOD(FastChart_Chart, addOverlaySeries)
 {
@@ -1771,8 +1711,6 @@ ZEND_METHOD(FastChart_Chart, addOverlaySeries)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ----------------- PieChart::setOtherThreshold ------------------- */
-
 ZEND_METHOD(FastChart_PieChart, setOtherThreshold)
 {
     double percent;
@@ -1803,8 +1741,6 @@ ZEND_METHOD(FastChart_PieChart, setOtherThreshold)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ----------------- StockChart::setVolumeColors ------------------- */
-
 ZEND_METHOD(FastChart_StockChart, setVolumeColors)
 {
     zval *colors;
@@ -1818,8 +1754,6 @@ ZEND_METHOD(FastChart_StockChart, setVolumeColors)
     add_assoc_zval(&self->config, "volume_colors", &colors_copy);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* ---------------- axis titles + label rotation ------------------- */
 
 ZEND_METHOD(FastChart_Chart, setXAxisTitle)
 {
@@ -1869,8 +1803,6 @@ ZEND_METHOD(FastChart_Chart, setXAxisLabelAngle)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ---------------- forced Y-axis range ----------------------------- */
-
 ZEND_METHOD(FastChart_Chart, setYAxisRange)
 {
     double y_min = 0, y_max = 0, y_int = 0;
@@ -1909,11 +1841,7 @@ ZEND_METHOD(FastChart_Chart, setYAxisRange)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ---------------- secondary Y axis -------------------------------- */
-
 FASTCHART_BOOL_SETTER(FastChart_Chart, setSecondaryYAxis, secondary_y)
-
-/* ---------------- pie label / explode ----------------------------- */
 
 ZEND_METHOD(FastChart_PieChart, setExplode)
 {
@@ -1960,8 +1888,6 @@ ZEND_METHOD(FastChart_PieChart, setSliceLabelFormat)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* ---------------- StockChart candle style ------------------------- */
-
 ZEND_METHOD(FastChart_StockChart, setCandleStyle)
 {
     zend_long style;
@@ -1976,8 +1902,6 @@ ZEND_METHOD(FastChart_StockChart, setCandleStyle)
     self->candle_style = style;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* ---------------- AreaChart-specific setters ---------------------- */
 
 ZEND_METHOD(FastChart_AreaChart, setSeries)
 {
@@ -2017,8 +1941,6 @@ ZEND_METHOD(FastChart_AreaChart, setFillOpacity)
     self->area_alpha = alpha;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* ----------------- renderPng / renderJpeg / renderWebp ----------- */
 
 /* Dispatch by class entry. Six concrete subclasses; a single
  * if/else chain is fine -- this is per-render-call, not per-pixel.
@@ -2185,13 +2107,15 @@ static int format_from_path(const char *path, size_t len)
     }
     if (!dot) return -1;
     const char *ext = dot + 1;
-    /* lowercase compare against known extensions */
-    if (!strcasecmp(ext, "png"))  return 0;
-    if (!strcasecmp(ext, "jpg"))  return 1;
-    if (!strcasecmp(ext, "jpeg")) return 1;
-    if (!strcasecmp(ext, "webp")) return 2;
-    if (!strcasecmp(ext, "gif"))  return 3;
-    if (!strcasecmp(ext, "avif")) return 4;
+    size_t ext_len = strlen(ext);
+    /* ASCII-only fold: strcasecmp() honors the C locale, so a
+     * tr_TR.UTF-8 process would map "I" to "ı" and miss "JPG". */
+    if (zend_binary_strcasecmp(ext, ext_len, "png",  3) == 0) return 0;
+    if (zend_binary_strcasecmp(ext, ext_len, "jpg",  3) == 0) return 1;
+    if (zend_binary_strcasecmp(ext, ext_len, "jpeg", 4) == 0) return 1;
+    if (zend_binary_strcasecmp(ext, ext_len, "webp", 4) == 0) return 2;
+    if (zend_binary_strcasecmp(ext, ext_len, "gif",  3) == 0) return 3;
+    if (zend_binary_strcasecmp(ext, ext_len, "avif", 4) == 0) return 4;
     return -1;
 }
 
@@ -2451,8 +2375,6 @@ ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
     add_next_index_zval(list_zv, &entry);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
-
-/* --------------------------- module entry ------------------------- */
 
 PHP_MINIT_FUNCTION(fastchart)
 {

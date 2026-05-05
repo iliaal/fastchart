@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: d44bffea784a2e645b15c2b884aeb4b5d2d6b847 */
+ * Stub hash: fbfabb8f143cb5f290438cdde309debb0af14388 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -197,6 +197,10 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setDropSha
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, color, IS_LONG, 1, "null")
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setShadowAlpha, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, alpha, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setDateAxisStride, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, unit, IS_LONG, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, every, IS_LONG, 0, "1")
@@ -247,9 +251,7 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_AreaChart_setSta
 	ZEND_ARG_TYPE_INFO(0, stacked, _IS_BOOL, 0)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_AreaChart_setFillOpacity, 0, 1, IS_STATIC, 0)
-	ZEND_ARG_TYPE_INFO(0, alpha, IS_LONG, 0)
-ZEND_END_ARG_INFO()
+#define arginfo_class_FastChart_AreaChart_setFillOpacity arginfo_class_FastChart_Chart_setShadowAlpha
 
 #define arginfo_class_FastChart_AreaChart_draw arginfo_class_FastChart_Chart_draw
 
@@ -466,6 +468,7 @@ ZEND_METHOD(FastChart_Chart, addTextAnnotation);
 ZEND_METHOD(FastChart_Chart, setLineStyle);
 ZEND_METHOD(FastChart_Chart, setGradientFill);
 ZEND_METHOD(FastChart_Chart, setDropShadow);
+ZEND_METHOD(FastChart_Chart, setShadowAlpha);
 ZEND_METHOD(FastChart_Chart, setDateAxisStride);
 ZEND_METHOD(FastChart_Chart, renderPng);
 ZEND_METHOD(FastChart_Chart, renderJpeg);
@@ -593,6 +596,7 @@ static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, setLineStyle, arginfo_class_FastChart_Chart_setLineStyle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setGradientFill, arginfo_class_FastChart_Chart_setGradientFill, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setDropShadow, arginfo_class_FastChart_Chart_setDropShadow, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setShadowAlpha, arginfo_class_FastChart_Chart_setShadowAlpha, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setDateAxisStride, arginfo_class_FastChart_Chart_setDateAxisStride, ZEND_ACC_PUBLIC)
 	ZEND_RAW_FENTRY("draw", NULL, arginfo_class_FastChart_Chart_draw, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
 	ZEND_ME(FastChart_Chart, renderPng, arginfo_class_FastChart_Chart_renderPng, ZEND_ACC_PUBLIC)

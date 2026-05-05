@@ -55,8 +55,6 @@ static inline time_t fc_timegm(struct tm *tm)
 #define X_LABEL_PADDING         6
 #define TITLE_PADDING_BELOW    10
 
-/* ------------------------- zval coercion -------------------------- */
-
 int fastchart_zval_to_double(zval *zv, double *out)
 {
     switch (Z_TYPE_P(zv)) {
@@ -95,8 +93,6 @@ int fastchart_zval_to_long(zval *zv, zend_long *out)
             return -1;
     }
 }
-
-/* ----------------------- font resolution ------------------------ */
 
 /* Roles map to three buckets: title (title_font_*), axis tick + axis
  * title + xaxis/yaxis/xtitle/ytitle (axis_font_*), and label/annotation
@@ -154,8 +150,6 @@ double fastchart_resolve_font_size(fastchart_obj *chart,
     if (chart->thumbnail_mode) sz *= 0.6;
     return sz;
 }
-
-/* ------------------------ polyline drawer ----------------------- */
 
 /* Catmull-Rom interpolation of one segment (p1 -> p2) at parameter
  * t in [0, 1], with the surrounding control points p0 (or p1 if
@@ -242,8 +236,6 @@ void fastchart_draw_polyline(gdImagePtr im, fastchart_obj *chart,
     if (thickness > 1) gdImageSetThickness(im, 1);
 }
 
-/* ----------------------------- markers --------------------------- */
-
 void fastchart_draw_marker(gdImagePtr im, int x, int y,
                            int style, int size, int color)
 {
@@ -285,8 +277,6 @@ void fastchart_draw_marker(gdImagePtr im, int x, int y,
             break;
     }
 }
-
-/* ----------------------------- layout ----------------------------- */
 
 void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
                               int has_y_axis, int has_x_axis,
@@ -390,8 +380,6 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
     if (out_plot->x1 < out_plot->x0 + 10) out_plot->x1 = out_plot->x0 + 10;
     if (out_plot->y1 < out_plot->y0 + 10) out_plot->y1 = out_plot->y0 + 10;
 }
-
-/* --------------------------- value range -------------------------- */
 
 void fastchart_value_range_compute(double dmin, double dmax,
                                    int target_ticks,
@@ -556,8 +544,6 @@ int fastchart_y_to_pixel(double y,
     return plot->y1 - (int)(frac * (double)h + 0.5);
 }
 
-/* --------------------------- frame + title ------------------------- */
-
 /* Load and composite a background image onto the canvas. Format
  * detected from extension. Silently no-ops on load failure -- the
  * chart still renders, just without the bg image.
@@ -658,8 +644,6 @@ void fastchart_draw_title(gdImagePtr im, fastchart_obj *chart,
                                   gdImageSX(im) / 2,
                                   plot->y0 - TITLE_PADDING_BELOW);
 }
-
-/* ------------------------------- y axis --------------------------- */
 
 static void format_tick_label(double value, double step, char *out, size_t out_n)
 {
@@ -845,8 +829,6 @@ void fastchart_draw_axis_titles(gdImagePtr im, fastchart_obj *chart,
     }
 }
 
-/* --------------------------- x axis (categorical) ------------------ */
-
 int fastchart_x_categorical_center(const fastchart_rect *plot, int idx, int n)
 {
     if (n <= 0) return plot->x0;
@@ -933,8 +915,6 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
     }
 }
 
-/* --------------------------- x axis (time) ------------------------- */
-
 int fastchart_x_time_to_pixel(const fastchart_rect *plot,
                               zend_long ts, zend_long t_min, zend_long t_max)
 {
@@ -946,8 +926,6 @@ int fastchart_x_time_to_pixel(const fastchart_rect *plot,
     int w = plot->x1 - plot->x0;
     return plot->x0 + (int)(frac * (double)w + 0.5);
 }
-
-/* --------------------------- legend ------------------------------- */
 
 void fastchart_draw_legend(gdImagePtr im, fastchart_obj *chart,
                            const fastchart_rect *plot,
@@ -1044,8 +1022,6 @@ void fastchart_draw_legend(gdImagePtr im, fastchart_obj *chart,
     }
 }
 
-/* --------------------------- value labels ------------------------ */
-
 void fastchart_draw_value_label(gdImagePtr im, fastchart_obj *chart,
                                 const fastchart_palette *pal,
                                 int x, int y, double value)
@@ -1066,8 +1042,6 @@ void fastchart_draw_value_label(gdImagePtr im, fastchart_obj *chart,
     fastchart_text_draw(im, font, size, pal->text,
                         x, label_y, FASTCHART_ALIGN_CENTER, buf, NULL, 0);
 }
-
-/* --------------------------- combo overlays ---------------------- */
 
 /* Allocate or reuse a color from an overlay's optional 'color' key.
  * Falls back to the rotating palette index `slot`. */
@@ -1218,8 +1192,6 @@ void fastchart_draw_overlays_time(gdImagePtr im, fastchart_obj *chart,
         slot++;
     } ZEND_HASH_FOREACH_END();
 }
-
-/* --------------------------- annotations ------------------------- */
 
 /* Set a dashed style on im for subsequent gdStyled draws. The
  * pattern draws 6 px of color, then 4 px of transparent. */

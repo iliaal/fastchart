@@ -358,6 +358,13 @@ abstract class Chart
     public function setDropShadow(int $offsetX, int $offsetY, ?int $color = null): static {}
 
     /**
+     * Drop-shadow opacity in libgd's alpha space: 0 = fully opaque,
+     * 127 = fully transparent. Default is 64 (~50% opacity). Matches
+     * the convention used by `imagecolorallocatealpha()`.
+     */
+    public function setShadowAlpha(int $alpha): static {}
+
+    /**
      * Calendar-aware date-axis tick stride for charts that use a
      * Unix-timestamp X axis (StockChart, etc.). `$unit` is one of
      * `DATE_DAY` / `DATE_WEEK` / `DATE_MONTH` / `DATE_QUARTER` /
