@@ -28,20 +28,16 @@ int fastchart_apply_line_style(gdImagePtr im, fastchart_obj *chart, int color);
 int fastchart_lerp_rgb(int from, int to, double t);
 
 /* Fill a rectangle with a vertical or horizontal gradient between
- * gradient_from and gradient_to (chart settings). Allocates intermediate
- * colors on `im`. No-op if gradient is not enabled. Returns 1 if
- * the gradient was painted, 0 if the caller should fall back to a
- * solid fill in `solid_color`. */
+ * gradient_from and gradient_to (chart settings). No-op when gradient
+ * is disabled — returns 0 so callers can fall through to a solid
+ * fill of their choice. Returns 1 if the gradient was painted. */
 int fastchart_gradient_filled_rectangle(gdImagePtr im, fastchart_obj *chart,
-                                        int x0, int y0, int x1, int y1,
-                                        int solid_color);
+                                        int x0, int y0, int x1, int y1);
 
-/* Fill an arbitrary polygon with the chart's gradient by drawing
- * horizontal interpolated rows clipped to the polygon's scanline
- * extents. Returns 1 if painted, 0 if the caller should fall back. */
+/* Fill an arbitrary polygon with the chart's gradient. Same return
+ * semantics as the rectangle variant. */
 int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
-                                      gdPointPtr poly, int n_pts,
-                                      int solid_color);
+                                      gdPointPtr poly, int n_pts);
 
 /* Drop-shadow helpers. Each is a no-op when chart->has_drop_shadow is
  * false. The "before" call paints a darkened/colored offset shape

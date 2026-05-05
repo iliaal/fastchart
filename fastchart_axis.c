@@ -56,34 +56,22 @@ int fastchart_zval_to_long(zval *zv, long *out)
 
 /* ----------------------- font resolution ------------------------ */
 
+/* Roles map to three buckets: title (title_font_*), axis tick + axis
+ * title + xaxis/yaxis/xtitle/ytitle (axis_font_*), and label/annotation
+ * (label_font_*). Anything unset falls through to the chart-wide
+ * font_path / FASTCHART_DEFAULT_FONT_SIZE. */
 const char *fastchart_resolve_font(fastchart_obj *chart, const char *role)
 {
     if (strcmp(role, "title") == 0 && chart->title_font_path) {
         return ZSTR_VAL(chart->title_font_path);
     }
-    if (strcmp(role, "xaxis") == 0) {
-        if (chart->x_axis_font_path) return ZSTR_VAL(chart->x_axis_font_path);
-        if (chart->axis_font_path)   return ZSTR_VAL(chart->axis_font_path);
-    }
-    if (strcmp(role, "yaxis") == 0) {
-        if (chart->y_axis_font_path) return ZSTR_VAL(chart->y_axis_font_path);
-        if (chart->axis_font_path)   return ZSTR_VAL(chart->axis_font_path);
-    }
-    if (strcmp(role, "xtitle") == 0) {
-        if (chart->x_axis_title_font_path) return ZSTR_VAL(chart->x_axis_title_font_path);
-        if (chart->axis_font_path)         return ZSTR_VAL(chart->axis_font_path);
-    }
-    if (strcmp(role, "ytitle") == 0) {
-        if (chart->y_axis_title_font_path) return ZSTR_VAL(chart->y_axis_title_font_path);
-        if (chart->axis_font_path)         return ZSTR_VAL(chart->axis_font_path);
-    }
-    if (strcmp(role, "annotation") == 0 && chart->annotation_font_path) {
-        return ZSTR_VAL(chart->annotation_font_path);
-    }
-    if (strcmp(role, "axis") == 0 && chart->axis_font_path) {
+    if ((strcmp(role, "axis")   == 0 || strcmp(role, "xaxis")  == 0 ||
+         strcmp(role, "yaxis")  == 0 || strcmp(role, "xtitle") == 0 ||
+         strcmp(role, "ytitle") == 0) && chart->axis_font_path) {
         return ZSTR_VAL(chart->axis_font_path);
     }
-    if (strcmp(role, "label") == 0 && chart->label_font_path) {
+    if ((strcmp(role, "label") == 0 || strcmp(role, "annotation") == 0)
+            && chart->label_font_path) {
         return ZSTR_VAL(chart->label_font_path);
     }
     return chart->font_path ? ZSTR_VAL(chart->font_path) : NULL;
@@ -95,23 +83,12 @@ double fastchart_resolve_font_size(fastchart_obj *chart, const char *role,
     double sz = base_default;
     if (strcmp(role, "title") == 0 && chart->title_font_size > 0) {
         sz = chart->title_font_size;
-    } else if (strcmp(role, "xaxis") == 0) {
-        if      (chart->x_axis_font_size > 0) sz = chart->x_axis_font_size;
-        else if (chart->axis_font_size > 0)   sz = chart->axis_font_size;
-    } else if (strcmp(role, "yaxis") == 0) {
-        if      (chart->y_axis_font_size > 0) sz = chart->y_axis_font_size;
-        else if (chart->axis_font_size > 0)   sz = chart->axis_font_size;
-    } else if (strcmp(role, "xtitle") == 0) {
-        if      (chart->x_axis_title_font_size > 0) sz = chart->x_axis_title_font_size;
-        else if (chart->axis_font_size > 0)         sz = chart->axis_font_size;
-    } else if (strcmp(role, "ytitle") == 0) {
-        if      (chart->y_axis_title_font_size > 0) sz = chart->y_axis_title_font_size;
-        else if (chart->axis_font_size > 0)         sz = chart->axis_font_size;
-    } else if (strcmp(role, "annotation") == 0 && chart->annotation_font_size > 0) {
-        sz = chart->annotation_font_size;
-    } else if (strcmp(role, "axis") == 0 && chart->axis_font_size > 0) {
+    } else if ((strcmp(role, "axis")   == 0 || strcmp(role, "xaxis")  == 0 ||
+                strcmp(role, "yaxis")  == 0 || strcmp(role, "xtitle") == 0 ||
+                strcmp(role, "ytitle") == 0) && chart->axis_font_size > 0) {
         sz = chart->axis_font_size;
-    } else if (strcmp(role, "label") == 0 && chart->label_font_size > 0) {
+    } else if ((strcmp(role, "label") == 0 || strcmp(role, "annotation") == 0)
+            && chart->label_font_size > 0) {
         sz = chart->label_font_size;
     }
     if (chart->thumbnail_mode) sz *= 0.6;

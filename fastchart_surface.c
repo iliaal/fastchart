@@ -113,8 +113,8 @@ int fastchart_surface_render_to_image(fastchart_obj *self, gdImagePtr im)
      * Two contrasting label-text colors (dark / light) are also
      * pre-allocated here so the value-label path stops calling
      * gdImageColorAllocate per cell. */
-    int low = (int)self->surface_low;
-    int high = (int)self->surface_high;
+    int low = (int)self->color_ramp_low;
+    int high = (int)self->color_ramp_high;
     double span = vmax - vmin;
     if (span <= 0) span = 1.0;
 

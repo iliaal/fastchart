@@ -170,8 +170,8 @@ int fastchart_contour_render_to_image(fastchart_obj *self, gdImagePtr im)
      * matters on large grids (a 100x100 grid is 10k allocations the
      * old way). */
     if (self->contour_filled) {
-        int low = (int)self->contour_low;
-        int high = (int)self->contour_high;
+        int low = (int)self->color_ramp_low;
+        int high = (int)self->color_ramp_high;
         double span = vmax - vmin;
         if (span <= 0) span = 1.0;
 

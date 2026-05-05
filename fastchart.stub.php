@@ -319,17 +319,6 @@ abstract class Chart
     public function setAxisTitleColor(int $rgb): static {}
 
     /**
-     * Per-axis font overrides (path + size). Pass null path to
-     * inherit from setAxisFont() / setFontPath(). Pass null size
-     * to inherit from setAxisFont() / setFontSize().
-     */
-    public function setXAxisFont(?string $path = null, ?float $size = null): static {}
-    public function setYAxisFont(?string $path = null, ?float $size = null): static {}
-    public function setXAxisTitleFont(?string $path = null, ?float $size = null): static {}
-    public function setYAxisTitleFont(?string $path = null, ?float $size = null): static {}
-    public function setAnnotationFont(?string $path = null, ?float $size = null): static {}
-
-    /**
      * Add a free-floating text annotation at canvas coordinates
      * (`$x`, `$y` are pixel positions in the rendered image).
      * Useful for callouts, watermarks, or labeled regions. Color
@@ -369,15 +358,6 @@ abstract class Chart
      * Pass `$every = 0` to revert to auto-density labels.
      */
     public function setDateAxisStride(int $unit, int $every = 1): static {}
-
-    /**
-     * After a render, return an HTML imagemap describing the
-     * clickable region for each data point. Each entry has a `'url'`
-     * and `'title'` taken from the matching `'href'` / `'tooltip'`
-     * keys on the source data. Empty string when no points carry
-     * URLs. The map's `name` attribute is the supplied `$name`.
-     */
-    public function getImageMap(string $name = 'fastchart'): string {}
 
     abstract public function draw(\GdImage $canvas): \GdImage;
 
@@ -533,6 +513,16 @@ final class ScatterChart extends Chart
      * or `[lo, hi]` (asymmetric). Pass `[]` to clear.
      */
     public function setErrorBars(array $errors): static {}
+
+    /**
+     * After a render, return an HTML imagemap describing the
+     * clickable region for each scatter point. Each entry has a
+     * `'url'` and `'title'` taken from the matching `'href'` /
+     * `'tooltip'` keys on the source data. Empty string when no
+     * points carry URLs. The map's `name` attribute is the supplied
+     * `$name`, sanitized to alphanumeric + dash + underscore.
+     */
+    public function getImageMap(string $name = 'fastchart'): string {}
 
     public function draw(\GdImage $canvas): \GdImage {}
 }

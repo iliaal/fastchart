@@ -151,16 +151,6 @@ static zend_object *fastchart_create_object(zend_class_entry *ce)
     intern->title_color = -1;
     intern->axis_label_color = -1;
     intern->axis_title_color = -1;
-    intern->x_axis_font_path = NULL;
-    intern->y_axis_font_path = NULL;
-    intern->x_axis_title_font_path = NULL;
-    intern->y_axis_title_font_path = NULL;
-    intern->annotation_font_path = NULL;
-    intern->x_axis_font_size = 0.0;
-    intern->y_axis_font_size = 0.0;
-    intern->x_axis_title_font_size = 0.0;
-    intern->y_axis_title_font_size = 0.0;
-    intern->annotation_font_size = 0.0;
 
     intern->line_style = FASTCHART_LINE_SOLID;
     intern->gradient_from = -1;
@@ -175,8 +165,8 @@ static zend_object *fastchart_create_object(zend_class_entry *ce)
     intern->trend_line_color = -1;
     intern->radar_max = 0.0;
     intern->radar_filled = true;
-    intern->surface_low = 0x1f77b4;     /* default cool blue */
-    intern->surface_high = 0xd62728;    /* default warm red */
+    intern->color_ramp_low = 0x1f77b4;  /* default cool blue */
+    intern->color_ramp_high = 0xd62728; /* default warm red */
     intern->surface_show_values = false;
     intern->surface_value_format = NULL;
     intern->gauge_value = 0.0;
@@ -194,8 +184,6 @@ static zend_object *fastchart_create_object(zend_class_entry *ce)
     intern->polar_max_radius = 0.0;     /* 0 = auto */
     intern->polar_filled = true;
     intern->contour_filled = true;
-    intern->contour_low = 0x1f77b4;
-    intern->contour_high = 0xd62728;
 
     if (fastchart_default_font_path) {
         intern->font_path = zend_string_copy(fastchart_default_font_path);
@@ -228,11 +216,6 @@ static void fastchart_free_object(zend_object *object)
     if (intern->y_axis_label_format) zend_string_release(intern->y_axis_label_format);
     if (intern->x_axis_label_format) zend_string_release(intern->x_axis_label_format);
     if (intern->y_axis_title2)      zend_string_release(intern->y_axis_title2);
-    if (intern->x_axis_font_path)   zend_string_release(intern->x_axis_font_path);
-    if (intern->y_axis_font_path)   zend_string_release(intern->y_axis_font_path);
-    if (intern->x_axis_title_font_path) zend_string_release(intern->x_axis_title_font_path);
-    if (intern->y_axis_title_font_path) zend_string_release(intern->y_axis_title_font_path);
-    if (intern->annotation_font_path) zend_string_release(intern->annotation_font_path);
     if (intern->surface_value_format) zend_string_release(intern->surface_value_format);
     if (intern->gauge_value_format)   zend_string_release(intern->gauge_value_format);
     zval_ptr_dtor(&intern->data);
@@ -1134,14 +1117,6 @@ FASTCHART_TEXT_COLOR_SETTER(setTitleColor,      title_color)
 FASTCHART_TEXT_COLOR_SETTER(setAxisLabelColor,  axis_label_color)
 FASTCHART_TEXT_COLOR_SETTER(setAxisTitleColor,  axis_title_color)
 
-/* ----------------- per-axis fonts -------------------------------- */
-
-FASTCHART_FONT_OVERRIDE_SETTER(setXAxisFont,      x_axis_font_path,       x_axis_font_size)
-FASTCHART_FONT_OVERRIDE_SETTER(setYAxisFont,      y_axis_font_path,       y_axis_font_size)
-FASTCHART_FONT_OVERRIDE_SETTER(setXAxisTitleFont, x_axis_title_font_path, x_axis_title_font_size)
-FASTCHART_FONT_OVERRIDE_SETTER(setYAxisTitleFont, y_axis_title_font_path, y_axis_title_font_size)
-FASTCHART_FONT_OVERRIDE_SETTER(setAnnotationFont, annotation_font_path,   annotation_font_size)
-
 /* ----------------- text annotation ------------------------------- */
 
 ZEND_METHOD(FastChart_Chart, addTextAnnotation)
@@ -1423,8 +1398,8 @@ ZEND_METHOD(FastChart_SurfaceChart, setColorRamp)
         RETURN_THROWS();
     }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->surface_low = lo;
-    self->surface_high = hi;
+    self->color_ramp_low = lo;
+    self->color_ramp_high = hi;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -1540,7 +1515,7 @@ ZEND_METHOD(FastChart_Chart, setDateAxisStride)
  * <area> entries for those that carry an 'href' / 'tooltip' key.
  * The chart must have been render()'d already so the chart's
  * cached pixel positions are present in self->config["areas"]. */
-ZEND_METHOD(FastChart_Chart, getImageMap)
+ZEND_METHOD(FastChart_ScatterChart, getImageMap)
 {
     zend_string *name;
     ZEND_PARSE_PARAMETERS_START(0, 1)
@@ -1818,8 +1793,8 @@ ZEND_METHOD(FastChart_ContourChart, setColorRamp)
         RETURN_THROWS();
     }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->contour_low = lo;
-    self->contour_high = hi;
+    self->color_ramp_low = lo;
+    self->color_ramp_high = hi;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 

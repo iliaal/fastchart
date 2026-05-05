@@ -199,7 +199,7 @@ int fastchart_gantt_render_to_image(fastchart_obj *self, gdImagePtr im)
             int y0 = row_yc - bar_h / 2;
             int y1 = row_yc + bar_h / 2;
             fastchart_shadow_filled_rectangle(im, self, x_start, y0, x_end, y1);
-            if (!fastchart_gradient_filled_rectangle(im, self, x_start, y0, x_end, y1, color)) {
+            if (!fastchart_gradient_filled_rectangle(im, self, x_start, y0, x_end, y1)) {
                 gdImageFilledRectangle(im, x_start, y0, x_end, y1, color);
             }
             if (self->edge_color >= 0) gdImageRectangle(im, x_start, y0, x_end, y1, (int)self->edge_color);

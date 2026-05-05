@@ -245,7 +245,7 @@ int fastchart_area_render_to_image(fastchart_obj *self, gdImagePtr im)
             }
             if (n_pts >= 3) {
                 fastchart_shadow_filled_polygon(im, self, poly, n_pts);
-                if (!fastchart_gradient_filled_polygon(im, self, poly, n_pts, rgb_color)) {
+                if (!fastchart_gradient_filled_polygon(im, self, poly, n_pts)) {
                     gdImageFilledPolygon(im, poly, n_pts, rgb_color);
                 }
                 if (self->edge_color >= 0) {
@@ -306,7 +306,7 @@ int fastchart_area_render_to_image(fastchart_obj *self, gdImagePtr im)
             if (n_pts >= 3) {
                 fastchart_shadow_filled_polygon(im, self, poly, n_pts);
                 gdImageAlphaBlending(im, 1);
-                if (!fastchart_gradient_filled_polygon(im, self, poly, n_pts, alpha_color)) {
+                if (!fastchart_gradient_filled_polygon(im, self, poly, n_pts)) {
                     gdImageFilledPolygon(im, poly, n_pts, alpha_color);
                 }
                 if (self->edge_color >= 0) {

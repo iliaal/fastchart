@@ -321,7 +321,7 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
                 fastchart_shadow_filled_rectangle(im, self, x0, y0, x1, y1);
-                if (!fastchart_gradient_filled_rectangle(im, self, x0, y0, x1, y1, color)) {
+                if (!fastchart_gradient_filled_rectangle(im, self, x0, y0, x1, y1)) {
                     gdImageFilledRectangle(im, x0, y0, x1, y1, color);
                 }
                 if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
@@ -340,7 +340,7 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
                 fastchart_shadow_filled_rectangle(im, self, x0, y0, x1, y1);
-                if (!fastchart_gradient_filled_rectangle(im, self, x0, y0, x1, y1, color)) {
+                if (!fastchart_gradient_filled_rectangle(im, self, x0, y0, x1, y1)) {
                     gdImageFilledRectangle(im, x0, y0, x1, y1, color);
                 }
                 if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
@@ -367,7 +367,7 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
                 fastchart_shadow_filled_rectangle(im, self, x0, y0, x1, y1);
-                if (!fastchart_gradient_filled_rectangle(im, self, x0, y0, x1, y1, color)) {
+                if (!fastchart_gradient_filled_rectangle(im, self, x0, y0, x1, y1)) {
                     gdImageFilledRectangle(im, x0, y0, x1, y1, color);
                 }
                 if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
@@ -387,7 +387,7 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
                 int y0 = y_v < zero_y ? y_v : zero_y;
                 int y1 = y_v < zero_y ? zero_y : y_v;
                 fastchart_shadow_filled_rectangle(im, self, x0, y0, x1, y1);
-                if (!fastchart_gradient_filled_rectangle(im, self, x0, y0, x1, y1, color)) {
+                if (!fastchart_gradient_filled_rectangle(im, self, x0, y0, x1, y1)) {
                     gdImageFilledRectangle(im, x0, y0, x1, y1, color);
                 }
                 if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);

@@ -82,10 +82,8 @@ static inline int lut_index(int pos, int span)
 }
 
 int fastchart_gradient_filled_rectangle(gdImagePtr im, fastchart_obj *chart,
-                                        int x0, int y0, int x1, int y1,
-                                        int solid_color)
+                                        int x0, int y0, int x1, int y1)
 {
-    (void)solid_color;
     if (!gradient_active(chart)) return 0;
     if (x1 < x0) { int t = x0; x0 = x1; x1 = t; }
     if (y1 < y0) { int t = y0; y0 = y1; y1 = t; }
@@ -108,10 +106,8 @@ int fastchart_gradient_filled_rectangle(gdImagePtr im, fastchart_obj *chart,
 }
 
 int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
-                                      gdPointPtr poly, int n_pts,
-                                      int solid_color)
+                                      gdPointPtr poly, int n_pts)
 {
-    (void)solid_color;
     if (!gradient_active(chart) || n_pts < 3) return 0;
 
     /* Approach: paint the polygon in a sentinel color via libgd's

@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: bfa09db1fcbcf923d01d3b67b4dae4b54132cab9 */
+ * Stub hash: fe19d40ce228242dbd2c864292b7273b415235f1 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -169,16 +169,6 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_Chart_setAxisTitleColor arginfo_class_FastChart_Chart_setBackgroundColor
 
-#define arginfo_class_FastChart_Chart_setXAxisFont arginfo_class_FastChart_Chart_setTitleFont
-
-#define arginfo_class_FastChart_Chart_setYAxisFont arginfo_class_FastChart_Chart_setTitleFont
-
-#define arginfo_class_FastChart_Chart_setXAxisTitleFont arginfo_class_FastChart_Chart_setTitleFont
-
-#define arginfo_class_FastChart_Chart_setYAxisTitleFont arginfo_class_FastChart_Chart_setTitleFont
-
-#define arginfo_class_FastChart_Chart_setAnnotationFont arginfo_class_FastChart_Chart_setTitleFont
-
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_addTextAnnotation, 0, 3, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, text, IS_STRING, 0)
 	ZEND_ARG_TYPE_INFO(0, x, IS_LONG, 0)
@@ -205,10 +195,6 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setDateAxisStride, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, unit, IS_LONG, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, every, IS_LONG, 0, "1")
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_getImageMap, 0, 0, IS_STRING, 0)
-	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, name, IS_STRING, 0, "\'fastchart\'")
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_FastChart_Chart_draw, 0, 1, GdImage, 0)
@@ -310,6 +296,10 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_ScatterChart_set
 ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_ScatterChart_setErrorBars arginfo_class_FastChart_LineChart_setErrorBars
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_ScatterChart_getImageMap, 0, 0, IS_STRING, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, name, IS_STRING, 0, "\'fastchart\'")
+ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_ScatterChart_draw arginfo_class_FastChart_Chart_draw
 
@@ -473,17 +463,11 @@ ZEND_METHOD(FastChart_Chart, setThumbnailMode);
 ZEND_METHOD(FastChart_Chart, setTitleColor);
 ZEND_METHOD(FastChart_Chart, setAxisLabelColor);
 ZEND_METHOD(FastChart_Chart, setAxisTitleColor);
-ZEND_METHOD(FastChart_Chart, setXAxisFont);
-ZEND_METHOD(FastChart_Chart, setYAxisFont);
-ZEND_METHOD(FastChart_Chart, setXAxisTitleFont);
-ZEND_METHOD(FastChart_Chart, setYAxisTitleFont);
-ZEND_METHOD(FastChart_Chart, setAnnotationFont);
 ZEND_METHOD(FastChart_Chart, addTextAnnotation);
 ZEND_METHOD(FastChart_Chart, setLineStyle);
 ZEND_METHOD(FastChart_Chart, setGradientFill);
 ZEND_METHOD(FastChart_Chart, setDropShadow);
 ZEND_METHOD(FastChart_Chart, setDateAxisStride);
-ZEND_METHOD(FastChart_Chart, getImageMap);
 ZEND_METHOD(FastChart_Chart, renderPng);
 ZEND_METHOD(FastChart_Chart, renderJpeg);
 ZEND_METHOD(FastChart_Chart, renderWebp);
@@ -516,6 +500,7 @@ ZEND_METHOD(FastChart_ScatterChart, setMarkerStyle);
 ZEND_METHOD(FastChart_ScatterChart, setMarkerSize);
 ZEND_METHOD(FastChart_ScatterChart, setTrendLine);
 ZEND_METHOD(FastChart_ScatterChart, setErrorBars);
+ZEND_METHOD(FastChart_ScatterChart, getImageMap);
 ZEND_METHOD(FastChart_ScatterChart, draw);
 ZEND_METHOD(FastChart_StockChart, setOhlcv);
 ZEND_METHOD(FastChart_StockChart, setMovingAverages);
@@ -606,17 +591,11 @@ static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, setTitleColor, arginfo_class_FastChart_Chart_setTitleColor, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setAxisLabelColor, arginfo_class_FastChart_Chart_setAxisLabelColor, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setAxisTitleColor, arginfo_class_FastChart_Chart_setAxisTitleColor, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_Chart, setXAxisFont, arginfo_class_FastChart_Chart_setXAxisFont, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_Chart, setYAxisFont, arginfo_class_FastChart_Chart_setYAxisFont, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_Chart, setXAxisTitleFont, arginfo_class_FastChart_Chart_setXAxisTitleFont, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_Chart, setYAxisTitleFont, arginfo_class_FastChart_Chart_setYAxisTitleFont, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_Chart, setAnnotationFont, arginfo_class_FastChart_Chart_setAnnotationFont, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, addTextAnnotation, arginfo_class_FastChart_Chart_addTextAnnotation, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setLineStyle, arginfo_class_FastChart_Chart_setLineStyle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setGradientFill, arginfo_class_FastChart_Chart_setGradientFill, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setDropShadow, arginfo_class_FastChart_Chart_setDropShadow, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setDateAxisStride, arginfo_class_FastChart_Chart_setDateAxisStride, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_Chart, getImageMap, arginfo_class_FastChart_Chart_getImageMap, ZEND_ACC_PUBLIC)
 	ZEND_RAW_FENTRY("draw", NULL, arginfo_class_FastChart_Chart_draw, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
 	ZEND_ME(FastChart_Chart, renderPng, arginfo_class_FastChart_Chart_renderPng, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, renderJpeg, arginfo_class_FastChart_Chart_renderJpeg, ZEND_ACC_PUBLIC)
@@ -670,6 +649,7 @@ static const zend_function_entry class_FastChart_ScatterChart_methods[] = {
 	ZEND_ME(FastChart_ScatterChart, setMarkerSize, arginfo_class_FastChart_ScatterChart_setMarkerSize, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ScatterChart, setTrendLine, arginfo_class_FastChart_ScatterChart_setTrendLine, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ScatterChart, setErrorBars, arginfo_class_FastChart_ScatterChart_setErrorBars, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_ScatterChart, getImageMap, arginfo_class_FastChart_ScatterChart_getImageMap, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ScatterChart, draw, arginfo_class_FastChart_ScatterChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };

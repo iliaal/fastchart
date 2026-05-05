@@ -204,17 +204,6 @@ typedef struct _fastchart_obj {
     zend_long axis_label_color;
     zend_long axis_title_color;
 
-    /* Per-axis font overrides. NULL path / 0 size = inherit. */
-    zend_string *x_axis_font_path;
-    zend_string *y_axis_font_path;
-    zend_string *x_axis_title_font_path;
-    zend_string *y_axis_title_font_path;
-    zend_string *annotation_font_path;
-    double x_axis_font_size;
-    double y_axis_font_size;
-    double x_axis_title_font_size;
-    double y_axis_title_font_size;
-    double annotation_font_size;
 
     /* Line dash style (FASTCHART_LINE_*). Default SOLID. */
     zend_long line_style;
@@ -239,9 +228,12 @@ typedef struct _fastchart_obj {
     double radar_max;           /* 0 = auto */
     bool radar_filled;          /* default true */
 
+    /* Shared by SurfaceChart::setColorRamp() and
+     * ContourChart::setColorRamp() — same semantics, same defaults. */
+    zend_long color_ramp_low;
+    zend_long color_ramp_high;
+
     /* SurfaceChart-specific config. */
-    zend_long surface_low;
-    zend_long surface_high;
     bool surface_show_values;
     zend_string *surface_value_format;
 
@@ -274,8 +266,6 @@ typedef struct _fastchart_obj {
 
     /* ContourChart specific. */
     bool contour_filled;
-    zend_long contour_low;
-    zend_long contour_high;
 
     zval data;
     zval config;
