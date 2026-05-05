@@ -254,8 +254,8 @@ typedef struct _fastchart_obj {
     /* GanttChart specific. */
     bool gantt_show_labels;
     bool gantt_has_range;
-    long gantt_range_start;
-    long gantt_range_end;
+    zend_long gantt_range_start;
+    zend_long gantt_range_end;
 
     /* BoxPlot specific. */
     zend_long box_width_pct;

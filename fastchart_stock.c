@@ -30,7 +30,7 @@
  * close, volume. Volume is optional; missing or non-numeric drops
  * volume rendering for the bar but keeps the candle. */
 typedef struct {
-    long   ts;
+    zend_long ts;
     double open;
     double high;
     double low;
@@ -56,7 +56,7 @@ static int read_candle(zval *row, fastchart_candle *out)
     zval *zc  = zend_hash_index_find(r, 4);
     if (!zts || !zo || !zh || !zl || !zc) return -1;
 
-    long ts;
+    zend_long ts;
     double o, h, l, c;
     if (fastchart_zval_to_long(zts, &ts) != 0) return -1;
     if (fastchart_zval_to_double(zo, &o) != 0) return -1;
@@ -126,8 +126,8 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
         candles[j + 1] = k;
     }
 
-    long t_min = candles[0].ts;
-    long t_max = candles[n - 1].ts;
+    zend_long t_min = candles[0].ts;
+    zend_long t_max = candles[n - 1].ts;
     if (t_min == t_max) t_max = t_min + 1;  /* avoid div-by-zero */
 
     double y_min = candles[0].low, y_max = candles[0].high;
@@ -153,7 +153,7 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
         zval *p;
         ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(cfg_ma), p) {
             if (sma_count >= 8) break;
-            long pp;
+            zend_long pp;
             if (fastchart_zval_to_long(p, &pp) == 0 && pp >= 2 && pp <= n) {
                 sma_periods[sma_count++] = (int)pp;
             }
@@ -665,7 +665,7 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
      * range. Allocate a flat timestamps array since the helper
      * walks a contiguous long[] rather than the candle struct. */
     {
-        long *ts_arr = ecalloc((size_t)n, sizeof(long));
+        zend_long *ts_arr = ecalloc((size_t)n, sizeof(zend_long));
         for (int i = 0; i < n; i++) ts_arr[i] = candles[i].ts;
         fastchart_draw_overlays_time(im, self, &price_pane, &pal, &yrange,
                                       t_min, t_max, ts_arr, n);

@@ -29,17 +29,17 @@
 #define MAX_TASKS 256
 
 typedef struct {
-    long start;
-    long end;
+    zend_long start;
+    zend_long end;
     const char *name;
-    long color;        /* -1 = palette */
+    zend_long color;   /* -1 = palette */
     bool milestone;
     int *deps;         /* indices into the array */
     int n_deps;
 } fastchart_gantt_task;
 
 static int collect_tasks(zval *data_zv, fastchart_gantt_task *out, int max_tasks,
-                         int *out_count, long *out_min, long *out_max)
+                         int *out_count, zend_long *out_min, zend_long *out_max)
 {
     *out_count = 0;
     *out_min = 0; *out_max = 0;
@@ -57,8 +57,8 @@ static int collect_tasks(zval *data_zv, fastchart_gantt_task *out, int max_tasks
         double ds, de;
         if (fastchart_zval_to_double(zs, &ds) != 0) continue;
         if (fastchart_zval_to_double(ze, &de) != 0) continue;
-        long s = (long)ds, e = (long)de;
-        if (e < s) { long tmp = s; s = e; e = tmp; }
+        zend_long s = (zend_long)ds, e = (zend_long)de;
+        if (e < s) { zend_long tmp = s; s = e; e = tmp; }
 
         out[*out_count].start = s;
         out[*out_count].end   = e;
@@ -111,7 +111,7 @@ int fastchart_gantt_render_to_image(fastchart_obj *self, gdImagePtr im)
 {
     fastchart_gantt_task tasks[MAX_TASKS];
     int n_tasks = 0;
-    long t_min = 0, t_max = 0;
+    zend_long t_min = 0, t_max = 0;
     if (collect_tasks(&self->data, tasks, MAX_TASKS,
                       &n_tasks, &t_min, &t_max) != 0 || n_tasks == 0) {
         zend_throw_error(NULL,

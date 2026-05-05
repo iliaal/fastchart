@@ -224,7 +224,54 @@ static void fastchart_free_object(zend_object *object)
     zend_object_std_dtor(&intern->std);
 }
 
-#define fastchart_clone_object NULL
+/* Deep-copy the C-level state when PHP's `clone $chart` runs.
+ * zend_objects_clone_members handles the std property table, but
+ * the extension stores its actual state in C struct fields
+ * (zend_string* paths, two zvals, scalars) that the std clone
+ * doesn't see. Without this handler, the destination object aliases
+ * the source's owned pointers — the first setter on either side
+ * releases a string the other still references.
+ *
+ * Strategy: start from a fresh, fully-initialized object via
+ * fastchart_create_object, drop its own owned references, then
+ * memcpy the source struct over the trailing fields and re-bump
+ * every refcounted slot. */
+#define FASTCHART_FOREACH_OWNED_STR(F) \
+    F(title) F(font_path) F(x_axis_title) F(y_axis_title) \
+    F(slice_label_format) F(title_font_path) F(axis_font_path) \
+    F(label_font_path) F(value_format) F(pie_other_label) \
+    F(bg_image_path) F(y_axis_label_format) F(x_axis_label_format) \
+    F(y_axis_title2) F(surface_value_format) F(gauge_value_format)
+
+static zend_object *fastchart_clone_object(zend_object *src_obj)
+{
+    fastchart_obj *src = fastchart_obj_from_zend(src_obj);
+    zend_object *dst_obj = fastchart_create_object(src_obj->ce);
+    fastchart_obj *dst = fastchart_obj_from_zend(dst_obj);
+
+    /* Drop refs the create_object handler took (title, font_path)
+     * plus the empty data/config zvals, before overwriting. */
+#define FC_RELEASE(field) if (dst->field) zend_string_release(dst->field);
+    FASTCHART_FOREACH_OWNED_STR(FC_RELEASE)
+#undef FC_RELEASE
+    zval_ptr_dtor(&dst->data);
+    zval_ptr_dtor(&dst->config);
+
+    /* Bulk-copy the POD-and-aliased-pointer block. `std` is last in
+     * the struct; offsetof(fastchart_obj, std) is exactly the size
+     * of everything we need. */
+    memcpy(dst, src, offsetof(fastchart_obj, std));
+
+    /* Re-own each shared pointer. */
+#define FC_ADDREF(field) if (dst->field) zend_string_addref(dst->field);
+    FASTCHART_FOREACH_OWNED_STR(FC_ADDREF)
+#undef FC_ADDREF
+    Z_TRY_ADDREF(dst->data);
+    Z_TRY_ADDREF(dst->config);
+
+    zend_objects_clone_members(&dst->std, &src->std);
+    return &dst->std;
+}
 
 /* --------------------- font default detection ---------------------- */
 
@@ -1651,14 +1698,17 @@ ZEND_METHOD(FastChart_GanttChart, setTimeRange)
         Z_PARAM_LONG_OR_NULL(start, start_is_null)
         Z_PARAM_LONG_OR_NULL(end, end_is_null)
     ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    self->gantt_has_range = !(start_is_null && end_is_null);
-    self->gantt_range_start = start_is_null ? 0 : (long)start;
-    self->gantt_range_end   = end_is_null   ? 0 : (long)end;
-    if (self->gantt_has_range && self->gantt_range_end <= self->gantt_range_start) {
+    /* Validate before storing so the comparison runs against the
+     * full-precision zend_long values, not after a narrowing cast. */
+    bool has_range = !(start_is_null && end_is_null);
+    if (has_range && end <= start) {
         zend_value_error("FastChart\\GanttChart::setTimeRange() requires start < end");
         RETURN_THROWS();
     }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->gantt_has_range = has_range;
+    self->gantt_range_start = start_is_null ? 0 : start;
+    self->gantt_range_end   = end_is_null   ? 0 : end;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 

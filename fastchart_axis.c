@@ -39,18 +39,39 @@
 int fastchart_zval_to_double(zval *zv, double *out)
 {
     switch (Z_TYPE_P(zv)) {
-        case IS_DOUBLE: *out = Z_DVAL_P(zv); return 0;
-        case IS_LONG:   *out = (double)Z_LVAL_P(zv); return 0;
-        default:        return -1;
+        case IS_DOUBLE:
+            if (!isfinite(Z_DVAL_P(zv))) return -1;
+            *out = Z_DVAL_P(zv);
+            return 0;
+        case IS_LONG:
+            *out = (double)Z_LVAL_P(zv);
+            return 0;
+        default:
+            return -1;
     }
 }
 
-int fastchart_zval_to_long(zval *zv, long *out)
+/* zend_long is int64_t on 64-bit and int32_t on 32-bit (regardless of
+ * how the platform sizes `long` — Windows LLP64 has 32-bit `long` with
+ * 64-bit zend_long). Take and return zend_long so timestamps past
+ * 2038 round-trip correctly on every PHP-supported platform. */
+int fastchart_zval_to_long(zval *zv, zend_long *out)
 {
     switch (Z_TYPE_P(zv)) {
-        case IS_LONG:   *out = (long)Z_LVAL_P(zv); return 0;
-        case IS_DOUBLE: *out = (long)Z_DVAL_P(zv); return 0;
-        default:        return -1;
+        case IS_LONG:
+            *out = Z_LVAL_P(zv);
+            return 0;
+        case IS_DOUBLE: {
+            double d = Z_DVAL_P(zv);
+            if (!isfinite(d) ||
+                d < (double)ZEND_LONG_MIN || d > (double)ZEND_LONG_MAX) {
+                return -1;
+            }
+            *out = (zend_long)d;
+            return 0;
+        }
+        default:
+            return -1;
     }
 }
 
@@ -59,22 +80,40 @@ int fastchart_zval_to_long(zval *zv, long *out)
 /* Roles map to three buckets: title (title_font_*), axis tick + axis
  * title + xaxis/yaxis/xtitle/ytitle (axis_font_*), and label/annotation
  * (label_font_*). Anything unset falls through to the chart-wide
- * font_path / FASTCHART_DEFAULT_FONT_SIZE. */
+ * font_path / FASTCHART_DEFAULT_FONT_SIZE.
+ *
+ * Setters validate the path against open_basedir at the time the user
+ * calls them, but draw() runs arbitrarily later. open_basedir can be
+ * narrowed via ini_set() between the setter and the render, so the
+ * resolver re-checks before handing the path to FreeType (which
+ * stat()s and open()s it). On a runtime narrowing, fall through to
+ * the default font_path or NULL. */
+static const char *check_font_path(const zend_string *path)
+{
+    if (!path) return NULL;
+    const char *s = ZSTR_VAL(path);
+    if (php_check_open_basedir_ex(s, /*warn=*/0) != 0) return NULL;
+    return s;
+}
+
 const char *fastchart_resolve_font(fastchart_obj *chart, const char *role)
 {
-    if (strcmp(role, "title") == 0 && chart->title_font_path) {
-        return ZSTR_VAL(chart->title_font_path);
+    const char *p;
+    if (strcmp(role, "title") == 0 &&
+            (p = check_font_path(chart->title_font_path))) {
+        return p;
     }
     if ((strcmp(role, "axis")   == 0 || strcmp(role, "xaxis")  == 0 ||
          strcmp(role, "yaxis")  == 0 || strcmp(role, "xtitle") == 0 ||
-         strcmp(role, "ytitle") == 0) && chart->axis_font_path) {
-        return ZSTR_VAL(chart->axis_font_path);
+         strcmp(role, "ytitle") == 0) &&
+            (p = check_font_path(chart->axis_font_path))) {
+        return p;
     }
-    if ((strcmp(role, "label") == 0 || strcmp(role, "annotation") == 0)
-            && chart->label_font_path) {
-        return ZSTR_VAL(chart->label_font_path);
+    if ((strcmp(role, "label") == 0 || strcmp(role, "annotation") == 0) &&
+            (p = check_font_path(chart->label_font_path))) {
+        return p;
     }
-    return chart->font_path ? ZSTR_VAL(chart->font_path) : NULL;
+    return check_font_path(chart->font_path);
 }
 
 double fastchart_resolve_font_size(fastchart_obj *chart, const char *role,
@@ -881,7 +920,7 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
 /* --------------------------- x axis (time) ------------------------- */
 
 int fastchart_x_time_to_pixel(const fastchart_rect *plot,
-                              long ts, long t_min, long t_max)
+                              zend_long ts, zend_long t_min, zend_long t_max)
 {
     long span = t_max - t_min;
     if (span <= 0) return plot->x0;
@@ -1128,8 +1167,8 @@ void fastchart_draw_overlays_time(gdImagePtr im, fastchart_obj *chart,
                                   const fastchart_rect *plot,
                                   const fastchart_palette *pal,
                                   const fastchart_value_range *yrange,
-                                  long t_min, long t_max,
-                                  long *timestamps, int n_candles)
+                                  zend_long t_min, zend_long t_max,
+                                  zend_long *timestamps, int n_candles)
 {
     zval *list = zend_hash_str_find(Z_ARRVAL(chart->config),
                                     "overlays", sizeof("overlays") - 1);
@@ -1266,11 +1305,11 @@ static int v_pos_continuous(const fastchart_rect *plot, double position, void *c
     return plot->x0 + (int)(frac * (plot->x1 - plot->x0) + 0.5);
 }
 
-typedef struct { long t_min; long t_max; } v_time_ctx;
+typedef struct { zend_long t_min; zend_long t_max; } v_time_ctx;
 static int v_pos_time(const fastchart_rect *plot, double position, void *ctx)
 {
     v_time_ctx *c = (v_time_ctx *)ctx;
-    long ts = (long)position;
+    zend_long ts = (zend_long)position;
     if (ts < c->t_min || ts > c->t_max) return -1;
     return fastchart_x_time_to_pixel(plot, ts, c->t_min, c->t_max);
 }
@@ -1337,7 +1376,7 @@ void fastchart_draw_v_annotations_continuous(gdImagePtr im, fastchart_obj *chart
 void fastchart_draw_v_annotations_time(gdImagePtr im, fastchart_obj *chart,
                                        const fastchart_rect *plot,
                                        const fastchart_palette *pal,
-                                       long t_min, long t_max)
+                                       zend_long t_min, zend_long t_max)
 {
     v_time_ctx ctx = { t_min, t_max };
     draw_v_annotations_with_mapper(im, chart, plot, pal, v_pos_time, &ctx);
@@ -1379,7 +1418,7 @@ void fastchart_draw_text_annotations(gdImagePtr im, fastchart_obj *chart,
 void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
                                 const fastchart_rect *plot,
                                 const fastchart_palette *pal,
-                                long t_min, long t_max)
+                                zend_long t_min, zend_long t_max)
 {
     if (!chart->x_axis_visible) return;
     gdImageLine(im, plot->x0, plot->y1, plot->x1, plot->y1, pal->axis);
@@ -1458,7 +1497,7 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
 
         int n_emitted = 0;
         while (cur <= t_max && n_emitted < 64) {
-            int x = fastchart_x_time_to_pixel(plot, (long)cur, t_min, t_max);
+            int x = fastchart_x_time_to_pixel(plot, (zend_long)cur, t_min, t_max);
             if (draw_points) {
                 gdImageLine(im, x, plot->y1 + 1, x,
                             plot->y1 + TICK_MARK_LEN, pal->axis);
@@ -1514,7 +1553,7 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
     /* Rotated labels are narrower so they can pack more densely. */
     const int N = (angle == 0) ? 5 : 8;
     for (int i = 0; i < N; i++) {
-        long ts = t_min + (long)((double)(t_max - t_min) * i / (N - 1));
+        zend_long ts = t_min + (zend_long)((double)(t_max - t_min) * i / (N - 1));
         int x = fastchart_x_time_to_pixel(plot, ts, t_min, t_max);
         if (draw_points) {
             gdImageLine(im, x, plot->y1 + 1, x,

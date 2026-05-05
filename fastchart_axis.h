@@ -122,21 +122,22 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
 void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
                                 const fastchart_rect *plot,
                                 const fastchart_palette *pal,
-                                long t_min, long t_max);
+                                zend_long t_min, zend_long t_max);
 
 /* Compute the X-pixel center of category `idx` of `n` total. */
 int fastchart_x_categorical_center(const fastchart_rect *plot, int idx, int n);
 
 /* Compute the X-pixel for a Unix-timestamp `ts` within [t_min, t_max]. */
 int fastchart_x_time_to_pixel(const fastchart_rect *plot,
-                              long ts, long t_min, long t_max);
+                              zend_long ts, zend_long t_min, zend_long t_max);
 
 /* Coerce a zval (long or double, with bounded long-string parsing) to
  * a double. Returns 0 on success, -1 on type mismatch. */
 int fastchart_zval_to_double(zval *zv, double *out);
 
-/* Coerce a zval to a long. Returns 0 on success, -1 on mismatch. */
-int fastchart_zval_to_long(zval *zv, long *out);
+/* Coerce a zval to a zend_long. Returns 0 on success, -1 on type
+ * mismatch / non-finite double / out-of-range double. */
+int fastchart_zval_to_long(zval *zv, zend_long *out);
 
 /* Draw a single point marker. `style` is one of FASTCHART_MARKER_*;
  * `size` is the marker's enclosing diameter in pixels. NONE renders
@@ -190,8 +191,8 @@ void fastchart_draw_overlays_time(gdImagePtr im, fastchart_obj *chart,
                                   const fastchart_rect *plot,
                                   const fastchart_palette *pal,
                                   const fastchart_value_range *yrange,
-                                  long t_min, long t_max,
-                                  long *timestamps, int n_candles);
+                                  zend_long t_min, zend_long t_max,
+                                  zend_long *timestamps, int n_candles);
 
 /* Draw a legend in the position the chart's `legend_position`
  * field selects (one of FASTCHART_LEGEND_*). One row per series
@@ -231,7 +232,7 @@ void fastchart_draw_v_annotations_continuous(gdImagePtr im, fastchart_obj *chart
 void fastchart_draw_v_annotations_time(gdImagePtr im, fastchart_obj *chart,
                                        const fastchart_rect *plot,
                                        const fastchart_palette *pal,
-                                       long t_min, long t_max);
+                                       zend_long t_min, zend_long t_max);
 
 /* Walk chart->config["text_annotations"] and render each free-floating
  * label at the stored canvas pixel coordinates. Per-entry color
