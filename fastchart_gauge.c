@@ -64,8 +64,7 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
 
     if (self->zones && self->n_zones > 0) {
         /* Background fill (a thin ring, drawn as a fat arc). */
-        gdImageFilledArc(im, cx, cy, diameter, diameter, 180, 360,
-                         pal.grid, gdPie);
+        fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
         for (int i = 0; i < self->n_zones; i++) {
             const fastchart_gauge_zone *zn = &self->zones[i];
             int color = default_color;
@@ -91,19 +90,17 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
             int end   = (int)(180 + frac_b * 180);
             if (start > end) { int t = start; start = end; end = t; }
             if (end <= start) continue;  /* empty zone, skip */
-            gdImageFilledArc(im, cx, cy, diameter, diameter,
-                             start, end, color, gdPie);
+            fastchart_filled_wedge_aa(im, cx, cy, diameter, start, end, color);
         }
     } else {
         /* Single-color sweep from min to value, with the rest in grid color. */
-        gdImageFilledArc(im, cx, cy, diameter, diameter, 180, 360,
-                         pal.grid, gdPie);
+        fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
         double aV = gauge_value_to_deg(v, mn, mx);
         int start = 180;
         int end = 180 + (int)(180 - aV);
         if (end > start) {
-            gdImageFilledArc(im, cx, cy, diameter, diameter,
-                             start, end, default_color, gdPie);
+            fastchart_filled_wedge_aa(im, cx, cy, diameter,
+                                      start, end, default_color);
         }
     }
 

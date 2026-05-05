@@ -57,6 +57,24 @@ int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
                                       fastchart_gradient_cache *cache,
                                       gdPointPtr poly, int n_pts);
 
+/* Filled polygon with anti-aliased edges. libgd's gdImageFilledPolygon
+ * paints a hard-edged fill; this helper walks each segment with the
+ * AA renderer afterwards so angled edges read as smooth. Use it for
+ * any polygon whose visible edges are diagonal — area-chart fills,
+ * radar / polar shapes, pie slices via the radial+arc decomposition
+ * at the call site. Axis-aligned rectangles don't benefit and should
+ * keep using gdImageFilledRectangle directly. */
+void fastchart_filled_polygon_aa(gdImagePtr im, gdPointPtr poly,
+                                 int n_pts, int color);
+
+/* Filled wedge (pie slice / gauge zone) with anti-aliased outer arc
+ * and radial edges. Wraps gdImageFilledArc(... gdPie) and adds the
+ * AA outline. start_deg / end_deg follow libgd's CCW convention with
+ * 0 = +x (3 o'clock). */
+void fastchart_filled_wedge_aa(gdImagePtr im, int cx, int cy,
+                               int diameter, int start_deg, int end_deg,
+                               int color);
+
 /* Drop-shadow helpers. Each is a no-op when chart->has_drop_shadow is
  * false. The "before" call paints a darkened/colored offset shape
  * underneath; the actual fill follows on top. */

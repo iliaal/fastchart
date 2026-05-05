@@ -162,7 +162,7 @@ int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
             int alpha = gdImageColorAllocateAlpha(im, rr, gg, bb, 90);
             gdImageAlphaBlending(im, 1);
             fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_axes);
-            gdImageFilledPolygon(im, poly, n_axes, alpha);
+            fastchart_filled_polygon_aa(im, poly, n_axes, alpha);
             gdImageAlphaBlending(im, 0);
         }
         gdImageSetThickness(im, 2);

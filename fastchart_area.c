@@ -149,7 +149,7 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
             if (n_pts >= 3) {
                 fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
                 if (!fastchart_gradient_filled_polygon(im, (fastchart_obj *)self, &grad_cache, poly, n_pts)) {
-                    gdImageFilledPolygon(im, poly, n_pts, rgb_color);
+                    fastchart_filled_polygon_aa(im, poly, n_pts, rgb_color);
                 }
                 if (self->edge_color >= 0) {
                     gdImagePolygon(im, poly, n_pts, (int)self->edge_color);
@@ -203,7 +203,7 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
                 fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
                 gdImageAlphaBlending(im, 1);
                 if (!fastchart_gradient_filled_polygon(im, (fastchart_obj *)self, &grad_cache, poly, n_pts)) {
-                    gdImageFilledPolygon(im, poly, n_pts, alpha_color);
+                    fastchart_filled_polygon_aa(im, poly, n_pts, alpha_color);
                 }
                 if (self->edge_color >= 0) {
                     gdImagePolygon(im, poly, n_pts, (int)self->edge_color);

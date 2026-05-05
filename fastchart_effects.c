@@ -14,6 +14,8 @@
 #include "config.h"
 #endif
 
+#include <math.h>
+
 #include "php.h"
 #include "fastchart_effects.h"
 #include "fastchart_text.h"
@@ -206,6 +208,47 @@ static int shadow_color_alloc(gdImagePtr im, fastchart_obj *chart)
         gdImageColorAllocateAlpha(im, r, g, b, (int)chart->shadow_alpha);
     chart->shadow_color_valid = true;
     return chart->shadow_color_handle;
+}
+
+void fastchart_filled_polygon_aa(gdImagePtr im, gdPointPtr poly,
+                                 int n_pts, int color)
+{
+    if (n_pts < 3) return;
+    gdImageFilledPolygon(im, poly, n_pts, color);
+    /* Walk each edge as a 1px AA line. The fill is already opaque under
+     * the centerline, so the AA pass only contributes coverage to the
+     * fringe pixels just outside the rasterized fill — softening the
+     * jaggy step pattern without thickening the shape. */
+    gdImageSetAntiAliased(im, color);
+    for (int i = 0; i < n_pts; i++) {
+        int j = (i + 1) % n_pts;
+        gdImageLine(im, poly[i].x, poly[i].y,
+                        poly[j].x, poly[j].y, gdAntiAliased);
+    }
+}
+
+void fastchart_filled_wedge_aa(gdImagePtr im, int cx, int cy,
+                               int diameter, int start_deg, int end_deg,
+                               int color)
+{
+    gdImageFilledArc(im, cx, cy, diameter, diameter,
+                     start_deg, end_deg, color, gdPie);
+    /* AA outline: outer arc + the two radial edges from center to the
+     * arc endpoints. libgd's gdImageArc honors gdAntiAliased, so the
+     * arc curve itself reads smooth; the two radials are 1px AA lines
+     * mirroring the fastchart_filled_polygon_aa idea. */
+    gdImageSetAntiAliased(im, color);
+    gdImageArc(im, cx, cy, diameter, diameter,
+               start_deg, end_deg, gdAntiAliased);
+    int radius = diameter / 2;
+    double rs = start_deg * M_PI / 180.0;
+    double re = end_deg   * M_PI / 180.0;
+    int sx = cx + (int)((double)radius * cos(rs));
+    int sy = cy + (int)((double)radius * sin(rs));
+    int ex = cx + (int)((double)radius * cos(re));
+    int ey = cy + (int)((double)radius * sin(re));
+    gdImageLine(im, cx, cy, sx, sy, gdAntiAliased);
+    gdImageLine(im, cx, cy, ex, ey, gdAntiAliased);
 }
 
 void fastchart_shadow_filled_rectangle(gdImagePtr im, fastchart_obj *chart,
