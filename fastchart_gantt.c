@@ -51,6 +51,9 @@ int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
     fastchart_palette_init(im, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
+    fastchart_gradient_cache grad_cache;
+    fastchart_gradient_cache_reset(&grad_cache);
+
     fastchart_rect plot;
     fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, &plot);
 
@@ -121,7 +124,7 @@ int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
             int y0 = row_yc - bar_h / 2;
             int y1 = row_yc + bar_h / 2;
             fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x_start, y0, x_end, y1);
-            if (!fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, x_start, y0, x_end, y1)) {
+            if (!fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x_start, y0, x_end, y1)) {
                 gdImageFilledRectangle(im, x_start, y0, x_end, y1, color);
             }
             if (self->edge_color >= 0) gdImageRectangle(im, x_start, y0, x_end, y1, (int)self->edge_color);
@@ -171,6 +174,7 @@ ZEND_METHOD(FastChart_GanttChart, draw)
         zend_throw_error(NULL, "FastChart\\GanttChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
+    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
     fastchart_gantt_obj *self = Z_FASTCHART_GANTT_OBJ_P(ZEND_THIS);
     if (fastchart_gantt_render_to_image(self, im) != 0) {
         RETURN_THROWS();

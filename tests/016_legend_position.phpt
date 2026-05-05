@@ -52,10 +52,11 @@ $any = $count_in($im, 60, 220, 10, 80) +
        $count_in($im, 600, 770, 10, 80) +
        $count_in($im, 60, 220, 280, 360) +
        $count_in($im, 600, 770, 280, 360);
-// Non-zero is OK (data lines may pass through corner regions),
-// but the legend SWATCH adds a dense ~140 pixel block; absence
-// means well below that.
-echo "legend_none_no_dense_swatch: ", ($any < 50 ? "yes" : "no ($any)"), "\n";
+// Non-zero is OK (data lines may pass through corner regions and
+// thick 2-pass strokes add ~50-70 hits per corner). A legend swatch
+// adds a dense ~140 pixel block on top of those line transits, so
+// "swatch present" lands well above 350; "no swatch" stays below.
+echo "legend_none_no_dense_swatch: ", ($any < 350 ? "yes" : "no ($any)"), "\n";
 
 // Bad position rejected.
 try {

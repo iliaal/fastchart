@@ -199,7 +199,8 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
                 int ly = cy + (int)(outside_r * sin_mid);
                 int rim_x = cx + (int)((diameter / 2.0) * cos_mid);
                 int rim_y = cy + (int)((diameter / 2.0) * sin_mid);
-                gdImageLine(im, rim_x, rim_y, lx, ly, pal.axis);
+                gdImageSetAntiAliased(im, pal.axis);
+                gdImageLine(im, rim_x, rim_y, lx, ly, gdAntiAliased);
                 fastchart_align align = right_side
                     ? FASTCHART_ALIGN_LEFT : FASTCHART_ALIGN_RIGHT;
                 int anchor_x = lx + (right_side ? 4 : -4);
@@ -212,7 +213,8 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
                 /* Tiny leader line from rim to label anchor. */
                 int rim_x = cx + (int)((diameter / 2.0) * cos_mid);
                 int rim_y = cy + (int)((diameter / 2.0) * sin_mid);
-                gdImageLine(im, rim_x, rim_y, lx, ly, pal.axis);
+                gdImageSetAntiAliased(im, pal.axis);
+                gdImageLine(im, rim_x, rim_y, lx, ly, gdAntiAliased);
                 bool right_side = (cos_mid >= 0);
                 fastchart_align align = right_side
                     ? FASTCHART_ALIGN_LEFT : FASTCHART_ALIGN_RIGHT;
@@ -254,6 +256,7 @@ ZEND_METHOD(FastChart_PieChart, draw)
         zend_throw_error(NULL, "FastChart\\PieChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
+    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
 
     fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
     if (fastchart_pie_render_to_image(self, im) != 0) {

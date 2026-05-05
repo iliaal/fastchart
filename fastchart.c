@@ -167,7 +167,68 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
     b->font_path = fastchart_default_font_path
         ? zend_string_copy(fastchart_default_font_path) : NULL;
 
+    b->category_labels = NULL;
+    b->n_category_labels = 0;
+
+    b->plot_bands = NULL;
+    b->n_plot_bands = 0;
+
+    b->icons = NULL;
+    b->n_icons = 0;
+
+    for (int i = 0; i < 4; i++) b->font_cache_path[i] = NULL;
+    b->font_cache_valid = false;
+    b->shadow_color_handle = -1;
+    b->shadow_color_valid = false;
+
     array_init(&b->config);
+}
+
+static void fastchart_icons_free(fastchart_obj *b)
+{
+    if (!b->icons) return;
+    for (int i = 0; i < b->n_icons; i++) {
+        if (b->icons[i].path) efree(b->icons[i].path);
+    }
+    efree(b->icons);
+    b->icons = NULL;
+    b->n_icons = 0;
+}
+
+static void fastchart_plot_bands_free(fastchart_obj *b)
+{
+    if (!b->plot_bands) return;
+    for (int i = 0; i < b->n_plot_bands; i++) {
+        if (b->plot_bands[i].label) efree(b->plot_bands[i].label);
+    }
+    efree(b->plot_bands);
+    b->plot_bands = NULL;
+    b->n_plot_bands = 0;
+}
+
+static void fastchart_category_labels_free(fastchart_obj *b)
+{
+    if (!b->category_labels) return;
+    for (int i = 0; i < b->n_category_labels; i++) {
+        if (b->category_labels[i]) efree(b->category_labels[i]);
+    }
+    efree(b->category_labels);
+    b->category_labels = NULL;
+    b->n_category_labels = 0;
+}
+
+/* Renderer helper: borrow the category-label slots into a freshly
+ * allocated const char ** sized to `n` slots so callers can pass it
+ * straight to the categorical-axis drawer. Out-of-range slots are
+ * filled with NULL. Returns NULL when no labels are set or n <= 0. */
+const char **fastchart_borrow_category_labels(fastchart_obj *b, int n)
+{
+    if (n <= 0 || !b->category_labels) return NULL;
+    const char **out = ecalloc((size_t)n, sizeof(const char *));
+    for (int i = 0; i < n; i++) {
+        out[i] = (i < b->n_category_labels) ? b->category_labels[i] : NULL;
+    }
+    return out;
 }
 
 #define FASTCHART_BASE_OWNED_STR(F) \
@@ -181,6 +242,9 @@ static void fastchart_base_release_owned(fastchart_obj *b)
 #define FC_RELEASE(field) if (b->field) zend_string_release(b->field);
     FASTCHART_BASE_OWNED_STR(FC_RELEASE)
 #undef FC_RELEASE
+    fastchart_category_labels_free(b);
+    fastchart_plot_bands_free(b);
+    fastchart_icons_free(b);
     zval_ptr_dtor(&b->config);
 }
 
@@ -189,6 +253,47 @@ static void fastchart_base_addref_owned(fastchart_obj *b)
 #define FC_ADDREF(field) if (b->field) zend_string_addref(b->field);
     FASTCHART_BASE_OWNED_STR(FC_ADDREF)
 #undef FC_ADDREF
+    /* Deep-copy the category-label string array so the clone owns
+     * its own slots. */
+    if (b->category_labels && b->n_category_labels > 0) {
+        char **copy = ecalloc((size_t)b->n_category_labels, sizeof(char *));
+        for (int i = 0; i < b->n_category_labels; i++) {
+            const char *src = b->category_labels[i];
+            if (!src) { copy[i] = NULL; continue; }
+            size_t len = strlen(src);
+            copy[i] = emalloc(len + 1);
+            memcpy(copy[i], src, len + 1);
+        }
+        b->category_labels = copy;
+    }
+    if (b->plot_bands && b->n_plot_bands > 0) {
+        size_t bytes = (size_t)b->n_plot_bands * sizeof(fastchart_plot_band);
+        fastchart_plot_band *copy = emalloc(bytes);
+        memcpy(copy, b->plot_bands, bytes);
+        for (int i = 0; i < b->n_plot_bands; i++) {
+            if (copy[i].label) {
+                size_t len = strlen(copy[i].label);
+                char *l = emalloc(len + 1);
+                memcpy(l, copy[i].label, len + 1);
+                copy[i].label = l;
+            }
+        }
+        b->plot_bands = copy;
+    }
+    if (b->icons && b->n_icons > 0) {
+        size_t bytes = (size_t)b->n_icons * sizeof(fastchart_icon);
+        fastchart_icon *copy = emalloc(bytes);
+        memcpy(copy, b->icons, bytes);
+        for (int i = 0; i < b->n_icons; i++) {
+            if (copy[i].path) {
+                size_t len = strlen(copy[i].path);
+                char *p = emalloc(len + 1);
+                memcpy(p, copy[i].path, len + 1);
+                copy[i].path = p;
+            }
+        }
+        b->icons = copy;
+    }
     Z_TRY_ADDREF(b->config);
 }
 
@@ -292,14 +397,22 @@ static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int 
         }
         if (flags & FC_SERIES_F_RIGHTAXIS) {
             zval *axis_zv = zend_hash_str_find(ht, "axis", sizeof("axis") - 1);
+            /* zend_string_equals_literal is length-aware: rejects
+             * "right\0junk" that strcmp would accept. */
             right_axis = (axis_zv && Z_TYPE_P(axis_zv) == IS_STRING &&
-                          strcmp(Z_STRVAL_P(axis_zv), "right") == 0);
+                          zend_string_equals_literal(Z_STR_P(axis_zv), "right"));
         }
     } else {
         data_ht = ht;
     }
 
-    int n = (int)zend_hash_num_elements(data_ht);
+    uint32_t un = zend_hash_num_elements(data_ht);
+    if (un > FASTCHART_MAX_POINTS_PER_SERIES) {
+        zend_value_error("FastChart series accepts at most %d points per series; got %u",
+                         FASTCHART_MAX_POINTS_PER_SERIES, un);
+        return -1;
+    }
+    int n = (int)un;
     out->len = n;
     out->right_axis = right_axis;
     fastchart_series_dup_label(out, label);
@@ -419,21 +532,35 @@ static void fastchart_line_init_extras(fastchart_line_obj *o)
     fastchart_series_array_init(o->series, FASTCHART_MAX_SERIES);
     o->n_series = 0;
     o->max_len = 0;
+    o->err_lo = NULL;
+    o->err_hi = NULL;
+    o->err_n  = 0;
 }
 static void fastchart_line_release_extras(fastchart_line_obj *o)
 {
     fastchart_series_array_release(o->series, o->n_series);
     o->n_series = 0;
     o->max_len = 0;
+    if (o->err_lo) efree(o->err_lo);
+    if (o->err_hi) efree(o->err_hi);
+    o->err_lo = NULL;
+    o->err_hi = NULL;
+    o->err_n  = 0;
 }
 static void fastchart_line_addref_extras(fastchart_line_obj *o)
 {
     fastchart_series_array_addref(o->series, o->n_series);
+    if (o->err_lo && o->err_n > 0) {
+        size_t bytes = (size_t)o->err_n * sizeof(double);
+        double *l = emalloc(bytes); memcpy(l, o->err_lo, bytes); o->err_lo = l;
+        double *h = emalloc(bytes); memcpy(h, o->err_hi, bytes); o->err_hi = h;
+    }
 }
 
 static void fastchart_area_init_extras(fastchart_area_obj *o)
 {
     o->area_alpha = 64;
+    o->stacked = false;
     fastchart_series_array_init(o->series, FASTCHART_MAX_SERIES);
     o->n_series = 0;
     o->max_len = 0;
@@ -453,6 +580,8 @@ static void fastchart_bar_init_extras(fastchart_bar_obj *o)
 {
     o->stack_mode = FASTCHART_STACK_SUM;
     o->bar_floating = false;
+    o->stacked = false;
+    o->bar_orientation = FASTCHART_BAR_VERTICAL;
     fastchart_series_array_init(o->series, FASTCHART_MAX_SERIES);
     o->n_series = 0;
     o->max_len = 0;
@@ -543,6 +672,11 @@ static void fastchart_scatter_init_extras(fastchart_scatter_obj *o)
     for (int i = 0; i < FASTCHART_MAX_SCATTER_SERIES; i++) {
         o->series_labels[i] = NULL;
     }
+    o->err_lo = NULL;
+    o->err_hi = NULL;
+    o->err_n  = 0;
+    o->image_map_areas = NULL;
+    o->n_image_map_areas = 0;
 }
 static void fastchart_scatter_release_extras(fastchart_scatter_obj *o)
 {
@@ -562,6 +696,16 @@ static void fastchart_scatter_release_extras(fastchart_scatter_obj *o)
         }
     }
     o->n_series = 0;
+    if (o->err_lo) efree(o->err_lo);
+    if (o->err_hi) efree(o->err_hi);
+    o->err_lo = NULL;
+    o->err_hi = NULL;
+    o->err_n  = 0;
+    /* Image-map areas borrow href/tooltip from points[i]; only the
+     * areas array itself is owned. */
+    if (o->image_map_areas) efree(o->image_map_areas);
+    o->image_map_areas = NULL;
+    o->n_image_map_areas = 0;
 }
 static void fastchart_scatter_addref_extras(fastchart_scatter_obj *o)
 {
@@ -580,6 +724,19 @@ static void fastchart_scatter_addref_extras(fastchart_scatter_obj *o)
     for (int i = 0; i < o->n_series; i++) {
         o->series_labels[i] = fc_strdup_opt(o->series_labels[i]);
     }
+    if (o->err_lo && o->err_n > 0) {
+        size_t bytes = (size_t)o->err_n * sizeof(double);
+        double *l = emalloc(bytes); memcpy(l, o->err_lo, bytes); o->err_lo = l;
+        double *h = emalloc(bytes); memcpy(h, o->err_hi, bytes); o->err_hi = h;
+    }
+    /* Image-map areas are a render artifact — clear on the clone so
+     * the cloned chart starts with no cached areas. The next draw on
+     * the clone will repopulate them with fresh href/tooltip pointers
+     * borrowed from the cloned points[]. Carrying over the original
+     * areas would leave stale pointers into the original points array
+     * (which is no longer reachable after this addref). */
+    o->image_map_areas = NULL;
+    o->n_image_map_areas = 0;
 }
 
 static void fastchart_stock_init_extras(fastchart_stock_obj *o)
@@ -763,14 +920,25 @@ static void fastchart_gauge_init_extras(fastchart_gauge_obj *o)
     o->gauge_min = 0.0;
     o->gauge_max = 100.0;
     o->gauge_value_format = NULL;
+    o->zones = NULL;
+    o->n_zones = 0;
 }
 static void fastchart_gauge_release_extras(fastchart_gauge_obj *o)
 {
     if (o->gauge_value_format) zend_string_release(o->gauge_value_format);
+    if (o->zones) efree(o->zones);
+    o->zones = NULL;
+    o->n_zones = 0;
 }
 static void fastchart_gauge_addref_extras(fastchart_gauge_obj *o)
 {
     if (o->gauge_value_format) zend_string_addref(o->gauge_value_format);
+    if (o->zones && o->n_zones > 0) {
+        size_t bytes = (size_t)o->n_zones * sizeof(fastchart_gauge_zone);
+        fastchart_gauge_zone *copy = emalloc(bytes);
+        memcpy(copy, o->zones, bytes);
+        o->zones = copy;
+    }
 }
 
 static void fastchart_gantt_init_extras(fastchart_gantt_obj *o)
@@ -1003,7 +1171,7 @@ FASTCHART_DEFINE_LIFECYCLE(contour, fastchart_contour_obj)
  *   Arch:               /usr/share/fonts/TTF/...
  *   Alpine:             /usr/share/fonts/TTF/...
  *   macOS:              /Library/Fonts/... (system) or /System/Library/Fonts/... */
-static const char *DEFAULT_FONT_CANDIDATES[] = {
+static const char *FASTCHART_DEFAULT_FONT_CANDIDATES[] = {
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
@@ -1016,10 +1184,10 @@ static const char *DEFAULT_FONT_CANDIDATES[] = {
 static zend_string *fastchart_probe_default_font(void)
 {
     struct stat st;
-    for (int i = 0; DEFAULT_FONT_CANDIDATES[i]; i++) {
-        if (stat(DEFAULT_FONT_CANDIDATES[i], &st) == 0 && S_ISREG(st.st_mode)) {
-            return zend_string_init(DEFAULT_FONT_CANDIDATES[i],
-                                    strlen(DEFAULT_FONT_CANDIDATES[i]),
+    for (int i = 0; FASTCHART_DEFAULT_FONT_CANDIDATES[i]; i++) {
+        if (stat(FASTCHART_DEFAULT_FONT_CANDIDATES[i], &st) == 0 && S_ISREG(st.st_mode)) {
+            return zend_string_init(FASTCHART_DEFAULT_FONT_CANDIDATES[i],
+                                    strlen(FASTCHART_DEFAULT_FONT_CANDIDATES[i]),
                                     1 /* persistent */);
         }
     }
@@ -1201,12 +1369,52 @@ ZEND_METHOD(FastChart_Chart, setCategoryLabels)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    /* Stash a refcounted copy on config so the per-type draw can
-     * find it under a known key. Replacing on each call keeps the
-     * setter idempotent. */
-    zval labels_copy;
-    ZVAL_COPY(&labels_copy, labels);
-    add_assoc_zval(&self->config, "category_labels", &labels_copy);
+    HashTable *ht = Z_ARRVAL_P(labels);
+    uint32_t n = zend_hash_num_elements(ht);
+    if (n > FASTCHART_MAX_CATEGORY_LABELS) n = FASTCHART_MAX_CATEGORY_LABELS;
+
+    fastchart_category_labels_free(self);
+    if (n == 0) {
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
+    }
+
+    /* Materialize each label into an owned char* slot. Non-string
+     * cells become NULL so renderers can skip them; embedded NUL is
+     * not allowed. */
+    char **slots = ecalloc((size_t)n, sizeof(char *));
+    uint32_t idx = 0;
+    zval *lv;
+    ZEND_HASH_FOREACH_VAL(ht, lv) {
+        if (idx >= n) break;
+        if (Z_TYPE_P(lv) == IS_STRING) {
+            zend_string *zs = Z_STR_P(lv);
+            const char *src = ZSTR_VAL(zs);
+            size_t len = ZSTR_LEN(zs);
+            if (memchr(src, '\0', len) == NULL) {
+                slots[idx] = emalloc(len + 1);
+                memcpy(slots[idx], src, len);
+                slots[idx][len] = '\0';
+            }
+        } else if (Z_TYPE_P(lv) == IS_LONG) {
+            char buf[32];
+            int blen = snprintf(buf, sizeof(buf), ZEND_LONG_FMT, Z_LVAL_P(lv));
+            if (blen > 0 && blen < (int)sizeof(buf)) {
+                slots[idx] = emalloc((size_t)blen + 1);
+                memcpy(slots[idx], buf, (size_t)blen + 1);
+            }
+        } else if (Z_TYPE_P(lv) == IS_DOUBLE) {
+            char buf[64];
+            int blen = snprintf(buf, sizeof(buf), "%g", Z_DVAL_P(lv));
+            if (blen > 0 && blen < (int)sizeof(buf)) {
+                slots[idx] = emalloc((size_t)blen + 1);
+                memcpy(slots[idx], buf, (size_t)blen + 1);
+            }
+        }
+        idx++;
+    } ZEND_HASH_FOREACH_END();
+
+    self->category_labels = slots;
+    self->n_category_labels = (int)n;
 
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
@@ -1409,6 +1617,191 @@ ZEND_METHOD(FastChart_Chart, addHorizontalLine)
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     push_annotation(self, "h", value, label, !color_is_null, color);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, addHorizontalBand)
+{
+    double low, high;
+    zend_long color;
+    zend_long alpha = 64;
+    zend_string *label = NULL;
+
+    ZEND_PARSE_PARAMETERS_START(3, 5)
+        Z_PARAM_DOUBLE(low)
+        Z_PARAM_DOUBLE(high)
+        Z_PARAM_LONG(color)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(alpha)
+        Z_PARAM_STR_OR_NULL(label)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (fastchart_reject_non_finite(low, "FastChart\\Chart::addHorizontalBand()") != 0 ||
+        fastchart_reject_non_finite(high, "FastChart\\Chart::addHorizontalBand()") != 0) {
+        RETURN_THROWS();
+    }
+    if (color < 0 || color > 0xFFFFFF) {
+        zend_value_error("FastChart\\Chart::addHorizontalBand() color out of range; expected 0..0xFFFFFF");
+        RETURN_THROWS();
+    }
+    if (alpha < 0 || alpha > 127) {
+        zend_value_error("FastChart\\Chart::addHorizontalBand() alpha out of range; expected 0..127");
+        RETURN_THROWS();
+    }
+    if (label && memchr(ZSTR_VAL(label), 0, ZSTR_LEN(label)) != NULL) {
+        zend_value_error("FastChart\\Chart::addHorizontalBand() label contains an embedded NUL");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (self->n_plot_bands >= FASTCHART_MAX_BANDS) {
+        zend_value_error("FastChart\\Chart::addHorizontalBand() supports at most %d bands",
+                         FASTCHART_MAX_BANDS);
+        RETURN_THROWS();
+    }
+
+    /* Grow the array one slot at a time. erealloc is fine here since
+     * the cap is small (16) and bands are added at chart-config time,
+     * not in a hot loop. */
+    size_t new_bytes = (size_t)(self->n_plot_bands + 1) * sizeof(fastchart_plot_band);
+    self->plot_bands = self->plot_bands
+        ? erealloc(self->plot_bands, new_bytes)
+        : emalloc(new_bytes);
+
+    fastchart_plot_band *band = &self->plot_bands[self->n_plot_bands];
+    band->low = low < high ? low : high;
+    band->high = low < high ? high : low;
+    band->color_rgb = (int)color;
+    band->alpha = (int)alpha;
+    band->label = NULL;
+    band->is_vertical = false;
+    if (label) {
+        size_t len = ZSTR_LEN(label);
+        band->label = emalloc(len + 1);
+        memcpy(band->label, ZSTR_VAL(label), len);
+        band->label[len] = '\0';
+    }
+    self->n_plot_bands++;
+
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, addVerticalBand)
+{
+    double low, high;
+    zend_long color;
+    zend_long alpha = 64;
+    zend_string *label = NULL;
+
+    ZEND_PARSE_PARAMETERS_START(3, 5)
+        Z_PARAM_DOUBLE(low)
+        Z_PARAM_DOUBLE(high)
+        Z_PARAM_LONG(color)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(alpha)
+        Z_PARAM_STR_OR_NULL(label)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (fastchart_reject_non_finite(low, "FastChart\\Chart::addVerticalBand()") != 0 ||
+        fastchart_reject_non_finite(high, "FastChart\\Chart::addVerticalBand()") != 0) {
+        RETURN_THROWS();
+    }
+    if (color < 0 || color > 0xFFFFFF) {
+        zend_value_error("FastChart\\Chart::addVerticalBand() color out of range; expected 0..0xFFFFFF");
+        RETURN_THROWS();
+    }
+    if (alpha < 0 || alpha > 127) {
+        zend_value_error("FastChart\\Chart::addVerticalBand() alpha out of range; expected 0..127");
+        RETURN_THROWS();
+    }
+    if (label && memchr(ZSTR_VAL(label), 0, ZSTR_LEN(label)) != NULL) {
+        zend_value_error("FastChart\\Chart::addVerticalBand() label contains an embedded NUL");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (self->n_plot_bands >= FASTCHART_MAX_BANDS) {
+        zend_value_error("FastChart\\Chart::addVerticalBand() supports at most %d bands",
+                         FASTCHART_MAX_BANDS);
+        RETURN_THROWS();
+    }
+
+    size_t new_bytes = (size_t)(self->n_plot_bands + 1) * sizeof(fastchart_plot_band);
+    self->plot_bands = self->plot_bands
+        ? erealloc(self->plot_bands, new_bytes)
+        : emalloc(new_bytes);
+
+    fastchart_plot_band *band = &self->plot_bands[self->n_plot_bands];
+    band->low = low < high ? low : high;
+    band->high = low < high ? high : low;
+    band->color_rgb = (int)color;
+    band->alpha = (int)alpha;
+    band->label = NULL;
+    band->is_vertical = true;
+    if (label) {
+        size_t len = ZSTR_LEN(label);
+        band->label = emalloc(len + 1);
+        memcpy(band->label, ZSTR_VAL(label), len);
+        band->label[len] = '\0';
+    }
+    self->n_plot_bands++;
+
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, addIconAt)
+{
+    double x, y;
+    zend_string *path;
+    zend_long max_w = -1, max_h = -1;
+
+    ZEND_PARSE_PARAMETERS_START(3, 5)
+        Z_PARAM_DOUBLE(x)
+        Z_PARAM_DOUBLE(y)
+        Z_PARAM_STR(path)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(max_w)
+        Z_PARAM_LONG(max_h)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (fastchart_reject_non_finite(x, "FastChart\\Chart::addIconAt()") != 0 ||
+        fastchart_reject_non_finite(y, "FastChart\\Chart::addIconAt()") != 0) {
+        RETURN_THROWS();
+    }
+    if (ZSTR_LEN(path) == 0 ||
+        memchr(ZSTR_VAL(path), 0, ZSTR_LEN(path)) != NULL) {
+        zend_value_error("FastChart\\Chart::addIconAt() path must be non-empty and NUL-free");
+        RETURN_THROWS();
+    }
+    if ((max_w != -1 && (max_w < 1 || max_w > 4096)) ||
+        (max_h != -1 && (max_h < 1 || max_h > 4096))) {
+        zend_value_error("FastChart\\Chart::addIconAt() max width / height must be -1 or in [1, 4096]");
+        RETURN_THROWS();
+    }
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (self->n_icons >= FASTCHART_MAX_ICONS) {
+        zend_value_error("FastChart\\Chart::addIconAt() supports at most %d icons",
+                         FASTCHART_MAX_ICONS);
+        RETURN_THROWS();
+    }
+
+    size_t new_bytes = (size_t)(self->n_icons + 1) * sizeof(fastchart_icon);
+    self->icons = self->icons
+        ? erealloc(self->icons, new_bytes)
+        : emalloc(new_bytes);
+
+    fastchart_icon *icon = &self->icons[self->n_icons];
+    icon->x = x;
+    icon->y = y;
+    icon->max_w = (int)max_w;
+    icon->max_h = (int)max_h;
+    size_t plen = ZSTR_LEN(path);
+    icon->path = emalloc(plen + 1);
+    memcpy(icon->path, ZSTR_VAL(path), plen);
+    icon->path[plen] = '\0';
+    self->n_icons++;
+
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -1661,8 +2054,9 @@ ZEND_METHOD(FastChart_Chart, setLineInterpolation)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(mode)
     ZEND_PARSE_PARAMETERS_END();
-    if (mode != FASTCHART_INTERP_LINEAR && mode != FASTCHART_INTERP_SMOOTH) {
-        zend_value_error("FastChart\\Chart::setLineInterpolation() expects INTERP_LINEAR or INTERP_SMOOTH");
+    if (mode != FASTCHART_INTERP_LINEAR && mode != FASTCHART_INTERP_SMOOTH &&
+        mode != FASTCHART_INTERP_STEP_AFTER && mode != FASTCHART_INTERP_STEP_BEFORE) {
+        zend_value_error("FastChart\\Chart::setLineInterpolation() expects INTERP_LINEAR, INTERP_SMOOTH, INTERP_STEP_AFTER or INTERP_STEP_BEFORE");
         RETURN_THROWS();
     }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
@@ -2026,23 +2420,88 @@ ZEND_METHOD(FastChart_ScatterChart, setTrendLine)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-#define FASTCHART_ERROR_BARS_SETTER(class_) \
-    ZEND_METHOD(class_, setErrorBars) \
-    { \
-        zval *errs; \
-        ZEND_PARSE_PARAMETERS_START(1, 1) \
-            Z_PARAM_ARRAY(errs) \
-        ZEND_PARSE_PARAMETERS_END(); \
-        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
-        zval copy; \
-        ZVAL_COPY(&copy, errs); \
-        zend_hash_str_update(Z_ARRVAL(self->config), "error_bars", \
-                             sizeof("error_bars") - 1, &copy); \
-        RETURN_ZVAL(ZEND_THIS, 1, 0); \
+/* Parse a setErrorBars input array into two parallel double arrays
+ * (lo / hi as positive magnitudes). Each entry is one of:
+ *   - non-numeric / negative scalar -> NaN slot (no error bar)
+ *   - non-negative scalar M         -> lo = hi = M  (symmetric)
+ *   - [lo, hi] array                -> as-is, with negative values
+ *                                      coerced to NaN (no error bar)
+ * Returns 0 on success; never fails for shape — bad cells silently
+ * become NaN slots. Caller frees out_lo / out_hi via efree(). */
+static int fastchart_parse_error_bars(zval *errs, double **out_lo,
+                                      double **out_hi, int *out_n)
+{
+    HashTable *ht = Z_ARRVAL_P(errs);
+    uint32_t n = zend_hash_num_elements(ht);
+    if (n == 0) {
+        *out_lo = NULL;
+        *out_hi = NULL;
+        *out_n = 0;
+        return 0;
     }
+    double *lo = emalloc((size_t)n * sizeof(double));
+    double *hi = emalloc((size_t)n * sizeof(double));
 
-FASTCHART_ERROR_BARS_SETTER(FastChart_LineChart)
-FASTCHART_ERROR_BARS_SETTER(FastChart_ScatterChart)
+    uint32_t idx = 0;
+    zval *ev;
+    ZEND_HASH_FOREACH_VAL(ht, ev) {
+        if (idx >= n) break;
+        double l = NAN, h = NAN;
+        if (Z_TYPE_P(ev) == IS_ARRAY) {
+            zval *zlo = zend_hash_index_find(Z_ARRVAL_P(ev), 0);
+            zval *zhi = zend_hash_index_find(Z_ARRVAL_P(ev), 1);
+            double dl = NAN, dh = NAN;
+            if (zlo && fastchart_zval_to_double(zlo, &dl) == 0 && dl >= 0) l = dl;
+            if (zhi && fastchart_zval_to_double(zhi, &dh) == 0 && dh >= 0) h = dh;
+        } else {
+            double m;
+            if (fastchart_zval_to_double(ev, &m) == 0 && m >= 0) {
+                l = m;
+                h = m;
+            }
+        }
+        lo[idx] = l;
+        hi[idx] = h;
+        idx++;
+    } ZEND_HASH_FOREACH_END();
+
+    *out_lo = lo;
+    *out_hi = hi;
+    *out_n = (int)n;
+    return 0;
+}
+
+ZEND_METHOD(FastChart_LineChart, setErrorBars)
+{
+    zval *errs;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(errs)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_line_obj *self = Z_FASTCHART_LINE_OBJ_P(ZEND_THIS);
+    if (self->err_lo) efree(self->err_lo);
+    if (self->err_hi) efree(self->err_hi);
+    self->err_lo = NULL;
+    self->err_hi = NULL;
+    self->err_n = 0;
+    fastchart_parse_error_bars(errs, &self->err_lo, &self->err_hi, &self->err_n);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_ScatterChart, setErrorBars)
+{
+    zval *errs;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(errs)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_scatter_obj *self = Z_FASTCHART_SCATTER_OBJ_P(ZEND_THIS);
+    if (self->err_lo) efree(self->err_lo);
+    if (self->err_hi) efree(self->err_hi);
+    self->err_lo = NULL;
+    self->err_hi = NULL;
+    self->err_n = 0;
+    fastchart_parse_error_bars(errs, &self->err_lo, &self->err_hi, &self->err_n);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
 /* Parse one [x, y] (or longer) tuple plus optional 'href' / 'tooltip'
  * / 'color' assoc keys into a typed scatter point. Returns 0 on
@@ -2274,11 +2733,53 @@ ZEND_METHOD(FastChart_GaugeChart, setZones)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(zones)
     ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval copy;
-    ZVAL_COPY(&copy, zones);
-    zend_hash_str_update(Z_ARRVAL(self->config), "gauge_zones",
-                         sizeof("gauge_zones") - 1, &copy);
+
+    fastchart_gauge_obj *self = Z_FASTCHART_GAUGE_OBJ_P(ZEND_THIS);
+
+    /* Replace any existing zones. Each user-facing entry is an assoc
+     * array { from: float, to: float, color?: int }. Bad-shape entries
+     * are silently dropped (matches the prior config-zval behavior).
+     * Up to 16 zones; further entries are ignored. */
+    if (self->zones) efree(self->zones);
+    self->zones = NULL;
+    self->n_zones = 0;
+
+    HashTable *ht = Z_ARRVAL_P(zones);
+    uint32_t total = zend_hash_num_elements(ht);
+    if (total == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+
+    fastchart_gauge_zone *out = ecalloc(
+        total > FASTCHART_MAX_GAUGE_ZONES ? FASTCHART_MAX_GAUGE_ZONES : total,
+        sizeof(fastchart_gauge_zone));
+    int n = 0;
+    zval *z;
+    ZEND_HASH_FOREACH_VAL(ht, z) {
+        if (n >= FASTCHART_MAX_GAUGE_ZONES) break;
+        if (Z_TYPE_P(z) != IS_ARRAY) continue;
+        zval *zf = zend_hash_str_find(Z_ARRVAL_P(z), "from", sizeof("from") - 1);
+        zval *zt = zend_hash_str_find(Z_ARRVAL_P(z), "to",   sizeof("to")   - 1);
+        zval *zc = zend_hash_str_find(Z_ARRVAL_P(z), "color", sizeof("color") - 1);
+        double f, t;
+        if (!zf || !zt) continue;
+        if (fastchart_zval_to_double(zf, &f) != 0) continue;
+        if (fastchart_zval_to_double(zt, &t) != 0) continue;
+        int color_rgb = -1;
+        if (zc && Z_TYPE_P(zc) == IS_LONG &&
+            Z_LVAL_P(zc) >= 0 && Z_LVAL_P(zc) <= 0xFFFFFF) {
+            color_rgb = (int)Z_LVAL_P(zc);
+        }
+        out[n].from = f;
+        out[n].to = t;
+        out[n].color_rgb = color_rgb;
+        n++;
+    } ZEND_HASH_FOREACH_END();
+
+    if (n == 0) {
+        efree(out);
+    } else {
+        self->zones = out;
+        self->n_zones = n;
+    }
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -2320,10 +2821,9 @@ ZEND_METHOD(FastChart_Chart, setDateAxisStride)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* Walk a flat list of points (Scatter/Bubble shape) and emit
- * <area> entries for those that carry an 'href' / 'tooltip' key.
- * The chart must have been render()'d already so the chart's
- * cached pixel positions are present in self->config["areas"]. */
+/* Emit a HTML <map> for the scatter chart's clickable points. Reads
+ * the typed image_map_areas array populated by the renderer; chart
+ * must have been draw()'d at least once for any output. */
 ZEND_METHOD(FastChart_ScatterChart, getImageMap)
 {
     zend_string *name;
@@ -2332,12 +2832,8 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
         Z_PARAM_STR(name)
     ZEND_PARSE_PARAMETERS_END();
 
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval *areas_zv = zend_hash_str_find(Z_ARRVAL(self->config),
-                                        "image_map_areas",
-                                        sizeof("image_map_areas") - 1);
-    if (!areas_zv || Z_TYPE_P(areas_zv) != IS_ARRAY ||
-        zend_hash_num_elements(Z_ARRVAL_P(areas_zv)) == 0) {
+    fastchart_scatter_obj *self = Z_FASTCHART_SCATTER_OBJ_P(ZEND_THIS);
+    if (!self->image_map_areas || self->n_image_map_areas == 0) {
         RETURN_EMPTY_STRING();
     }
 
@@ -2370,38 +2866,22 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
     }
     smart_str_appends(&out, "\">");
 
-    zval *entry;
-    ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(areas_zv), entry) {
-        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
-        zval *zx = zend_hash_str_find(Z_ARRVAL_P(entry), "x", sizeof("x") - 1);
-        zval *zy = zend_hash_str_find(Z_ARRVAL_P(entry), "y", sizeof("y") - 1);
-        zval *zr = zend_hash_str_find(Z_ARRVAL_P(entry), "r", sizeof("r") - 1);
-        zval *zh = zend_hash_str_find(Z_ARRVAL_P(entry), "href", sizeof("href") - 1);
-        zval *zt = zend_hash_str_find(Z_ARRVAL_P(entry), "title", sizeof("title") - 1);
-        if (!zx || !zy || !zr || !zh) continue;
-        if (Z_TYPE_P(zh) != IS_STRING) continue;
+    for (int idx = 0; idx < self->n_image_map_areas; idx++) {
+        const fastchart_image_map_area *a = &self->image_map_areas[idx];
+        const char *href_str = a->href;
+        if (!href_str) continue;
+        size_t href_len = strlen(href_str);
 
         /* Scheme allowlist: dangerous URL schemes (javascript:, data:,
          * vbscript:) are rejected. Relative paths, fragments, and
          * mailto: are allowed alongside http(s). Reject the whole
          * <area> entry on a bad scheme rather than emit a sanitized
-         * one -- callers can audit their input. Embedded NUL also
-         * drops the entry: HTML5 parsers replace \0 with U+FFFD,
-         * but C-string consumers truncate, so the visible href and
-         * the actual link diverge. Same convention as the format-
-         * string validator. */
-        const char *href_str = Z_STRVAL_P(zh);
-        size_t href_len = Z_STRLEN_P(zh);
-        if (memchr(href_str, 0, href_len) != NULL) continue;
+         * one -- callers can audit their input. Embedded NUL was
+         * already dropped by the setter; href_str is NUL-clean. */
         bool href_ok = false;
         if (href_len == 0) {
             href_ok = true;
         } else if (href_str[0] == '/' || href_str[0] == '#') {
-            /* Single leading '/' covers absolute paths (/foo) and the
-             * legacy protocol-relative form (//host/path), which the
-             * browser resolves against the page scheme. The XSS surface
-             * is the same as an explicit https:// since the scheme is
-             * inherited, not chosen by the link. */
             href_ok = true;
         } else if (zend_binary_strncasecmp(href_str, href_len, "http://",  7,  7) == 0 ||
                    zend_binary_strncasecmp(href_str, href_len, "https://", 8,  8) == 0 ||
@@ -2409,20 +2889,14 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
             href_ok = true;
         }
         if (!href_ok) continue;
-        if (zt && Z_TYPE_P(zt) == IS_STRING &&
-            memchr(Z_STRVAL_P(zt), 0, Z_STRLEN_P(zt)) != NULL) {
-            /* Tooltip with embedded NUL: drop the title attribute,
-             * keep the link. Same divergence rationale as href. */
-            zt = NULL;
-        }
 
         char buf[256];
-        int n = snprintf(buf, sizeof(buf),
-            "<area shape=\"circle\" coords=\"" ZEND_LONG_FMT "," ZEND_LONG_FMT "," ZEND_LONG_FMT "\" href=\"",
-            Z_LVAL_P(zx), Z_LVAL_P(zy), Z_LVAL_P(zr));
-        if (n < 0) n = 0;
-        if ((size_t)n > sizeof(buf)) n = (int)sizeof(buf);
-        smart_str_appendl(&out, buf, (size_t)n);
+        int n_chars = snprintf(buf, sizeof(buf),
+            "<area shape=\"circle\" coords=\"%d,%d,%d\" href=\"",
+            a->x, a->y, a->r);
+        if (n_chars < 0) n_chars = 0;
+        if ((size_t)n_chars > sizeof(buf)) n_chars = (int)sizeof(buf);
+        smart_str_appendl(&out, buf, (size_t)n_chars);
 
         /* HTML-escape the href value: &, <, >, " each become their
          * entity form. Single quotes don't need escaping inside a
@@ -2439,10 +2913,10 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
         }
         smart_str_appends(&out, "\"");
 
-        if (zt && Z_TYPE_P(zt) == IS_STRING) {
+        if (a->tooltip) {
             smart_str_appends(&out, " title=\"");
-            const char *t_str = Z_STRVAL_P(zt);
-            size_t t_len = Z_STRLEN_P(zt);
+            const char *t_str = a->tooltip;
+            size_t t_len = strlen(t_str);
             for (size_t i = 0; i < t_len; i++) {
                 char c = t_str[i];
                 switch (c) {
@@ -2456,7 +2930,7 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
             smart_str_appends(&out, "\"");
         }
         smart_str_appends(&out, ">");
-    } ZEND_HASH_FOREACH_END();
+    }
 
     smart_str_appends(&out, "</map>");
     smart_str_0(&out);
@@ -2533,8 +3007,10 @@ ZEND_METHOD(FastChart_ContourChart, setLevels)
     if (self->levels) { efree(self->levels); self->levels = NULL; }
     self->level_count = 0;
     HashTable *ht = Z_ARRVAL_P(levels);
-    int n = (int)zend_hash_num_elements(ht);
-    if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    uint32_t un = zend_hash_num_elements(ht);
+    if (un == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    if (un > FASTCHART_MAX_LEVELS) un = FASTCHART_MAX_LEVELS;
+    int n = (int)un;
     self->levels = ecalloc((size_t)n, sizeof(double));
     int k = 0;
     zval *v;
@@ -2597,10 +3073,6 @@ ZEND_METHOD(FastChart_Chart, addOverlaySeries)
         if (opt && Z_TYPE_P(opt) == IS_LONG) {
             zend_long c = Z_LVAL_P(opt);
             if (c >= 0 && c <= 0xFFFFFF) add_assoc_long(&entry, "color", c);
-        }
-        opt = zend_hash_str_find(opts, "label", sizeof("label") - 1);
-        if (opt && Z_TYPE_P(opt) == IS_STRING) {
-            add_assoc_str(&entry, "label", zend_string_copy(Z_STR_P(opt)));
         }
         opt = zend_hash_str_find(opts, "thickness", sizeof("thickness") - 1);
         if (opt && Z_TYPE_P(opt) == IS_LONG) {
@@ -2749,13 +3221,15 @@ ZEND_METHOD(FastChart_StockChart, setVolumeColors)
 
     fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
     HashTable *ht = Z_ARRVAL_P(colors);
-    int n = (int)zend_hash_num_elements(ht);
-    if (n == 0) {
+    uint32_t un = zend_hash_num_elements(ht);
+    if (un == 0) {
         if (self->volume_colors) efree(self->volume_colors);
         self->volume_colors = NULL;
         self->volume_colors_count = 0;
         RETURN_ZVAL(ZEND_THIS, 1, 0);
     }
+    if (un > FASTCHART_MAX_VOLUME_COLORS) un = FASTCHART_MAX_VOLUME_COLORS;
+    int n = (int)un;
     int *parsed = emalloc((size_t)n * sizeof(int));
     for (int i = 0; i < n; i++) {
         zval *cv = zend_hash_index_find(ht, i);
@@ -2866,10 +3340,12 @@ ZEND_METHOD(FastChart_PieChart, setExplode)
 
     fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
     HashTable *ht = Z_ARRVAL_P(offsets);
-    int n = (int)zend_hash_num_elements(ht);
+    uint32_t un = zend_hash_num_elements(ht);
     if (self->explode) { efree(self->explode); self->explode = NULL; }
     self->explode_count = 0;
-    if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    if (un == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    if (un > FASTCHART_MAX_SLICES) un = FASTCHART_MAX_SLICES;
+    int n = (int)un;
     self->explode = ecalloc((size_t)n, sizeof(zend_long));
     /* Walk by index 0..n-1 so the array is positional even when the
      * user supplied an associative-style { 0 => 8, 2 => 12 } shape. */
@@ -3130,8 +3606,8 @@ ZEND_METHOD(FastChart_AreaChart, setStacked)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_BOOL(stacked)
     ZEND_PARSE_PARAMETERS_END();
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    add_assoc_bool(&self->config, "stacked", stacked);
+    fastchart_area_obj *self = Z_FASTCHART_AREA_OBJ_P(ZEND_THIS);
+    self->stacked = stacked;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -3208,7 +3684,7 @@ static int encode_image(gdImagePtr im, int format, int quality,
     return (*out_bytes && *out_sz > 0) ? 0 : -1;
 }
 
-static void render_to_string_helper(INTERNAL_FUNCTION_PARAMETERS, int format, zend_long quality)
+static void fastchart_render_to_string(INTERNAL_FUNCTION_PARAMETERS, int format, zend_long quality)
 {
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
 
@@ -3248,7 +3724,7 @@ static void render_to_string_helper(INTERNAL_FUNCTION_PARAMETERS, int format, ze
 ZEND_METHOD(FastChart_Chart, renderPng)
 {
     ZEND_PARSE_PARAMETERS_NONE();
-    render_to_string_helper(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0, 0);
+    fastchart_render_to_string(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0, 0);
 }
 
 ZEND_METHOD(FastChart_Chart, renderJpeg)
@@ -3263,7 +3739,7 @@ ZEND_METHOD(FastChart_Chart, renderJpeg)
         zend_value_error("FastChart\\Chart::renderJpeg() quality must be in [1, 100]");
         RETURN_THROWS();
     }
-    render_to_string_helper(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1, quality);
+    fastchart_render_to_string(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1, quality);
 }
 
 ZEND_METHOD(FastChart_Chart, renderWebp)
@@ -3278,13 +3754,13 @@ ZEND_METHOD(FastChart_Chart, renderWebp)
         zend_value_error("FastChart\\Chart::renderWebp() quality must be in [0, 100]");
         RETURN_THROWS();
     }
-    render_to_string_helper(INTERNAL_FUNCTION_PARAM_PASSTHRU, 2, quality);
+    fastchart_render_to_string(INTERNAL_FUNCTION_PARAM_PASSTHRU, 2, quality);
 }
 
 ZEND_METHOD(FastChart_Chart, renderGif)
 {
     ZEND_PARSE_PARAMETERS_NONE();
-    render_to_string_helper(INTERNAL_FUNCTION_PARAM_PASSTHRU, 3, 0);
+    fastchart_render_to_string(INTERNAL_FUNCTION_PARAM_PASSTHRU, 3, 0);
 }
 
 ZEND_METHOD(FastChart_Chart, renderAvif)
@@ -3299,7 +3775,7 @@ ZEND_METHOD(FastChart_Chart, renderAvif)
         zend_value_error("FastChart\\Chart::renderAvif() quality must be in [0, 100]");
         RETURN_THROWS();
     }
-    render_to_string_helper(INTERNAL_FUNCTION_PARAM_PASSTHRU, 4, quality);
+    fastchart_render_to_string(INTERNAL_FUNCTION_PARAM_PASSTHRU, 4, quality);
 }
 
 /* --------------------- renderToFile -------------------------------
@@ -3396,6 +3872,15 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
 
     if (written < 0) {
         zend_throw_error(NULL, "FastChart: write to %s failed", ZSTR_VAL(path));
+        RETURN_THROWS();
+    }
+    /* Short writes leave a truncated file behind. Treat as failure
+     * rather than returning the partial byte count, which a caller
+     * could mistake for success. */
+    if ((size_t)written != (size_t)sz) {
+        zend_throw_error(NULL,
+            "FastChart: short write to %s (%zd of %d bytes)",
+            ZSTR_VAL(path), written, sz);
         RETURN_THROWS();
     }
     RETURN_LONG((zend_long)written);
@@ -3550,7 +4035,9 @@ ZEND_METHOD(FastChart_GanttChart, setTasks)
                     (Z_TYPE_P(zm) == IS_LONG && Z_LVAL_P(zm) != 0)));
         zval *zd = zend_hash_str_find(th, "depends", 7);
         if (zd && Z_TYPE_P(zd) == IS_ARRAY) {
-            int dn = (int)zend_hash_num_elements(Z_ARRVAL_P(zd));
+            uint32_t udn = zend_hash_num_elements(Z_ARRVAL_P(zd));
+            if (udn > FASTCHART_MAX_GANTT_DEPS) udn = FASTCHART_MAX_GANTT_DEPS;
+            int dn = (int)udn;
             if (dn > 0) {
                 out->deps = ecalloc((size_t)dn, sizeof(int));
                 int k = 0;
@@ -3604,7 +4091,9 @@ ZEND_METHOD(FastChart_RadarChart, setSeries)
 
 #define RADAR_PARSE_VALUES(slot_, ht_) do {                                  \
         HashTable *_dh = (ht_);                                              \
-        int _np = (int)zend_hash_num_elements(_dh);                          \
+        uint32_t _unp = zend_hash_num_elements(_dh);                         \
+        if (_unp > FASTCHART_MAX_RADAR_VALUES) _unp = FASTCHART_MAX_RADAR_VALUES; \
+        int _np = (int)_unp;                                                 \
         if (_np > 0) {                                                       \
             (slot_)->values = emalloc((size_t)_np * sizeof(double));         \
             int _k = 0;                                                      \
@@ -3686,7 +4175,9 @@ ZEND_METHOD(FastChart_PolarChart, setSeries)
     /* Helper: parse a [angle, radius] list into the slot. */
 #define POLAR_PARSE_DATA(slot_, ht_) do {                                \
         HashTable *_dh = (ht_);                                          \
-        int _np = (int)zend_hash_num_elements(_dh);                      \
+        uint32_t _unp = zend_hash_num_elements(_dh);                     \
+        if (_unp > FASTCHART_MAX_POLAR_POINTS) _unp = FASTCHART_MAX_POLAR_POINTS; \
+        int _np = (int)_unp;                                             \
         if (_np > 0) {                                                   \
             (slot_)->angles = emalloc((size_t)_np * sizeof(double));     \
             (slot_)->radii  = emalloc((size_t)_np * sizeof(double));     \
@@ -3799,7 +4290,9 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxes)
             out->label = fc_strdup_opt(fastchart_label_or_null(zlabel));
             zval *zout = zend_hash_str_find(eh, "outliers", 8);
             if (zout && Z_TYPE_P(zout) == IS_ARRAY) {
-                int on = (int)zend_hash_num_elements(Z_ARRVAL_P(zout));
+                uint32_t uon = zend_hash_num_elements(Z_ARRVAL_P(zout));
+                if (uon > FASTCHART_MAX_OUTLIERS) uon = FASTCHART_MAX_OUTLIERS;
+                int on = (int)uon;
                 if (on > 0) {
                     out->outliers = ecalloc((size_t)on, sizeof(double));
                     int k = 0;
@@ -3888,9 +4381,25 @@ ZEND_METHOD(FastChart_BarChart, setStacked)
         Z_PARAM_BOOL(stacked)
     ZEND_PARSE_PARAMETERS_END();
 
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    add_assoc_bool(&self->config, "stacked", stacked);
+    fastchart_bar_obj *self = Z_FASTCHART_BAR_OBJ_P(ZEND_THIS);
+    self->stacked = stacked;
 
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_BarChart, setOrientation)
+{
+    zend_long orientation;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(orientation)
+    ZEND_PARSE_PARAMETERS_END();
+    if (orientation != FASTCHART_BAR_VERTICAL &&
+        orientation != FASTCHART_BAR_HORIZONTAL) {
+        zend_value_error("FastChart\\BarChart::setOrientation() expects BAR_VERTICAL or BAR_HORIZONTAL");
+        RETURN_THROWS();
+    }
+    fastchart_bar_obj *self = Z_FASTCHART_BAR_OBJ_P(ZEND_THIS);
+    self->bar_orientation = orientation;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -3930,8 +4439,8 @@ ZEND_METHOD(FastChart_StockChart, addMovingAverage)
         zend_value_error("FastChart\\StockChart::addMovingAverage() period must be >= 2");
         RETURN_THROWS();
     }
-    if (type != FASTCHART_MA_SMA && type != FASTCHART_MA_EMA) {
-        zend_value_error("FastChart\\StockChart::addMovingAverage() type must be MA_SMA or MA_EMA");
+    if (type != FASTCHART_MA_SMA && type != FASTCHART_MA_EMA && type != FASTCHART_MA_WMA) {
+        zend_value_error("FastChart\\StockChart::addMovingAverage() type must be MA_SMA, MA_EMA or MA_WMA");
         RETURN_THROWS();
     }
 
@@ -4004,7 +4513,9 @@ ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
      * finite cells become NaN so the renderer can break the line at
      * those gaps. */
     HashTable *vht = Z_ARRVAL_P(values);
-    int vn = (int)zend_hash_num_elements(vht);
+    uint32_t uvn = zend_hash_num_elements(vht);
+    if (uvn > FASTCHART_MAX_INDICATOR_VALUES) uvn = FASTCHART_MAX_INDICATOR_VALUES;
+    int vn = (int)uvn;
     double *parsed_values = vn > 0 ? emalloc((size_t)vn * sizeof(double)) : NULL;
     int idx = 0;
     zval *vv;

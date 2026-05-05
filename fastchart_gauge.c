@@ -59,48 +59,41 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
 
     /* Draw zones (or a single fill). libgd arc angles are clockwise
      * with 0° at 3-o'clock; a 180° arc covers 180° (left) to 360°
-     * (right). */
-    zval *zones_zv = zend_hash_str_find(Z_ARRVAL(self->config),
-        "gauge_zones", sizeof("gauge_zones") - 1);
+     * (right). Zones are pre-parsed into typed C state by setZones. */
     int default_color = pal.series[0];
 
-    if (zones_zv && Z_TYPE_P(zones_zv) == IS_ARRAY &&
-        zend_hash_num_elements(Z_ARRVAL_P(zones_zv)) > 0) {
+    if (self->zones && self->n_zones > 0) {
         /* Background fill (a thin ring, drawn as a fat arc). */
         gdImageFilledArc(im, cx, cy, diameter, diameter, 180, 360,
                          pal.grid, gdPie);
-        zval *z;
-        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(zones_zv), z) {
-            if (Z_TYPE_P(z) != IS_ARRAY) continue;
-            zval *zf = zend_hash_str_find(Z_ARRVAL_P(z), "from", sizeof("from") - 1);
-            zval *zt = zend_hash_str_find(Z_ARRVAL_P(z), "to",   sizeof("to") - 1);
-            zval *zc = zend_hash_str_find(Z_ARRVAL_P(z), "color", sizeof("color") - 1);
-            double f, t;
-            if (!zf || !zt || fastchart_zval_to_double(zf, &f) != 0 ||
-                fastchart_zval_to_double(zt, &t) != 0) continue;
+        for (int i = 0; i < self->n_zones; i++) {
+            const fastchart_gauge_zone *zn = &self->zones[i];
             int color = default_color;
-            if (zc && Z_TYPE_P(zc) == IS_LONG &&
-                Z_LVAL_P(zc) >= 0 && Z_LVAL_P(zc) <= 0xFFFFFF) {
-                zend_long c = Z_LVAL_P(zc);
+            if (zn->color_rgb >= 0) {
+                int c = zn->color_rgb;
                 color = gdImageColorAllocate(im,
                     (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
             }
-            /* Convert from gauge values to libgd arc angles. The
-             * "from" angle is the higher numeric (left side of arc);
-             * libgd starts the arc at the smaller angle and sweeps
-             * clockwise to the larger one. */
-            double a1 = gauge_value_to_deg(f, mn, mx);
-            double a2 = gauge_value_to_deg(t, mn, mx);
-            int start = (int)(a2 < a1 ? a2 : a1);
-            int end   = (int)(a2 < a1 ? a1 : a2);
-            /* Map degrees in our 180..0 frame to libgd's 180..360 frame. */
-            start += 180; end += 180;
-            if (start >= 360) start -= 360;
-            if (end >= 360) end -= 360;
-            if (end <= start) end = start + 1;
+            /* Map gauge values directly into libgd's arc-angle frame:
+             *   value=min  -> 180° (left edge of upper half)
+             *   value=max  -> 360° (right edge of upper half)
+             * Increasing value sweeps CCW through the top. The old
+             * code routed via gauge_value_to_deg [180..0] plus a
+             * +=180 / %360 dance, which collapsed the leftmost zone
+             * to a 1° sliver because value=0 wrapped 360 -> 0. */
+            double frac_a = (zn->from - mn) / (mx - mn);
+            double frac_b = (zn->to   - mn) / (mx - mn);
+            if (frac_a < 0) frac_a = 0;
+            if (frac_a > 1) frac_a = 1;
+            if (frac_b < 0) frac_b = 0;
+            if (frac_b > 1) frac_b = 1;
+            int start = (int)(180 + frac_a * 180);
+            int end   = (int)(180 + frac_b * 180);
+            if (start > end) { int t = start; start = end; end = t; }
+            if (end <= start) continue;  /* empty zone, skip */
             gdImageFilledArc(im, cx, cy, diameter, diameter,
                              start, end, color, gdPie);
-        } ZEND_HASH_FOREACH_END();
+        }
     } else {
         /* Single-color sweep from min to value, with the rest in grid color. */
         gdImageFilledArc(im, cx, cy, diameter, diameter, 180, 360,
@@ -121,14 +114,22 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
     /* Outer arc edge in border color. */
     gdImageArc(im, cx, cy, diameter, diameter, 180, 360, pal.border);
 
-    /* Needle. */
+    /* Needle. gauge_value_to_deg returns 180 (value=min) to 0 (value=max),
+     * which is the standard math angle (CCW from +x axis): 180=left,
+     * 90=up, 0=right. Screen y points down, so we negate the sine. */
     double aV = gauge_value_to_deg(v, mn, mx);
     double rad = aV * M_PI / 180.0;
-    int nx = cx - (int)((double)(radius - 6) * cos(rad));
+    int nx = cx + (int)((double)(radius - 6) * cos(rad));
     int ny = cy - (int)((double)(radius - 6) * sin(rad));
+    /* Two-pass needle: thick non-AA gives weight, then a 1px AA spine
+     * on top sharpens the perceived edge. libgd's thick-line + AA paths
+     * are mutually exclusive, so combining them like this is the only
+     * way to get both visual properties at angled needle positions. */
     gdImageSetThickness(im, 3);
     gdImageLine(im, cx, cy, nx, ny, pal.text);
     gdImageSetThickness(im, 1);
+    gdImageSetAntiAliased(im, pal.text);
+    gdImageLine(im, cx, cy, nx, ny, gdAntiAliased);
     gdImageFilledEllipse(im, cx, cy, 12, 12, pal.text);
 
     /* Center value label. */
@@ -182,6 +183,7 @@ ZEND_METHOD(FastChart_GaugeChart, draw)
         zend_throw_error(NULL, "FastChart\\GaugeChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
+    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
     fastchart_gauge_obj *self = Z_FASTCHART_GAUGE_OBJ_P(ZEND_THIS);
     if (fastchart_gauge_render_to_image(self, im) != 0) {
         RETURN_THROWS();

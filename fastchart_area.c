@@ -43,12 +43,7 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
     int n_series = self->n_series;
     int max_len = self->max_len;
 
-    bool stacked = false;
-    {
-        zval *cfg = zend_hash_str_find(Z_ARRVAL(self->config),
-                                       "stacked", sizeof("stacked") - 1);
-        if (cfg && Z_TYPE_P(cfg) == IS_TRUE) stacked = true;
-    }
+    bool stacked = self->stacked;
     if (n_series < 2) stacked = false;
 
     double dmin = 0, dmax = 0;
@@ -103,23 +98,19 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
     fastchart_palette_init(im, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
+    fastchart_gradient_cache grad_cache;
+    fastchart_gradient_cache_reset(&grad_cache);
+
     fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_y_axis(im, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_plot_bands(im, (fastchart_obj *)self, &plot, &range, &pal);
+    fastchart_draw_v_plot_bands_categorical(im, (fastchart_obj *)self, &plot,
+                                            max_len, &pal);
 
-    /* Categorical X axis (same shape as LineChart). */
-    const char **label_ptrs = NULL;
-    zval *labels_zv = zend_hash_str_find(Z_ARRVAL(self->config),
-        "category_labels", sizeof("category_labels") - 1);
-    if (labels_zv && Z_TYPE_P(labels_zv) == IS_ARRAY && max_len > 0) {
-        label_ptrs = ecalloc((size_t)max_len, sizeof(const char *));
-        for (int i = 0; i < max_len; i++) {
-            zval *lv = zend_hash_index_find(Z_ARRVAL_P(labels_zv), i);
-            label_ptrs[i] = fastchart_label_or_null(lv);
-        }
-    }
+    const char **label_ptrs = fastchart_borrow_category_labels((fastchart_obj *)self, max_len);
     fastchart_draw_x_axis_categorical(im, (fastchart_obj *)self, &plot, &pal, max_len, label_ptrs);
-    if (label_ptrs) efree(label_ptrs);
+    if (label_ptrs) efree((void *)label_ptrs);
 
     fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
 
@@ -131,7 +122,7 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
      * sums; each series's polygon spans [prev_cum, prev_cum + v].
      * For non-stacked overlay, each series's polygon spans
      * [0, v] with translucent fill so layered shapes show through. */
-    gdPoint poly[2 * 2048];
+    gdPoint poly[2 * FASTCHART_MAX_POINTS_PER_SERIES];
 
     if (stacked) {
         double *cum = ecalloc((size_t)max_len, sizeof(double));
@@ -157,7 +148,7 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
             }
             if (n_pts >= 3) {
                 fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
-                if (!fastchart_gradient_filled_polygon(im, (fastchart_obj *)self, poly, n_pts)) {
+                if (!fastchart_gradient_filled_polygon(im, (fastchart_obj *)self, &grad_cache, poly, n_pts)) {
                     gdImageFilledPolygon(im, poly, n_pts, rgb_color);
                 }
                 if (self->edge_color >= 0) {
@@ -211,7 +202,7 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
             if (n_pts >= 3) {
                 fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
                 gdImageAlphaBlending(im, 1);
-                if (!fastchart_gradient_filled_polygon(im, (fastchart_obj *)self, poly, n_pts)) {
+                if (!fastchart_gradient_filled_polygon(im, (fastchart_obj *)self, &grad_cache, poly, n_pts)) {
                     gdImageFilledPolygon(im, poly, n_pts, alpha_color);
                 }
                 if (self->edge_color >= 0) {
@@ -262,6 +253,18 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
     }
 
     fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+
+    if (self->icons && self->n_icons > 0 && max_len > 0) {
+        for (int i = 0; i < self->n_icons; i++) {
+            const fastchart_icon *ic = &self->icons[i];
+            double frac_x = max_len > 1
+                ? (ic->x + 0.5) / (double)max_len
+                : 0.5;
+            int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
+            int py = fastchart_y_to_pixel(ic->y, &range, &plot);
+            fastchart_blit_icon(im, ic, px, py);
+        }
+    }
     return 0;
 }
 
@@ -278,6 +281,7 @@ ZEND_METHOD(FastChart_AreaChart, draw)
         zend_throw_error(NULL, "FastChart\\AreaChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
+    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
 
     fastchart_area_obj *self = Z_FASTCHART_AREA_OBJ_P(ZEND_THIS);
     if (fastchart_area_render_to_image(self, im) != 0) {

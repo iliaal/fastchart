@@ -81,15 +81,32 @@ static inline int lut_index(int pos, int span)
     return idx;
 }
 
+/* Resolve the LUT pointer to use for this gradient draw. When a
+ * caller-supplied cache exists and is already built, reuse its 256
+ * entries; otherwise (re)build into the cache or a stack scratch.
+ * The chart's gradient_from / gradient_to are constant across one
+ * draw, so no invalidation key is needed. */
+static const int *resolve_gradient_lut(gdImagePtr im, fastchart_obj *chart,
+                                       fastchart_gradient_cache *cache,
+                                       int scratch[256])
+{
+    if (cache && cache->built) return cache->lut;
+    int *target = cache ? cache->lut : scratch;
+    build_gradient_lut(im, (int)chart->gradient_from, (int)chart->gradient_to, target);
+    if (cache) cache->built = true;
+    return target;
+}
+
 int fastchart_gradient_filled_rectangle(gdImagePtr im, fastchart_obj *chart,
+                                        fastchart_gradient_cache *cache,
                                         int x0, int y0, int x1, int y1)
 {
     if (!gradient_active(chart)) return 0;
     if (x1 < x0) { int t = x0; x0 = x1; x1 = t; }
     if (y1 < y0) { int t = y0; y0 = y1; y1 = t; }
 
-    int lut[256];
-    build_gradient_lut(im, (int)chart->gradient_from, (int)chart->gradient_to, lut);
+    int scratch[256];
+    const int *lut = resolve_gradient_lut(im, chart, cache, scratch);
 
     if (chart->gradient_dir == FASTCHART_GRADIENT_HORIZONTAL) {
         int span = x1 - x0;
@@ -106,6 +123,7 @@ int fastchart_gradient_filled_rectangle(gdImagePtr im, fastchart_obj *chart,
 }
 
 int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
+                                      fastchart_gradient_cache *cache,
                                       gdPointPtr poly, int n_pts)
 {
     if (!gradient_active(chart) || n_pts < 3) return 0;
@@ -145,8 +163,8 @@ int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
     gdImageFilledPolygon(mask, shifted, n_pts, fg);
     efree(shifted);
 
-    int lut[256];
-    build_gradient_lut(im, (int)chart->gradient_from, (int)chart->gradient_to, lut);
+    int scratch[256];
+    const int *lut = resolve_gradient_lut(im, chart, cache, scratch);
 
     if (chart->gradient_dir == FASTCHART_GRADIENT_HORIZONTAL) {
         int span = xmax - xmin;
@@ -177,10 +195,17 @@ int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
 
 static int shadow_color_alloc(gdImagePtr im, fastchart_obj *chart)
 {
+    /* Per-draw cache: the shadow color is chart-wide and constant for
+     * the entire draw. fastchart_compute_layout invalidates the slot
+     * at the top of each render so a fresh canvas allocates fresh. */
+    if (chart->shadow_color_valid) return chart->shadow_color_handle;
     int r = (chart->shadow_color >> 16) & 0xFF;
     int g = (chart->shadow_color >>  8) & 0xFF;
     int b =  chart->shadow_color        & 0xFF;
-    return gdImageColorAllocateAlpha(im, r, g, b, (int)chart->shadow_alpha);
+    chart->shadow_color_handle =
+        gdImageColorAllocateAlpha(im, r, g, b, (int)chart->shadow_alpha);
+    chart->shadow_color_valid = true;
+    return chart->shadow_color_handle;
 }
 
 void fastchart_shadow_filled_rectangle(gdImagePtr im, fastchart_obj *chart,
@@ -225,23 +250,3 @@ void fastchart_shadow_filled_arc(gdImagePtr im, fastchart_obj *chart,
                      start_deg, end_deg, c, gdPie);
 }
 
-void fastchart_shadow_text(gdImagePtr im, fastchart_obj *chart,
-                           const char *font, double size,
-                           int x, int y, double angle,
-                           const char *text)
-{
-    if (!chart->has_drop_shadow || !font) return;
-    int c = shadow_color_alloc(im, chart);
-    int dx = (int)chart->shadow_dx;
-    int dy = (int)chart->shadow_dy;
-    gdImageAlphaBlending(im, 1);
-    if (angle == 0.0) {
-        fastchart_text_draw(im, font, size, c,
-                            x + dx, y + dy, FASTCHART_ALIGN_CENTER,
-                            text, NULL, 0);
-    } else {
-        fastchart_text_draw_rotated(im, font, size, c,
-                                    x + dx, y + dy, FASTCHART_ALIGN_CENTER,
-                                    angle, text, NULL, 0);
-    }
-}

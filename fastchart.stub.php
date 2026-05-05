@@ -46,8 +46,10 @@ abstract class Chart
     public const int BORDER_ALL    = 15;
 
     /** Line interpolation modes for setLineInterpolation(). */
-    public const int INTERP_LINEAR = 0;
-    public const int INTERP_SMOOTH = 1;
+    public const int INTERP_LINEAR      = 0;
+    public const int INTERP_SMOOTH      = 1;
+    public const int INTERP_STEP_AFTER  = 2;
+    public const int INTERP_STEP_BEFORE = 3;
 
     /** Tick mode for setTickMode(). */
     public const int TICK_NONE   = 0;
@@ -100,7 +102,30 @@ abstract class Chart
     public function setFontSize(float $size): static {}
     public function setCategoryLabels(array $labels): static {}
     public function setLegendPosition(int $position): static {}
+    /**
+     * Scale of the *value* axis. SCALE_LINEAR (default) or SCALE_LOG
+     * (base-10, requires strictly positive data).
+     *
+     * Misnomer note: the setter is named for the Y axis because every
+     * chart family except horizontal BarChart puts values on Y.
+     * BarChart with `setOrientation(BAR_HORIZONTAL)` puts values on
+     * the X axis, but still consults this setter — i.e. on horizontal
+     * bar charts, `setYAxisScale(SCALE_LOG)` actually configures the
+     * X axis. The name is preserved across types so callers don't
+     * need a chart-specific setter.
+     */
     public function setYAxisScale(int $scale): static {}
+    /**
+     * Strict-mode validation for setSeries() input. When enabled,
+     * non-numeric / non-null cells in the data array trigger a
+     * TypeError instead of silently coercing to NaN. Default: off.
+     *
+     * Coverage: enforced on `LineChart::setSeries`,
+     * `AreaChart::setSeries`, `BarChart::setSeries`. Other setters
+     * (Pie / Scatter / Stock / BoxPlot / Radar / Polar / Bubble /
+     * Gantt) silently skip malformed entries regardless of this
+     * flag — those shapes are best-effort.
+     */
     public function setStrict(bool $strict): static {}
 
     /**
@@ -141,6 +166,55 @@ abstract class Chart
 
     public function addHorizontalLine(float $value, ?string $label = null, ?int $color = null): static {}
     public function addVerticalLine(float $position, ?string $label = null, ?int $color = null): static {}
+
+    /**
+     * Overlay an external image at data coordinates on the chart.
+     * Currently honored on `LineChart` (x = fractional category
+     * index, e.g. 2.5 = halfway between the 3rd and 4th category)
+     * and `ScatterChart` (x, y both in data coordinates). Other
+     * chart types silently ignore the call.
+     *
+     * `$path` is opened with libgd's auto-detect loader at draw time
+     * and respects `open_basedir`; missing or invalid images are
+     * silently skipped so a typo doesn't abort the whole render.
+     * `$maxWidth` / `$maxHeight` cap the display size while preserving
+     * the source aspect ratio (-1 = use the source dimension as-is).
+     * Up to 32 icons per chart.
+     */
+    public function addIconAt(float $x, float $y, string $path,
+                              int $maxWidth = -1,
+                              int $maxHeight = -1): static {}
+
+    /**
+     * Add a horizontal plot band: a shaded Y-range region drawn behind
+     * the chart data on Cartesian charts (Line / Area / Bar / Scatter
+     * / Bubble / Stock / BoxPlot). Useful for "normal range" callouts
+     * (e.g. healthy heart-rate band, target SLA window). `$low` and
+     * `$high` are in data Y units; the renderer reorders if needed.
+     * `$color` is a 24-bit RGB. `$alpha` follows libgd's 0..127
+     * convention (0 = opaque, 127 = fully transparent), defaulting to
+     * 64 for a visible-but-translucent overlay. Up to 16 bands per
+     * chart (shared budget with addVerticalBand).
+     */
+    public function addHorizontalBand(float $low, float $high, int $color,
+                                      int $alpha = 64,
+                                      ?string $label = null): static {}
+
+    /**
+     * Add a vertical plot band: a shaded X-range region drawn behind
+     * the chart data. Companion to addHorizontalBand. The X-axis
+     * interpretation depends on the chart type:
+     *   - Line / Area / Bar (vertical) / BoxPlot: fractional category
+     *     index (0 = first category, n_categories = past last). Pass
+     *     2.0 / 4.0 to span the 3rd through 4th category slots.
+     *   - Scatter / Bubble: data X value.
+     *   - Stock: unix timestamp.
+     * Color / alpha / label / band cap are identical to
+     * addHorizontalBand; the two share the 16-band-per-chart budget.
+     */
+    public function addVerticalBand(float $low, float $high, int $color,
+                                    int $alpha = 64,
+                                    ?string $label = null): static {}
 
     /**
      * Per-element color overrides. Each takes a 24-bit RGB int or
@@ -223,7 +297,6 @@ abstract class Chart
      * numeric values parallel to the primary's categories (or
      * matching the candle count for `StockChart`). `$opts` keys:
      *   - `'color'`     => int 0xRRGGBB
-     *   - `'label'`     => string (legend label)
      *   - `'thickness'` => int (line width, default 2)
      *   - `'axis'`      => `'left'` (default) or `'right'` for
      *                      secondary Y axis
@@ -448,8 +521,22 @@ final class AreaChart extends Chart
 
 final class BarChart extends Chart
 {
+    /** Orientation for setOrientation(). */
+    public const int BAR_VERTICAL   = 0;
+    public const int BAR_HORIZONTAL = 1;
+
     public function setSeries(array $series): static {}
     public function setStacked(bool $stacked): static {}
+
+    /**
+     * Bar orientation. BAR_VERTICAL (default) draws traditional
+     * vertical bars with categories along the X axis. BAR_HORIZONTAL
+     * draws bars running left-to-right with categories along the Y
+     * axis -- useful when category labels are long. All other bar
+     * features (stacking, floating, per-point colors, value labels)
+     * carry over with X/Y semantics swapped.
+     */
+    public function setOrientation(int $orientation): static {}
 
     /**
      * Stacking algorithm for multi-series bars when stacked mode is
@@ -516,8 +603,10 @@ final class ScatterChart extends Chart
 
     /**
      * Overlay a least-squares regression curve over the scatter
-     * points. `$degree = 1` (default) is the linear fit; 2..5
-     * fits a polynomial of that order. Pass false (default) to
+     * points. `$degree = 1` (default) is the linear fit; 2 or 3
+     * fits a polynomial of that order. Higher degrees are rejected
+     * — quartic / quintic fits over noisy scatter data overfit and
+     * are numerically fragile. Pass `$enabled = false` (default) to
      * suppress.
      */
     public function setTrendLine(bool $enabled, ?int $color = null, int $degree = 1): static {}
@@ -547,16 +636,21 @@ final class StockChart extends Chart
     /** Moving-average kind passed to addMovingAverage(). */
     const int MA_SMA = 0;
     const int MA_EMA = 1;
+    const int MA_WMA = 2;
 
     public function setOhlcv(array $ohlcv): static {}
 
     /**
      * Add a single moving-average overlay over the close price.
      * `$period` is the window length in bars (>= 2). `$type` selects
-     * the smoothing kind: `MA_SMA` for the simple moving average
-     * (arithmetic mean of the last $period closes) or `MA_EMA` for
-     * the exponential moving average (alpha = 2 / (period + 1),
-     * seeded with the first $period closes).
+     * the smoothing kind:
+     *   - `MA_SMA` simple moving average (arithmetic mean of the last
+     *     `$period` closes)
+     *   - `MA_EMA` exponential moving average (alpha = 2 /
+     *     (period + 1), seeded with the SMA of the first `$period`
+     *     closes)
+     *   - `MA_WMA` linear-weighted moving average (weights 1..period,
+     *     so the most recent close has weight `period`).
      *
      * Up to 8 overlays per chart; further calls raise ValueError.
      * Mix freely: `addMovingAverage(20, MA_SMA)` plus

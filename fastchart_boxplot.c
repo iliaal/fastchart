@@ -60,16 +60,17 @@ int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im
     fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_y_axis(im, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_plot_bands(im, (fastchart_obj *)self, &plot, &range, &pal);
+    fastchart_draw_v_plot_bands_categorical(im, (fastchart_obj *)self, &plot,
+                                            n, &pal);
 
     /* Use category labels if supplied, else fall back to per-box label
      * fields, else integer indices. */
     const char **labels = ecalloc(n, sizeof(const char *));
-    zval *cat_zv = zend_hash_str_find(Z_ARRVAL(self->config),
-        "category_labels", sizeof("category_labels") - 1);
+    fastchart_obj *base = (fastchart_obj *)self;
     for (int i = 0; i < n; i++) {
-        if (cat_zv && Z_TYPE_P(cat_zv) == IS_ARRAY) {
-            zval *lv = zend_hash_index_find(Z_ARRVAL_P(cat_zv), i);
-            labels[i] = fastchart_label_or_null(lv);
+        if (base->category_labels && i < base->n_category_labels) {
+            labels[i] = base->category_labels[i];
         }
         if (!labels[i] && boxes[i].label) labels[i] = boxes[i].label;
     }
@@ -127,7 +128,21 @@ int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im
         }
     }
 
+    fastchart_draw_h_annotations(im, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_v_annotations_categorical(im, (fastchart_obj *)self, &plot, &pal, n);
+    fastchart_draw_overlays_categorical(im, (fastchart_obj *)self, &plot, &pal,
+                                         &range, NULL, n);
     fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+
+    if (self->icons && self->n_icons > 0 && n > 0) {
+        for (int i = 0; i < self->n_icons; i++) {
+            const fastchart_icon *ic = &self->icons[i];
+            double frac_x = n > 1 ? (ic->x + 0.5) / (double)n : 0.5;
+            int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
+            int py = fastchart_y_to_pixel(ic->y, &range, &plot);
+            fastchart_blit_icon(im, ic, px, py);
+        }
+    }
     return 0;
 }
 
@@ -142,6 +157,7 @@ ZEND_METHOD(FastChart_BoxPlot, draw)
         zend_throw_error(NULL, "FastChart\\BoxPlot::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
+    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
     fastchart_boxplot_obj *self = Z_FASTCHART_BOXPLOT_OBJ_P(ZEND_THIS);
     if (fastchart_boxplot_render_to_image(self, im) != 0) {
         RETURN_THROWS();

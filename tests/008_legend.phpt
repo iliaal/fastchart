@@ -44,7 +44,10 @@ $im2 = imagecreatetruecolor(800, 500);
     ->setSeries([1, 2, 3, 4, 5])  // flat list, no labels
     ->draw($im2);
 $blue_hits2 = count_color_in_region($im2, $blue, 700, 780, 15, 35);
-echo "single_series_no_legend_box: ", ($blue_hits2 < 3 ? "yes" : "no ($blue_hits2)"), "\n";
+// The data line ([1,2,3,4,5] at 800x500) passes through this top-right
+// region with thick (2px) MA-style strokes, contributing ~10-20 hits.
+// A swatch would add ~140 pixels of solid blue; threshold sits between.
+echo "single_series_no_legend_box: ", ($blue_hits2 < 80 ? "yes" : "no ($blue_hits2)"), "\n";
 
 // Stock chart: SMA overlay legend present even with single price
 // series.

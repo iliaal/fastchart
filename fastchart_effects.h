@@ -27,16 +27,34 @@ int fastchart_apply_line_style(gdImagePtr im, fastchart_obj *chart, int color);
 /* Linearly interpolate between two 24-bit RGB ints. t in [0,1]. */
 int fastchart_lerp_rgb(int from, int to, double t);
 
+/* Per-render gradient LUT cache. The 256-entry table is expensive to
+ * build (256 gdImageColorAllocate calls) and the (gradient_from,
+ * gradient_to) pair is constant across one draw, so renderers
+ * allocate one of these on the stack at the top of their draw and
+ * pass it to every gradient_filled_* call. The first call builds
+ * the table; subsequent calls reuse it. */
+typedef struct {
+    int  lut[256];
+    bool built;
+} fastchart_gradient_cache;
+
+static inline void fastchart_gradient_cache_reset(fastchart_gradient_cache *c)
+{
+    c->built = false;
+}
+
 /* Fill a rectangle with a vertical or horizontal gradient between
  * gradient_from and gradient_to (chart settings). No-op when gradient
  * is disabled — returns 0 so callers can fall through to a solid
  * fill of their choice. Returns 1 if the gradient was painted. */
 int fastchart_gradient_filled_rectangle(gdImagePtr im, fastchart_obj *chart,
+                                        fastchart_gradient_cache *cache,
                                         int x0, int y0, int x1, int y1);
 
 /* Fill an arbitrary polygon with the chart's gradient. Same return
  * semantics as the rectangle variant. */
 int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
+                                      fastchart_gradient_cache *cache,
                                       gdPointPtr poly, int n_pts);
 
 /* Drop-shadow helpers. Each is a no-op when chart->has_drop_shadow is
@@ -49,9 +67,5 @@ void fastchart_shadow_filled_polygon(gdImagePtr im, fastchart_obj *chart,
 void fastchart_shadow_filled_arc(gdImagePtr im, fastchart_obj *chart,
                                  int cx, int cy, int diameter,
                                  int start_deg, int end_deg);
-void fastchart_shadow_text(gdImagePtr im, fastchart_obj *chart,
-                           const char *font, double size,
-                           int x, int y, double angle,
-                           const char *text);
 
 #endif /* FASTCHART_EFFECTS_H */

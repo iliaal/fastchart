@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: fac5d1524eab2c6bacd63e7757e6f0d5e2143c92 */
+ * Stub hash: 4dd2be15824236f3ef69d9a7ad8a4bd21429e612 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -85,6 +85,24 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_addVertica
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, label, IS_STRING, 1, "null")
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, color, IS_LONG, 1, "null")
 ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_addIconAt, 0, 3, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, x, IS_DOUBLE, 0)
+	ZEND_ARG_TYPE_INFO(0, y, IS_DOUBLE, 0)
+	ZEND_ARG_TYPE_INFO(0, path, IS_STRING, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, maxWidth, IS_LONG, 0, "-1")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, maxHeight, IS_LONG, 0, "-1")
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_addHorizontalBand, 0, 3, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, low, IS_DOUBLE, 0)
+	ZEND_ARG_TYPE_INFO(0, high, IS_DOUBLE, 0)
+	ZEND_ARG_TYPE_INFO(0, color, IS_LONG, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, alpha, IS_LONG, 0, "64")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, label, IS_STRING, 1, "null")
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_Chart_addVerticalBand arginfo_class_FastChart_Chart_addHorizontalBand
 
 #define arginfo_class_FastChart_Chart_setAxisColor arginfo_class_FastChart_Chart_setBackgroundColor
 
@@ -258,6 +276,10 @@ ZEND_END_ARG_INFO()
 #define arginfo_class_FastChart_BarChart_setSeries arginfo_class_FastChart_LineChart_setSeries
 
 #define arginfo_class_FastChart_BarChart_setStacked arginfo_class_FastChart_AreaChart_setStacked
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_BarChart_setOrientation, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, orientation, IS_LONG, 0)
+ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_BarChart_setStackMode arginfo_class_FastChart_Chart_setLineInterpolation
 
@@ -440,6 +462,9 @@ ZEND_METHOD(FastChart_Chart, setYAxisRange);
 ZEND_METHOD(FastChart_Chart, setSecondaryYAxis);
 ZEND_METHOD(FastChart_Chart, addHorizontalLine);
 ZEND_METHOD(FastChart_Chart, addVerticalLine);
+ZEND_METHOD(FastChart_Chart, addIconAt);
+ZEND_METHOD(FastChart_Chart, addHorizontalBand);
+ZEND_METHOD(FastChart_Chart, addVerticalBand);
 ZEND_METHOD(FastChart_Chart, setAxisColor);
 ZEND_METHOD(FastChart_Chart, setGridColor);
 ZEND_METHOD(FastChart_Chart, setBorderColor);
@@ -492,6 +517,7 @@ ZEND_METHOD(FastChart_AreaChart, setFillOpacity);
 ZEND_METHOD(FastChart_AreaChart, draw);
 ZEND_METHOD(FastChart_BarChart, setSeries);
 ZEND_METHOD(FastChart_BarChart, setStacked);
+ZEND_METHOD(FastChart_BarChart, setOrientation);
 ZEND_METHOD(FastChart_BarChart, setStackMode);
 ZEND_METHOD(FastChart_BarChart, setFloating);
 ZEND_METHOD(FastChart_BarChart, draw);
@@ -569,6 +595,9 @@ static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, setSecondaryYAxis, arginfo_class_FastChart_Chart_setSecondaryYAxis, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, addHorizontalLine, arginfo_class_FastChart_Chart_addHorizontalLine, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, addVerticalLine, arginfo_class_FastChart_Chart_addVerticalLine, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, addIconAt, arginfo_class_FastChart_Chart_addIconAt, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, addHorizontalBand, arginfo_class_FastChart_Chart_addHorizontalBand, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, addVerticalBand, arginfo_class_FastChart_Chart_addVerticalBand, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setAxisColor, arginfo_class_FastChart_Chart_setAxisColor, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setGridColor, arginfo_class_FastChart_Chart_setGridColor, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setBorderColor, arginfo_class_FastChart_Chart_setBorderColor, ZEND_ACC_PUBLIC)
@@ -634,6 +663,7 @@ static const zend_function_entry class_FastChart_AreaChart_methods[] = {
 static const zend_function_entry class_FastChart_BarChart_methods[] = {
 	ZEND_ME(FastChart_BarChart, setSeries, arginfo_class_FastChart_BarChart_setSeries, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_BarChart, setStacked, arginfo_class_FastChart_BarChart_setStacked, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_BarChart, setOrientation, arginfo_class_FastChart_BarChart_setOrientation, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_BarChart, setStackMode, arginfo_class_FastChart_BarChart_setStackMode, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_BarChart, setFloating, arginfo_class_FastChart_BarChart_setFloating, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_BarChart, draw, arginfo_class_FastChart_BarChart_draw, ZEND_ACC_PUBLIC)
@@ -940,6 +970,18 @@ static zend_class_entry *register_class_FastChart_Chart(void)
 	zend_declare_typed_class_constant(class_entry, const_INTERP_SMOOTH_name, &const_INTERP_SMOOTH_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
 	zend_string_release(const_INTERP_SMOOTH_name);
 
+	zval const_INTERP_STEP_AFTER_value;
+	ZVAL_LONG(&const_INTERP_STEP_AFTER_value, 2);
+	zend_string *const_INTERP_STEP_AFTER_name = zend_string_init_interned("INTERP_STEP_AFTER", sizeof("INTERP_STEP_AFTER") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_INTERP_STEP_AFTER_name, &const_INTERP_STEP_AFTER_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_INTERP_STEP_AFTER_name);
+
+	zval const_INTERP_STEP_BEFORE_value;
+	ZVAL_LONG(&const_INTERP_STEP_BEFORE_value, 3);
+	zend_string *const_INTERP_STEP_BEFORE_name = zend_string_init_interned("INTERP_STEP_BEFORE", sizeof("INTERP_STEP_BEFORE") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_INTERP_STEP_BEFORE_name, &const_INTERP_STEP_BEFORE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_INTERP_STEP_BEFORE_name);
+
 	zval const_TICK_NONE_value;
 	ZVAL_LONG(&const_TICK_NONE_value, 0);
 	zend_string *const_TICK_NONE_name = zend_string_init_interned("TICK_NONE", sizeof("TICK_NONE") - 1, 1);
@@ -1084,6 +1126,18 @@ static zend_class_entry *register_class_FastChart_BarChart(zend_class_entry *cla
 	INIT_NS_CLASS_ENTRY(ce, "FastChart", "BarChart", class_FastChart_BarChart_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
 
+	zval const_BAR_VERTICAL_value;
+	ZVAL_LONG(&const_BAR_VERTICAL_value, 0);
+	zend_string *const_BAR_VERTICAL_name = zend_string_init_interned("BAR_VERTICAL", sizeof("BAR_VERTICAL") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_BAR_VERTICAL_name, &const_BAR_VERTICAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_BAR_VERTICAL_name);
+
+	zval const_BAR_HORIZONTAL_value;
+	ZVAL_LONG(&const_BAR_HORIZONTAL_value, 1);
+	zend_string *const_BAR_HORIZONTAL_name = zend_string_init_interned("BAR_HORIZONTAL", sizeof("BAR_HORIZONTAL") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_BAR_HORIZONTAL_name, &const_BAR_HORIZONTAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_BAR_HORIZONTAL_name);
+
 	return class_entry;
 }
 
@@ -1125,6 +1179,12 @@ static zend_class_entry *register_class_FastChart_StockChart(zend_class_entry *c
 	zend_string *const_MA_EMA_name = zend_string_init_interned("MA_EMA", sizeof("MA_EMA") - 1, 1);
 	zend_declare_typed_class_constant(class_entry, const_MA_EMA_name, &const_MA_EMA_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
 	zend_string_release(const_MA_EMA_name);
+
+	zval const_MA_WMA_value;
+	ZVAL_LONG(&const_MA_WMA_value, 2);
+	zend_string *const_MA_WMA_name = zend_string_init_interned("MA_WMA", sizeof("MA_WMA") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_MA_WMA_name, &const_MA_WMA_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_MA_WMA_name);
 
 	return class_entry;
 }

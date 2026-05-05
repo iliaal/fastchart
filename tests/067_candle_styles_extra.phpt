@@ -51,7 +51,7 @@ $has = function ($im, $c, $w, $h) {
     return false;
 };
 echo "vector_lime: ",     $has($im, 0x00E640, 900, 500) ? "yes" : "no", "\n";
-echo "vector_red: ",      $has($im, 0xE30000, 900, 500) ? "yes" : "no", "\n";
+echo "vector_fuchsia: ",  $has($im, 0xE600C0, 900, 500) ? "yes" : "no", "\n";
 
 // HOLLOW differs visually from CANDLE (bullish bodies are outline-only).
 $candle = (new FastChart\StockChart(700, 400))
@@ -84,7 +84,7 @@ HOLLOW: ok
 VOLUME: ok
 VECTOR: ok
 vector_lime: yes
-vector_red: yes
+vector_fuchsia: yes
 hollow_differs: yes
 volume_differs: yes
 bad: ValueError ok

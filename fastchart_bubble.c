@@ -59,9 +59,15 @@ int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
     fastchart_palette_init(im, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
+    fastchart_color_cache color_cache;
+    fastchart_color_cache_init(&color_cache);
+
     fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_y_axis(im, (fastchart_obj *)self, &plot, &pal, &yrange);
+    fastchart_draw_plot_bands(im, (fastchart_obj *)self, &plot, &yrange, &pal);
+    fastchart_draw_v_plot_bands_xrange(im, (fastchart_obj *)self, &plot,
+                                       &xrange, &pal);
 
     /* Categorical x labels would mismatch the continuous data; draw a
      * lightweight numeric scale by reusing the time axis path with
@@ -101,8 +107,10 @@ int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
         int color, alpha;
         if (pts[i].color_rgb >= 0) {
             int c = pts[i].color_rgb;
-            color = gdImageColorAllocate(im,
-                (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+            color = fastchart_color_cache_get(&color_cache, im, c);
+            /* Translucent variant of the same RGB. gdImage's truecolor
+             * hash dedupes RGBA tuples, so the per-call cost is a hash
+             * hit after the first unique color. */
             alpha = gdImageColorAllocateAlpha(im,
                 (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, 70);
         } else {
@@ -119,7 +127,17 @@ int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
     gdImageAlphaBlending(im, 0);
 
     fastchart_draw_h_annotations(im, (fastchart_obj *)self, &plot, &pal, &yrange);
+    fastchart_draw_v_annotations_continuous(im, (fastchart_obj *)self, &plot, &pal, &xrange);
     fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+
+    if (self->icons && self->n_icons > 0) {
+        for (int i = 0; i < self->n_icons; i++) {
+            const fastchart_icon *ic = &self->icons[i];
+            int px = fastchart_x_to_pixel(ic->x, &xrange, &plot);
+            int py = fastchart_y_to_pixel(ic->y, &yrange, &plot);
+            fastchart_blit_icon(im, ic, px, py);
+        }
+    }
     return 0;
 }
 
@@ -135,6 +153,7 @@ ZEND_METHOD(FastChart_BubbleChart, draw)
         zend_throw_error(NULL, "FastChart\\BubbleChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
+    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
     fastchart_bubble_obj *self = Z_FASTCHART_BUBBLE_OBJ_P(ZEND_THIS);
     if (fastchart_bubble_render_to_image(self, im) != 0) {
         RETURN_THROWS();

@@ -14,6 +14,7 @@
 #define PHP_FASTCHART_H
 
 #include "php.h"
+#include "zend_exceptions.h"
 #include <gd.h>
 
 #define PHP_FASTCHART_VERSION "0.1.0"
@@ -151,6 +152,21 @@ extern zend_class_entry *fastchart_gd_image_ce;
     zend_long color_ramp_high; \
     zend_long date_axis_unit; \
     zend_long date_axis_every; \
+    char **category_labels; \
+    int n_category_labels; \
+    struct fastchart_plot_band *plot_bands; \
+    int n_plot_bands; \
+    struct fastchart_icon *icons; \
+    int n_icons; \
+    /* Per-render font cache: 4 slots (one per role) holding the \
+     * resolved path (NULL on basedir reject). Invalidated at the top \
+     * of every render via fastchart_compute_layout so an ini_set \
+     * narrowing between draws is caught. Avoids 2048+ \
+     * php_check_open_basedir_ex calls in show-values hot loops. */ \
+    const char *font_cache_path[4]; \
+    bool font_cache_valid; \
+    int shadow_color_handle; \
+    bool shadow_color_valid; \
     zval config;
 
 /* Base view type. fastchart_obj* is what base setters and shared
@@ -176,6 +192,47 @@ typedef struct {
 
 #define FASTCHART_MAX_SERIES 8
 
+/* Hard cap on points-per-series for cartesian charts (Line / Area /
+ * Bar). The render-time stack arrays in fastchart_line.c / _area.c
+ * size to this; setSeries rejects longer input rather than silently
+ * truncating. */
+#define FASTCHART_MAX_POINTS_PER_SERIES 2048
+
+/* IconPlot overlay: an external image blitted onto the chart at a
+ * data-coordinate position. Path is owned (loaded fresh at each
+ * draw); max_w / max_h cap the display size while preserving the
+ * source aspect ratio. -1 in either bound means "use the source
+ * dimension as-is". */
+struct fastchart_icon {
+    double x;
+    double y;
+    char  *path;          /* owned, NUL-free, non-empty */
+    int    max_w;         /* -1 = source width */
+    int    max_h;         /* -1 = source height */
+};
+typedef struct fastchart_icon fastchart_icon;
+
+#define FASTCHART_MAX_ICONS 32
+
+/* Plot band: shaded region drawn behind the chart data on Cartesian
+ * charts. `low`/`high` are in data coordinates of the relevant axis
+ * (Y for horizontal bands, X for vertical). The X-axis interpretation
+ * for vertical bands depends on the chart type: fractional category
+ * index for Line/Area/Bar/BoxPlot, data x for Scatter/Bubble, unix
+ * timestamp for Stock. `alpha` follows libgd's 0..127 convention
+ * (0 = opaque, 127 = fully transparent). */
+struct fastchart_plot_band {
+    double low;
+    double high;
+    int    color_rgb;     /* 0..0xFFFFFF */
+    int    alpha;         /* 0..127 */
+    char  *label;         /* owned, optional, NUL-free */
+    bool   is_vertical;   /* true = X-axis band, false = Y-axis band */
+};
+typedef struct fastchart_plot_band fastchart_plot_band;
+
+#define FASTCHART_MAX_BANDS 16
+
 /* PieChart slice. label is owned (malloc'd, NUL-terminated) when the
  * caller supplied one; NULL means "use idx_label as a numeric
  * fallback". value is always > 0 (non-positive slices skip parsing).
@@ -188,6 +245,18 @@ typedef struct {
 } fastchart_pie_slice;
 
 #define FASTCHART_MAX_SLICES 32
+
+/* Pre-computed clickable area for getImageMap. The renderer fills
+ * this from the typed scatter points after pixel-mapping; getImageMap
+ * walks the array to emit <area> tags without re-running the
+ * coordinate math. href is owned; tooltip is owned, may be NULL. */
+typedef struct {
+    int x;
+    int y;
+    int r;
+    char *href;
+    char *tooltip;
+} fastchart_image_map_area;
 
 /* ScatterChart point. series_idx selects the per-series palette
  * color when color_rgb is -1; href and tooltip are owned strings used
@@ -273,12 +342,20 @@ typedef struct {
     fastchart_series_t series[FASTCHART_MAX_SERIES];
     int n_series;
     int max_len;
+    /* Per-point error-bar magnitudes for the first (left-axis) series.
+     * Both arrays are owned, length err_n, parallel to series[0].values.
+     * NaN at a slot = no error bar. Both NULL when setErrorBars was
+     * never called. */
+    double *err_lo;
+    double *err_hi;
+    int     err_n;
     zend_object std;
 } fastchart_line_obj;
 
 typedef struct {
     FASTCHART_BASE_FIELDS
     zend_long area_alpha;
+    bool stacked;
     fastchart_series_t series[FASTCHART_MAX_SERIES];
     int n_series;
     int max_len;
@@ -289,6 +366,8 @@ typedef struct {
     FASTCHART_BASE_FIELDS
     zend_long stack_mode;
     bool bar_floating;
+    bool stacked;
+    zend_long bar_orientation;   /* FASTCHART_BAR_VERTICAL | FASTCHART_BAR_HORIZONTAL */
     fastchart_series_t series[FASTCHART_MAX_SERIES];
     int n_series;
     int max_len;
@@ -319,8 +398,18 @@ typedef struct {
     int point_count;
     char *series_labels[FASTCHART_MAX_SCATTER_SERIES]; /* owned */
     int n_series;
-    /* error_bars storage shared with LineChart's config zval for now;
-     * a future migration would land here as well. */
+    /* Per-point error-bar magnitudes parallel to setPoints index order.
+     * NaN at a slot = no error bar. Both NULL until setErrorBars runs. */
+    double *err_lo;
+    double *err_hi;
+    int     err_n;
+    /* Pre-computed image-map areas, populated at the end of each
+     * scatter render and consumed by getImageMap(). The href/tooltip
+     * strings borrow from the points[i].href/tooltip slots — same
+     * lifetime, no separate ownership needed. NULL when no points
+     * had a clickable href. */
+    fastchart_image_map_area *image_map_areas;
+    int n_image_map_areas;
     zend_object std;
 } fastchart_scatter_obj;
 
@@ -356,6 +445,17 @@ typedef struct {
 #define FASTCHART_MAX_CANDLES         4096
 #define FASTCHART_MAX_SMA             8
 #define FASTCHART_MAX_INDICATOR_PANES 3
+#define FASTCHART_MAX_INDICATOR_VALUES 4096
+
+/* Per-setter input caps for the remaining list-shaped setters that
+ * previously allocated against the user-supplied count. */
+#define FASTCHART_MAX_VOLUME_COLORS    FASTCHART_MAX_CANDLES
+#define FASTCHART_MAX_OUTLIERS         128       /* per box */
+#define FASTCHART_MAX_LEVELS           32        /* contour */
+#define FASTCHART_MAX_GANTT_DEPS       64        /* per task */
+#define FASTCHART_MAX_CATEGORY_LABELS  4096
+#define FASTCHART_MAX_RADAR_VALUES     128       /* per series */
+#define FASTCHART_MAX_POLAR_POINTS     1024      /* per series */
 
 typedef struct {
     FASTCHART_BASE_FIELDS
@@ -400,12 +500,25 @@ typedef struct {
     zend_object std;
 } fastchart_surface_obj;
 
+/* GaugeChart shaded zone: a colored arc spanning the gauge from
+ * `from` to `to` (in gauge value units). color_rgb < 0 means "use the
+ * default series color". */
+typedef struct {
+    double from;
+    double to;
+    int    color_rgb;     /* -1 = default */
+} fastchart_gauge_zone;
+
+#define FASTCHART_MAX_GAUGE_ZONES 16
+
 typedef struct {
     FASTCHART_BASE_FIELDS
     double gauge_value;
     double gauge_min;
     double gauge_max;
     zend_string *gauge_value_format;
+    fastchart_gauge_zone *zones;
+    int n_zones;
     zend_object std;
 } fastchart_gauge_obj;
 
@@ -513,6 +626,7 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 /* StockChart moving-average kind. */
 #define FASTCHART_MA_SMA 0
 #define FASTCHART_MA_EMA 1
+#define FASTCHART_MA_WMA 2
 
 /* Border side bitmask. */
 #define FASTCHART_BORDER_NONE   0
@@ -523,8 +637,10 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define FASTCHART_BORDER_ALL    15
 
 /* Line interpolation. */
-#define FASTCHART_INTERP_LINEAR 0
-#define FASTCHART_INTERP_SMOOTH 1
+#define FASTCHART_INTERP_LINEAR       0
+#define FASTCHART_INTERP_SMOOTH       1
+#define FASTCHART_INTERP_STEP_AFTER   2
+#define FASTCHART_INTERP_STEP_BEFORE  3
 
 /* Tick mode bitmask: bit0 = labels, bit1 = points. */
 #define FASTCHART_TICK_NONE   0
@@ -536,6 +652,10 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define FASTCHART_STACK_SUM    0
 #define FASTCHART_STACK_BESIDE 1
 #define FASTCHART_STACK_LAYER  2
+
+/* BarChart orientation. */
+#define FASTCHART_BAR_VERTICAL   0
+#define FASTCHART_BAR_HORIZONTAL 1
 
 /* Pie label position extends LABEL_INSIDE/OUTSIDE/NONE. */
 #define FASTCHART_LABEL_LEFT  3
@@ -572,6 +692,22 @@ static inline gdImagePtr fastchart_gd_image_from_zval(zval *canvas_zv)
 {
     if (Z_TYPE_P(canvas_zv) != IS_OBJECT) return NULL;
     return (gdImagePtr)php_gd_libgdimageptr_from_zval_p(canvas_zv);
+}
+
+/* Reject palette-mode canvases at draw() entry. libgd's per-call AA
+ * (gdImageSetAntiAliased + gdAntiAliased) and alpha-blended fills both
+ * silently degrade on a non-truecolor image — the result still renders
+ * but text and lines look aliased and fills mis-blend. Fail fast with
+ * a ValueError so the caller switches to imagecreatetruecolor(). */
+static inline bool fastchart_require_truecolor(gdImagePtr im)
+{
+    if (im && !im->trueColor) {
+        zend_throw_error(zend_ce_value_error,
+            "fastchart requires a truecolor GdImage; "
+            "use imagecreatetruecolor() instead of imagecreate()");
+        return false;
+    }
+    return true;
 }
 
 /* Read a string label from an array-shaped setter, dropping the

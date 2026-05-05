@@ -70,9 +70,15 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
     fastchart_palette_init(im, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
+    fastchart_color_cache color_cache;
+    fastchart_color_cache_init(&color_cache);
+
     fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_y_axis(im, (fastchart_obj *)self, &plot, &pal, &yrange);
+    fastchart_draw_plot_bands(im, (fastchart_obj *)self, &plot, &yrange, &pal);
+    fastchart_draw_v_plot_bands_xrange(im, (fastchart_obj *)self, &plot,
+                                       &xrange, &pal);
 
     /* Custom X axis: continuous numeric ticks from xrange. Reuse the
      * categorical axis line + tick infrastructure by drawing the line
@@ -90,11 +96,16 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
             gdImageLine(im, x, plot.y1 + 1, x, plot.y1 + 4, pal.axis);
 
             char buf[32];
-            int decimals = xrange.tick_step >= 1.0 ? 0
-                : (int)ceil(-log10(xrange.tick_step));
-            if (decimals < 0) decimals = 0;
-            if (decimals > 4) decimals = 4;
-            snprintf(buf, sizeof(buf), "%.*f", decimals, v);
+            if (self->x_axis_label_format) {
+                fastchart_format_tick_label_user(v, self->x_axis_label_format,
+                                                 buf, sizeof(buf));
+            } else {
+                int decimals = xrange.tick_step >= 1.0 ? 0
+                    : (int)ceil(-log10(xrange.tick_step));
+                if (decimals < 0) decimals = 0;
+                if (decimals > 4) decimals = 4;
+                snprintf(buf, sizeof(buf), "%.*f", decimals, v);
+            }
 
             fastchart_text_draw(im, font, size, pal.text,
                                 x, label_y, FASTCHART_ALIGN_CENTER,
@@ -113,12 +124,9 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
         : 7;
 
     /* Optional per-point error bars (parallel to setPoints index order). */
-    HashTable *err_ht = NULL;
-    {
-        zval *eb = zend_hash_str_find(Z_ARRVAL(self->config),
-            "error_bars", sizeof("error_bars") - 1);
-        if (eb && Z_TYPE_P(eb) == IS_ARRAY) err_ht = Z_ARRVAL_P(eb);
-    }
+    double *err_lo = self->err_lo;
+    double *err_hi = self->err_hi;
+    int err_n = self->err_n;
 
     for (int i = 0; i < n; i++) {
         double frac_x = (xrange.max - xrange.min) > 0
@@ -129,34 +137,20 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
 
         int color;
         if (points[i].color_rgb >= 0) {
-            int c = points[i].color_rgb;
-            color = gdImageColorAllocate(im,
-                (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+            color = fastchart_color_cache_get(&color_cache, im, points[i].color_rgb);
         } else {
             color = pal.series[points[i].series_idx % FASTCHART_PALETTE_SERIES_N];
         }
 
         /* Error bar before marker so the marker overdraws the stem
-         * cleanly. err_ht entries: scalar -> symmetric ±, [lo, hi] ->
-         * asymmetric. */
-        if (err_ht) {
-            zval *ev = zend_hash_index_find(err_ht, i);
-            if (ev) {
-                double lo = 0, hi = 0;
-                if (Z_TYPE_P(ev) == IS_ARRAY) {
-                    zval *zlo = zend_hash_index_find(Z_ARRVAL_P(ev), 0);
-                    zval *zhi = zend_hash_index_find(Z_ARRVAL_P(ev), 1);
-                    if (zlo && zhi &&
-                        fastchart_zval_to_double(zlo, &lo) == 0 &&
-                        fastchart_zval_to_double(zhi, &hi) == 0) {
-                        /* asymmetric: lo / hi as separate magnitudes */
-                    } else { lo = hi = 0; }
-                } else {
-                    double m;
-                    if (fastchart_zval_to_double(ev, &m) == 0 && m >= 0) {
-                        lo = hi = m;
-                    }
-                }
+         * cleanly. Typed err_lo/err_hi already parsed at setErrorBars
+         * time: NaN slot means "no error bar at this point". */
+        if (err_lo && err_n > 0 && i < err_n) {
+            double lo = err_lo[i];
+            double hi = err_hi[i];
+            if (!(isnan(lo) && isnan(hi))) {
+                if (isnan(lo)) lo = 0;
+                if (isnan(hi)) hi = 0;
                 if (lo > 0 || hi > 0) {
                     int py_lo = fastchart_y_to_pixel(points[i].y - lo, &yrange, &plot);
                     int py_hi = fastchart_y_to_pixel(points[i].y + hi, &yrange, &plot);
@@ -310,12 +304,36 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
 
     fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
 
-    /* Build the image-map area list from typed points. Stash on
-     * config["image_map_areas"] so Chart::getImageMap can serialize
-     * later without revisiting the input zval. */
-    {
-        zval map_list;
-        array_init(&map_list);
+    /* IconPlot overlays at data coordinates. x is data-x in xrange,
+     * y is data-y in yrange. Drawn on top of markers + annotations. */
+    if (self->icons && self->n_icons > 0) {
+        fastchart_obj *base = (fastchart_obj *)self;
+        for (int i = 0; i < base->n_icons; i++) {
+            const fastchart_icon *ic = &base->icons[i];
+            double frac_x = (xrange.max - xrange.min) > 0
+                ? (ic->x - xrange.min) / (xrange.max - xrange.min)
+                : 0.5;
+            int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
+            int py = fastchart_y_to_pixel(ic->y, &yrange, &plot);
+            fastchart_blit_icon(im, ic, px, py);
+        }
+    }
+
+    /* Build the image-map area list from typed points. The href and
+     * tooltip pointers borrow from points[i] — same lifetime since
+     * the area list is freed/repopulated on every render. */
+    if (self->image_map_areas) {
+        efree(self->image_map_areas);
+        self->image_map_areas = NULL;
+    }
+    self->n_image_map_areas = 0;
+    int href_count = 0;
+    for (int i = 0; i < n; i++) {
+        if (points[i].href) href_count++;
+    }
+    if (href_count > 0) {
+        self->image_map_areas = ecalloc((size_t)href_count, sizeof(fastchart_image_map_area));
+        int k = 0;
         for (int i = 0; i < n; i++) {
             if (!points[i].href) continue;
             double frac_x = (xrange.max - xrange.min) > 0
@@ -323,21 +341,14 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
                 : 0.5;
             int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
             int py = fastchart_y_to_pixel(points[i].y, &yrange, &plot);
-            zval e;
-            array_init(&e);
-            add_assoc_long(&e, "x", px);
-            add_assoc_long(&e, "y", py);
-            add_assoc_long(&e, "r", marker_size);
-            add_assoc_str(&e, "href",
-                zend_string_init(points[i].href, strlen(points[i].href), 0));
-            if (points[i].tooltip) {
-                add_assoc_str(&e, "title",
-                    zend_string_init(points[i].tooltip, strlen(points[i].tooltip), 0));
-            }
-            add_next_index_zval(&map_list, &e);
+            self->image_map_areas[k].x = px;
+            self->image_map_areas[k].y = py;
+            self->image_map_areas[k].r = marker_size;
+            self->image_map_areas[k].href = points[i].href;
+            self->image_map_areas[k].tooltip = points[i].tooltip;
+            k++;
         }
-        zend_hash_str_update(Z_ARRVAL(self->config), "image_map_areas",
-                             sizeof("image_map_areas") - 1, &map_list);
+        self->n_image_map_areas = k;
     }
     return 0;
 }
@@ -355,6 +366,7 @@ ZEND_METHOD(FastChart_ScatterChart, draw)
         zend_throw_error(NULL, "FastChart\\ScatterChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
+    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
 
     fastchart_scatter_obj *self = Z_FASTCHART_SCATTER_OBJ_P(ZEND_THIS);
     if (fastchart_scatter_render_to_image(self, im) != 0) {

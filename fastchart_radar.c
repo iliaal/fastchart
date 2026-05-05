@@ -116,12 +116,11 @@ int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
     double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base);
-    zval *labels_zv = zend_hash_str_find(Z_ARRVAL(self->config),
-        "category_labels", sizeof("category_labels") - 1);
-    if (font && labels_zv && Z_TYPE_P(labels_zv) == IS_ARRAY) {
+    fastchart_obj *chart_base = (fastchart_obj *)self;
+    if (font && chart_base->category_labels) {
         for (int i = 0; i < n_axes; i++) {
-            zval *lv = zend_hash_index_find(Z_ARRVAL_P(labels_zv), i);
-            const char *label = fastchart_label_or_null(lv);
+            const char *label = (i < chart_base->n_category_labels)
+                ? chart_base->category_labels[i] : NULL;
             if (!label) continue;
             int lx = cx + (int)((radius + 16) * cos_a[i]);
             int ly = cy + (int)((radius + 16) * sin_a[i]);
@@ -208,6 +207,7 @@ ZEND_METHOD(FastChart_RadarChart, draw)
         zend_throw_error(NULL, "FastChart\\RadarChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
+    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
     fastchart_radar_obj *self = Z_FASTCHART_RADAR_OBJ_P(ZEND_THIS);
     if (fastchart_radar_render_to_image(self, im) != 0) {
         RETURN_THROWS();

@@ -81,6 +81,7 @@ int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im)
     }
     if (n_right > 0) {
         fastchart_value_range_compute(dmin_r, dmax_r, 6, &range_r);
+        fastchart_value_range_apply_override((fastchart_obj *)self, &range_r);
     }
 
     fastchart_rect plot;
@@ -96,21 +97,13 @@ int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im)
     if (n_right > 0) {
         fastchart_draw_y_axis_right(im, (fastchart_obj *)self, &plot, &pal, &range_r);
     }
+    fastchart_draw_plot_bands(im, (fastchart_obj *)self, &plot, &range_l, &pal);
+    fastchart_draw_v_plot_bands_categorical(im, (fastchart_obj *)self, &plot,
+                                            max_len, &pal);
 
-    /* Category labels: borrowed pointers into still-rooted PHP
-     * zend_strings, valid for the rest of this call. */
-    const char **label_ptrs = NULL;
-    zval *labels_zv = zend_hash_str_find(Z_ARRVAL(self->config),
-        "category_labels", sizeof("category_labels") - 1);
-    if (labels_zv && Z_TYPE_P(labels_zv) == IS_ARRAY && max_len > 0) {
-        label_ptrs = ecalloc((size_t)max_len, sizeof(const char *));
-        for (int i = 0; i < max_len; i++) {
-            zval *lv = zend_hash_index_find(Z_ARRVAL_P(labels_zv), i);
-            label_ptrs[i] = fastchart_label_or_null(lv);
-        }
-    }
+    const char **label_ptrs = fastchart_borrow_category_labels((fastchart_obj *)self, max_len);
     fastchart_draw_x_axis_categorical(im, (fastchart_obj *)self, &plot, &pal, max_len, label_ptrs);
-    if (label_ptrs) efree(label_ptrs);
+    if (label_ptrs) efree((void *)label_ptrs);
 
     fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
 
@@ -125,23 +118,20 @@ int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im)
     const char *legend_labels[FASTCHART_MAX_SERIES];
     int legend_count = 0;
 
-    /* Optional per-point error bars (parallel to the first series).
-     * Still pulled from the config zval since setErrorBars hasn't
-     * migrated to typed storage yet. */
-    HashTable *err_ht = NULL;
-    {
-        zval *eb = zend_hash_str_find(Z_ARRVAL(self->config),
-            "error_bars", sizeof("error_bars") - 1);
-        if (eb && Z_TYPE_P(eb) == IS_ARRAY) err_ht = Z_ARRVAL_P(eb);
-    }
+    /* Optional per-point error bars (parallel to the first series). */
+    double *err_lo = self->err_lo;
+    double *err_hi = self->err_hi;
+    int err_n = self->err_n;
 
-    fastchart_pt pts[2048];
+    fastchart_pt pts[FASTCHART_MAX_POINTS_PER_SERIES];
     for (int s = 0; s < n_series; s++) {
         int color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
         bool right = self->secondary_y && series[s].right_axis;
         const fastchart_value_range *rng = right ? &range_r : &range_l;
         double *values = series[s].values;
-        int n = series[s].len > 2048 ? 2048 : series[s].len;
+        /* setSeries rejects > FASTCHART_MAX_POINTS_PER_SERIES, so the
+         * clamp is defensive — the parser already capped this. */
+        int n = series[s].len;
         if (n < 1) continue;
 
         /* Build the polyline points (NaN -> invalid -> gap). */
@@ -157,23 +147,15 @@ int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im)
 
         /* Error bars on the first (left-axis) series only -- multi-
          * series line charts get crowded fast otherwise. */
-        if (err_ht && s == 0 && !right) {
-            for (int i = 0; i < n; i++) {
+        if (err_lo && err_n > 0 && s == 0 && !right) {
+            int lim = n < err_n ? n : err_n;
+            for (int i = 0; i < lim; i++) {
                 if (!pts[i].valid) continue;
-                zval *ev = zend_hash_index_find(err_ht, i);
-                if (!ev) continue;
-                double lo = 0, hi = 0;
-                if (Z_TYPE_P(ev) == IS_ARRAY) {
-                    zval *zlo = zend_hash_index_find(Z_ARRVAL_P(ev), 0);
-                    zval *zhi = zend_hash_index_find(Z_ARRVAL_P(ev), 1);
-                    if (zlo && zhi) {
-                        fastchart_zval_to_double(zlo, &lo);
-                        fastchart_zval_to_double(zhi, &hi);
-                    }
-                } else {
-                    double m;
-                    if (fastchart_zval_to_double(ev, &m) == 0 && m >= 0) lo = hi = m;
-                }
+                double lo = err_lo[i];
+                double hi = err_hi[i];
+                if (isnan(lo) && isnan(hi)) continue;
+                if (isnan(lo)) lo = 0;
+                if (isnan(hi)) hi = 0;
                 if (lo > 0 || hi > 0) {
                     int py_lo = fastchart_y_to_pixel(values[i] - lo, rng, &plot);
                     int py_hi = fastchart_y_to_pixel(values[i] + hi, rng, &plot);
@@ -226,6 +208,22 @@ int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im)
 
     fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
 
+    /* IconPlot overlays at data coordinates. x is treated as a
+     * fractional category index (0 = first category, max_len-1 = last);
+     * out-of-range values still render but get clipped to the plot
+     * edges. y is data-y on the left axis. */
+    if (self->icons && self->n_icons > 0 && max_len > 0) {
+        for (int i = 0; i < self->n_icons; i++) {
+            const fastchart_icon *ic = &self->icons[i];
+            double frac_x = max_len > 1
+                ? (ic->x + 0.5) / (double)max_len
+                : 0.5;
+            int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
+            int py = fastchart_y_to_pixel(ic->y, &range_l, &plot);
+            fastchart_blit_icon(im, ic, px, py);
+        }
+    }
+
     return 0;
 }
 
@@ -242,6 +240,7 @@ ZEND_METHOD(FastChart_LineChart, draw)
         zend_throw_error(NULL, "FastChart\\LineChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
+    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
 
     fastchart_line_obj *self = Z_FASTCHART_LINE_OBJ_P(ZEND_THIS);
     if (fastchart_line_render_to_image(self, im) != 0) {

@@ -1,5 +1,5 @@
 --TEST--
-StockChart::addMovingAverage supports SMA and EMA with configurable period
+StockChart::addMovingAverage supports SMA / EMA / WMA with configurable period
 --EXTENSIONS--
 fastchart
 --FILE--
@@ -22,8 +22,9 @@ $out = (new FastChart\StockChart(800, 400))
     ->setOhlcv($rows)
     ->addMovingAverage(5, FastChart\StockChart::MA_SMA)
     ->addMovingAverage(10, FastChart\StockChart::MA_EMA)
+    ->addMovingAverage(7, FastChart\StockChart::MA_WMA)
     ->draw($im);
-echo "mixed_sma_ema: ", ($out instanceof \GdImage ? "ok" : "bad"), "\n";
+echo "mixed_sma_ema_wma: ", ($out instanceof \GdImage ? "ok" : "bad"), "\n";
 
 /* setMovingAverages still works as bulk SMA shortcut. */
 $im2 = imagecreatetruecolor(400, 200);
@@ -59,13 +60,15 @@ try {
     echo "ninth_overlay: ValueError ok\n";
 }
 
-/* MA_SMA / MA_EMA constants are 0 and 1. */
-echo "MA_SMA=", FastChart\StockChart::MA_SMA, " MA_EMA=", FastChart\StockChart::MA_EMA, "\n";
+/* MA_SMA / MA_EMA / MA_WMA constants are 0, 1, 2. */
+echo "MA_SMA=", FastChart\StockChart::MA_SMA,
+     " MA_EMA=", FastChart\StockChart::MA_EMA,
+     " MA_WMA=", FastChart\StockChart::MA_WMA, "\n";
 ?>
 --EXPECT--
-mixed_sma_ema: ok
+mixed_sma_ema_wma: ok
 bulk_sma_shortcut: ok
 period_low: ValueError ok
 bad_type: ValueError ok
 ninth_overlay: ValueError ok
-MA_SMA=0 MA_EMA=1
+MA_SMA=0 MA_EMA=1 MA_WMA=2

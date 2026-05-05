@@ -150,6 +150,9 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
 
     fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_y_axis(im, (fastchart_obj *)self, &price_pane, &pal, &yrange);
+    fastchart_draw_plot_bands(im, (fastchart_obj *)self, &price_pane, &yrange, &pal);
+    fastchart_draw_v_plot_bands_time(im, (fastchart_obj *)self, &price_pane,
+                                     t_min, t_max, &pal);
     fastchart_draw_x_axis_time(im, (fastchart_obj *)self, &plot, &pal, t_min, t_max);
     fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
 
@@ -239,18 +242,23 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
         }
     }
 
-    /* Vector-candle palette: 6 colors for direction × strength. The
-     * pinescript defaults are lime/cyan for bullish strong/rising and
-     * red/fuchsia for bearish strong/rising. Neutral falls back to
-     * the theme's up/down colors so a vector chart with no high-vol
-     * bars looks like a normal candle chart. */
-    int v_bull_strong  = 0, v_bull_rising = 0;
-    int v_bear_strong  = 0, v_bear_rising = 0;
+    /* Vector-candle palette: 4 categories matching the TradingView
+     * indicator convention. Lime + fuchsia mark high-volume climax
+     * bars by direction (so the up/down distinction is preserved
+     * where the signal is strongest). Rising-volume bars (150-200%
+     * of the trailing avg) collapse to a single blue/purple
+     * regardless of direction — the candle body shape carries
+     * direction; color carries strength. Neutral bars fall back to
+     * gray so the eye is drawn to the unusual ones. */
+    int v_climax_up = 0;     /* lime    — high buying climax */
+    int v_climax_dn = 0;     /* fuchsia — high selling climax */
+    int v_rising    = 0;     /* purple  — moderate-high volume, either direction */
+    int v_neutral   = 0;     /* gray    — standard market conditions */
     if (candle_style == FASTCHART_STYLE_VECTOR) {
-        v_bull_strong  = gdImageColorAllocate(im, 0x00, 0xE6, 0x40); /* lime */
-        v_bull_rising  = gdImageColorAllocate(im, 0x05, 0xFF, 0xFB); /* cyan */
-        v_bear_strong  = gdImageColorAllocate(im, 0xE3, 0x00, 0x00); /* red */
-        v_bear_rising  = gdImageColorAllocate(im, 0xFF, 0x00, 0xFF); /* fuchsia */
+        v_climax_up = gdImageColorAllocate(im, 0x00, 0xE6, 0x40);
+        v_climax_dn = gdImageColorAllocate(im, 0xE6, 0x00, 0xC0);
+        v_rising    = gdImageColorAllocate(im, 0x6B, 0x5B, 0xFF);
+        v_neutral   = gdImageColorAllocate(im, 0x9D, 0x9D, 0x9D);
     }
 
     for (int i = 0; i < n; i++) {
@@ -264,15 +272,9 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
         int up = candles[i].close >= candles[i].open;
         int color = up ? pal.up : pal.down;
         if (candle_style == FASTCHART_STYLE_VECTOR) {
-            if (up) {
-                color = (va[i] == 1) ? v_bull_strong
-                      : (va[i] == 2) ? v_bull_rising
-                      : pal.up;
-            } else {
-                color = (va[i] == 1) ? v_bear_strong
-                      : (va[i] == 2) ? v_bear_rising
-                      : pal.down;
-            }
+            color = (va[i] == 1) ? (up ? v_climax_up : v_climax_dn)
+                  : (va[i] == 2) ? v_rising
+                  : v_neutral;
         }
 
         /* Per-bar half-width: VOLUME mode scales by volume / avg. */
@@ -387,9 +389,10 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
 
     /* MA overlays. Each period gets a series color and a 2px line.
      * gdAntiAliased smooths the diagonals; set the AA color per
-     * overlay since gd carries one AA color across calls. SMA uses
-     * a sliding-window sum, EMA uses the standard alpha = 2/(p+1)
-     * recurrence seeded with the SMA of the first period closes. */
+     * overlay since gd carries one AA color across calls. SMA and
+     * WMA use sliding-window updates, EMA uses the standard alpha =
+     * 2/(p+1) recurrence seeded with the SMA of the first period
+     * closes. */
     if (sma_count > 0) {
         gdImageSetThickness(im, 2);
         for (int s = 0; s < sma_count; s++) {
@@ -416,6 +419,38 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
                     int x = fastchart_x_time_to_pixel(&price_pane,
                                                       candles[i].ts, t_min, t_max);
                     int y = fastchart_y_to_pixel(ema, &yrange, &price_pane);
+                    if (has_prev) {
+                        gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
+                    }
+                    prev_x = x; prev_y = y; has_prev = 1;
+                }
+            } else if (type == FASTCHART_MA_WMA) {
+                /* Linear-weighted MA: weights 1..period applied
+                 * oldest-to-newest. Sliding update keeps two running
+                 * sums (sum_close, sum_weighted) so each step is O(1)
+                 * regardless of period. Identity: shifting the window
+                 * one bar drops the oldest close (weight 1) and
+                 * decreases each remaining weight by 1, so
+                 *   new_sum_weighted = old_sum_weighted
+                 *                    + period * new_close
+                 *                    - old_sum_close. */
+                double sum_close = 0, sum_weighted = 0;
+                for (int k = 0; k < period; k++) {
+                    sum_close += candles[k].close;
+                    sum_weighted += (double)(k + 1) * candles[k].close;
+                }
+                double denom_inv = 2.0 / ((double)period * (double)(period + 1));
+                for (int i = period - 1; i < n; i++) {
+                    if (i >= period) {
+                        double new_close = candles[i].close;
+                        double drop = candles[i - period].close;
+                        sum_weighted += (double)period * new_close - sum_close;
+                        sum_close += new_close - drop;
+                    }
+                    double wma = sum_weighted * denom_inv;
+                    int x = fastchart_x_time_to_pixel(&price_pane,
+                                                      candles[i].ts, t_min, t_max);
+                    int y = fastchart_y_to_pixel(wma, &yrange, &price_pane);
                     if (has_prev) {
                         gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
                     }
@@ -587,9 +622,10 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
         for (int s = 0; s < sma_count; s++) {
             legend_colors[s] = pal.series[s % FASTCHART_PALETTE_SERIES_N];
             char *slot = legend_label_storage + s * 16;
-            snprintf(slot, 16, "%s(%d)",
-                     sma_types[s] == FASTCHART_MA_EMA ? "EMA" : "SMA",
-                     sma_periods[s]);
+            const char *kind = "SMA";
+            if (sma_types[s] == FASTCHART_MA_EMA) kind = "EMA";
+            else if (sma_types[s] == FASTCHART_MA_WMA) kind = "WMA";
+            snprintf(slot, 16, "%s(%d)", kind, sma_periods[s]);
             legend_labels[s] = slot;
         }
         fastchart_draw_legend(im, (fastchart_obj *)self, &price_pane, &pal,
@@ -598,6 +634,19 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
     }
 
     fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+
+    /* IconPlot: x is a unix timestamp (mapped via the candle time
+     * range), y is a price (mapped via the price pane Y range). Drawn
+     * after MA overlays so icons don't get hidden by trend lines. */
+    if (self->icons && self->n_icons > 0) {
+        for (int i = 0; i < self->n_icons; i++) {
+            const fastchart_icon *ic = &self->icons[i];
+            zend_long ts = (zend_long)ic->x;
+            int px = fastchart_x_time_to_pixel(&price_pane, ts, t_min, t_max);
+            int py = fastchart_y_to_pixel(ic->y, &yrange, &price_pane);
+            fastchart_blit_icon(im, ic, px, py);
+        }
+    }
     return 0;
 }
 
@@ -614,6 +663,7 @@ ZEND_METHOD(FastChart_StockChart, draw)
         zend_throw_error(NULL, "FastChart\\StockChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
+    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
 
     fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
     if (fastchart_stock_render_to_image(self, im) != 0) {

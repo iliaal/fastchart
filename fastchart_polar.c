@@ -155,6 +155,7 @@ ZEND_METHOD(FastChart_PolarChart, draw)
         zend_throw_error(NULL, "FastChart\\PolarChart::draw() received a closed or invalid GdImage");
         RETURN_THROWS();
     }
+    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
     fastchart_polar_obj *self = Z_FASTCHART_POLAR_OBJ_P(ZEND_THIS);
     if (fastchart_polar_render_to_image(self, im) != 0) {
         RETURN_THROWS();
