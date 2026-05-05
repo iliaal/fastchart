@@ -56,6 +56,16 @@ int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im
     fastchart_palette_init(im, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
 
+    /* Stamp DPI on the canvas — feeds gdImage's resolution
+     * metadata + FreeType hinting via fastchart_text_draw's
+     * gdImageStringFTEx call. Renderers that go through
+     * fastchart_compute_layout already get this; this one
+     * does not, so the call is local. */
+    if (((fastchart_obj *)self)->dpi > 0) {
+        gdImageSetResolution(im, (unsigned int)((fastchart_obj *)self)->dpi,
+                              (unsigned int)((fastchart_obj *)self)->dpi);
+    }
+
     int W = gdImageSX(im);
     int H = gdImageSY(im);
     gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, pal.bg);

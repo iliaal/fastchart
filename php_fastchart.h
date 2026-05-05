@@ -152,6 +152,7 @@ extern zend_class_entry *fastchart_gd_image_ce;
     zend_long color_ramp_high; \
     zend_long date_axis_unit; \
     zend_long date_axis_every; \
+    zend_long dpi; \
     char **category_labels; \
     int n_category_labels; \
     struct fastchart_plot_band *plot_bands; \
