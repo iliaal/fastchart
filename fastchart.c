@@ -3414,8 +3414,97 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
 FASTCHART_SETTER_ARRAY(FastChart_RadarChart,   setSeries, data)
 FASTCHART_SETTER_ARRAY(FastChart_SurfaceChart, setGrid,   data)
 FASTCHART_SETTER_ARRAY(FastChart_GanttChart,   setTasks,  data)
-FASTCHART_SETTER_ARRAY(FastChart_PolarChart,   setSeries, data)
 FASTCHART_SETTER_ARRAY(FastChart_ContourChart, setGrid,   data)
+
+ZEND_METHOD(FastChart_PolarChart, setSeries)
+{
+    zval *arr;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(arr)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_polar_obj *self = Z_FASTCHART_POLAR_OBJ_P(ZEND_THIS);
+    /* Drop existing series. */
+    for (int i = 0; i < self->n_series; i++) {
+        fc_efree_opt(self->series[i].angles);
+        fc_efree_opt(self->series[i].radii);
+        fc_efree_opt(self->series[i].label);
+        self->series[i].angles = NULL;
+        self->series[i].radii = NULL;
+        self->series[i].label = NULL;
+        self->series[i].len = 0;
+    }
+    self->n_series = 0;
+
+    HashTable *ht = Z_ARRVAL_P(arr);
+    if (zend_hash_num_elements(ht) == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+
+    zval *first = zend_hash_index_find(ht, 0);
+    bool is_multi = false;
+    if (first && Z_TYPE_P(first) == IS_ARRAY) {
+        zval *d = zend_hash_str_find(Z_ARRVAL_P(first), "data", sizeof("data") - 1);
+        if (d && Z_TYPE_P(d) == IS_ARRAY) is_multi = true;
+    }
+
+    /* Helper: parse a [angle, radius] list into the slot. */
+#define POLAR_PARSE_DATA(slot_, ht_) do {                                \
+        HashTable *_dh = (ht_);                                          \
+        int _np = (int)zend_hash_num_elements(_dh);                      \
+        if (_np > 0) {                                                   \
+            (slot_)->angles = emalloc((size_t)_np * sizeof(double));     \
+            (slot_)->radii  = emalloc((size_t)_np * sizeof(double));     \
+            int _k = 0;                                                  \
+            zval *_p;                                                    \
+            ZEND_HASH_FOREACH_VAL(_dh, _p) {                             \
+                if (Z_TYPE_P(_p) != IS_ARRAY) continue;                  \
+                zval *_za = zend_hash_index_find(Z_ARRVAL_P(_p), 0);     \
+                zval *_zr = zend_hash_index_find(Z_ARRVAL_P(_p), 1);     \
+                if (!_za || !_zr) continue;                              \
+                double _a, _r;                                           \
+                if (fastchart_zval_to_double(_za, &_a) != 0) continue;   \
+                if (fastchart_zval_to_double(_zr, &_r) != 0) continue;   \
+                if (_r < 0) _r = 0;                                      \
+                (slot_)->angles[_k] = _a;                                \
+                (slot_)->radii[_k]  = _r;                                \
+                _k++;                                                    \
+            } ZEND_HASH_FOREACH_END();                                   \
+            (slot_)->len = _k;                                           \
+            if (_k == 0) {                                               \
+                efree((slot_)->angles); efree((slot_)->radii);           \
+                (slot_)->angles = NULL; (slot_)->radii = NULL;           \
+            }                                                            \
+        }                                                                \
+    } while (0)
+
+    if (is_multi) {
+        zval *s;
+        ZEND_HASH_FOREACH_VAL(ht, s) {
+            if (self->n_series >= FASTCHART_MAX_POLAR_SERIES) break;
+            if (Z_TYPE_P(s) != IS_ARRAY) continue;
+            zval *d = zend_hash_str_find(Z_ARRVAL_P(s), "data", sizeof("data") - 1);
+            if (!d || Z_TYPE_P(d) != IS_ARRAY) continue;
+            fastchart_polar_series *slot = &self->series[self->n_series];
+            POLAR_PARSE_DATA(slot, Z_ARRVAL_P(d));
+            zval *l = zend_hash_str_find(Z_ARRVAL_P(s), "label", sizeof("label") - 1);
+            slot->label = fc_strdup_opt(fastchart_label_or_null(l));
+            zval *c = zend_hash_str_find(Z_ARRVAL_P(s), "color", sizeof("color") - 1);
+            slot->color_rgb = -1;
+            if (c && Z_TYPE_P(c) == IS_LONG) {
+                zend_long cc = Z_LVAL_P(c);
+                if (cc >= 0 && cc <= 0xFFFFFF) slot->color_rgb = (int)cc;
+            }
+            self->n_series++;
+        } ZEND_HASH_FOREACH_END();
+    } else {
+        fastchart_polar_series *slot = &self->series[0];
+        POLAR_PARSE_DATA(slot, ht);
+        slot->label = NULL;
+        slot->color_rgb = -1;
+        self->n_series = 1;
+    }
+#undef POLAR_PARSE_DATA
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
 ZEND_METHOD(FastChart_BoxPlot, setBoxes)
 {
