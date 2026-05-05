@@ -167,7 +167,6 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
     b->font_path = fastchart_default_font_path
         ? zend_string_copy(fastchart_default_font_path) : NULL;
 
-    array_init(&b->data);
     array_init(&b->config);
 }
 
@@ -182,7 +181,6 @@ static void fastchart_base_release_owned(fastchart_obj *b)
 #define FC_RELEASE(field) if (b->field) zend_string_release(b->field);
     FASTCHART_BASE_OWNED_STR(FC_RELEASE)
 #undef FC_RELEASE
-    zval_ptr_dtor(&b->data);
     zval_ptr_dtor(&b->config);
 }
 
@@ -191,7 +189,6 @@ static void fastchart_base_addref_owned(fastchart_obj *b)
 #define FC_ADDREF(field) if (b->field) zend_string_addref(b->field);
     FASTCHART_BASE_OWNED_STR(FC_ADDREF)
 #undef FC_ADDREF
-    Z_TRY_ADDREF(b->data);
     Z_TRY_ADDREF(b->config);
 }
 
@@ -3402,31 +3399,6 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
     }
     RETURN_LONG((zend_long)written);
 }
-
-/* ---------------- per-class setSeries family --------------------
- *
- * gen_stub emits a separate ZEND_METHOD entry per class even though
- * the bodies are identical, so we cannot collapse them into one
- * shared ZEND_FUNCTION. They all just stash the array on `data`. */
-
-#define FASTCHART_SETTER_ARRAY(class_, method_, slot_) \
-    ZEND_METHOD(class_, method_) \
-    { \
-        zval *arr; \
-        ZEND_PARSE_PARAMETERS_START(1, 1) \
-            Z_PARAM_ARRAY(arr) \
-        ZEND_PARSE_PARAMETERS_END(); \
-        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
-        zval_ptr_dtor(&self->slot_); \
-        ZVAL_COPY(&self->slot_, arr); \
-        RETURN_ZVAL(ZEND_THIS, 1, 0); \
-    }
-
-/* Pie + Scatter setters land below; remaining FASTCHART_SETTER_ARRAY
- * users are limited to classes still on parse-at-draw. */
-/* Classes still on parse-at-draw-time keep using FASTCHART_SETTER_ARRAY
- * to stash the raw input on self->data. Their typed migration lands
- * in subsequent phases. */
 
 /* Parse a 2D PHP array into a typed fastchart_grid (row-major, NaN
  * for missing/non-finite cells). Out is overwritten; caller frees

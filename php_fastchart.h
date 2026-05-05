@@ -151,7 +151,6 @@ extern zend_class_entry *fastchart_gd_image_ce;
     zend_long color_ramp_high; \
     zend_long date_axis_unit; \
     zend_long date_axis_every; \
-    zval data; \
     zval config;
 
 /* Base view type. fastchart_obj* is what base setters and shared
