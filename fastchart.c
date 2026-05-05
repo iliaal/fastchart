@@ -3761,6 +3761,44 @@ static double fastchart_dpi_scale(const fastchart_obj *self)
     return (double)self->dpi / 96.0;
 }
 
+/* Resolve the physical (allocated) canvas dimensions from the logical
+ * setSize() values and the chart's DPI scale, with a hard cap. setSize
+ * accepts width/height up to 65535 ("fits in 16 bits"); setDpi(1200)
+ * on those would otherwise allocate ~819188x819188 pixels — capping
+ * here keeps gdImageCreateTrueColor inside libgd's safe range. Also
+ * clamps below: setDpi(24) on a 1x1 canvas would otherwise round to
+ * 0x0 and crash libgd. Returns 0 on success, -1 with a thrown
+ * ValueError otherwise. */
+static int fastchart_resolve_canvas_dims(const fastchart_obj *self,
+                                         int *out_w, int *out_h)
+{
+    double scale = fastchart_dpi_scale(self);
+    /* Round to int first so the cap comparison is on the actual
+     * dimension we'll allocate (16384 exact must pass). */
+    int pw = (int)((double)self->width  * scale + 0.5);
+    int ph = (int)((double)self->height * scale + 0.5);
+    /* Clamp below to avoid 0x0 allocations on tiny logical sizes
+     * combined with sub-96 DPI (e.g. 1x1 at 24 DPI rounds to 0). */
+    if (pw < 1) pw = 1;
+    if (ph < 1) ph = 1;
+    /* 16384 is libgd's de-facto safe upper bound on a single dimension;
+     * 16384 * 16384 * 4 = 1 GiB which is also our absolute pixel-count
+     * cap. */
+    const int MAX_PHYS_DIM = 16384;
+    if (pw > MAX_PHYS_DIM || ph > MAX_PHYS_DIM) {
+        zend_value_error(
+            "FastChart: physical canvas dimensions exceed the 16384px cap "
+            "(setSize=%lldx%lld, setDpi=%ld -> %dx%d). "
+            "Reduce setSize() or setDpi().",
+            (long long)self->width, (long long)self->height,
+            (long)self->dpi, pw, ph);
+        return -1;
+    }
+    *out_w = pw;
+    *out_h = ph;
+    return 0;
+}
+
 static void fastchart_render_to_string(INTERNAL_FUNCTION_PARAMETERS, int format, zend_long quality)
 {
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
@@ -3770,9 +3808,10 @@ static void fastchart_render_to_string(INTERNAL_FUNCTION_PARAMETERS, int format,
         RETURN_THROWS();
     }
 
-    double scale = fastchart_dpi_scale(self);
-    int alloc_w = (int)((double)self->width  * scale + 0.5);
-    int alloc_h = (int)((double)self->height * scale + 0.5);
+    int alloc_w, alloc_h;
+    if (fastchart_resolve_canvas_dims(self, &alloc_w, &alloc_h) != 0) {
+        RETURN_THROWS();
+    }
     gdImagePtr im = gdImageCreateTrueColor(alloc_w, alloc_h);
     if (!im) {
         zend_throw_error(NULL, "FastChart: gdImageCreateTrueColor() returned NULL");
@@ -3931,9 +3970,10 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         RETURN_THROWS();
     }
 
-    double scale = fastchart_dpi_scale(self);
-    int alloc_w = (int)((double)self->width  * scale + 0.5);
-    int alloc_h = (int)((double)self->height * scale + 0.5);
+    int alloc_w, alloc_h;
+    if (fastchart_resolve_canvas_dims(self, &alloc_w, &alloc_h) != 0) {
+        RETURN_THROWS();
+    }
     gdImagePtr im = gdImageCreateTrueColor(alloc_w, alloc_h);
     if (!im) {
         zend_throw_error(NULL, "FastChart: gdImageCreateTrueColor() returned NULL");
