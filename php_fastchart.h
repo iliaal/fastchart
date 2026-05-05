@@ -283,6 +283,12 @@ typedef struct {
 
 #define FASTCHART_MAX_BUBBLE_POINTS 4096
 
+/* SurfaceChart / ContourChart grid cell count cap. 10K cells covers
+ * any realistic chart size (a 100x100 grid is already finer than the
+ * pixel resolution of typical chart canvases). Without this cap a
+ * 10000x10000 grid allocates 800MB of doubles per setGrid call. */
+#define FASTCHART_MAX_GRID_CELLS 10000
+
 /* BoxPlot entry. five-number summary plus optional outliers. */
 typedef struct {
     char *label;          /* owned */

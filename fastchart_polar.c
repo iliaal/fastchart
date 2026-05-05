@@ -107,7 +107,7 @@ int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
             int alpha = gdImageColorAllocateAlpha(im, rr, gg, bb, 90);
             gdImageAlphaBlending(im, 1);
             fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
-            gdImageFilledPolygon(im, poly, n_pts, alpha);
+            fastchart_filled_polygon_aa(im, poly, n_pts, alpha);
             gdImageAlphaBlending(im, 0);
         }
         gdImageSetThickness(im, 2);

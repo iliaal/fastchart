@@ -1960,12 +1960,30 @@ static int fastchart_validate_double_format(const zend_string *fmt, const char *
         /* Skip flags */
         while (i < len && (p[i] == '-' || p[i] == '+' || p[i] == ' ' ||
                             p[i] == '#' || p[i] == '0' || p[i] == '\'')) i++;
-        /* Skip width */
-        while (i < len && p[i] >= '0' && p[i] <= '9') i++;
-        /* Skip precision */
+        /* Cap width and precision at three digits (max 999). libc's
+         * printf(3) honors the width by padding the output buffer; a
+         * format like "%500000000f" forces snprintf into a multi-second
+         * loop that translates straight into request CPU when chart
+         * labels render. Three digits is more than enough for any real
+         * label (max chart canvas is ~16K px wide). */
+        int wdigits = 0;
+        while (i < len && p[i] >= '0' && p[i] <= '9') {
+            if (++wdigits > 3) {
+                zend_value_error("FastChart\\Chart::%s() format width is capped at three digits", where);
+                return -1;
+            }
+            i++;
+        }
         if (i < len && p[i] == '.') {
             i++;
-            while (i < len && p[i] >= '0' && p[i] <= '9') i++;
+            int pdigits = 0;
+            while (i < len && p[i] >= '0' && p[i] <= '9') {
+                if (++pdigits > 3) {
+                    zend_value_error("FastChart\\Chart::%s() format precision is capped at three digits", where);
+                    return -1;
+                }
+                i++;
+            }
         }
         /* Reject length modifiers (l, ll, h, etc. -- they imply
          * non-double arg types). */
@@ -2439,6 +2457,12 @@ static int fastchart_parse_error_bars(zval *errs, double **out_lo,
         *out_n = 0;
         return 0;
     }
+    /* Cap at the per-series point limit so error-bar arrays can't
+     * blow past the bounds the rest of the series-data parsers
+     * enforce. setErrorBars data is per-point, so the appropriate
+     * cap is FASTCHART_MAX_POINTS_PER_SERIES — extra entries beyond
+     * that simply have no data point to attach to. */
+    if (n > FASTCHART_MAX_POINTS_PER_SERIES) n = FASTCHART_MAX_POINTS_PER_SERIES;
     double *lo = emalloc((size_t)n * sizeof(double));
     double *hi = emalloc((size_t)n * sizeof(double));
 
@@ -3340,22 +3364,38 @@ ZEND_METHOD(FastChart_PieChart, setExplode)
 
     fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
     HashTable *ht = Z_ARRVAL_P(offsets);
-    uint32_t un = zend_hash_num_elements(ht);
     if (self->explode) { efree(self->explode); self->explode = NULL; }
     self->explode_count = 0;
-    if (un == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
-    if (un > FASTCHART_MAX_SLICES) un = FASTCHART_MAX_SLICES;
-    int n = (int)un;
+    if (zend_hash_num_elements(ht) == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+
+    /* The stub documents [2 => 12] sparse syntax: the user names a
+     * slice index, the rest stay at 0. Walk by integer key so that
+     * sparse maps work; allocate through max(key) + 1 capped at
+     * FASTCHART_MAX_SLICES. The previous positional 0..n-1 walk
+     * silently dropped any entry whose key was beyond the element
+     * count (so [2 => 12] became n=1 and ignored slice 2). */
+    zend_ulong max_key = 0;
+    bool any_int = false;
+    {
+        zend_ulong k_idx;
+        zend_string *k_str;
+        zval *v;
+        ZEND_HASH_FOREACH_KEY_VAL(ht, k_idx, k_str, v) {
+            (void)v;
+            if (k_str) continue;  /* string keys ignored */
+            if (k_idx >= FASTCHART_MAX_SLICES) continue;
+            if (!any_int || k_idx > max_key) max_key = k_idx;
+            any_int = true;
+        } ZEND_HASH_FOREACH_END();
+    }
+    if (!any_int) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    int n = (int)max_key + 1;
     self->explode = ecalloc((size_t)n, sizeof(zend_long));
-    /* Walk by index 0..n-1 so the array is positional even when the
-     * user supplied an associative-style { 0 => 8, 2 => 12 } shape. */
     for (int i = 0; i < n; i++) {
         zval *off_zv = zend_hash_index_find(ht, i);
         zend_long off = 0;
         if (off_zv && fastchart_zval_to_long(off_zv, &off) == 0 && off > 0) {
             self->explode[i] = off;
-        } else {
-            self->explode[i] = 0;
         }
     }
     self->explode_count = n;
@@ -3822,8 +3862,13 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         zend_value_error("FastChart\\Chart::renderToFile() could not infer format from extension; expected .png/.jpg/.jpeg/.webp/.gif/.avif");
         RETURN_THROWS();
     }
-    if (quality < 1 || quality > 100) {
-        zend_value_error("FastChart\\Chart::renderToFile() quality must be in [1, 100]");
+    /* Match the per-format render*() validators: WebP and AVIF accept
+     * quality 0 (smallest, lowest fidelity); only the JPEG encoder
+     * treats 0 as degenerate. The libgd encoder folds 0 into "best
+     * compression" for PNG too. Allow 0 across formats here so
+     * renderToFile is consistent with renderWebp() / renderAvif(). */
+    if (quality < 0 || quality > 100) {
+        zend_value_error("FastChart\\Chart::renderToFile() quality must be in [0, 100]");
         RETURN_THROWS();
     }
     if (php_check_open_basedir(ZSTR_VAL(path))) {
@@ -3912,6 +3957,15 @@ static int fastchart_parse_grid(zval *arr, fastchart_grid *out, const char *wher
     if ((size_t)cols > SIZE_MAX / sizeof(double) ||
         (size_t)rows > (SIZE_MAX / sizeof(double)) / (size_t)cols) {
         zend_value_error("%s grid dimensions overflow allocation", where);
+        return -1;
+    }
+    /* Per-request cell-count cap. Surface / contour grids are
+     * inherently bounded by canvas pixel resolution; nothing realistic
+     * needs more than ~10K cells. Without this cap, setGrid([10000][
+     * 10000]) allocates 800MB of doubles per call. */
+    if ((size_t)rows * (size_t)cols > FASTCHART_MAX_GRID_CELLS) {
+        zend_value_error("%s grid exceeds %d cells (got rows=%d cols=%d)",
+                         where, FASTCHART_MAX_GRID_CELLS, rows, cols);
         return -1;
     }
     out->cells = emalloc((size_t)rows * (size_t)cols * sizeof(double));
@@ -4575,10 +4629,14 @@ PHP_MINIT_FUNCTION(fastchart)
     /* Per-class handlers init. Each handlers struct gets its own
      * std offset matching its per-type struct layout, plus the
      * class's free / clone hooks. */
+/* Use offsetof, not XtOffsetOf — the latter was removed in PHP 8.6
+ * (`Zend/zend_portability.h`). offsetof works on every supported PHP
+ * version. The clone macro at fastchart_clone_object_for already uses
+ * offsetof; this site lagged behind. */
 #define FASTCHART_INIT_HANDLERS(name, T) do {                                            \
         memcpy(&fastchart_##name##_handlers, &std_object_handlers,                       \
                sizeof(zend_object_handlers));                                            \
-        fastchart_##name##_handlers.offset    = XtOffsetOf(T, std);                      \
+        fastchart_##name##_handlers.offset    = offsetof(T, std);                        \
         fastchart_##name##_handlers.free_obj  = fastchart_##name##_free_object;          \
         fastchart_##name##_handlers.clone_obj = fastchart_##name##_clone_object;         \
         fastchart_##name##_handlers.dtor_obj  = zend_objects_destroy_object;             \

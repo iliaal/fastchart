@@ -116,7 +116,11 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
     fastchart_value_range yrange;
     if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
         if (fastchart_value_range_compute_log(y_min, y_max, &yrange) != 0) {
-            efree(candles);
+            /* `candles` aliases self->candles — the per-class extras
+             * destructor (fastchart_stock_release_extras) frees that
+             * buffer, so we must NOT efree the alias here. Doing so
+             * leaves self->candles pointing at freed memory; the next
+             * unset($obj) double-frees. */
             zend_value_error("FastChart\\StockChart::draw(): log Y-axis requires strictly-positive prices");
             return -1;
         }

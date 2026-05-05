@@ -140,13 +140,30 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
         fastchart_shadow_filled_arc(im, (fastchart_obj *)self, slice_cx, slice_cy, diameter,
                                     (int)floor(start_deg),
                                     (int)ceil(start_deg + sweep));
-        gdImageFilledArc(im, slice_cx, slice_cy, diameter, diameter,
-                         (int)floor(start_deg), (int)ceil(start_deg + sweep),
-                         color, gdPie);
+        /* Wedge fill + AA outline of arc and radial edges in the slice
+         * color softens the angled boundary. The separator stroke
+         * below then lays a 1px AA line in the border color over the
+         * outline so adjacent slices remain visually distinct. */
+        fastchart_filled_wedge_aa(im, slice_cx, slice_cy, diameter,
+                                  (int)floor(start_deg),
+                                  (int)ceil(start_deg + sweep),
+                                  color);
         int edge = self->edge_color >= 0 ? (int)self->edge_color : pal.border;
-        gdImageFilledArc(im, slice_cx, slice_cy, diameter, diameter,
-                         (int)floor(start_deg), (int)ceil(start_deg + sweep),
-                         edge, gdNoFill | gdEdged);
+        gdImageSetAntiAliased(im, edge);
+        gdImageArc(im, slice_cx, slice_cy, diameter, diameter,
+                   (int)floor(start_deg), (int)ceil(start_deg + sweep),
+                   gdAntiAliased);
+        int radius = diameter / 2;
+        double rs = floor(start_deg) * M_PI / 180.0;
+        double re = ceil(start_deg + sweep) * M_PI / 180.0;
+        gdImageLine(im, slice_cx, slice_cy,
+                    slice_cx + (int)((double)radius * cos(rs)),
+                    slice_cy + (int)((double)radius * sin(rs)),
+                    gdAntiAliased);
+        gdImageLine(im, slice_cx, slice_cy,
+                    slice_cx + (int)((double)radius * cos(re)),
+                    slice_cy + (int)((double)radius * sin(re)),
+                    gdAntiAliased);
         start_deg += sweep;
     }
 
