@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 40d491c16bb023a1fe67188ef0469bdf7c4f45e4 */
+ * Stub hash: 8214d78acfcdcec7bd92398f069ae29dbfb2dbc2 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -202,6 +202,15 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setDropSha
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, color, IS_LONG, 1, "null")
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setDateAxisStride, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, unit, IS_LONG, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, every, IS_LONG, 0, "1")
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_getImageMap, 0, 0, IS_STRING, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, name, IS_STRING, 0, "\'fastchart\'")
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_FastChart_Chart_draw, 0, 1, GdImage, 0)
 	ZEND_ARG_OBJ_INFO(0, canvas, GdImage, 0)
 ZEND_END_ARG_INFO()
@@ -233,6 +242,10 @@ ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_LineChart_setMarkerSize, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, size, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_LineChart_setErrorBars, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, errors, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_LineChart_draw arginfo_class_FastChart_Chart_draw
@@ -293,7 +306,10 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_ScatterChart_setTrendLine, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, enabled, _IS_BOOL, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, color, IS_LONG, 1, "null")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, degree, IS_LONG, 0, "1")
 ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_ScatterChart_setErrorBars arginfo_class_FastChart_LineChart_setErrorBars
 
 #define arginfo_class_FastChart_ScatterChart_draw arginfo_class_FastChart_Chart_draw
 
@@ -365,6 +381,49 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_GaugeChart_draw arginfo_class_FastChart_Chart_draw
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_GanttChart_setTasks, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, tasks, IS_ARRAY, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_GanttChart_setTimeRange, 0, 0, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, start, IS_LONG, 1, "null")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, end, IS_LONG, 1, "null")
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_GanttChart_setShowTaskLabels, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, show, _IS_BOOL, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_GanttChart_draw arginfo_class_FastChart_Chart_draw
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_BoxPlot_setBoxes, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, boxes, IS_ARRAY, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_BoxPlot_setBoxWidth arginfo_class_FastChart_Chart_setBarWidth
+
+#define arginfo_class_FastChart_BoxPlot_draw arginfo_class_FastChart_Chart_draw
+
+#define arginfo_class_FastChart_PolarChart_setSeries arginfo_class_FastChart_LineChart_setSeries
+
+#define arginfo_class_FastChart_PolarChart_setMaxRadius arginfo_class_FastChart_RadarChart_setMaxValue
+
+#define arginfo_class_FastChart_PolarChart_setFilled arginfo_class_FastChart_RadarChart_setFilled
+
+#define arginfo_class_FastChart_PolarChart_draw arginfo_class_FastChart_Chart_draw
+
+#define arginfo_class_FastChart_ContourChart_setGrid arginfo_class_FastChart_SurfaceChart_setGrid
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_ContourChart_setLevels, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, levels, IS_ARRAY, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_ContourChart_setFilled arginfo_class_FastChart_RadarChart_setFilled
+
+#define arginfo_class_FastChart_ContourChart_setColorRamp arginfo_class_FastChart_SurfaceChart_setColorRamp
+
+#define arginfo_class_FastChart_ContourChart_draw arginfo_class_FastChart_Chart_draw
+
 ZEND_METHOD(FastChart_Chart, __construct);
 ZEND_METHOD(FastChart_Chart, version);
 ZEND_METHOD(FastChart_Chart, setSize);
@@ -423,6 +482,8 @@ ZEND_METHOD(FastChart_Chart, addTextAnnotation);
 ZEND_METHOD(FastChart_Chart, setLineStyle);
 ZEND_METHOD(FastChart_Chart, setGradientFill);
 ZEND_METHOD(FastChart_Chart, setDropShadow);
+ZEND_METHOD(FastChart_Chart, setDateAxisStride);
+ZEND_METHOD(FastChart_Chart, getImageMap);
 ZEND_METHOD(FastChart_Chart, renderPng);
 ZEND_METHOD(FastChart_Chart, renderJpeg);
 ZEND_METHOD(FastChart_Chart, renderWebp);
@@ -432,6 +493,7 @@ ZEND_METHOD(FastChart_Chart, renderToFile);
 ZEND_METHOD(FastChart_LineChart, setSeries);
 ZEND_METHOD(FastChart_LineChart, setMarkerStyle);
 ZEND_METHOD(FastChart_LineChart, setMarkerSize);
+ZEND_METHOD(FastChart_LineChart, setErrorBars);
 ZEND_METHOD(FastChart_LineChart, draw);
 ZEND_METHOD(FastChart_AreaChart, setSeries);
 ZEND_METHOD(FastChart_AreaChart, setStacked);
@@ -453,6 +515,7 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints);
 ZEND_METHOD(FastChart_ScatterChart, setMarkerStyle);
 ZEND_METHOD(FastChart_ScatterChart, setMarkerSize);
 ZEND_METHOD(FastChart_ScatterChart, setTrendLine);
+ZEND_METHOD(FastChart_ScatterChart, setErrorBars);
 ZEND_METHOD(FastChart_ScatterChart, draw);
 ZEND_METHOD(FastChart_StockChart, setOhlcv);
 ZEND_METHOD(FastChart_StockChart, setMovingAverages);
@@ -476,6 +539,22 @@ ZEND_METHOD(FastChart_GaugeChart, setRange);
 ZEND_METHOD(FastChart_GaugeChart, setZones);
 ZEND_METHOD(FastChart_GaugeChart, setValueFormat);
 ZEND_METHOD(FastChart_GaugeChart, draw);
+ZEND_METHOD(FastChart_GanttChart, setTasks);
+ZEND_METHOD(FastChart_GanttChart, setTimeRange);
+ZEND_METHOD(FastChart_GanttChart, setShowTaskLabels);
+ZEND_METHOD(FastChart_GanttChart, draw);
+ZEND_METHOD(FastChart_BoxPlot, setBoxes);
+ZEND_METHOD(FastChart_BoxPlot, setBoxWidth);
+ZEND_METHOD(FastChart_BoxPlot, draw);
+ZEND_METHOD(FastChart_PolarChart, setSeries);
+ZEND_METHOD(FastChart_PolarChart, setMaxRadius);
+ZEND_METHOD(FastChart_PolarChart, setFilled);
+ZEND_METHOD(FastChart_PolarChart, draw);
+ZEND_METHOD(FastChart_ContourChart, setGrid);
+ZEND_METHOD(FastChart_ContourChart, setLevels);
+ZEND_METHOD(FastChart_ContourChart, setFilled);
+ZEND_METHOD(FastChart_ContourChart, setColorRamp);
+ZEND_METHOD(FastChart_ContourChart, draw);
 
 static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, __construct, arginfo_class_FastChart_Chart___construct, ZEND_ACC_PUBLIC)
@@ -536,6 +615,8 @@ static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, setLineStyle, arginfo_class_FastChart_Chart_setLineStyle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setGradientFill, arginfo_class_FastChart_Chart_setGradientFill, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setDropShadow, arginfo_class_FastChart_Chart_setDropShadow, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setDateAxisStride, arginfo_class_FastChart_Chart_setDateAxisStride, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, getImageMap, arginfo_class_FastChart_Chart_getImageMap, ZEND_ACC_PUBLIC)
 	ZEND_RAW_FENTRY("draw", NULL, arginfo_class_FastChart_Chart_draw, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
 	ZEND_ME(FastChart_Chart, renderPng, arginfo_class_FastChart_Chart_renderPng, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, renderJpeg, arginfo_class_FastChart_Chart_renderJpeg, ZEND_ACC_PUBLIC)
@@ -550,6 +631,7 @@ static const zend_function_entry class_FastChart_LineChart_methods[] = {
 	ZEND_ME(FastChart_LineChart, setSeries, arginfo_class_FastChart_LineChart_setSeries, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_LineChart, setMarkerStyle, arginfo_class_FastChart_LineChart_setMarkerStyle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_LineChart, setMarkerSize, arginfo_class_FastChart_LineChart_setMarkerSize, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_LineChart, setErrorBars, arginfo_class_FastChart_LineChart_setErrorBars, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_LineChart, draw, arginfo_class_FastChart_LineChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
@@ -587,6 +669,7 @@ static const zend_function_entry class_FastChart_ScatterChart_methods[] = {
 	ZEND_ME(FastChart_ScatterChart, setMarkerStyle, arginfo_class_FastChart_ScatterChart_setMarkerStyle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ScatterChart, setMarkerSize, arginfo_class_FastChart_ScatterChart_setMarkerSize, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ScatterChart, setTrendLine, arginfo_class_FastChart_ScatterChart_setTrendLine, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_ScatterChart, setErrorBars, arginfo_class_FastChart_ScatterChart_setErrorBars, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ScatterChart, draw, arginfo_class_FastChart_ScatterChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
@@ -630,6 +713,38 @@ static const zend_function_entry class_FastChart_GaugeChart_methods[] = {
 	ZEND_ME(FastChart_GaugeChart, setZones, arginfo_class_FastChart_GaugeChart_setZones, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_GaugeChart, setValueFormat, arginfo_class_FastChart_GaugeChart_setValueFormat, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_GaugeChart, draw, arginfo_class_FastChart_GaugeChart_draw, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_FastChart_GanttChart_methods[] = {
+	ZEND_ME(FastChart_GanttChart, setTasks, arginfo_class_FastChart_GanttChart_setTasks, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_GanttChart, setTimeRange, arginfo_class_FastChart_GanttChart_setTimeRange, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_GanttChart, setShowTaskLabels, arginfo_class_FastChart_GanttChart_setShowTaskLabels, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_GanttChart, draw, arginfo_class_FastChart_GanttChart_draw, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_FastChart_BoxPlot_methods[] = {
+	ZEND_ME(FastChart_BoxPlot, setBoxes, arginfo_class_FastChart_BoxPlot_setBoxes, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_BoxPlot, setBoxWidth, arginfo_class_FastChart_BoxPlot_setBoxWidth, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_BoxPlot, draw, arginfo_class_FastChart_BoxPlot_draw, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_FastChart_PolarChart_methods[] = {
+	ZEND_ME(FastChart_PolarChart, setSeries, arginfo_class_FastChart_PolarChart_setSeries, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_PolarChart, setMaxRadius, arginfo_class_FastChart_PolarChart_setMaxRadius, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_PolarChart, setFilled, arginfo_class_FastChart_PolarChart_setFilled, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_PolarChart, draw, arginfo_class_FastChart_PolarChart_draw, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_FastChart_ContourChart_methods[] = {
+	ZEND_ME(FastChart_ContourChart, setGrid, arginfo_class_FastChart_ContourChart_setGrid, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_ContourChart, setLevels, arginfo_class_FastChart_ContourChart_setLevels, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_ContourChart, setFilled, arginfo_class_FastChart_ContourChart_setFilled, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_ContourChart, setColorRamp, arginfo_class_FastChart_ContourChart_setColorRamp, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_ContourChart, draw, arginfo_class_FastChart_ContourChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -904,6 +1019,36 @@ static zend_class_entry *register_class_FastChart_Chart(void)
 	zend_declare_typed_class_constant(class_entry, const_GRADIENT_HORIZONTAL_name, &const_GRADIENT_HORIZONTAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
 	zend_string_release(const_GRADIENT_HORIZONTAL_name);
 
+	zval const_DATE_DAY_value;
+	ZVAL_LONG(&const_DATE_DAY_value, 0);
+	zend_string *const_DATE_DAY_name = zend_string_init_interned("DATE_DAY", sizeof("DATE_DAY") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_DATE_DAY_name, &const_DATE_DAY_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_DATE_DAY_name);
+
+	zval const_DATE_WEEK_value;
+	ZVAL_LONG(&const_DATE_WEEK_value, 1);
+	zend_string *const_DATE_WEEK_name = zend_string_init_interned("DATE_WEEK", sizeof("DATE_WEEK") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_DATE_WEEK_name, &const_DATE_WEEK_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_DATE_WEEK_name);
+
+	zval const_DATE_MONTH_value;
+	ZVAL_LONG(&const_DATE_MONTH_value, 2);
+	zend_string *const_DATE_MONTH_name = zend_string_init_interned("DATE_MONTH", sizeof("DATE_MONTH") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_DATE_MONTH_name, &const_DATE_MONTH_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_DATE_MONTH_name);
+
+	zval const_DATE_QUARTER_value;
+	ZVAL_LONG(&const_DATE_QUARTER_value, 3);
+	zend_string *const_DATE_QUARTER_name = zend_string_init_interned("DATE_QUARTER", sizeof("DATE_QUARTER") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_DATE_QUARTER_name, &const_DATE_QUARTER_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_DATE_QUARTER_name);
+
+	zval const_DATE_YEAR_value;
+	ZVAL_LONG(&const_DATE_YEAR_value, 4);
+	zend_string *const_DATE_YEAR_name = zend_string_init_interned("DATE_YEAR", sizeof("DATE_YEAR") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_DATE_YEAR_name, &const_DATE_YEAR_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_DATE_YEAR_name);
+
 	return class_entry;
 }
 
@@ -1002,6 +1147,46 @@ static zend_class_entry *register_class_FastChart_GaugeChart(zend_class_entry *c
 	zend_class_entry ce, *class_entry;
 
 	INIT_NS_CLASS_ENTRY(ce, "FastChart", "GaugeChart", class_FastChart_GaugeChart_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_FastChart_GanttChart(zend_class_entry *class_entry_FastChart_Chart)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "FastChart", "GanttChart", class_FastChart_GanttChart_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_FastChart_BoxPlot(zend_class_entry *class_entry_FastChart_Chart)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "FastChart", "BoxPlot", class_FastChart_BoxPlot_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_FastChart_PolarChart(zend_class_entry *class_entry_FastChart_Chart)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "FastChart", "PolarChart", class_FastChart_PolarChart_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_FastChart_ContourChart(zend_class_entry *class_entry_FastChart_Chart)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "FastChart", "ContourChart", class_FastChart_ContourChart_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
 
 	return class_entry;

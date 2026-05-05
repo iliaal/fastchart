@@ -19,6 +19,7 @@
 #include "php_streams.h"
 #include "ext/standard/info.h"
 #include "Zend/zend_exceptions.h"
+#include "Zend/zend_smart_str.h"
 
 #include <math.h>
 #include <string.h>
@@ -39,6 +40,10 @@ zend_class_entry *fastchart_radar_chart_ce;
 zend_class_entry *fastchart_bubble_chart_ce;
 zend_class_entry *fastchart_surface_chart_ce;
 zend_class_entry *fastchart_gauge_chart_ce;
+zend_class_entry *fastchart_gantt_chart_ce;
+zend_class_entry *fastchart_box_plot_ce;
+zend_class_entry *fastchart_polar_chart_ce;
+zend_class_entry *fastchart_contour_chart_ce;
 zend_class_entry *fastchart_gd_image_ce = NULL;
 
 static zend_object_handlers fastchart_object_handlers;
@@ -178,6 +183,19 @@ static zend_object *fastchart_create_object(zend_class_entry *ce)
     intern->gauge_min = 0.0;
     intern->gauge_max = 100.0;
     intern->gauge_value_format = NULL;
+    intern->trend_degree = 1;
+    intern->date_axis_unit = FASTCHART_DATE_DAY;
+    intern->date_axis_every = 0;        /* 0 = auto */
+    intern->gantt_show_labels = true;
+    intern->gantt_has_range = false;
+    intern->gantt_range_start = 0;
+    intern->gantt_range_end = 0;
+    intern->box_width_pct = 60;
+    intern->polar_max_radius = 0.0;     /* 0 = auto */
+    intern->polar_filled = true;
+    intern->contour_filled = true;
+    intern->contour_low = 0x1f77b4;
+    intern->contour_high = 0xd62728;
 
     if (fastchart_default_font_path) {
         intern->font_path = zend_string_copy(fastchart_default_font_path);
@@ -1201,23 +1219,50 @@ ZEND_METHOD(FastChart_ScatterChart, setTrendLine)
 {
     bool en;
     zend_long color = -1;
+    zend_long degree = 1;
     bool color_is_null = true;
 
-    ZEND_PARSE_PARAMETERS_START(1, 2)
+    ZEND_PARSE_PARAMETERS_START(1, 3)
         Z_PARAM_BOOL(en)
         Z_PARAM_OPTIONAL
         Z_PARAM_LONG_OR_NULL(color, color_is_null)
+        Z_PARAM_LONG(degree)
     ZEND_PARSE_PARAMETERS_END();
 
     if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
         zend_value_error("FastChart\\ScatterChart::setTrendLine() color must be 0..0xFFFFFF");
         RETURN_THROWS();
     }
+    if (degree < 1 || degree > 5) {
+        zend_value_error("FastChart\\ScatterChart::setTrendLine() degree must be in [1, 5]");
+        RETURN_THROWS();
+    }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     self->trend_line = en;
     self->trend_line_color = color_is_null ? -1 : color;
+    self->trend_degree = degree;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
+
+/* ----------------- error bars ----------------------------------- */
+
+#define FASTCHART_ERROR_BARS_SETTER(class_) \
+    ZEND_METHOD(class_, setErrorBars) \
+    { \
+        zval *errs; \
+        ZEND_PARSE_PARAMETERS_START(1, 1) \
+            Z_PARAM_ARRAY(errs) \
+        ZEND_PARSE_PARAMETERS_END(); \
+        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
+        zval copy; \
+        ZVAL_COPY(&copy, errs); \
+        zend_hash_str_update(Z_ARRVAL(self->config), "error_bars", \
+                             sizeof("error_bars") - 1, &copy); \
+        RETURN_ZVAL(ZEND_THIS, 1, 0); \
+    }
+
+FASTCHART_ERROR_BARS_SETTER(FastChart_LineChart)
+FASTCHART_ERROR_BARS_SETTER(FastChart_ScatterChart)
 
 /* ----------------- RadarChart setters --------------------------- */
 
@@ -1379,6 +1424,261 @@ ZEND_METHOD(FastChart_GaugeChart, setValueFormat)
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (self->gauge_value_format) zend_string_release(self->gauge_value_format);
     self->gauge_value_format = ZSTR_LEN(fmt) == 0 ? NULL : zend_string_copy(fmt);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- date axis stride ----------------------------- */
+
+ZEND_METHOD(FastChart_Chart, setDateAxisStride)
+{
+    zend_long unit, every = 1;
+    ZEND_PARSE_PARAMETERS_START(1, 2)
+        Z_PARAM_LONG(unit)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(every)
+    ZEND_PARSE_PARAMETERS_END();
+    if (unit < FASTCHART_DATE_DAY || unit > FASTCHART_DATE_YEAR) {
+        zend_value_error("FastChart\\Chart::setDateAxisStride() unit must be a DATE_* constant");
+        RETURN_THROWS();
+    }
+    if (every < 0 || every > 1000) {
+        zend_value_error("FastChart\\Chart::setDateAxisStride() every must be in [0, 1000] (0 = auto)");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->date_axis_unit = unit;
+    self->date_axis_every = every;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- image map ------------------------------------ */
+
+/* Walk a flat list of points (Scatter/Bubble shape) and emit
+ * <area> entries for those that carry an 'href' / 'tooltip' key.
+ * The chart must have been render()'d already so the chart's
+ * cached pixel positions are present in self->config["areas"]. */
+ZEND_METHOD(FastChart_Chart, getImageMap)
+{
+    zend_string *name;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_STR(name)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval *areas_zv = zend_hash_str_find(Z_ARRVAL(self->config),
+                                        "image_map_areas",
+                                        sizeof("image_map_areas") - 1);
+    if (!areas_zv || Z_TYPE_P(areas_zv) != IS_ARRAY ||
+        zend_hash_num_elements(Z_ARRVAL_P(areas_zv)) == 0) {
+        RETURN_EMPTY_STRING();
+    }
+
+    smart_str out = {0};
+    smart_str_appends(&out, "<map name=\"");
+    if (ZEND_NUM_ARGS() < 1 || !name || ZSTR_LEN(name) == 0) {
+        smart_str_appends(&out, "fastchart");
+    } else {
+        smart_str_append(&out, name);
+    }
+    smart_str_appends(&out, "\">");
+
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(areas_zv), entry) {
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        zval *zx = zend_hash_str_find(Z_ARRVAL_P(entry), "x", sizeof("x") - 1);
+        zval *zy = zend_hash_str_find(Z_ARRVAL_P(entry), "y", sizeof("y") - 1);
+        zval *zr = zend_hash_str_find(Z_ARRVAL_P(entry), "r", sizeof("r") - 1);
+        zval *zh = zend_hash_str_find(Z_ARRVAL_P(entry), "href", sizeof("href") - 1);
+        zval *zt = zend_hash_str_find(Z_ARRVAL_P(entry), "title", sizeof("title") - 1);
+        if (!zx || !zy || !zr || !zh) continue;
+        char buf[256];
+        int n = snprintf(buf, sizeof(buf),
+            "<area shape=\"circle\" coords=\"%ld,%ld,%ld\" href=\"",
+            (long)Z_LVAL_P(zx), (long)Z_LVAL_P(zy), (long)Z_LVAL_P(zr));
+        smart_str_appendl(&out, buf, n);
+        if (Z_TYPE_P(zh) == IS_STRING) smart_str_append(&out, Z_STR_P(zh));
+        smart_str_appends(&out, "\"");
+        if (zt && Z_TYPE_P(zt) == IS_STRING) {
+            smart_str_appends(&out, " title=\"");
+            smart_str_append(&out, Z_STR_P(zt));
+            smart_str_appends(&out, "\"");
+        }
+        smart_str_appends(&out, ">");
+    } ZEND_HASH_FOREACH_END();
+
+    smart_str_appends(&out, "</map>");
+    smart_str_0(&out);
+    RETURN_STR(out.s);
+}
+
+/* ----------------- GanttChart setters --------------------------- */
+
+ZEND_METHOD(FastChart_GanttChart, setTasks)
+{
+    zval *tasks;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(tasks)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval_ptr_dtor(&self->data);
+    ZVAL_COPY(&self->data, tasks);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_GanttChart, setTimeRange)
+{
+    zend_long start = 0, end = 0;
+    bool start_is_null = true, end_is_null = true;
+    ZEND_PARSE_PARAMETERS_START(0, 2)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG_OR_NULL(start, start_is_null)
+        Z_PARAM_LONG_OR_NULL(end, end_is_null)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->gantt_has_range = !(start_is_null && end_is_null);
+    self->gantt_range_start = start_is_null ? 0 : (long)start;
+    self->gantt_range_end   = end_is_null   ? 0 : (long)end;
+    if (self->gantt_has_range && self->gantt_range_end <= self->gantt_range_start) {
+        zend_value_error("FastChart\\GanttChart::setTimeRange() requires start < end");
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_GanttChart, setShowTaskLabels)
+{
+    bool s;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(s)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->gantt_show_labels = s;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- BoxPlot setters ------------------------------ */
+
+ZEND_METHOD(FastChart_BoxPlot, setBoxes)
+{
+    zval *data;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(data)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval_ptr_dtor(&self->data);
+    ZVAL_COPY(&self->data, data);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_BoxPlot, setBoxWidth)
+{
+    zend_long pct;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(pct)
+    ZEND_PARSE_PARAMETERS_END();
+    if (pct < 1 || pct > 100) {
+        zend_value_error("FastChart\\BoxPlot::setBoxWidth() expects a percent in [1, 100]");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->box_width_pct = pct;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- PolarChart setters --------------------------- */
+
+ZEND_METHOD(FastChart_PolarChart, setSeries)
+{
+    zval *data;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(data)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval_ptr_dtor(&self->data);
+    ZVAL_COPY(&self->data, data);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_PolarChart, setMaxRadius)
+{
+    double m;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_DOUBLE(m)
+    ZEND_PARSE_PARAMETERS_END();
+    if (m < 0.0) {
+        zend_value_error("FastChart\\PolarChart::setMaxRadius() must be non-negative");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->polar_max_radius = m;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_PolarChart, setFilled)
+{
+    bool f;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(f)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->polar_filled = f;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* ----------------- ContourChart setters ------------------------- */
+
+ZEND_METHOD(FastChart_ContourChart, setGrid)
+{
+    zval *data;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(data)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval_ptr_dtor(&self->data);
+    ZVAL_COPY(&self->data, data);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_ContourChart, setLevels)
+{
+    zval *levels;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(levels)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    zval copy;
+    ZVAL_COPY(&copy, levels);
+    zend_hash_str_update(Z_ARRVAL(self->config), "contour_levels",
+                         sizeof("contour_levels") - 1, &copy);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_ContourChart, setFilled)
+{
+    bool f;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(f)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->contour_filled = f;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_ContourChart, setColorRamp)
+{
+    zend_long lo, hi;
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_LONG(lo)
+        Z_PARAM_LONG(hi)
+    ZEND_PARSE_PARAMETERS_END();
+    if (lo < 0 || lo > 0xFFFFFF || hi < 0 || hi > 0xFFFFFF) {
+        zend_value_error("FastChart\\ContourChart::setColorRamp() colors must be 0..0xFFFFFF");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->contour_low = lo;
+    self->contour_high = hi;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -1687,6 +1987,10 @@ static int dispatch_render(fastchart_obj *self, zend_class_entry *ce, gdImagePtr
     if (ce == fastchart_bubble_chart_ce)  return fastchart_bubble_render_to_image(self, im);
     if (ce == fastchart_surface_chart_ce) return fastchart_surface_render_to_image(self, im);
     if (ce == fastchart_gauge_chart_ce)   return fastchart_gauge_render_to_image(self, im);
+    if (ce == fastchart_gantt_chart_ce)   return fastchart_gantt_render_to_image(self, im);
+    if (ce == fastchart_box_plot_ce)      return fastchart_boxplot_render_to_image(self, im);
+    if (ce == fastchart_polar_chart_ce)   return fastchart_polar_render_to_image(self, im);
+    if (ce == fastchart_contour_chart_ce) return fastchart_contour_render_to_image(self, im);
     zend_throw_error(NULL, "FastChart: render dispatch found unknown class entry");
     return -1;
 }
@@ -2126,6 +2430,18 @@ PHP_MINIT_FUNCTION(fastchart)
 
     fastchart_gauge_chart_ce   = register_class_FastChart_GaugeChart(fastchart_chart_ce);
     fastchart_gauge_chart_ce->create_object = fastchart_create_object;
+
+    fastchart_gantt_chart_ce   = register_class_FastChart_GanttChart(fastchart_chart_ce);
+    fastchart_gantt_chart_ce->create_object = fastchart_create_object;
+
+    fastchart_box_plot_ce      = register_class_FastChart_BoxPlot(fastchart_chart_ce);
+    fastchart_box_plot_ce->create_object = fastchart_create_object;
+
+    fastchart_polar_chart_ce   = register_class_FastChart_PolarChart(fastchart_chart_ce);
+    fastchart_polar_chart_ce->create_object = fastchart_create_object;
+
+    fastchart_contour_chart_ce = register_class_FastChart_ContourChart(fastchart_chart_ce);
+    fastchart_contour_chart_ce->create_object = fastchart_create_object;
 
     fastchart_gd_image_ce = zend_hash_str_find_ptr(CG(class_table),
         "gdimage", sizeof("gdimage") - 1);

@@ -53,6 +53,10 @@ extern zend_class_entry *fastchart_radar_chart_ce;
 extern zend_class_entry *fastchart_bubble_chart_ce;
 extern zend_class_entry *fastchart_surface_chart_ce;
 extern zend_class_entry *fastchart_gauge_chart_ce;
+extern zend_class_entry *fastchart_gantt_chart_ce;
+extern zend_class_entry *fastchart_box_plot_ce;
+extern zend_class_entry *fastchart_polar_chart_ce;
+extern zend_class_entry *fastchart_contour_chart_ce;
 
 /* Cached \GdImage class entry, resolved at MINIT via direct
  * CG(class_table) lookup. ext/gd defines gd_image_ce file-static
@@ -247,6 +251,32 @@ typedef struct _fastchart_obj {
     double gauge_max;
     zend_string *gauge_value_format;
 
+    /* Trend line: degree of polynomial fit (1 = linear). */
+    zend_long trend_degree;
+
+    /* Calendar-aware date axis stride. unit FASTCHART_DATE_*; every
+     * 0 = auto-density (the legacy behavior). */
+    zend_long date_axis_unit;
+    zend_long date_axis_every;
+
+    /* GanttChart specific. */
+    bool gantt_show_labels;
+    bool gantt_has_range;
+    long gantt_range_start;
+    long gantt_range_end;
+
+    /* BoxPlot specific. */
+    zend_long box_width_pct;
+
+    /* PolarChart specific. */
+    double polar_max_radius;
+    bool polar_filled;
+
+    /* ContourChart specific. */
+    bool contour_filled;
+    zend_long contour_low;
+    zend_long contour_high;
+
     zval data;
     zval config;
     zend_object std;
@@ -331,6 +361,13 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define FASTCHART_GRADIENT_VERTICAL   0
 #define FASTCHART_GRADIENT_HORIZONTAL 1
 
+/* Calendar-aware date-axis stride units. */
+#define FASTCHART_DATE_DAY     0
+#define FASTCHART_DATE_WEEK    1
+#define FASTCHART_DATE_MONTH   2
+#define FASTCHART_DATE_QUARTER 3
+#define FASTCHART_DATE_YEAR    4
+
 /* Forward-declare the only ext/gd public API we use (also declared in
  * fastchart.c at the call site). Mirrored verbatim from
  * ext/gd/php_gd.h since that header is not installed via make install. */
@@ -355,5 +392,9 @@ int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im);
 int fastchart_bubble_render_to_image(fastchart_obj *self, gdImagePtr im);
 int fastchart_surface_render_to_image(fastchart_obj *self, gdImagePtr im);
 int fastchart_gauge_render_to_image(fastchart_obj *self, gdImagePtr im);
+int fastchart_gantt_render_to_image(fastchart_obj *self, gdImagePtr im);
+int fastchart_boxplot_render_to_image(fastchart_obj *self, gdImagePtr im);
+int fastchart_polar_render_to_image(fastchart_obj *self, gdImagePtr im);
+int fastchart_contour_render_to_image(fastchart_obj *self, gdImagePtr im);
 
 #endif /* PHP_FASTCHART_H */

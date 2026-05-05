@@ -208,6 +208,14 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
         ? (int)self->marker_size
         : 7;
 
+    /* Optional per-point error bars (parallel to setPoints index order). */
+    HashTable *err_ht = NULL;
+    {
+        zval *eb = zend_hash_str_find(Z_ARRVAL(self->config),
+            "error_bars", sizeof("error_bars") - 1);
+        if (eb && Z_TYPE_P(eb) == IS_ARRAY) err_ht = Z_ARRVAL_P(eb);
+    }
+
     for (int i = 0; i < n; i++) {
         double frac_x = (xrange.max - xrange.min) > 0
             ? (points[i].x - xrange.min) / (xrange.max - xrange.min)
@@ -216,42 +224,139 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
         int py = fastchart_y_to_pixel(points[i].y, &yrange, &plot);
 
         int color = pal.series[points[i].series % FASTCHART_PALETTE_SERIES_N];
+
+        /* Error bar before marker so the marker overdraws the stem
+         * cleanly. err_ht entries: scalar -> symmetric ±, [lo, hi] ->
+         * asymmetric. */
+        if (err_ht) {
+            zval *ev = zend_hash_index_find(err_ht, i);
+            if (ev) {
+                double lo = 0, hi = 0;
+                if (Z_TYPE_P(ev) == IS_ARRAY) {
+                    zval *zlo = zend_hash_index_find(Z_ARRVAL_P(ev), 0);
+                    zval *zhi = zend_hash_index_find(Z_ARRVAL_P(ev), 1);
+                    if (zlo && zhi &&
+                        fastchart_zval_to_double(zlo, &lo) == 0 &&
+                        fastchart_zval_to_double(zhi, &hi) == 0) {
+                        /* asymmetric: lo / hi as separate magnitudes */
+                    } else { lo = hi = 0; }
+                } else {
+                    double m;
+                    if (fastchart_zval_to_double(ev, &m) == 0 && m >= 0) {
+                        lo = hi = m;
+                    }
+                }
+                if (lo > 0 || hi > 0) {
+                    int py_lo = fastchart_y_to_pixel(points[i].y - lo, &yrange, &plot);
+                    int py_hi = fastchart_y_to_pixel(points[i].y + hi, &yrange, &plot);
+                    gdImageLine(im, px, py_hi, px, py_lo, pal.axis);
+                    gdImageLine(im, px - 4, py_hi, px + 4, py_hi, pal.axis);
+                    gdImageLine(im, px - 4, py_lo, px + 4, py_lo, pal.axis);
+                }
+            }
+        }
+
         fastchart_draw_marker(im, px, py, marker_style, marker_size, color);
         fastchart_draw_value_label(im, self, &pal, px, py, points[i].y);
     }
 
-    /* Linear regression overlay: simple least-squares y = a + b*x
-     * across all points (across series too -- the user can split
-     * series and call setTrendLine independently per chart if a
-     * per-series trend is wanted). */
+    /* Trend line: least-squares fit. Linear (degree=1) uses the
+     * closed-form 2x2 solution; polynomial (degree>=2) builds the
+     * normal-equations matrix and solves via Gaussian elimination.
+     * The fitted curve is rendered as 200 sub-segments across the
+     * x range. */
     if (self->trend_line && n >= 2) {
-        double sx = 0, sy = 0, sxx = 0, sxy = 0;
-        for (int i = 0; i < n; i++) {
-            sx  += points[i].x;
-            sy  += points[i].y;
-            sxx += points[i].x * points[i].x;
-            sxy += points[i].x * points[i].y;
+        int deg = (int)self->trend_degree;
+        if (deg < 1) deg = 1;
+        if (deg > 5) deg = 5;
+        if (deg + 1 > n) deg = n - 1;
+        if (deg < 1) deg = 1;
+
+        int color = self->trend_line_color >= 0
+            ? gdImageColorAllocate(im,
+                (int)((self->trend_line_color >> 16) & 0xFF),
+                (int)((self->trend_line_color >>  8) & 0xFF),
+                (int)( self->trend_line_color        & 0xFF))
+            : pal.axis;
+
+        double coeffs[6] = {0};
+        if (deg == 1) {
+            double sx = 0, sy = 0, sxx = 0, sxy = 0;
+            for (int i = 0; i < n; i++) {
+                sx  += points[i].x;
+                sy  += points[i].y;
+                sxx += points[i].x * points[i].x;
+                sxy += points[i].x * points[i].y;
+            }
+            double denom = n * sxx - sx * sx;
+            if (denom != 0.0) {
+                coeffs[1] = (n * sxy - sx * sy) / denom;
+                coeffs[0] = (sy - coeffs[1] * sx) / n;
+            }
+        } else {
+            /* Normal equations for polynomial of degree `deg`:
+             *   A[k][j] = sum x^(j+k)        for j,k in 0..deg
+             *   b[k]    = sum y * x^k
+             * Solve A * c = b (size deg+1) via partial-pivot Gauss. */
+            int m = deg + 1;
+            double A[6][7] = {{0}};   /* augmented [m | b] */
+            for (int i = 0; i < n; i++) {
+                double xi = points[i].x;
+                double yi = points[i].y;
+                double xpow_row[12]; /* x^0 .. x^(2*deg) */
+                xpow_row[0] = 1.0;
+                for (int p = 1; p <= 2 * deg; p++) xpow_row[p] = xpow_row[p-1] * xi;
+                for (int k = 0; k < m; k++) {
+                    for (int j = 0; j < m; j++) {
+                        A[k][j] += xpow_row[j + k];
+                    }
+                    A[k][m] += yi * xpow_row[k];
+                }
+            }
+            /* Gauss-Jordan with partial pivoting. */
+            for (int k = 0; k < m; k++) {
+                int piv = k;
+                double best = fabs(A[k][k]);
+                for (int r = k + 1; r < m; r++) {
+                    if (fabs(A[r][k]) > best) { best = fabs(A[r][k]); piv = r; }
+                }
+                if (best < 1e-12) { /* singular -- skip */ goto no_fit; }
+                if (piv != k) {
+                    for (int c = 0; c <= m; c++) {
+                        double tmp = A[k][c]; A[k][c] = A[piv][c]; A[piv][c] = tmp;
+                    }
+                }
+                double pivval = A[k][k];
+                for (int c = 0; c <= m; c++) A[k][c] /= pivval;
+                for (int r = 0; r < m; r++) {
+                    if (r == k) continue;
+                    double f = A[r][k];
+                    if (f == 0) continue;
+                    for (int c = 0; c <= m; c++) A[r][c] -= f * A[k][c];
+                }
+            }
+            for (int k = 0; k < m; k++) coeffs[k] = A[k][m];
         }
-        double denom = n * sxx - sx * sx;
-        if (denom != 0.0) {
-            double b = (n * sxy - sx * sy) / denom;
-            double a = (sy - b * sx) / n;
-            double y0 = a + b * x_min;
-            double y1 = a + b * x_max;
-            int px0 = plot.x0;
-            int px1 = plot.x1;
-            int py0 = fastchart_y_to_pixel(y0, &yrange, &plot);
-            int py1 = fastchart_y_to_pixel(y1, &yrange, &plot);
-            int color = self->trend_line_color >= 0
-                ? gdImageColorAllocate(im,
-                    (int)((self->trend_line_color >> 16) & 0xFF),
-                    (int)((self->trend_line_color >>  8) & 0xFF),
-                    (int)( self->trend_line_color        & 0xFF))
-                : pal.axis;
-            gdImageSetThickness(im, 2);
-            gdImageLine(im, px0, py0, px1, py1, color);
-            gdImageSetThickness(im, 1);
+
+        /* Plot 200 sub-segments. */
+        const int N = 200;
+        gdImageSetThickness(im, 2);
+        int prev_px = 0, prev_py = 0;
+        for (int s = 0; s <= N; s++) {
+            double t = (double)s / (double)N;
+            double x = x_min + t * (x_max - x_min);
+            double y = 0;
+            double xp = 1.0;
+            for (int k = 0; k <= deg; k++) { y += coeffs[k] * xp; xp *= x; }
+            double frac = (xrange.max - xrange.min) > 0
+                ? (x - xrange.min) / (xrange.max - xrange.min) : 0.5;
+            int px = plot.x0 + (int)(frac * (plot.x1 - plot.x0) + 0.5);
+            int py = fastchart_y_to_pixel(y, &yrange, &plot);
+            if (s > 0) gdImageLine(im, prev_px, prev_py, px, py, color);
+            prev_px = px; prev_py = py;
         }
+        gdImageSetThickness(im, 1);
+        no_fit: ;
     }
 
     fastchart_draw_h_annotations(im, self, &plot, &pal, &yrange);
@@ -274,6 +379,88 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
     }
 
     fastchart_draw_text_annotations(im, self, &pal);
+
+    /* Build the image-map area list for points that carry an
+     * 'href' / 'tooltip' key. We re-walk the source data because
+     * the flat points[] struct doesn't preserve the originating
+     * dict. The map is parked on config["image_map_areas"] for
+     * later retrieval via Chart::getImageMap(). */
+    {
+        zval map_list;
+        array_init(&map_list);
+        if (Z_TYPE(self->data) == IS_ARRAY) {
+            int point_idx = 0;
+            zval *first = zend_hash_index_find(Z_ARRVAL(self->data), 0);
+            int multi = first && Z_TYPE_P(first) == IS_ARRAY &&
+                zend_hash_str_find(Z_ARRVAL_P(first), "data", sizeof("data") - 1) != NULL;
+
+            zval *outer;
+            ZEND_HASH_FOREACH_VAL(Z_ARRVAL(self->data), outer) {
+                if (Z_TYPE_P(outer) != IS_ARRAY) continue;
+                HashTable *src;
+                if (multi) {
+                    zval *d = zend_hash_str_find(Z_ARRVAL_P(outer), "data", sizeof("data") - 1);
+                    if (!d || Z_TYPE_P(d) != IS_ARRAY) continue;
+                    src = Z_ARRVAL_P(d);
+                } else {
+                    src = NULL;
+                }
+
+                /* Single-series flat: outer is the point dict itself. */
+                if (!multi) {
+                    zval *href = zend_hash_str_find(Z_ARRVAL_P(outer), "href", sizeof("href") - 1);
+                    if (href && Z_TYPE_P(href) == IS_STRING && point_idx < n) {
+                        double frac_x = (xrange.max - xrange.min) > 0
+                            ? (points[point_idx].x - xrange.min) / (xrange.max - xrange.min)
+                            : 0.5;
+                        int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
+                        int py = fastchart_y_to_pixel(points[point_idx].y, &yrange, &plot);
+                        zval e;
+                        array_init(&e);
+                        add_assoc_long(&e, "x", px);
+                        add_assoc_long(&e, "y", py);
+                        add_assoc_long(&e, "r", marker_size);
+                        add_assoc_str(&e, "href", zend_string_copy(Z_STR_P(href)));
+                        zval *tip = zend_hash_str_find(Z_ARRVAL_P(outer), "tooltip", sizeof("tooltip") - 1);
+                        if (tip && Z_TYPE_P(tip) == IS_STRING) {
+                            add_assoc_str(&e, "title", zend_string_copy(Z_STR_P(tip)));
+                        }
+                        add_next_index_zval(&map_list, &e);
+                    }
+                    point_idx++;
+                } else if (src) {
+                    zval *p;
+                    ZEND_HASH_FOREACH_VAL(src, p) {
+                        if (Z_TYPE_P(p) == IS_ARRAY && point_idx < n) {
+                            zval *href = zend_hash_str_find(Z_ARRVAL_P(p), "href", sizeof("href") - 1);
+                            if (href && Z_TYPE_P(href) == IS_STRING) {
+                                double frac_x = (xrange.max - xrange.min) > 0
+                                    ? (points[point_idx].x - xrange.min) / (xrange.max - xrange.min)
+                                    : 0.5;
+                                int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
+                                int py = fastchart_y_to_pixel(points[point_idx].y, &yrange, &plot);
+                                zval e;
+                                array_init(&e);
+                                add_assoc_long(&e, "x", px);
+                                add_assoc_long(&e, "y", py);
+                                add_assoc_long(&e, "r", marker_size);
+                                add_assoc_str(&e, "href", zend_string_copy(Z_STR_P(href)));
+                                zval *tip = zend_hash_str_find(Z_ARRVAL_P(p), "tooltip", sizeof("tooltip") - 1);
+                                if (tip && Z_TYPE_P(tip) == IS_STRING) {
+                                    add_assoc_str(&e, "title", zend_string_copy(Z_STR_P(tip)));
+                                }
+                                add_next_index_zval(&map_list, &e);
+                            }
+                        }
+                        point_idx++;
+                    } ZEND_HASH_FOREACH_END();
+                }
+            } ZEND_HASH_FOREACH_END();
+        }
+        zend_hash_str_update(Z_ARRVAL(self->config), "image_map_areas",
+                             sizeof("image_map_areas") - 1, &map_list);
+    }
+
     return 0;
 }
 

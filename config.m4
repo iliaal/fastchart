@@ -59,6 +59,10 @@ if test "$PHP_FASTCHART" != "no"; then
     fastchart_bubble.c \
     fastchart_surface.c \
     fastchart_gauge.c \
+    fastchart_gantt.c \
+    fastchart_boxplot.c \
+    fastchart_polar.c \
+    fastchart_contour.c \
     fastchart_effects.c"
 
   dnl -Wall -Wextra are on by default so wrapper regressions get caught

@@ -1395,6 +1395,110 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
         align = FASTCHART_ALIGN_RIGHT;
     }
 
+    /* Calendar-aware stride: emit ticks at unit boundaries (week
+     * starts, month starts, etc.) instead of evenly-spaced dividers
+     * across the range. Reverts to auto-density when every == 0. */
+    if (chart->date_axis_every > 0) {
+        long every = chart->date_axis_every;
+        struct tm tm_buf;
+        time_t tt = (time_t)t_min;
+        gmtime_r(&tt, &tm_buf);
+        /* Snap start to the unit boundary at-or-after t_min. */
+        switch (chart->date_axis_unit) {
+            case FASTCHART_DATE_DAY:
+                tm_buf.tm_hour = 0; tm_buf.tm_min = 0; tm_buf.tm_sec = 0;
+                break;
+            case FASTCHART_DATE_WEEK:
+                /* Snap to Monday (tm_wday: Sun=0..Sat=6). */
+                tm_buf.tm_hour = 0; tm_buf.tm_min = 0; tm_buf.tm_sec = 0;
+                {
+                    int dow = tm_buf.tm_wday == 0 ? 6 : tm_buf.tm_wday - 1;
+                    tm_buf.tm_mday -= dow;
+                }
+                break;
+            case FASTCHART_DATE_MONTH:
+                tm_buf.tm_hour = 0; tm_buf.tm_min = 0; tm_buf.tm_sec = 0;
+                tm_buf.tm_mday = 1;
+                break;
+            case FASTCHART_DATE_QUARTER:
+                tm_buf.tm_hour = 0; tm_buf.tm_min = 0; tm_buf.tm_sec = 0;
+                tm_buf.tm_mday = 1;
+                tm_buf.tm_mon -= tm_buf.tm_mon % 3;
+                break;
+            case FASTCHART_DATE_YEAR:
+                tm_buf.tm_hour = 0; tm_buf.tm_min = 0; tm_buf.tm_sec = 0;
+                tm_buf.tm_mday = 1;
+                tm_buf.tm_mon = 0;
+                break;
+        }
+        time_t cur = timegm(&tm_buf);
+        if (cur < t_min) {
+            /* Advance one unit so we always start inside the range. */
+            switch (chart->date_axis_unit) {
+                case FASTCHART_DATE_DAY:     tm_buf.tm_mday += 1; break;
+                case FASTCHART_DATE_WEEK:    tm_buf.tm_mday += 7; break;
+                case FASTCHART_DATE_MONTH:   tm_buf.tm_mon  += 1; break;
+                case FASTCHART_DATE_QUARTER: tm_buf.tm_mon  += 3; break;
+                case FASTCHART_DATE_YEAR:    tm_buf.tm_year += 1; break;
+            }
+            cur = timegm(&tm_buf);
+        }
+
+        int n_emitted = 0;
+        while (cur <= t_max && n_emitted < 64) {
+            int x = fastchart_x_time_to_pixel(plot, (long)cur, t_min, t_max);
+            if (draw_points) {
+                gdImageLine(im, x, plot->y1 + 1, x,
+                            plot->y1 + TICK_MARK_LEN, pal->axis);
+            }
+            if (draw_labels) {
+                char buf[64];
+                if (chart->x_axis_label_format) {
+                    format_tick_label_user((double)cur, chart->x_axis_label_format,
+                                           buf, sizeof(buf));
+                } else {
+                    struct tm tm_lbl;
+                    gmtime_r(&cur, &tm_lbl);
+                    const char *fmt;
+                    switch (chart->date_axis_unit) {
+                        case FASTCHART_DATE_YEAR:    fmt = "%Y";       break;
+                        case FASTCHART_DATE_QUARTER: fmt = "%Y-Q";     break;
+                        case FASTCHART_DATE_MONTH:   fmt = "%Y-%m";    break;
+                        default:                     fmt = "%Y-%m-%d"; break;
+                    }
+                    if (chart->date_axis_unit == FASTCHART_DATE_QUARTER) {
+                        snprintf(buf, sizeof(buf), "%d-Q%d",
+                                 tm_lbl.tm_year + 1900,
+                                 (tm_lbl.tm_mon / 3) + 1);
+                    } else {
+                        strftime(buf, sizeof(buf), fmt, &tm_lbl);
+                    }
+                }
+                if (angle == 0) {
+                    fastchart_text_draw(im, font, size, label_color,
+                                        x, label_y, align, buf, NULL, 0);
+                } else {
+                    fastchart_text_draw_rotated(im, font, size, label_color,
+                                                x, label_y, align, (double)angle,
+                                                buf, NULL, 0);
+                }
+            }
+            /* Advance by `every` units. */
+            for (long e = 0; e < every; e++) {
+                switch (chart->date_axis_unit) {
+                    case FASTCHART_DATE_DAY:     tm_buf.tm_mday += 1; break;
+                    case FASTCHART_DATE_WEEK:    tm_buf.tm_mday += 7; break;
+                    case FASTCHART_DATE_MONTH:   tm_buf.tm_mon  += 1; break;
+                    case FASTCHART_DATE_QUARTER: tm_buf.tm_mon  += 3; break;
+                    case FASTCHART_DATE_YEAR:    tm_buf.tm_year += 1; break;
+                }
+            }
+            cur = timegm(&tm_buf);
+            n_emitted++;
+        }
+        return;
+    }
+
     /* Rotated labels are narrower so they can pack more densely. */
     const int N = (angle == 0) ? 5 : 8;
     for (int i = 0; i < N; i++) {

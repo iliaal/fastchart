@@ -70,6 +70,13 @@ abstract class Chart
     public const int GRADIENT_VERTICAL   = 0;
     public const int GRADIENT_HORIZONTAL = 1;
 
+    /** Date-axis stride units for setDateAxisStride(). */
+    public const int DATE_DAY     = 0;
+    public const int DATE_WEEK    = 1;
+    public const int DATE_MONTH   = 2;
+    public const int DATE_QUARTER = 3;
+    public const int DATE_YEAR    = 4;
+
     /**
      * Optionally pass canvas dimensions at construction so callers
      * can skip the `imagecreatetruecolor()` step entirely when they
@@ -350,6 +357,25 @@ abstract class Chart
      */
     public function setDropShadow(int $offsetX, int $offsetY, ?int $color = null): static {}
 
+    /**
+     * Calendar-aware date-axis tick stride for charts that use a
+     * Unix-timestamp X axis (StockChart, etc.). `$unit` is one of
+     * `DATE_DAY` / `DATE_WEEK` / `DATE_MONTH` / `DATE_QUARTER` /
+     * `DATE_YEAR`; `$every` is the multiplier (e.g. `every=2,
+     * unit=DATE_WEEK` = a tick every 14 days, snapped to Mondays).
+     * Pass `$every = 0` to revert to auto-density labels.
+     */
+    public function setDateAxisStride(int $unit, int $every = 1): static {}
+
+    /**
+     * After a render, return an HTML imagemap describing the
+     * clickable region for each data point. Each entry has a `'url'`
+     * and `'title'` taken from the matching `'href'` / `'tooltip'`
+     * keys on the source data. Empty string when no points carry
+     * URLs. The map's `name` attribute is the supplied `$name`.
+     */
+    public function getImageMap(string $name = 'fastchart'): string {}
+
     abstract public function draw(\GdImage $canvas): \GdImage;
 
     /** Render to PNG bytes at the configured size. */
@@ -385,6 +411,16 @@ final class LineChart extends Chart
     public function setSeries(array $series): static {}
     public function setMarkerStyle(int $style): static {}
     public function setMarkerSize(int $size): static {}
+
+    /**
+     * Per-point error bar magnitudes. `$errors` is a flat list
+     * parallel to the primary series: each entry is either a single
+     * positive number (symmetric ±error) or `[lo, hi]` for an
+     * asymmetric bar. Pass `[]` to clear. Drawn as vertical stems
+     * with horizontal caps in the configured axis color.
+     */
+    public function setErrorBars(array $errors): static {}
+
     public function draw(\GdImage $canvas): \GdImage {}
 }
 
@@ -481,11 +517,19 @@ final class ScatterChart extends Chart
     public function setMarkerSize(int $size): static {}
 
     /**
-     * Overlay a least-squares linear regression line over the
-     * scatter points. Useful for visualizing correlation. Pass
-     * false (default) to suppress.
+     * Overlay a least-squares regression curve over the scatter
+     * points. `$degree = 1` (default) is the linear fit; 2..5
+     * fits a polynomial of that order. Pass false (default) to
+     * suppress.
      */
-    public function setTrendLine(bool $enabled, ?int $color = null): static {}
+    public function setTrendLine(bool $enabled, ?int $color = null, int $degree = 1): static {}
+
+    /**
+     * Per-point error bar magnitudes parallel to setPoints().
+     * Each entry is either a single positive number (symmetric)
+     * or `[lo, hi]` (asymmetric). Pass `[]` to clear.
+     */
+    public function setErrorBars(array $errors): static {}
 
     public function draw(\GdImage $canvas): \GdImage {}
 }
@@ -607,6 +651,105 @@ final class GaugeChart extends Chart
      * sprintf format for the central value label. Default `"%.1f"`.
      */
     public function setValueFormat(string $format): static {}
+
+    public function draw(\GdImage $canvas): \GdImage {}
+}
+
+/**
+ * Gantt chart: a horizontal-bar timeline. Each task has a name, a
+ * start and end timestamp, an optional color, and an optional list
+ * of dependency-task indices that draw an arrow from the dependency
+ * task's end to this task's start.
+ */
+final class GanttChart extends Chart
+{
+    /**
+     * Tasks: list of dicts with keys `'name'`, `'start'` (Unix
+     * timestamp), `'end'` (Unix timestamp), optional `'color'`
+     * (0xRRGGBB), optional `'milestone'` (bool, default false --
+     * draws a diamond at end instead of a bar), optional
+     * `'depends'` (list of indices into the same tasks array).
+     */
+    public function setTasks(array $tasks): static {}
+
+    /**
+     * Force the time-axis range. Pass null for either to auto-fit.
+     */
+    public function setTimeRange(?int $start = null, ?int $end = null): static {}
+
+    /** Show task name labels on / next to the bars. Default true. */
+    public function setShowTaskLabels(bool $show): static {}
+
+    public function draw(\GdImage $canvas): \GdImage {}
+}
+
+/**
+ * Box-and-whisker plot. Each category renders a box from Q1..Q3
+ * with a median line and whiskers extending to the min/max, plus
+ * optional outlier dots.
+ */
+final class BoxPlot extends Chart
+{
+    /**
+     * One box per entry. Each entry is either a flat
+     * `[$min, $q1, $median, $q3, $max]` or a dict with the same
+     * keys plus optional `'outliers' => [v1, v2, ...]` and
+     * `'label' => 'name'`.
+     */
+    public function setBoxes(array $boxes): static {}
+
+    /**
+     * Box width as a percent of slot width (1..100). Default 60.
+     */
+    public function setBoxWidth(int $percent): static {}
+
+    public function draw(\GdImage $canvas): \GdImage {}
+}
+
+/**
+ * Polar plot: continuous angular coordinate (radar's parent shape).
+ * Points are `[angle_deg, radius]` and connect into a polygon.
+ */
+final class PolarChart extends Chart
+{
+    /**
+     * Points (single series) or list of series with
+     * `['data' => [[deg, r], ...], 'label' => 'name', 'color' => int]`.
+     */
+    public function setSeries(array $series): static {}
+
+    /** Force the radial scale. 0 = auto. */
+    public function setMaxRadius(float $max): static {}
+
+    /** Fill the polygon area in the series color (translucent). */
+    public function setFilled(bool $filled): static {}
+
+    public function draw(\GdImage $canvas): \GdImage {}
+}
+
+/**
+ * Contour plot: isolines drawn through a 2D grid of values.
+ * Each level produces a closed-or-open curve where the grid value
+ * equals that level (marching-squares algorithm).
+ */
+final class ContourChart extends Chart
+{
+    /** 2D grid of numeric values. */
+    public function setGrid(array $grid): static {}
+
+    /**
+     * Levels at which to draw isolines. If empty, the renderer picks
+     * 5 evenly-spaced levels between the min and max grid values.
+     */
+    public function setLevels(array $levels): static {}
+
+    /**
+     * Color the area between isolines on a low->high color ramp.
+     * Default true. Pass false for line-only contours.
+     */
+    public function setFilled(bool $filled): static {}
+
+    public function setColorRamp(int $low, int $high): static {}
 
     public function draw(\GdImage $canvas): \GdImage {}
 }

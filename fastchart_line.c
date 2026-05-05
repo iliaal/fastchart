@@ -281,6 +281,14 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
     const char *legend_labels[MAX_SERIES];
     int legend_count = 0;
 
+    /* Optional per-point error bars (parallel to the first series). */
+    HashTable *err_ht = NULL;
+    {
+        zval *eb = zend_hash_str_find(Z_ARRVAL(self->config),
+            "error_bars", sizeof("error_bars") - 1);
+        if (eb && Z_TYPE_P(eb) == IS_ARRAY) err_ht = Z_ARRVAL_P(eb);
+    }
+
     double values[2048];
     fastchart_pt pts[2048];
     for (int s = 0; s < n_series; s++) {
@@ -301,6 +309,36 @@ int fastchart_line_render_to_image(fastchart_obj *self, gdImagePtr im)
             } else {
                 pts[i].y = fastchart_y_to_pixel(values[i], rng, &plot);
                 pts[i].valid = true;
+            }
+        }
+
+        /* Error bars on the first (left-axis) series only -- multi-series
+         * line charts get crowded fast otherwise. */
+        if (err_ht && s == 0 && !series[s].right_axis) {
+            for (int i = 0; i < n; i++) {
+                if (!pts[i].valid) continue;
+                zval *ev = zend_hash_index_find(err_ht, i);
+                if (!ev) continue;
+                double lo = 0, hi = 0;
+                if (Z_TYPE_P(ev) == IS_ARRAY) {
+                    zval *zlo = zend_hash_index_find(Z_ARRVAL_P(ev), 0);
+                    zval *zhi = zend_hash_index_find(Z_ARRVAL_P(ev), 1);
+                    if (zlo && zhi) {
+                        fastchart_zval_to_double(zlo, &lo);
+                        fastchart_zval_to_double(zhi, &hi);
+                    }
+                } else {
+                    double m;
+                    if (fastchart_zval_to_double(ev, &m) == 0 && m >= 0) lo = hi = m;
+                }
+                if (lo > 0 || hi > 0) {
+                    int py_lo = fastchart_y_to_pixel(values[i] - lo, rng, &plot);
+                    int py_hi = fastchart_y_to_pixel(values[i] + hi, rng, &plot);
+                    int x = pts[i].x;
+                    gdImageLine(im, x, py_hi, x, py_lo, pal.axis);
+                    gdImageLine(im, x - 4, py_hi, x + 4, py_hi, pal.axis);
+                    gdImageLine(im, x - 4, py_lo, x + 4, py_lo, pal.axis);
+                }
             }
         }
 

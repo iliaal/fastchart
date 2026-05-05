@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `FastChart\GanttChart` — project-management timeline chart. Tasks
+  carry `'name'`, `'start'` (Unix ts), `'end'` (Unix ts), optional
+  `'color'`, `'milestone'` (diamond at end instead of bar), and
+  `'depends'` (list of task indices that draw arrow dependencies).
+  `setTimeRange(start, end)` overrides auto-fit;
+  `setShowTaskLabels(bool)` toggles inline task names.
+- `FastChart\BoxPlot` — quartile box chart for distributions. Each
+  box accepts either a flat `[min, q1, median, q3, max]` list or a
+  dict with the same keys plus `'outliers' => [...]` and `'label'`.
+  `setBoxWidth(int $percent)` controls box fill width.
+- `FastChart\PolarChart` — continuous polar plot. Points are
+  `[angle_deg, radius]`; multi-series shape with `'data' / 'label'
+  / 'color'` keys also supported. `setMaxRadius(float)`,
+  `setFilled(bool)`.
+- `FastChart\ContourChart` — isolines through a 2D grid via
+  marching squares. `setLevels(array)` for explicit threshold
+  levels (auto-spaced 5 if empty). `setFilled(bool)` toggles the
+  filled cell-color underlay; `setColorRamp(low, high)` configures
+  the ramp.
+- `LineChart::setErrorBars(array)` and
+  `ScatterChart::setErrorBars(array)` — per-point ± error stems
+  with caps. Each entry is a scalar (symmetric) or `[lo, hi]`
+  (asymmetric).
+- `ScatterChart::setTrendLine(bool, ?int $color, int $degree = 1)`
+  — added the `$degree` parameter; values 2..5 fit a polynomial
+  regression via least-squares normal equations with Gauss-Jordan
+  partial-pivoted elimination, rendered as a 200-segment curve.
+- `Chart::setDateAxisStride(int $unit, int $every = 1)` —
+  calendar-aware tick stride for time-axis charts. Units:
+  `DATE_DAY`, `DATE_WEEK` (snaps to Mondays), `DATE_MONTH`,
+  `DATE_QUARTER`, `DATE_YEAR`. `every = 0` reverts to auto-density.
+  Honored by `StockChart` and `GanttChart`.
+- `Chart::getImageMap(string $name = 'fastchart')` — after
+  rendering, returns an HTML `<map>` element with one `<area>`
+  per data point that carried an `'href'` key (and optional
+  `'tooltip'`). Currently populated by `ScatterChart`. Clicking
+  in the rendered image takes the user to the corresponding URL.
 - `FastChart\RadarChart` — spider/radar chart class. N axes radiating
   from the center, one polygon per series. Single-flat-list and
   multi-series shapes accepted. `setMaxValue(float)` forces the
