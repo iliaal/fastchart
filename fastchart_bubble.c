@@ -27,61 +27,22 @@
 /* Bubble: each entry is [x, y, size] or [x, y, size, rgb_color]. */
 int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
 {
-    HashTable *ht = Z_TYPE(self->data) == IS_ARRAY ? Z_ARRVAL(self->data) : NULL;
-    if (!ht || zend_hash_num_elements(ht) == 0) {
+    if (self->point_count == 0) {
         zend_throw_error(NULL,
             "FastChart\\BubbleChart::draw() requires setPoints() with non-empty data");
         return -1;
     }
+    fastchart_bubble_point *pts = self->points;
+    int collected = self->point_count;
 
-    int n = (int)zend_hash_num_elements(ht);
-    double *xs = ecalloc(n, sizeof(double));
-    double *ys = ecalloc(n, sizeof(double));
-    double *ss = ecalloc(n, sizeof(double));
-    zend_long *cs = ecalloc(n, sizeof(zend_long));
-    int    *has_color = ecalloc(n, sizeof(int));
-    int collected = 0;
-
-    zval *p;
-    ZEND_HASH_FOREACH_VAL(ht, p) {
-        if (Z_TYPE_P(p) != IS_ARRAY) continue;
-        HashTable *t = Z_ARRVAL_P(p);
-        zval *zx = zend_hash_index_find(t, 0);
-        zval *zy = zend_hash_index_find(t, 1);
-        zval *zs = zend_hash_index_find(t, 2);
-        if (!zx || !zy || !zs) continue;
-        double dx, dy, ds;
-        if (fastchart_zval_to_double(zx, &dx) != 0) continue;
-        if (fastchart_zval_to_double(zy, &dy) != 0) continue;
-        if (fastchart_zval_to_double(zs, &ds) != 0) continue;
-        if (ds < 0) ds = 0;
-        xs[collected] = dx;
-        ys[collected] = dy;
-        ss[collected] = ds;
-        zval *zc = zend_hash_index_find(t, 3);
-        if (zc && Z_TYPE_P(zc) == IS_LONG && Z_LVAL_P(zc) >= 0 && Z_LVAL_P(zc) <= 0xFFFFFF) {
-            cs[collected] = Z_LVAL_P(zc);
-            has_color[collected] = 1;
-        }
-        collected++;
-    } ZEND_HASH_FOREACH_END();
-
-    if (collected == 0) {
-        efree(xs); efree(ys); efree(ss); efree(cs); efree(has_color);
-        zend_throw_error(NULL,
-            "FastChart\\BubbleChart::draw() found no [x, y, size] points");
-        return -1;
-    }
-
-    /* Compute axis ranges. */
-    double xmin = xs[0], xmax = xs[0], ymin = ys[0], ymax = ys[0];
-    double smax = ss[0];
+    double xmin = pts[0].x, xmax = pts[0].x, ymin = pts[0].y, ymax = pts[0].y;
+    double smax = pts[0].size;
     for (int i = 1; i < collected; i++) {
-        if (xs[i] < xmin) xmin = xs[i];
-        if (xs[i] > xmax) xmax = xs[i];
-        if (ys[i] < ymin) ymin = ys[i];
-        if (ys[i] > ymax) ymax = ys[i];
-        if (ss[i] > smax) smax = ss[i];
+        if (pts[i].x < xmin) xmin = pts[i].x;
+        if (pts[i].x > xmax) xmax = pts[i].x;
+        if (pts[i].y < ymin) ymin = pts[i].y;
+        if (pts[i].y > ymax) ymax = pts[i].y;
+        if (pts[i].size > smax) smax = pts[i].size;
     }
 
     fastchart_value_range yrange;
@@ -130,19 +91,20 @@ int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
     gdImageAlphaBlending(im, 1);
     for (int i = 0; i < collected; i++) {
         double xfrac = (xrange.max - xrange.min) > 0
-            ? (xs[i] - xrange.min) / (xrange.max - xrange.min) : 0.5;
+            ? (pts[i].x - xrange.min) / (xrange.max - xrange.min) : 0.5;
         int px = plot.x0 + (int)(xfrac * (plot.x1 - plot.x0));
-        int py = fastchart_y_to_pixel(ys[i], &yrange, &plot);
-        double sfrac = smax > 0 ? sqrt(ss[i] / smax) : 0.5;
+        int py = fastchart_y_to_pixel(pts[i].y, &yrange, &plot);
+        double sfrac = smax > 0 ? sqrt(pts[i].size / smax) : 0.5;
         int rad = (int)(r_max * sfrac);
         if (rad < 2) rad = 2;
 
         int color, alpha;
-        if (has_color[i]) {
+        if (pts[i].color_rgb >= 0) {
+            int c = pts[i].color_rgb;
             color = gdImageColorAllocate(im,
-                (cs[i] >> 16) & 0xFF, (cs[i] >> 8) & 0xFF, cs[i] & 0xFF);
+                (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
             alpha = gdImageColorAllocateAlpha(im,
-                (cs[i] >> 16) & 0xFF, (cs[i] >> 8) & 0xFF, cs[i] & 0xFF, 70);
+                (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, 70);
         } else {
             int idx = i % FASTCHART_PALETTE_SERIES_N;
             color = pal.series[idx];
@@ -155,8 +117,6 @@ int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
         gdImageEllipse(im, px, py, rad * 2, rad * 2, edge);
     }
     gdImageAlphaBlending(im, 0);
-
-    efree(xs); efree(ys); efree(ss); efree(cs); efree(has_color);
 
     fastchart_draw_h_annotations(im, (fastchart_obj *)self, &plot, &pal, &yrange);
     fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);

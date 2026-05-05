@@ -3408,13 +3408,64 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
 
 /* Pie + Scatter setters land below; remaining FASTCHART_SETTER_ARRAY
  * users are limited to classes still on parse-at-draw. */
+/* Classes still on parse-at-draw-time keep using FASTCHART_SETTER_ARRAY
+ * to stash the raw input on self->data. Their typed migration lands
+ * in subsequent phases. */
 FASTCHART_SETTER_ARRAY(FastChart_RadarChart,   setSeries, data)
-FASTCHART_SETTER_ARRAY(FastChart_BubbleChart,  setPoints, data)
 FASTCHART_SETTER_ARRAY(FastChart_SurfaceChart, setGrid,   data)
 FASTCHART_SETTER_ARRAY(FastChart_GanttChart,   setTasks,  data)
 FASTCHART_SETTER_ARRAY(FastChart_BoxPlot,      setBoxes,  data)
 FASTCHART_SETTER_ARRAY(FastChart_PolarChart,   setSeries, data)
 FASTCHART_SETTER_ARRAY(FastChart_ContourChart, setGrid,   data)
+
+ZEND_METHOD(FastChart_BubbleChart, setPoints)
+{
+    zval *arr;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(arr)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_bubble_obj *self = Z_FASTCHART_BUBBLE_OBJ_P(ZEND_THIS);
+    if (self->points) { efree(self->points); self->points = NULL; }
+    self->point_count = 0;
+
+    HashTable *ht = Z_ARRVAL_P(arr);
+    int n = (int)zend_hash_num_elements(ht);
+    if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    if (n > FASTCHART_MAX_BUBBLE_POINTS) n = FASTCHART_MAX_BUBBLE_POINTS;
+    self->points = ecalloc((size_t)n, sizeof(fastchart_bubble_point));
+    int slot = 0;
+    zval *p;
+    ZEND_HASH_FOREACH_VAL(ht, p) {
+        if (slot >= n) break;
+        if (Z_TYPE_P(p) != IS_ARRAY) continue;
+        HashTable *t = Z_ARRVAL_P(p);
+        zval *zx = zend_hash_index_find(t, 0);
+        zval *zy = zend_hash_index_find(t, 1);
+        zval *zs = zend_hash_index_find(t, 2);
+        if (!zx || !zy || !zs) continue;
+        double dx, dy, ds;
+        if (fastchart_zval_to_double(zx, &dx) != 0) continue;
+        if (fastchart_zval_to_double(zy, &dy) != 0) continue;
+        if (fastchart_zval_to_double(zs, &ds) != 0) continue;
+        if (ds < 0) ds = 0;
+        self->points[slot].x = dx;
+        self->points[slot].y = dy;
+        self->points[slot].size = ds;
+        self->points[slot].color_rgb = -1;
+        zval *zc = zend_hash_index_find(t, 3);
+        if (zc && Z_TYPE_P(zc) == IS_LONG) {
+            zend_long c = Z_LVAL_P(zc);
+            if (c >= 0 && c <= 0xFFFFFF) self->points[slot].color_rgb = (int)c;
+        }
+        slot++;
+    } ZEND_HASH_FOREACH_END();
+    self->point_count = slot;
+    if (slot == 0) {
+        efree(self->points);
+        self->points = NULL;
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
 ZEND_METHOD(FastChart_BarChart, setStacked)
 {
