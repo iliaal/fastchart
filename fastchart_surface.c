@@ -23,6 +23,8 @@
 #include "fastchart_text.h"
 #include "fastchart_effects.h"
 
+#include <math.h>
+
 int fastchart_surface_render_to_image(fastchart_obj *self, gdImagePtr im)
 {
     HashTable *grid_ht = Z_TYPE(self->data) == IS_ARRAY ? Z_ARRVAL(self->data) : NULL;
@@ -63,7 +65,15 @@ int fastchart_surface_render_to_image(fastchart_obj *self, gdImagePtr im)
         ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(row), cell) {
             if (j >= cols) break;
             double d;
-            grid[ri * cols + j] = (fastchart_zval_to_double(cell, &d) == 0) ? d : NAN;
+            /* Reject non-finite values so the LUT index
+             * (int)(t * 255 + 0.5) and the luma-based label-color
+             * pick can't trip on Inf / NaN propagating through
+             * (v - vmin) / span. */
+            if (fastchart_zval_to_double(cell, &d) == 0 && isfinite(d)) {
+                grid[ri * cols + j] = d;
+            } else {
+                grid[ri * cols + j] = NAN;
+            }
             j++;
         } ZEND_HASH_FOREACH_END();
         for (; j < cols; j++) grid[ri * cols + j] = NAN;

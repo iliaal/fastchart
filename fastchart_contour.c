@@ -64,7 +64,16 @@ static double *materialize_grid(zval *grid_zv, int *rows_out, int *cols_out)
         ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(r), c) {
             if (j >= cols) break;
             double d;
-            flat[i * cols + j] = (fastchart_zval_to_double(c, &d) == 0) ? d : NAN;
+            /* Treat non-finite cells (Inf, NaN) as missing so the
+             * marching-squares math never sees them — `>=` against
+             * NaN, `Inf - Inf`, and casts to int after Inf
+             * arithmetic are all undefined or implementation-
+             * defined surface we don't want to step on. */
+            if (fastchart_zval_to_double(c, &d) == 0 && isfinite(d)) {
+                flat[i * cols + j] = d;
+            } else {
+                flat[i * cols + j] = NAN;
+            }
             j++;
         } ZEND_HASH_FOREACH_END();
         for (; j < cols; j++) flat[i * cols + j] = NAN;
@@ -86,12 +95,20 @@ static void cell_to_pixel(int col, int row, double col_f, double row_f,
     *py = y0 + (int)(cy * cell_h + 0.5);
 }
 
-/* Linear interpolation parameter where value crosses level. */
+/* Linear interpolation parameter where value crosses level.
+ * Returned value is clamped to [0, 1] so even pathological inputs
+ * (a == b == level, NaN/Inf in the cell from earlier non-finite
+ * arithmetic) can't propagate into cell_to_pixel as a non-finite
+ * fractional coord and round to a wild int via cast. */
 static double t_cross(double a, double b, double level)
 {
     double d = b - a;
-    if (d == 0) return 0.5;
-    return (level - a) / d;
+    if (d == 0 || !isfinite(d)) return 0.5;
+    double t = (level - a) / d;
+    if (!isfinite(t)) return 0.5;
+    if (t < 0.0) return 0.0;
+    if (t > 1.0) return 1.0;
+    return t;
 }
 
 int fastchart_contour_render_to_image(fastchart_obj *self, gdImagePtr im)

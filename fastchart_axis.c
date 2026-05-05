@@ -489,9 +489,18 @@ int fastchart_y_to_pixel(double y,
 
 /* Load and composite a background image onto the canvas. Format
  * detected from extension. Silently no-ops on load failure -- the
- * chart still renders, just without the bg image. */
+ * chart still renders, just without the bg image.
+ *
+ * setBackgroundImage() already validated the path against
+ * open_basedir, but render time is arbitrarily later — the
+ * basedir set in INI may have changed, or open_basedir may have
+ * been narrowed via ini_set() between the setter and draw. Re-
+ * check here so a runtime narrowing isn't bypassed by a
+ * pre-existing chart instance. */
 static void composite_bg_image(gdImagePtr im, const char *path)
 {
+    if (php_check_open_basedir_ex(path, /*warn=*/0) != 0) return;
+
     int W = gdImageSX(im);
     int H = gdImageSY(im);
 
