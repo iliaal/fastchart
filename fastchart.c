@@ -387,6 +387,14 @@ ZEND_METHOD(FastChart_Chart, setTitle)
         Z_PARAM_STR(title)
     ZEND_PARSE_PARAMETERS_END();
 
+    /* Reject embedded NUL: gdImageStringFT silently truncates at \0
+     * while the stored zend_string keeps its full length, so
+     * consumers see one length and the rendered image shows another. */
+    if (memchr(ZSTR_VAL(title), 0, ZSTR_LEN(title)) != NULL) {
+        zend_value_error("FastChart\\Chart::setTitle() title contains an embedded NUL");
+        RETURN_THROWS();
+    }
+
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (self->title) {
         zend_string_release(self->title);
@@ -1118,6 +1126,10 @@ ZEND_METHOD(FastChart_Chart, setSecondaryYAxisTitle)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_STR(t)
     ZEND_PARSE_PARAMETERS_END();
+    if (memchr(ZSTR_VAL(t), 0, ZSTR_LEN(t)) != NULL) {
+        zend_value_error("FastChart\\Chart::setSecondaryYAxisTitle() text contains an embedded NUL");
+        RETURN_THROWS();
+    }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (self->y_axis_title2) zend_string_release(self->y_axis_title2);
     self->y_axis_title2 = ZSTR_LEN(t) == 0 ? NULL : zend_string_copy(t);
@@ -1561,8 +1573,11 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
     smart_str out = {0};
 
     /* Map name: HTML5 imagemap names allow letters, digits, '-' and '_'.
-     * Anything else gets stripped to keep the output well-formed and
-     * prevent attribute-injection through a crafted name. */
+     * Anything else gets stripped to prevent attribute-injection
+     * through a crafted name. If sanitization leaves zero characters
+     * (e.g. caller passed "!@#"), fall back to the default so we
+     * never emit name="" — which would silently break any
+     * <img usemap="#..."> referencing the chart. */
     smart_str_appends(&out, "<map name=\"");
     const char *map_name = "fastchart";
     size_t map_name_len = sizeof("fastchart") - 1;
@@ -1570,12 +1585,17 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
         map_name = ZSTR_VAL(name);
         map_name_len = ZSTR_LEN(name);
     }
+    size_t before = ZSTR_LEN(out.s ? out.s : ZSTR_EMPTY_ALLOC());
     for (size_t i = 0; i < map_name_len; i++) {
         char c = map_name[i];
         if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
             (c >= '0' && c <= '9') || c == '-' || c == '_') {
             smart_str_appendc(&out, c);
         }
+    }
+    smart_str_0(&out);
+    if (ZSTR_LEN(out.s) == before) {
+        smart_str_appendl(&out, "fastchart", sizeof("fastchart") - 1);
     }
     smart_str_appends(&out, "\">");
 
@@ -1594,9 +1614,14 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
          * vbscript:) are rejected. Relative paths, fragments, and
          * mailto: are allowed alongside http(s). Reject the whole
          * <area> entry on a bad scheme rather than emit a sanitized
-         * one -- callers can audit their input. */
+         * one -- callers can audit their input. Embedded NUL also
+         * drops the entry: HTML5 parsers replace \0 with U+FFFD,
+         * but C-string consumers truncate, so the visible href and
+         * the actual link diverge. Same convention as the format-
+         * string validator. */
         const char *href_str = Z_STRVAL_P(zh);
         size_t href_len = Z_STRLEN_P(zh);
+        if (memchr(href_str, 0, href_len) != NULL) continue;
         bool href_ok = false;
         if (href_len == 0) {
             href_ok = true;
@@ -1608,6 +1633,12 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
             href_ok = true;
         }
         if (!href_ok) continue;
+        if (zt && Z_TYPE_P(zt) == IS_STRING &&
+            memchr(Z_STRVAL_P(zt), 0, Z_STRLEN_P(zt)) != NULL) {
+            /* Tooltip with embedded NUL: drop the title attribute,
+             * keep the link. Same divergence rationale as href. */
+            zt = NULL;
+        }
 
         char buf[256];
         int n = snprintf(buf, sizeof(buf),
@@ -1908,6 +1939,10 @@ ZEND_METHOD(FastChart_PieChart, setOtherThreshold)
         zend_value_error("FastChart\\PieChart::setOtherThreshold() expects a percentage in [0.0, 100.0)");
         RETURN_THROWS();
     }
+    if (label && memchr(ZSTR_VAL(label), 0, ZSTR_LEN(label)) != NULL) {
+        zend_value_error("FastChart\\PieChart::setOtherThreshold() label contains an embedded NUL");
+        RETURN_THROWS();
+    }
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     self->pie_other_threshold = percent;
@@ -1934,20 +1969,24 @@ ZEND_METHOD(FastChart_StockChart, setVolumeColors)
 
 /* ---------------- axis titles + label rotation ------------------- */
 
-#define FASTCHART_OPTSTR_SETTER(field_) \
+#define FASTCHART_OPTSTR_SETTER(field_, where_) \
     do { \
         zend_string *txt; \
         ZEND_PARSE_PARAMETERS_START(1, 1) \
             Z_PARAM_STR(txt) \
         ZEND_PARSE_PARAMETERS_END(); \
+        if (memchr(ZSTR_VAL(txt), 0, ZSTR_LEN(txt)) != NULL) { \
+            zend_value_error("FastChart\\Chart::" where_ "() text contains an embedded NUL"); \
+            RETURN_THROWS(); \
+        } \
         fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
         if (self->field_) zend_string_release(self->field_); \
         self->field_ = ZSTR_LEN(txt) == 0 ? NULL : zend_string_copy(txt); \
         RETURN_ZVAL(ZEND_THIS, 1, 0); \
     } while (0)
 
-ZEND_METHOD(FastChart_Chart, setXAxisTitle) { FASTCHART_OPTSTR_SETTER(x_axis_title); }
-ZEND_METHOD(FastChart_Chart, setYAxisTitle) { FASTCHART_OPTSTR_SETTER(y_axis_title); }
+ZEND_METHOD(FastChart_Chart, setXAxisTitle) { FASTCHART_OPTSTR_SETTER(x_axis_title, "setXAxisTitle"); }
+ZEND_METHOD(FastChart_Chart, setYAxisTitle) { FASTCHART_OPTSTR_SETTER(y_axis_title, "setYAxisTitle"); }
 
 ZEND_METHOD(FastChart_Chart, setXAxisLabelAngle)
 {
@@ -2611,7 +2650,10 @@ PHP_MINIT_FUNCTION(fastchart)
 PHP_MSHUTDOWN_FUNCTION(fastchart)
 {
     if (fastchart_default_font_path) {
-        zend_string_release(fastchart_default_font_path);
+        /* Allocated via zend_string_init(..., persistent=1) in
+         * fastchart_probe_default_font; the persistent variant of
+         * release is what pairs with that. */
+        zend_string_release_ex(fastchart_default_font_path, /*persistent=*/1);
         fastchart_default_font_path = NULL;
     }
     return SUCCESS;
