@@ -2394,7 +2394,7 @@ ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
 PHP_MINIT_FUNCTION(fastchart)
 {
     memcpy(&fastchart_object_handlers, &std_object_handlers, sizeof(zend_object_handlers));
-    fastchart_object_handlers.offset    = XtOffsetOf(fastchart_obj, std);
+    fastchart_object_handlers.offset    = offsetof(fastchart_obj, std);
     fastchart_object_handlers.free_obj  = fastchart_free_object;
     fastchart_object_handlers.clone_obj = fastchart_clone_object;
 

@@ -283,7 +283,7 @@ typedef struct _fastchart_obj {
 } fastchart_obj;
 
 static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
-    return (fastchart_obj *)((char *)(obj) - XtOffsetOf(fastchart_obj, std));
+    return (fastchart_obj *)((char *)(obj) - offsetof(fastchart_obj, std));
 }
 
 #define Z_FASTCHART_OBJ_P(zv) fastchart_obj_from_zend(Z_OBJ_P(zv))
