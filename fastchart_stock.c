@@ -283,18 +283,29 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
     const int baseT = 10;
     int *va = NULL;
     double *vol_scale = NULL;
+
+    /* Sliding-window state for rolling volume average over the previous
+     * baseT bars. Both the vector and volume blocks consume the same
+     * (sum, cnt) shape — keep one running window updated each step
+     * instead of recomputing from scratch (was O(n*baseT)). */
+    double win_sum = 0;
+    int    win_cnt = 0;
+
     if (candle_style == FASTCHART_STYLE_VECTOR) {
         va = ecalloc(n, sizeof(int));
         for (int i = 0; i < n; i++) {
-            if (!candles[i].has_volume) { va[i] = 0; continue; }
-            double sum = 0;
-            int cnt = 0;
-            for (int k = 1; k <= baseT && i - k >= 0; k++) {
-                if (!candles[i - k].has_volume) continue;
-                sum += candles[i - k].volume;
-                cnt++;
+            /* Window for step i = [max(0,i-baseT) .. i-1]. */
+            if (i >= 1 && candles[i - 1].has_volume) {
+                win_sum += candles[i - 1].volume; win_cnt++;
             }
-            double avg = cnt > 0 ? sum / cnt : candles[i].volume;
+            if (i >= baseT + 1 && candles[i - 1 - baseT].has_volume) {
+                win_sum -= candles[i - 1 - baseT].volume; win_cnt--;
+            }
+            if (!candles[i].has_volume) { va[i] = 0; continue; }
+            double avg = win_cnt > 0 ? win_sum / win_cnt : candles[i].volume;
+            /* Climax-max stays as a baseT-bounded inner pass; the window
+             * shape is volume*range, not volume, and baseT=10 keeps the
+             * constant factor negligible. */
             double climax = candles[i].volume * (candles[i].high - candles[i].low);
             double climax_max = 0;
             for (int k = 1; k <= baseT && i - k >= 0; k++) {
@@ -314,15 +325,14 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
     } else if (candle_style == FASTCHART_STYLE_VOLUME) {
         vol_scale = ecalloc(n, sizeof(double));
         for (int i = 0; i < n; i++) {
-            if (!candles[i].has_volume) { vol_scale[i] = 1.0; continue; }
-            double sum = 0;
-            int cnt = 0;
-            for (int k = 1; k <= baseT && i - k >= 0; k++) {
-                if (!candles[i - k].has_volume) continue;
-                sum += candles[i - k].volume;
-                cnt++;
+            if (i >= 1 && candles[i - 1].has_volume) {
+                win_sum += candles[i - 1].volume; win_cnt++;
             }
-            double avg = cnt > 0 ? sum / cnt : candles[i].volume;
+            if (i >= baseT + 1 && candles[i - 1 - baseT].has_volume) {
+                win_sum -= candles[i - 1 - baseT].volume; win_cnt--;
+            }
+            if (!candles[i].has_volume) { vol_scale[i] = 1.0; continue; }
+            double avg = win_cnt > 0 ? win_sum / win_cnt : candles[i].volume;
             double r = avg > 0 ? candles[i].volume / avg : 1.0;
             /* Cap to [0.2x, 2.0x] of the base body width so a single
              * monster-volume bar doesn't blow the layout. */
