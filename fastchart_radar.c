@@ -125,23 +125,33 @@ int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im)
     int radius = (W < H ? W : H) / 2 - 60;
     if (radius < 40) radius = 40;
 
+    /* Pre-compute the per-axis sin/cos table once. The grid loop,
+     * spoke loop, label loop, and series polygon loop all share
+     * these N angles, so without the cache each axis paid for 4
+     * cos+sin evaluations per render. */
+    double cos_a[MAX_RADAR_AXES];
+    double sin_a[MAX_RADAR_AXES];
+    for (int i = 0; i < n_axes; i++) {
+        double angle = -M_PI / 2.0 + 2 * M_PI * i / n_axes;
+        cos_a[i] = cos(angle);
+        sin_a[i] = sin(angle);
+    }
+
     /* Concentric grid: 4 rings + axis spokes. */
     const int rings = 4;
     for (int r = 1; r <= rings; r++) {
         double rr = (double)radius * (double)r / (double)rings;
         gdPoint poly[MAX_RADAR_AXES];
         for (int i = 0; i < n_axes; i++) {
-            double angle = -M_PI / 2.0 + 2 * M_PI * i / n_axes;
-            poly[i].x = cx + (int)(rr * cos(angle));
-            poly[i].y = cy + (int)(rr * sin(angle));
+            poly[i].x = cx + (int)(rr * cos_a[i]);
+            poly[i].y = cy + (int)(rr * sin_a[i]);
         }
         gdImagePolygon(im, poly, n_axes, pal.grid);
     }
     /* Spokes from center to each axis tip. */
     for (int i = 0; i < n_axes; i++) {
-        double angle = -M_PI / 2.0 + 2 * M_PI * i / n_axes;
-        int tx = cx + (int)(radius * cos(angle));
-        int ty = cy + (int)(radius * sin(angle));
+        int tx = cx + (int)(radius * cos_a[i]);
+        int ty = cy + (int)(radius * sin_a[i]);
         gdImageLine(im, cx, cy, tx, ty, pal.axis);
     }
 
@@ -155,12 +165,11 @@ int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im)
         for (int i = 0; i < n_axes; i++) {
             zval *lv = zend_hash_index_find(Z_ARRVAL_P(labels_zv), i);
             if (!lv || Z_TYPE_P(lv) != IS_STRING) continue;
-            double angle = -M_PI / 2.0 + 2 * M_PI * i / n_axes;
-            int lx = cx + (int)((radius + 16) * cos(angle));
-            int ly = cy + (int)((radius + 16) * sin(angle));
+            int lx = cx + (int)((radius + 16) * cos_a[i]);
+            int ly = cy + (int)((radius + 16) * sin_a[i]);
             fastchart_align align;
-            if (cos(angle) > 0.3) align = FASTCHART_ALIGN_LEFT;
-            else if (cos(angle) < -0.3) align = FASTCHART_ALIGN_RIGHT;
+            if (cos_a[i] > 0.3) align = FASTCHART_ALIGN_LEFT;
+            else if (cos_a[i] < -0.3) align = FASTCHART_ALIGN_RIGHT;
             else align = FASTCHART_ALIGN_CENTER;
             fastchart_text_draw(im, font, size, pal.text,
                                 lx, ly + (int)(size * 0.35),
@@ -184,9 +193,8 @@ int fastchart_radar_render_to_image(fastchart_obj *self, gdImagePtr im)
         for (int i = 0; i < n_axes; i++) {
             double v = read_d(series[s].data, i);
             double rr = (double)radius * v / dmax;
-            double angle = -M_PI / 2.0 + 2 * M_PI * i / n_axes;
-            poly[i].x = cx + (int)(rr * cos(angle));
-            poly[i].y = cy + (int)(rr * sin(angle));
+            poly[i].x = cx + (int)(rr * cos_a[i]);
+            poly[i].y = cy + (int)(rr * sin_a[i]);
         }
         if (self->radar_filled) {
             int r = (color >> 0); /* gd palette index, not raw RGB */

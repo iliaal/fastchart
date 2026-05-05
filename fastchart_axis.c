@@ -210,14 +210,22 @@ void fastchart_draw_polyline(gdImagePtr im, fastchart_obj *chart,
             prev_x = pts[i].x; prev_y = pts[i].y; prev_valid = true;
         }
     } else {
-        /* Catmull-Rom: 10 sub-segments per valid pair, with the
-         * surrounding two valid neighbors as control points (or
-         * the endpoints themselves at boundaries / gap edges). */
-        const int subdiv = 10;
+        /* Catmull-Rom with adaptive sub-segment count. Two adjacent
+         * points 3 px apart don't need 10 sub-segments (9 of them
+         * collapse to the same pixel); 200 px apart need more than
+         * 10 to keep the curve smooth. Step roughly one sub-segment
+         * per 4 px of Manhattan distance, clamped to [2, 20]. */
         for (int i = 0; i < n - 1; i++) {
             if (!pts[i].valid || !pts[i + 1].valid) continue;
             int p0i = (i > 0 && pts[i - 1].valid) ? i - 1 : i;
             int p3i = (i + 2 < n && pts[i + 2].valid) ? i + 2 : i + 1;
+            int dx = pts[i + 1].x - pts[i].x;
+            int dy = pts[i + 1].y - pts[i].y;
+            if (dx < 0) dx = -dx;
+            if (dy < 0) dy = -dy;
+            int subdiv = (dx + dy) / 4;
+            if (subdiv < 2)  subdiv = 2;
+            if (subdiv > 20) subdiv = 20;
             int prev_x = pts[i].x, prev_y = pts[i].y;
             for (int k = 1; k <= subdiv; k++) {
                 double t = (double)k / (double)subdiv;
