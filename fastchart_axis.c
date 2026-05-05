@@ -46,14 +46,31 @@ static inline time_t fc_timegm(struct tm *tm)
 #endif
 }
 
+/* All layout pixel constants are 96-DPI reference values. At higher
+ * DPI the rendered glyph pixel size grows by dpi/96 (FreeType handles
+ * that), so the margins / paddings / tick marks need to scale the same
+ * way or labels collide with the plot area. The DPI(...) macro pulls
+ * the scale from chart->dpi at use sites; chart_dpi_scale() returns it
+ * as a double for size-in-points multipliers like `size * 1.2`. */
 #define MARGIN_RIGHT_PAD       12
 #define MARGIN_TOP_PAD          8
 #define MARGIN_BOTTOM_PAD      10
 #define MARGIN_LEFT_PAD         8
-#define TICK_MARK_LEN           4
-#define Y_LABEL_PADDING         6
-#define X_LABEL_PADDING         6
-#define TITLE_PADDING_BELOW    10
+#define TICK_MARK_LEN_PX        4
+#define Y_LABEL_PADDING_PX      6
+#define X_LABEL_PADDING_PX      6
+#define TITLE_PADDING_BELOW_PX 10
+
+static inline double chart_dpi_scale(const fastchart_obj *chart)
+{
+    return chart->dpi > 96 ? (double)chart->dpi / 96.0 : 1.0;
+}
+
+#define DPI_PX(chart, value) ((int)((value) * chart_dpi_scale(chart) + 0.5))
+#define TICK_MARK_LEN(chart)        DPI_PX((chart), TICK_MARK_LEN_PX)
+#define Y_LABEL_PADDING(chart)      DPI_PX((chart), Y_LABEL_PADDING_PX)
+#define X_LABEL_PADDING(chart)      DPI_PX((chart), X_LABEL_PADDING_PX)
+#define TITLE_PADDING_BELOW(chart)  DPI_PX((chart), TITLE_PADDING_BELOW_PX)
 
 int fastchart_zval_to_double(zval *zv, double *out)
 {
@@ -393,20 +410,16 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
      * at 200 DPI scale~2.08 — fonts already grow ×scale via FreeType,
      * so margins / tick lengths / paddings need to grow proportionally
      * or labels overflow the canvas. */
-    double dpi_scale = chart->dpi > 96 ? (double)chart->dpi / 96.0 : 1.0;
-    int margin_top    = (int)(MARGIN_TOP_PAD    * dpi_scale + 0.5);
-    int margin_bottom = (int)(MARGIN_BOTTOM_PAD * dpi_scale + 0.5);
-    int margin_left   = (int)(MARGIN_LEFT_PAD   * dpi_scale + 0.5);
-    int margin_right  = (int)(MARGIN_RIGHT_PAD  * dpi_scale + 0.5);
-    int tick_mark_len = (int)(TICK_MARK_LEN     * dpi_scale + 0.5);
-    int y_label_pad   = (int)(Y_LABEL_PADDING   * dpi_scale + 0.5);
-    int x_label_pad   = (int)(X_LABEL_PADDING   * dpi_scale + 0.5);
-    int title_pad     = (int)(TITLE_PADDING_BELOW * dpi_scale + 0.5);
+    double dpi_scale = chart_dpi_scale(chart);
+    int tick_mark_len = TICK_MARK_LEN(chart);
+    int y_label_pad   = Y_LABEL_PADDING(chart);
+    int x_label_pad   = X_LABEL_PADDING(chart);
+    int title_pad     = TITLE_PADDING_BELOW(chart);
 
-    int top = margin_top;
-    int bottom = margin_bottom;
-    int left = margin_left;
-    int right = margin_right;
+    int top    = DPI_PX(chart, MARGIN_TOP_PAD);
+    int bottom = DPI_PX(chart, MARGIN_BOTTOM_PAD);
+    int left   = DPI_PX(chart, MARGIN_LEFT_PAD);
+    int right  = DPI_PX(chart, MARGIN_RIGHT_PAD);
 
     /* Each role is resolved through fastchart_resolve_font so the
      * draw-time open_basedir re-check fires before the path reaches
@@ -993,7 +1006,7 @@ void fastchart_draw_title(gdImagePtr im, fastchart_obj *chart,
                                   : gdImageSX(im) / 2;
     fastchart_draw_floating_title(im, chart, pal,
                                   cx,
-                                  plot->y0 - TITLE_PADDING_BELOW);
+                                  plot->y0 - TITLE_PADDING_BELOW(chart));
 }
 
 static void format_tick_label(double value, double step, char *out, size_t out_n)
@@ -1051,7 +1064,7 @@ void fastchart_draw_y_axis(gdImagePtr im, fastchart_obj *chart,
 
         /* Tick mark on the axis. */
         if (draw_points) {
-            gdImageLine(im, plot->x0 - TICK_MARK_LEN, y,
+            gdImageLine(im, plot->x0 - TICK_MARK_LEN(chart), y,
                             plot->x0 - 1, y, pal->axis);
         }
 
@@ -1063,8 +1076,8 @@ void fastchart_draw_y_axis(gdImagePtr im, fastchart_obj *chart,
         } else {
             format_tick_label(v, range->tick_step, buf, sizeof(buf));
         }
-        int label_x = plot->x0 - TICK_MARK_LEN - Y_LABEL_PADDING / 2;
-        int label_y = y + (int)(size * 0.35);  /* baseline correction */
+        int label_x = plot->x0 - TICK_MARK_LEN(chart) - Y_LABEL_PADDING(chart) / 2;
+        int label_y = y + (int)(size * 0.35 * chart_dpi_scale(chart));  /* baseline correction */
         fastchart_text_draw(im, font, size, label_color,
                             label_x, label_y, FASTCHART_ALIGN_RIGHT,
                             buf, NULL, 0);
@@ -1106,7 +1119,7 @@ void fastchart_draw_y_axis_right(gdImagePtr im, fastchart_obj *chart,
 
         if (draw_points) {
             gdImageLine(im, plot->x1 + 1, y,
-                            plot->x1 + TICK_MARK_LEN, y, pal->axis);
+                            plot->x1 + TICK_MARK_LEN(chart), y, pal->axis);
         }
         if (!draw_labels) continue;
 
@@ -1115,8 +1128,8 @@ void fastchart_draw_y_axis_right(gdImagePtr im, fastchart_obj *chart,
         } else {
             format_tick_label(v, range->tick_step, buf, sizeof(buf));
         }
-        int label_x = plot->x1 + TICK_MARK_LEN + Y_LABEL_PADDING / 2;
-        int label_y = y + (int)(size * 0.35);
+        int label_x = plot->x1 + TICK_MARK_LEN(chart) + Y_LABEL_PADDING(chart) / 2;
+        int label_y = y + (int)(size * 0.35 * chart_dpi_scale(chart));
         fastchart_text_draw(im, font, size, label_color,
                             label_x, label_y, FASTCHART_ALIGN_LEFT,
                             buf, NULL, 0);
@@ -1220,7 +1233,7 @@ void fastchart_draw_x_axis_numeric(gdImagePtr im, fastchart_obj *chart,
 
         if (draw_points) {
             gdImageLine(im, x, plot->y1 + 1,
-                            x, plot->y1 + TICK_MARK_LEN, pal->axis);
+                            x, plot->y1 + TICK_MARK_LEN(chart), pal->axis);
         }
 
         if (!draw_labels) continue;
@@ -1229,7 +1242,7 @@ void fastchart_draw_x_axis_numeric(gdImagePtr im, fastchart_obj *chart,
         } else {
             format_tick_label(v, range->tick_step, buf, sizeof(buf));
         }
-        int label_y = plot->y1 + TICK_MARK_LEN + (int)(size * 1.2);
+        int label_y = plot->y1 + TICK_MARK_LEN(chart) + (int)(size * 1.2 * chart_dpi_scale(chart));
         fastchart_text_draw(im, font, size, label_color,
                             x, label_y, FASTCHART_ALIGN_CENTER,
                             buf, NULL, 0);
@@ -1278,7 +1291,7 @@ void fastchart_draw_y_axis_categorical(gdImagePtr im, fastchart_obj *chart,
     for (int i = 0; i < n_categories; i += stride) {
         int y = fastchart_y_categorical_center(plot, i, n_categories);
         if (draw_points) {
-            gdImageLine(im, plot->x0 - TICK_MARK_LEN, y,
+            gdImageLine(im, plot->x0 - TICK_MARK_LEN(chart), y,
                             plot->x0 - 1, y, pal->axis);
         }
         if (!draw_labels) continue;
@@ -1291,8 +1304,8 @@ void fastchart_draw_y_axis_categorical(gdImagePtr im, fastchart_obj *chart,
             snprintf(fallback, sizeof(fallback), "%d", i);
             txt = fallback;
         }
-        int label_x = plot->x0 - TICK_MARK_LEN - Y_LABEL_PADDING / 2;
-        int label_y = y + (int)(size * 0.35);
+        int label_x = plot->x0 - TICK_MARK_LEN(chart) - Y_LABEL_PADDING(chart) / 2;
+        int label_y = y + (int)(size * 0.35 * chart_dpi_scale(chart));
         fastchart_text_draw(im, font, size, label_color,
                             label_x, label_y, FASTCHART_ALIGN_RIGHT,
                             txt, NULL, 0);
@@ -1323,16 +1336,41 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
     bool draw_labels = (chart->tick_mode & FASTCHART_TICK_LABELS) != 0;
     if (chart->thumbnail_mode) draw_labels = false;
 
+    /* Rotated-label anchor offset: when text is rotated CCW around
+     * the anchor point, the unrotated text extends upward-left (45°)
+     * or fully upward (90°). label_y must clear the rotated label's
+     * top edge, which sits at anchor - label_width * sin(angle).
+     * Measure the longest label so the offset matches the actual
+     * extent — fixed point-size multipliers undershoot at high DPI
+     * because rendered glyph width grows with dpi_scale. */
+    int max_label_w = 0;
+    if (angle != 0 && labels) {
+        for (int i = 0; i < n_categories; i++) {
+            if (!labels[i]) continue;
+            int w = 0, h = 0;
+            if (fastchart_text_measure(im, font, size, labels[i],
+                                       &w, &h, NULL, 0) == 0 && w > max_label_w) {
+                max_label_w = w;
+            }
+        }
+    }
+
     int label_y;
     fastchart_align align;
     if (angle == 0) {
-        label_y = plot->y1 + TICK_MARK_LEN + (int)(size * 1.2);
+        label_y = plot->y1 + TICK_MARK_LEN(chart) + (int)(size * 1.2 * chart_dpi_scale(chart));
         align = FASTCHART_ALIGN_CENTER;
     } else if (angle == 45) {
-        label_y = plot->y1 + TICK_MARK_LEN + (int)(size * 1.0);
+        /* Push baseline far enough below plot so the rotated label's
+         * top corner clears the plot rect. sin(45°) ≈ 0.707; add a
+         * small constant for visual breathing room. */
+        int rotate_offset = (int)((double)max_label_w * 0.707) + 4;
+        label_y = plot->y1 + TICK_MARK_LEN(chart) + rotate_offset;
         align = FASTCHART_ALIGN_RIGHT;
     } else { /* 90 */
-        label_y = plot->y1 + TICK_MARK_LEN + (int)(size * 0.5);
+        /* Vertical label extends fully upward from anchor by its
+         * pre-rotation horizontal width. */
+        label_y = plot->y1 + TICK_MARK_LEN(chart) + max_label_w + 4;
         align = FASTCHART_ALIGN_RIGHT;
     }
 
@@ -1353,7 +1391,7 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
         int x = fastchart_x_categorical_center(plot, i, n_categories);
         if (draw_points) {
             gdImageLine(im, x, plot->y1 + 1, x,
-                        plot->y1 + TICK_MARK_LEN, pal->axis);
+                        plot->y1 + TICK_MARK_LEN(chart), pal->axis);
         }
         if (!draw_labels) continue;
 
@@ -1879,7 +1917,7 @@ static void draw_v_annotations_with_mapper(gdImagePtr im, fastchart_obj *chart,
         if (label && font) {
             /* Place the label just below the top edge of the plot
              * area, centered on the annotation line. */
-            int ty = plot->y0 + (int)(size * 1.2) + 2;
+            int ty = plot->y0 + (int)(size * 1.2 * chart_dpi_scale(chart)) + 2;
             fastchart_text_draw(im, font, size, color,
                                 x + 4, ty, FASTCHART_ALIGN_LEFT,
                                 label, NULL, 0);
@@ -1958,7 +1996,7 @@ void fastchart_draw_horizontal_bar_annotations(gdImagePtr im, fastchart_obj *cha
             set_dash_style(im, color);
             gdImageLine(im, x, plot->y0 + 1, x, plot->y1 - 1, gdStyled);
             if (label && font) {
-                int ty = plot->y0 + (int)(size * 1.2) + 2;
+                int ty = plot->y0 + (int)(size * 1.2 * chart_dpi_scale(chart)) + 2;
                 fastchart_text_draw(im, font, size, color,
                                     x + 4, ty, FASTCHART_ALIGN_LEFT,
                                     label, NULL, 0);
@@ -2040,10 +2078,10 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
     int label_y;
     fastchart_align align;
     if (angle == 0) {
-        label_y = plot->y1 + TICK_MARK_LEN + (int)(size * 1.2);
+        label_y = plot->y1 + TICK_MARK_LEN(chart) + (int)(size * 1.2 * chart_dpi_scale(chart));
         align = FASTCHART_ALIGN_CENTER;
     } else {
-        label_y = plot->y1 + TICK_MARK_LEN + (int)(size * 1.0);
+        label_y = plot->y1 + TICK_MARK_LEN(chart) + (int)(size * 1.0 * chart_dpi_scale(chart));
         align = FASTCHART_ALIGN_RIGHT;
     }
 
@@ -2101,7 +2139,7 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
             int x = fastchart_x_time_to_pixel(plot, (zend_long)cur, t_min, t_max);
             if (draw_points) {
                 gdImageLine(im, x, plot->y1 + 1, x,
-                            plot->y1 + TICK_MARK_LEN, pal->axis);
+                            plot->y1 + TICK_MARK_LEN(chart), pal->axis);
             }
             if (draw_labels) {
                 char buf[64];
@@ -2158,7 +2196,7 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
         int x = fastchart_x_time_to_pixel(plot, ts, t_min, t_max);
         if (draw_points) {
             gdImageLine(im, x, plot->y1 + 1, x,
-                        plot->y1 + TICK_MARK_LEN, pal->axis);
+                        plot->y1 + TICK_MARK_LEN(chart), pal->axis);
         }
         if (!draw_labels) continue;
 

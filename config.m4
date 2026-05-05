@@ -86,9 +86,9 @@ if test "$PHP_FASTCHART" != "no"; then
   dnl Vendored NanoSVG rasterizer header lives under vendor/nanosvg/.
   dnl It's a single-translation-unit body in fastchart_aa.c (defines
   dnl NANOSVGRAST_IMPLEMENTATION before #include) so no separate compile
-  dnl unit; we only need the include path. Disable -Wstrict-prototypes
-  dnl just for fastchart_aa.c since the upstream rasterizer header
-  dnl uses old-style prototypes that trip --enable-fastchart-dev.
+  dnl unit; we only need the include path. The rasterizer's prototypes
+  dnl happen to be -Wstrict-prototypes-clean against this libgd version,
+  dnl so no per-file flag override is needed today.
   PHP_ADD_INCLUDE([$ext_srcdir])
   PHP_ADD_BUILD_DIR([$ext_builddir/vendor/nanosvg], 1)
 

@@ -450,19 +450,28 @@ abstract class Chart
     /**
      * Output / FreeType DPI for the rendered canvas.
      *
-     * Sets two things on every draw:
-     *   - the gdImage's reported resolution (PNG `pHYs` chunk and JPEG
-     *     density bytes) so print pipelines and HiDPI viewers size
-     *     the image correctly,
-     *   - the resolution passed to FreeType via `gdImageStringFTEx`,
-     *     which controls glyph hinting. Higher DPI = finer hinting.
+     * Behavior depends on the render path:
      *
-     * Default 96 (matches libgd / web-screen convention). For print
-     * exports, 200-300 is usual; for retina dashboards rendering at
-     * 2x canvas dimensions, 192. Glyphs rendered at the same point
-     * size will appear physically larger at higher DPI, so size up
-     * the canvas proportionally if you want the chart to keep its
-     * apparent layout.
+     * **`renderToFile()` / `renderPng()` / `renderJpeg()` /
+     * `renderWebp()` / `renderAvif()`:** fastchart owns the canvas
+     * and scales its physical pixel dimensions by `dpi/96`. The
+     * `setSize()` value is the *logical* size; a chart at
+     * `setSize(640, 320)->setDpi(200)` is allocated as a 1333×667
+     * pixel canvas. Apparent layout is preserved; pixel density
+     * doubles. Layout margins, tick marks, and label paddings scale
+     * proportionally so labels don't crowd the canvas edge.
+     *
+     * **`draw(\GdImage)`:** fastchart cannot resize a caller-owned
+     * canvas. The DPI value still flows through to PNG `pHYs` / JPEG
+     * density metadata, FreeType glyph hinting, AND layout spacing
+     * (margins, tick marks, label paddings all scale with `dpi/96`).
+     * The result on a fixed-size user canvas is that labels overflow
+     * because everything scales up but the canvas stays put. If you
+     * want HiDPI through `draw()`, allocate the canvas yourself at
+     * `width * dpi/96` so layout has room to breathe.
+     *
+     * Common values: 96 (default, web-screen), 192 (2× retina),
+     * 300 (print). Range is `[24, 1200]`.
      */
     public function setDpi(int $dpi): static {}
 
