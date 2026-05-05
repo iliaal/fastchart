@@ -125,11 +125,15 @@ done:
 
 int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
 {
-    static fastchart_scatter_point points[MAX_POINTS];
+    /* Per-call scratch. The previous file-static buffer made render
+     * non-reentrant — broken under ZTS or any SAPI that runs two
+     * draws concurrently. ~256 KB at MAX_POINTS=8192. */
+    fastchart_scatter_point *points = ecalloc(MAX_POINTS, sizeof(*points));
     const char *series_labels[MAX_SCATTER_SERIES] = { NULL };
     int n = 0, n_series = 0;
     if (collect_scatter_points(&self->data, points, MAX_POINTS, &n,
                                series_labels, &n_series) != 0 || n == 0) {
+        efree(points);
         zend_throw_error(NULL,
             "FastChart\\ScatterChart::draw() requires setPoints() with one or more [x, y] pairs");
         return -1;
@@ -148,6 +152,7 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
     fastchart_value_range yrange;
     if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
         if (fastchart_value_range_compute_log(y_min, y_max, &yrange) != 0) {
+            efree(points);
             zend_value_error("FastChart\\ScatterChart::draw(): log Y-axis requires strictly-positive Y values");
             return -1;
         }
@@ -461,6 +466,7 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
                              sizeof("image_map_areas") - 1, &map_list);
     }
 
+    efree(points);
     return 0;
 }
 

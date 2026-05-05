@@ -527,6 +527,29 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
         int bw = candle_w;
         int half_bw = bw / 2;
         if (half_bw < 1) half_bw = 1;
+
+        /* Pre-walk vol_colors_ht once into a flat int[] of resolved
+         * gd color handles (or -1 for "use default up/down"). The
+         * draw loop then reads from that array instead of calling
+         * gdImageColorAllocate per candle. */
+        int *vol_colors = NULL;
+        if (vol_colors_ht) {
+            vol_colors = ecalloc((size_t)n, sizeof(int));
+            for (int i = 0; i < n; i++) vol_colors[i] = -1;
+            for (int i = 0; i < n; i++) {
+                zval *cv = zend_hash_index_find(vol_colors_ht, i);
+                if (cv && Z_TYPE_P(cv) == IS_LONG) {
+                    zend_long c = Z_LVAL_P(cv);
+                    if (c >= 0 && c <= 0xFFFFFF) {
+                        vol_colors[i] = gdImageColorAllocate(im,
+                            (int)((c >> 16) & 0xFF),
+                            (int)((c >>  8) & 0xFF),
+                            (int)( c        & 0xFF));
+                    }
+                }
+            }
+        }
+
         for (int i = 0; i < n; i++) {
             if (!candles[i].has_volume) continue;
             int x = fastchart_x_time_to_pixel(&volume_pane,
@@ -534,22 +557,12 @@ int fastchart_stock_render_to_image(fastchart_obj *self, gdImagePtr im)
             int top = baseline - (int)((double)vh * candles[i].volume / v_max);
 
             int color = candles[i].close >= candles[i].open ? pal.up : pal.down;
-            if (vol_colors_ht) {
-                zval *cv = zend_hash_index_find(vol_colors_ht, i);
-                if (cv && Z_TYPE_P(cv) == IS_LONG) {
-                    long c = Z_LVAL_P(cv);
-                    if (c >= 0 && c <= 0xFFFFFF) {
-                        color = gdImageColorAllocate(im,
-                            (int)((c >> 16) & 0xFF),
-                            (int)((c >>  8) & 0xFF),
-                            (int)( c        & 0xFF));
-                    }
-                }
-            }
+            if (vol_colors && vol_colors[i] >= 0) color = vol_colors[i];
 
             gdImageFilledRectangle(im,
                 x - half_bw, top, x + half_bw, baseline - 1, color);
         }
+        if (vol_colors) efree(vol_colors);
     }
 
     /* Indicator panes. Each pane has its own y-range computed from

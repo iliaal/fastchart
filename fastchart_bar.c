@@ -291,12 +291,19 @@ int fastchart_bar_render_to_image(fastchart_obj *self, gdImagePtr im)
 
     int edge = (int)self->edge_color;
 
-    /* Allocate translucent series colors once for STACK_LAYER mode. */
+    /* Allocate translucent series colors once for STACK_LAYER mode.
+     * pal.series[s] is a gd color handle (the return of
+     * gdImageColorAllocate); on a paletted canvas that's an index
+     * into the palette, not a packed 0xRRGGBB. Use the gdImageRed/
+     * Green/Blue accessors so the unpack works for both truecolor
+     * and paletted GdImage canvases. */
     int layer_colors[MAX_SERIES] = {0};
     if (stack_layer && n_series > 1) {
         for (int s = 0; s < n_series; s++) {
             int c = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-            int r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+            int r = gdImageRed(im, c);
+            int g = gdImageGreen(im, c);
+            int b = gdImageBlue(im, c);
             layer_colors[s] = gdImageColorAllocateAlpha(im, r, g, b, 64);
         }
         gdImageAlphaBlending(im, 1);

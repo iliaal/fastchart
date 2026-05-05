@@ -110,12 +110,14 @@ int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
 {
     if (!gradient_active(chart) || n_pts < 3) return 0;
 
-    /* Approach: paint the polygon in a sentinel color via libgd's
-     * filled-polygon (handles concavity, edge anti-aliasing rules).
-     * Then walk only the bbox, replacing sentinel pixels with the
-     * gradient-indexed LUT color. The 256-entry LUT avoids per-row
-     * gdImageColorAllocate calls; the bbox-only walk avoids touching
-     * pixels outside the polygon's enclosing rectangle. */
+    /* Render the polygon shape into a private mask image (paletted,
+     * 1-bit) so we can read membership without colliding with any
+     * RGB the user may already have on the destination canvas. Then
+     * stamp the gradient color from a 256-entry LUT only where the
+     * mask reads 1. This is the same idea the previous implementation
+     * had, but without the can't-pick-a-safe-RGB-sentinel hazard:
+     * the mask is its own image, completely isolated from `im`'s
+     * existing pixels. */
     int xmin = poly[0].x, xmax = poly[0].x;
     int ymin = poly[0].y, ymax = poly[0].y;
     for (int i = 1; i < n_pts; i++) {
@@ -124,9 +126,24 @@ int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
         if (poly[i].y < ymin) ymin = poly[i].y;
         if (poly[i].y > ymax) ymax = poly[i].y;
     }
+    int mw = xmax - xmin + 1;
+    int mh = ymax - ymin + 1;
+    if (mw <= 0 || mh <= 0) return 1;
 
-    int sentinel = gdImageColorAllocate(im, 1, 2, 3);
-    gdImageFilledPolygon(im, poly, n_pts, sentinel);
+    gdImagePtr mask = gdImageCreate(mw, mh);
+    if (!mask) return 0;
+    int bg = gdImageColorAllocate(mask, 0, 0, 0);   /* outside */
+    int fg = gdImageColorAllocate(mask, 255, 255, 255); /* inside */
+    gdImageFilledRectangle(mask, 0, 0, mw - 1, mh - 1, bg);
+
+    /* Translate the polygon into mask-local coords. */
+    gdPoint *shifted = emalloc((size_t)n_pts * sizeof(gdPoint));
+    for (int i = 0; i < n_pts; i++) {
+        shifted[i].x = poly[i].x - xmin;
+        shifted[i].y = poly[i].y - ymin;
+    }
+    gdImageFilledPolygon(mask, shifted, n_pts, fg);
+    efree(shifted);
 
     int lut[256];
     build_gradient_lut(im, (int)chart->gradient_from, (int)chart->gradient_to, lut);
@@ -135,8 +152,9 @@ int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
         int span = xmax - xmin;
         for (int x = xmin; x <= xmax; x++) {
             int c = lut[lut_index(x - xmin, span)];
+            int mx = x - xmin;
             for (int y = ymin; y <= ymax; y++) {
-                if (gdImageGetPixel(im, x, y) == sentinel) {
+                if (gdImageGetPixel(mask, mx, y - ymin) == fg) {
                     gdImageSetPixel(im, x, y, c);
                 }
             }
@@ -145,13 +163,15 @@ int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
         int span = ymax - ymin;
         for (int y = ymin; y <= ymax; y++) {
             int c = lut[lut_index(y - ymin, span)];
+            int my = y - ymin;
             for (int x = xmin; x <= xmax; x++) {
-                if (gdImageGetPixel(im, x, y) == sentinel) {
+                if (gdImageGetPixel(mask, x - xmin, my) == fg) {
                     gdImageSetPixel(im, x, y, c);
                 }
             }
         }
     }
+    gdImageDestroy(mask);
     return 1;
 }
 

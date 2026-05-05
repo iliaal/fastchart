@@ -224,19 +224,27 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
 
     /* Slices via gdImageFilledArc. gdPie produces a filled wedge;
      * gdNoFill + gdEdged outlines without filling. We draw the wedge
-     * with gdPie + a thin outline pass for slice separation. */
-    double start_deg = -90.0;  /* 12 o'clock */
+     * with gdPie + a thin outline pass for slice separation.
+     *
+     * Resolve every slice's color once before the draw loop so the
+     * loop body reads from a flat int[] instead of calling
+     * gdImageColorAllocate per slice. */
+    int *slice_colors = ecalloc((size_t)n_slices, sizeof(int));
     for (int i = 0; i < n_slices; i++) {
-        double sweep = 360.0 * (slices[i].value / total);
-        int color;
         if (slices[i].color_rgb >= 0) {
-            color = gdImageColorAllocate(im,
+            slice_colors[i] = gdImageColorAllocate(im,
                 (slices[i].color_rgb >> 16) & 0xFF,
                 (slices[i].color_rgb >>  8) & 0xFF,
                  slices[i].color_rgb        & 0xFF);
         } else {
-            color = pal.series[i % FASTCHART_PALETTE_SERIES_N];
+            slice_colors[i] = pal.series[i % FASTCHART_PALETTE_SERIES_N];
         }
+    }
+
+    double start_deg = -90.0;  /* 12 o'clock */
+    for (int i = 0; i < n_slices; i++) {
+        double sweep = 360.0 * (slices[i].value / total);
+        int color = slice_colors[i];
 
         /* Explode this slice radially outward by `offset` pixels
          * along its mid-angle. Slices not mentioned stay at center. */
@@ -351,6 +359,7 @@ int fastchart_pie_render_to_image(fastchart_obj *self, gdImagePtr im)
     }
 
     fastchart_draw_text_annotations(im, self, &pal);
+    efree(slice_colors);
     return 0;
 }
 

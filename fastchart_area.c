@@ -274,16 +274,9 @@ int fastchart_area_render_to_image(fastchart_obj *self, gdImagePtr im)
 
         for (int s = 0; s < n_series; s++) {
             int base_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-            /* Allocate a translucent variant of the series color for
-             * the fill. The line stroke uses the opaque version. */
-            int fill_color = gdImageColorAllocateAlpha(im,
-                (base_color >> 16) & 0xFF,  /* placeholder; unused */
-                0, 0, 0);
-            (void)fill_color;
-            /* Re-extract RGB from the gd palette since pal.series
-             * stores allocated indices, not raw RGB. We allocated the
-             * series colors via fastchart_palette_init, so the raw
-             * RGB of slot s comes from gdImageRed/Green/Blue. */
+            /* gdImageRed/Green/Blue work on both palette and truecolor
+             * canvases; bit-shifting `base_color` would only work on
+             * truecolor (where the handle is the packed RGB). */
             int r = gdImageRed(im, base_color);
             int g = gdImageGreen(im, base_color);
             int b = gdImageBlue(im, base_color);
