@@ -24,99 +24,24 @@
 #include "fastchart_axis.h"
 #include "fastchart_effects.h"
 
-#define MAX_SERIES 8
-
-typedef struct {
-    HashTable *data;
-    const char *label;
-    bool right_axis;
-    int len;
-} fastchart_area_series;
-
-static int collect_area_series(zval *data_zv,
-                               fastchart_area_series *out,
-                               int max_series,
-                               int *out_count,
-                               int *out_max_len)
+/* Read a value from a typed series at the given index. Returns NaN
+ * if the index is past the series end or the cell is a gap. */
+static inline double area_read_value(const fastchart_series_t *s, int i)
 {
-    *out_count = 0;
-    *out_max_len = 0;
-
-    if (Z_TYPE_P(data_zv) != IS_ARRAY) return -1;
-    HashTable *ht = Z_ARRVAL_P(data_zv);
-    int n = (int)zend_hash_num_elements(ht);
-    if (n == 0) return 0;
-
-    zval *first = zend_hash_index_find(ht, 0);
-    int is_multi = 0;
-    if (first && Z_TYPE_P(first) == IS_ARRAY) {
-        zval *data_key = zend_hash_str_find(Z_ARRVAL_P(first),
-                                            "data", sizeof("data") - 1);
-        if (data_key && Z_TYPE_P(data_key) == IS_ARRAY) is_multi = 1;
-    }
-
-    if (is_multi) {
-        zval *series_zv;
-        ZEND_HASH_FOREACH_VAL(ht, series_zv) {
-            if (Z_TYPE_P(series_zv) != IS_ARRAY) continue;
-            zval *data_key = zend_hash_str_find(Z_ARRVAL_P(series_zv),
-                                                "data", sizeof("data") - 1);
-            if (!data_key || Z_TYPE_P(data_key) != IS_ARRAY) continue;
-            if (*out_count >= max_series) break;
-
-            HashTable *sht = Z_ARRVAL_P(data_key);
-            out[*out_count].data = sht;
-            out[*out_count].len = (int)zend_hash_num_elements(sht);
-
-            zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
-                                                "label", sizeof("label") - 1);
-            out[*out_count].label = fastchart_label_or_null(label_zv);
-
-            zval *axis_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
-                                               "axis", sizeof("axis") - 1);
-            out[*out_count].right_axis =
-                (axis_zv && Z_TYPE_P(axis_zv) == IS_STRING &&
-                 strcmp(Z_STRVAL_P(axis_zv), "right") == 0);
-
-            if (out[*out_count].len > *out_max_len) *out_max_len = out[*out_count].len;
-            (*out_count)++;
-        } ZEND_HASH_FOREACH_END();
-    } else {
-        out[0].data = ht;
-        out[0].label = NULL;
-        out[0].right_axis = false;
-        out[0].len = n;
-        *out_count = 1;
-        *out_max_len = n;
-    }
-    return 0;
-}
-
-/* Read value at index, returning NaN on null/non-numeric (gap). */
-static double read_value_or_nan(HashTable *ht, int idx, bool strict, int *err)
-{
-    zval *v = zend_hash_index_find(ht, idx);
-    if (!v) return NAN;
-    if (Z_TYPE_P(v) == IS_NULL) return NAN;
-    double d;
-    if (fastchart_zval_to_double(v, &d) == 0) return d;
-    if (strict) {
-        zend_type_error("FastChart strict mode: area data must be numeric or null");
-        *err = 1;
-    }
-    return NAN;
+    if (i >= s->len) return NAN;
+    return s->values[i];
 }
 
 int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
 {
-    fastchart_area_series series[MAX_SERIES];
-    int n_series = 0, max_len = 0;
-    if (collect_area_series(&self->data, series, MAX_SERIES,
-                            &n_series, &max_len) != 0 || n_series == 0) {
+    if (self->n_series == 0) {
         zend_throw_error(NULL,
             "FastChart\\AreaChart::draw() requires setSeries() to have been called with non-empty data");
         return -1;
     }
+    fastchart_series_t *series = self->series;
+    int n_series = self->n_series;
+    int max_len = self->max_len;
 
     bool stacked = false;
     {
@@ -126,18 +51,14 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
     }
     if (n_series < 2) stacked = false;
 
-    /* Y range. For stacked, max is the cumulative sum; min anchors
-     * at 0 (negative areas don't make stacked sense in v0.1). */
     double dmin = 0, dmax = 0;
     int seen = 0;
-    int err_strict = 0;
 
     if (stacked) {
         for (int i = 0; i < max_len; i++) {
             double sum = 0;
             for (int s = 0; s < n_series; s++) {
-                double v = read_value_or_nan(series[s].data, i, self->strict, &err_strict);
-                if (err_strict) return -1;
+                double v = area_read_value(&series[s], i);
                 if (!isnan(v)) sum += v;
             }
             if (!seen) { dmin = 0; dmax = sum; seen = 1; }
@@ -145,22 +66,14 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
         }
     } else {
         for (int s = 0; s < n_series; s++) {
-            zval *v;
-            ZEND_HASH_FOREACH_VAL(series[s].data, v) {
-                if (Z_TYPE_P(v) == IS_NULL) continue;
-                double d;
-                if (fastchart_zval_to_double(v, &d) != 0) {
-                    if (self->strict) {
-                        zend_type_error("FastChart strict mode: area data must be numeric or null");
-                        return -1;
-                    }
-                    continue;
-                }
+            for (int i = 0; i < series[s].len; i++) {
+                double d = series[s].values[i];
+                if (isnan(d)) continue;
                 if (!seen) { dmin = dmax = d; seen = 1; }
                 else { if (d < dmin) dmin = d; if (d > dmax) dmax = d; }
-            } ZEND_HASH_FOREACH_END();
+            }
         }
-        if (dmin > 0) dmin = 0;  /* anchor at zero so the fill is meaningful */
+        if (dmin > 0) dmin = 0;
     }
     if (!seen) {
         zend_throw_error(NULL,
@@ -228,7 +141,7 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
 
             /* Top edge: left to right at cum + v. */
             for (int i = 0; i < max_len && n_pts < 2048; i++) {
-                double v = read_value_or_nan(series[s].data, i, false, &err_strict);
+                double v = area_read_value(&series[s], i);
                 if (isnan(v)) v = 0;
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
                 int y = fastchart_y_to_pixel(cum[i] + v, &range, &plot);
@@ -256,7 +169,7 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
             int prev_x = 0, prev_y = 0;
             bool prev_valid = false;
             for (int i = 0; i < max_len; i++) {
-                double v = read_value_or_nan(series[s].data, i, false, &err_strict);
+                double v = area_read_value(&series[s], i);
                 if (isnan(v)) v = 0;
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
                 int y = fastchart_y_to_pixel(cum[i] + v, &range, &plot);
@@ -283,7 +196,7 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
 
             int n_pts = 0;
             for (int i = 0; i < max_len && n_pts < 2048; i++) {
-                double v = read_value_or_nan(series[s].data, i, false, &err_strict);
+                double v = area_read_value(&series[s], i);
                 if (isnan(v)) v = 0;
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
                 int y = fastchart_y_to_pixel(v, &range, &plot);
@@ -313,7 +226,7 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
             int prev_x = 0, prev_y = 0;
             bool prev_valid = false;
             for (int i = 0; i < max_len; i++) {
-                double v = read_value_or_nan(series[s].data, i, false, &err_strict);
+                double v = area_read_value(&series[s], i);
                 if (isnan(v)) { prev_valid = false; continue; }
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
                 int y = fastchart_y_to_pixel(v, &range, &plot);
@@ -333,8 +246,8 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
 
     /* Legend. */
     if (n_series >= 2) {
-        int legend_colors[MAX_SERIES];
-        const char *legend_labels[MAX_SERIES];
+        int legend_colors[FASTCHART_MAX_SERIES];
+        const char *legend_labels[FASTCHART_MAX_SERIES];
         int legend_count = 0;
         for (int s = 0; s < n_series; s++) {
             if (!series[s].label) continue;

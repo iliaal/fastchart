@@ -160,16 +160,39 @@ extern zend_class_entry *fastchart_gd_image_ce;
  * the embedded std lives at the end of those. */
 typedef struct _fastchart_obj { FASTCHART_BASE_FIELDS } fastchart_obj;
 
+/* Shared series shape for the cartesian chart families (Line, Area,
+ * Bar). Each series carries a parsed double array (NaN marks a gap),
+ * an optional malloc'd label, optional per-point color overrides
+ * (resolved at render time by gdImageColorAllocate), and for the bar
+ * case an optional values_max array that turns the entries into
+ * floating [min, max] ranges. */
+typedef struct {
+    char *label;          /* malloc'd, NUL-terminated; NULL = no label */
+    double *values;       /* malloc'd, len entries; NaN = data gap */
+    double *values_max;   /* malloc'd OR NULL; set on floating-bar series */
+    zend_long *point_colors; /* malloc'd OR NULL; -1 = use series default */
+    int len;
+    bool right_axis;
+} fastchart_series_t;
+
+#define FASTCHART_MAX_SERIES 8
+
 /* Per-type structs. Each adds the class-specific fields (or none)
  * plus the zend_object std at the end. */
 typedef struct {
     FASTCHART_BASE_FIELDS
+    fastchart_series_t series[FASTCHART_MAX_SERIES];
+    int n_series;
+    int max_len;
     zend_object std;
 } fastchart_line_obj;
 
 typedef struct {
     FASTCHART_BASE_FIELDS
     zend_long area_alpha;
+    fastchart_series_t series[FASTCHART_MAX_SERIES];
+    int n_series;
+    int max_len;
     zend_object std;
 } fastchart_area_obj;
 
@@ -177,6 +200,9 @@ typedef struct {
     FASTCHART_BASE_FIELDS
     zend_long stack_mode;
     bool bar_floating;
+    fastchart_series_t series[FASTCHART_MAX_SERIES];
+    int n_series;
+    int max_len;
     zend_object std;
 } fastchart_bar_obj;
 

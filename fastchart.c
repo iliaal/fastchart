@@ -195,23 +195,281 @@ static void fastchart_base_addref_owned(fastchart_obj *b)
     Z_TRY_ADDREF(b->config);
 }
 
-/* Per-class init / release / clone-addref helpers. No-ops for
- * classes with empty per-type segments. */
-static void fastchart_line_init_extras(fastchart_line_obj *o)        { (void)o; }
-static void fastchart_line_release_extras(fastchart_line_obj *o)     { (void)o; }
-static void fastchart_line_addref_extras(fastchart_line_obj *o)      { (void)o; }
+/* Shared series array helpers. The Line / Area / Bar per-type
+ * structs each carry a fixed-size fastchart_series_t array; these
+ * helpers manage the malloc'd label / values / values_max /
+ * point_colors slots inside each entry. */
+static void fastchart_series_array_init(fastchart_series_t *arr, int max)
+{
+    for (int i = 0; i < max; i++) {
+        arr[i].label = NULL;
+        arr[i].values = NULL;
+        arr[i].values_max = NULL;
+        arr[i].point_colors = NULL;
+        arr[i].len = 0;
+        arr[i].right_axis = false;
+    }
+}
+static void fastchart_series_array_release(fastchart_series_t *arr, int n)
+{
+    for (int i = 0; i < n; i++) {
+        if (arr[i].label)        efree(arr[i].label);
+        if (arr[i].values)       efree(arr[i].values);
+        if (arr[i].values_max)   efree(arr[i].values_max);
+        if (arr[i].point_colors) efree(arr[i].point_colors);
+        arr[i].label = NULL;
+        arr[i].values = NULL;
+        arr[i].values_max = NULL;
+        arr[i].point_colors = NULL;
+        arr[i].len = 0;
+    }
+}
+static void fastchart_series_array_addref(fastchart_series_t *arr, int n)
+{
+    for (int i = 0; i < n; i++) {
+        if (arr[i].label) {
+            size_t len = strlen(arr[i].label);
+            char *copy = emalloc(len + 1);
+            memcpy(copy, arr[i].label, len + 1);
+            arr[i].label = copy;
+        }
+        int slot_len = arr[i].len;
+        if (arr[i].values && slot_len > 0) {
+            size_t bytes = (size_t)slot_len * sizeof(double);
+            double *copy = emalloc(bytes);
+            memcpy(copy, arr[i].values, bytes);
+            arr[i].values = copy;
+        }
+        if (arr[i].values_max && slot_len > 0) {
+            size_t bytes = (size_t)slot_len * sizeof(double);
+            double *copy = emalloc(bytes);
+            memcpy(copy, arr[i].values_max, bytes);
+            arr[i].values_max = copy;
+        }
+        if (arr[i].point_colors && slot_len > 0) {
+            size_t bytes = (size_t)slot_len * sizeof(zend_long);
+            zend_long *copy = emalloc(bytes);
+            memcpy(copy, arr[i].point_colors, bytes);
+            arr[i].point_colors = copy;
+        }
+    }
+}
 
-static void fastchart_area_init_extras(fastchart_area_obj *o)        { o->area_alpha = 64; }
-static void fastchart_area_release_extras(fastchart_area_obj *o)     { (void)o; }
-static void fastchart_area_addref_extras(fastchart_area_obj *o)      { (void)o; }
+/* Parse one user-facing series array into a typed slot. flags picks
+ * which optional fields to read: bit0 colors, bit1 right_axis,
+ * bit2 floating-bar [min,max] pairs. Returns 0 on success, -1 if
+ * the input wasn't a usable series shape. */
+#define FC_SERIES_F_COLORS    0x1
+#define FC_SERIES_F_RIGHTAXIS 0x2
+#define FC_SERIES_F_FLOATING  0x4
+#define FC_SERIES_F_STRICT    0x8   /* error on non-numeric / non-null cells */
+
+static void fastchart_series_dup_label(fastchart_series_t *out, const char *src)
+{
+    if (!src) { out->label = NULL; return; }
+    size_t len = strlen(src);
+    out->label = emalloc(len + 1);
+    memcpy(out->label, src, len + 1);
+}
+
+static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int flags)
+{
+    if (Z_TYPE_P(series_zv) != IS_ARRAY) return -1;
+    HashTable *ht = Z_ARRVAL_P(series_zv);
+    HashTable *data_ht = NULL;
+    HashTable *colors_ht = NULL;
+    bool right_axis = false;
+    const char *label = NULL;
+
+    /* Allow either { 'data' => [...], ... } or a flat numeric list. */
+    zval *data_key = zend_hash_str_find(ht, "data", sizeof("data") - 1);
+    if (data_key && Z_TYPE_P(data_key) == IS_ARRAY) {
+        data_ht = Z_ARRVAL_P(data_key);
+        zval *label_zv = zend_hash_str_find(ht, "label", sizeof("label") - 1);
+        label = fastchart_label_or_null(label_zv);
+        if (flags & FC_SERIES_F_COLORS) {
+            zval *colors_zv = zend_hash_str_find(ht, "colors", sizeof("colors") - 1);
+            if (colors_zv && Z_TYPE_P(colors_zv) == IS_ARRAY) {
+                colors_ht = Z_ARRVAL_P(colors_zv);
+            }
+        }
+        if (flags & FC_SERIES_F_RIGHTAXIS) {
+            zval *axis_zv = zend_hash_str_find(ht, "axis", sizeof("axis") - 1);
+            right_axis = (axis_zv && Z_TYPE_P(axis_zv) == IS_STRING &&
+                          strcmp(Z_STRVAL_P(axis_zv), "right") == 0);
+        }
+    } else {
+        data_ht = ht;
+    }
+
+    int n = (int)zend_hash_num_elements(data_ht);
+    out->len = n;
+    out->right_axis = right_axis;
+    fastchart_series_dup_label(out, label);
+    out->values = NULL;
+    out->values_max = NULL;
+    out->point_colors = NULL;
+    if (n == 0) return 0;
+
+    if (flags & FC_SERIES_F_FLOATING) {
+        out->values = emalloc((size_t)n * sizeof(double));
+        out->values_max = emalloc((size_t)n * sizeof(double));
+        for (int i = 0; i < n; i++) {
+            zval *v = zend_hash_index_find(data_ht, i);
+            double lo = NAN, hi = NAN;
+            if (v && Z_TYPE_P(v) == IS_ARRAY) {
+                HashTable *pair = Z_ARRVAL_P(v);
+                zval *zlo = zend_hash_index_find(pair, 0);
+                zval *zhi = zend_hash_index_find(pair, 1);
+                if (zlo && zhi) {
+                    double l, h;
+                    if (fastchart_zval_to_double(zlo, &l) == 0 &&
+                        fastchart_zval_to_double(zhi, &h) == 0) {
+                        if (l > h) { double t = l; l = h; h = t; }
+                        lo = l; hi = h;
+                    }
+                }
+            }
+            out->values[i] = lo;
+            out->values_max[i] = hi;
+        }
+    } else {
+        out->values = emalloc((size_t)n * sizeof(double));
+        for (int i = 0; i < n; i++) {
+            zval *v = zend_hash_index_find(data_ht, i);
+            double d;
+            if (!v || Z_TYPE_P(v) == IS_NULL) {
+                out->values[i] = NAN;
+            } else if (fastchart_zval_to_double(v, &d) == 0) {
+                out->values[i] = d;
+            } else if (flags & FC_SERIES_F_STRICT) {
+                zend_type_error("FastChart strict mode: series data must be numeric or null");
+                /* Release the partial state we already allocated so
+                 * the caller doesn't have to worry about half-built
+                 * slots. label was emalloc'd in dup_label above. */
+                if (out->label) { efree(out->label); out->label = NULL; }
+                efree(out->values);
+                out->values = NULL;
+                out->len = 0;
+                return -1;
+            } else {
+                out->values[i] = NAN;
+            }
+        }
+    }
+
+    if (colors_ht) {
+        out->point_colors = emalloc((size_t)n * sizeof(zend_long));
+        for (int i = 0; i < n; i++) {
+            zval *cv = zend_hash_index_find(colors_ht, i);
+            zend_long c = -1;
+            if (cv && Z_TYPE_P(cv) == IS_LONG) c = Z_LVAL_P(cv);
+            out->point_colors[i] = (c >= 0 && c <= 0xFFFFFF) ? c : -1;
+        }
+    }
+    return 0;
+}
+
+/* Parse the user setSeries() input into self->series[]. Accepts
+ * either a flat numeric list (single series) or a list of
+ * series-dicts. Returns 0 on success, -1 on shape error. Caller
+ * already cleared any previously-parsed state via the array
+ * release helper. */
+static int fastchart_collect_series_into(zval *arr, fastchart_series_t *out,
+                                         int *out_n, int *out_max_len, int flags)
+{
+    *out_n = 0;
+    *out_max_len = 0;
+    if (Z_TYPE_P(arr) != IS_ARRAY) return -1;
+    HashTable *ht = Z_ARRVAL_P(arr);
+    int n = (int)zend_hash_num_elements(ht);
+    if (n == 0) return 0;
+
+    /* Multi-series detection: first element is an array with a 'data'
+     * key. Single-series fallback: the input is itself the values. */
+    zval *first = zend_hash_index_find(ht, 0);
+    bool is_multi = false;
+    if (first && Z_TYPE_P(first) == IS_ARRAY) {
+        zval *dk = zend_hash_str_find(Z_ARRVAL_P(first), "data", sizeof("data") - 1);
+        if (dk && Z_TYPE_P(dk) == IS_ARRAY) is_multi = true;
+    }
+
+    if (is_multi) {
+        zval *series_zv;
+        ZEND_HASH_FOREACH_VAL(ht, series_zv) {
+            if (*out_n >= FASTCHART_MAX_SERIES) break;
+            if (fastchart_parse_series(series_zv, &out[*out_n], flags) != 0) {
+                /* Strict-mode TypeError leaves an exception pending;
+                 * propagate it instead of silently skipping. */
+                if (EG(exception)) return -1;
+                continue;
+            }
+            if (out[*out_n].len > *out_max_len) *out_max_len = out[*out_n].len;
+            (*out_n)++;
+        } ZEND_HASH_FOREACH_END();
+    } else {
+        /* Single flat numeric series. Wrap in a fake series_zv arg. */
+        if (fastchart_parse_series(arr, &out[0], flags) != 0) return -1;
+        *out_n = 1;
+        *out_max_len = out[0].len;
+    }
+    return 0;
+}
+
+/* Per-class init / release / clone-addref helpers. */
+static void fastchart_line_init_extras(fastchart_line_obj *o)
+{
+    fastchart_series_array_init(o->series, FASTCHART_MAX_SERIES);
+    o->n_series = 0;
+    o->max_len = 0;
+}
+static void fastchart_line_release_extras(fastchart_line_obj *o)
+{
+    fastchart_series_array_release(o->series, o->n_series);
+    o->n_series = 0;
+    o->max_len = 0;
+}
+static void fastchart_line_addref_extras(fastchart_line_obj *o)
+{
+    fastchart_series_array_addref(o->series, o->n_series);
+}
+
+static void fastchart_area_init_extras(fastchart_area_obj *o)
+{
+    o->area_alpha = 64;
+    fastchart_series_array_init(o->series, FASTCHART_MAX_SERIES);
+    o->n_series = 0;
+    o->max_len = 0;
+}
+static void fastchart_area_release_extras(fastchart_area_obj *o)
+{
+    fastchart_series_array_release(o->series, o->n_series);
+    o->n_series = 0;
+    o->max_len = 0;
+}
+static void fastchart_area_addref_extras(fastchart_area_obj *o)
+{
+    fastchart_series_array_addref(o->series, o->n_series);
+}
 
 static void fastchart_bar_init_extras(fastchart_bar_obj *o)
 {
     o->stack_mode = FASTCHART_STACK_SUM;
     o->bar_floating = false;
+    fastchart_series_array_init(o->series, FASTCHART_MAX_SERIES);
+    o->n_series = 0;
+    o->max_len = 0;
 }
-static void fastchart_bar_release_extras(fastchart_bar_obj *o)       { (void)o; }
-static void fastchart_bar_addref_extras(fastchart_bar_obj *o)        { (void)o; }
+static void fastchart_bar_release_extras(fastchart_bar_obj *o)
+{
+    fastchart_series_array_release(o->series, o->n_series);
+    o->n_series = 0;
+    o->max_len = 0;
+}
+static void fastchart_bar_addref_extras(fastchart_bar_obj *o)
+{
+    fastchart_series_array_addref(o->series, o->n_series);
+}
 
 static void fastchart_pie_init_extras(fastchart_pie_obj *o)
 {
@@ -2195,16 +2453,70 @@ ZEND_METHOD(FastChart_StockChart, setCandleStyle)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+ZEND_METHOD(FastChart_LineChart, setSeries)
+{
+    zval *arr;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(arr)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_line_obj *self = Z_FASTCHART_LINE_OBJ_P(ZEND_THIS);
+    fastchart_series_array_release(self->series, self->n_series);
+    self->n_series = 0;
+    self->max_len = 0;
+    int flags = FC_SERIES_F_COLORS | FC_SERIES_F_RIGHTAXIS;
+    if (self->strict) flags |= FC_SERIES_F_STRICT;
+    if (fastchart_collect_series_into(arr, self->series, &self->n_series,
+                                      &self->max_len, flags) != 0) {
+        if (!EG(exception)) {
+            zend_value_error("FastChart\\LineChart::setSeries() expects a numeric list or list of {data: [...], label?, colors?, axis?}");
+        }
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 ZEND_METHOD(FastChart_AreaChart, setSeries)
 {
-    zval *series;
+    zval *arr;
     ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_ARRAY(series)
+        Z_PARAM_ARRAY(arr)
     ZEND_PARSE_PARAMETERS_END();
+    fastchart_area_obj *self = Z_FASTCHART_AREA_OBJ_P(ZEND_THIS);
+    fastchart_series_array_release(self->series, self->n_series);
+    self->n_series = 0;
+    self->max_len = 0;
+    int flags = FC_SERIES_F_RIGHTAXIS;
+    if (self->strict) flags |= FC_SERIES_F_STRICT;
+    if (fastchart_collect_series_into(arr, self->series, &self->n_series,
+                                      &self->max_len, flags) != 0) {
+        if (!EG(exception)) {
+            zend_value_error("FastChart\\AreaChart::setSeries() expects a numeric list or list of {data: [...], label?, axis?}");
+        }
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
-    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval_ptr_dtor(&self->data);
-    ZVAL_COPY(&self->data, series);
+ZEND_METHOD(FastChart_BarChart, setSeries)
+{
+    zval *arr;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(arr)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_bar_obj *self = Z_FASTCHART_BAR_OBJ_P(ZEND_THIS);
+    fastchart_series_array_release(self->series, self->n_series);
+    self->n_series = 0;
+    self->max_len = 0;
+    int flags = FC_SERIES_F_COLORS;
+    if (self->bar_floating) flags |= FC_SERIES_F_FLOATING;
+    if (self->strict) flags |= FC_SERIES_F_STRICT;
+    if (fastchart_collect_series_into(arr, self->series, &self->n_series,
+                                      &self->max_len, flags) != 0) {
+        if (!EG(exception)) {
+            zend_value_error("FastChart\\BarChart::setSeries() expects a numeric list or list of {data: [...], label?, colors?}");
+        }
+        RETURN_THROWS();
+    }
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -2504,8 +2816,6 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         RETURN_ZVAL(ZEND_THIS, 1, 0); \
     }
 
-FASTCHART_SETTER_ARRAY(FastChart_LineChart,    setSeries, data)
-FASTCHART_SETTER_ARRAY(FastChart_BarChart,     setSeries, data)
 FASTCHART_SETTER_ARRAY(FastChart_PieChart,     setSlices, data)
 FASTCHART_SETTER_ARRAY(FastChart_ScatterChart, setPoints, data)
 FASTCHART_SETTER_ARRAY(FastChart_RadarChart,   setSeries, data)

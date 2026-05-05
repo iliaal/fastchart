@@ -22,126 +22,29 @@
 #include "fastchart_axis.h"
 #include "fastchart_effects.h"
 
-#define MAX_SERIES 8
-
-/* Bar chart data acceptance mirrors LineChart: flat numeric list for
- * single-series, [{label, data: [...]}] for multi-series. The two
- * concrete classes intentionally don't share C-side helpers so each
- * draw() is self-contained -- per the v0.1 scaffold AGENTS.md note,
- * per-type structs/handlers replace the shared shape later, and at
- * that point the data extraction will diverge anyway. */
-
-typedef struct {
-    HashTable *data;
-    HashTable *colors;     /* optional per-bar colors */
-    const char *label;
-    int len;
-} fastchart_bar_series;
-
-static int collect_bar_series(zval *data_zv,
-                              fastchart_bar_series *out,
-                              int max_series,
-                              int *out_count,
-                              int *out_max_len)
+/* Resolve a per-point RGB into a gd color handle, falling back to
+ * the series default. setSeries() validated each entry to 0..0xFFFFFF
+ * or stored -1; we just allocate. */
+static int bar_per_point_color(zend_long *point_colors, int idx, int fallback,
+                               gdImagePtr im)
 {
-    *out_count = 0;
-    *out_max_len = 0;
-    if (Z_TYPE_P(data_zv) != IS_ARRAY) return -1;
-    HashTable *ht = Z_ARRVAL_P(data_zv);
-    if (zend_hash_num_elements(ht) == 0) return 0;
-
-    zval *first = zend_hash_index_find(ht, 0);
-    int is_multi = 0;
-    if (first && Z_TYPE_P(first) == IS_ARRAY) {
-        zval *data_key = zend_hash_str_find(Z_ARRVAL_P(first), "data", sizeof("data") - 1);
-        if (data_key && Z_TYPE_P(data_key) == IS_ARRAY) is_multi = 1;
-    }
-
-    if (is_multi) {
-        zval *series_zv;
-        ZEND_HASH_FOREACH_VAL(ht, series_zv) {
-            if (Z_TYPE_P(series_zv) != IS_ARRAY) continue;
-            zval *data_key = zend_hash_str_find(Z_ARRVAL_P(series_zv),
-                                                "data", sizeof("data") - 1);
-            if (!data_key || Z_TYPE_P(data_key) != IS_ARRAY) continue;
-            if (*out_count >= max_series) break;
-
-            HashTable *sht = Z_ARRVAL_P(data_key);
-            out[*out_count].data = sht;
-            out[*out_count].len = (int)zend_hash_num_elements(sht);
-
-            zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
-                                                "label", sizeof("label") - 1);
-            out[*out_count].label =
-                fastchart_label_or_null(label_zv);
-
-            zval *colors_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
-                                                 "colors", sizeof("colors") - 1);
-            out[*out_count].colors = (colors_zv && Z_TYPE_P(colors_zv) == IS_ARRAY)
-                ? Z_ARRVAL_P(colors_zv) : NULL;
-
-            if (out[*out_count].len > *out_max_len) *out_max_len = out[*out_count].len;
-            (*out_count)++;
-        } ZEND_HASH_FOREACH_END();
-    } else {
-        out[0].data = ht;
-        out[0].colors = NULL;
-        out[0].label = NULL;
-        out[0].len = (int)zend_hash_num_elements(ht);
-        *out_count = 1;
-        *out_max_len = out[0].len;
-    }
-    return 0;
-}
-
-static int per_point_color(HashTable *colors_ht, int idx, int fallback,
-                           gdImagePtr im)
-{
-    if (!colors_ht) return fallback;
-    zval *cv = zend_hash_index_find(colors_ht, idx);
-    if (!cv || Z_TYPE_P(cv) != IS_LONG) return fallback;
-    zend_long c = Z_LVAL_P(cv);
-    if (c < 0 || c > 0xFFFFFF) return fallback;
+    if (!point_colors) return fallback;
+    zend_long c = point_colors[idx];
+    if (c < 0) return fallback;
     return gdImageColorAllocate(im,
-        (int)((c >> 16) & 0xFF),
-        (int)((c >>  8) & 0xFF),
-        (int)( c        & 0xFF));
-}
-
-static int read_value(HashTable *ht, int index, double *out)
-{
-    zval *v = zend_hash_index_find(ht, index);
-    if (!v) return -1;
-    return fastchart_zval_to_double(v, out);
-}
-
-/* Read a [min, max] entry from a floating-bar series. Returns 0 on
- * success, -1 if the entry is missing or not a 2-element numeric
- * array. */
-static int read_range(HashTable *ht, int index, double *lo, double *hi)
-{
-    zval *v = zend_hash_index_find(ht, index);
-    if (!v || Z_TYPE_P(v) != IS_ARRAY) return -1;
-    HashTable *pair = Z_ARRVAL_P(v);
-    zval *zlo = zend_hash_index_find(pair, 0);
-    zval *zhi = zend_hash_index_find(pair, 1);
-    if (!zlo || !zhi) return -1;
-    if (fastchart_zval_to_double(zlo, lo) != 0) return -1;
-    if (fastchart_zval_to_double(zhi, hi) != 0) return -1;
-    if (*lo > *hi) { double tmp = *lo; *lo = *hi; *hi = tmp; }
-    return 0;
+        (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
 }
 
 int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
 {
-    fastchart_bar_series series[MAX_SERIES];
-    int n_series = 0, n_categories = 0;
-    if (collect_bar_series(&self->data, series, MAX_SERIES,
-                           &n_series, &n_categories) != 0 || n_series == 0) {
+    if (self->n_series == 0) {
         zend_throw_error(NULL,
             "FastChart\\BarChart::draw() requires setSeries() to have been called with non-empty data");
         return -1;
     }
+    fastchart_series_t *series = self->series;
+    int n_series = self->n_series;
+    int n_categories = self->max_len;
 
     bool stacked = false;
     {
@@ -149,9 +52,6 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
                                        "stacked", sizeof("stacked") - 1);
         if (cfg && Z_TYPE_P(cfg) == IS_TRUE) stacked = true;
     }
-    /* setStackMode(STACK_LAYER) implies stacked-mode rendering with a
-     * shared baseline + translucent fills; STACK_BESIDE mirrors
-     * setStacked(false). */
     bool stack_layer = (self->stack_mode == FASTCHART_STACK_LAYER);
     if (self->stack_mode == FASTCHART_STACK_BESIDE) stacked = false;
     if (stack_layer && n_series > 1) stacked = true;
@@ -160,19 +60,11 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
     double dmin = 0, dmax = 0;
     int seen = 0;
     if (floating) {
-        /* Floating bars: each entry is [min, max]; the value range
-         * spans both ends with no zero-anchor (since the bar doesn't
-         * start at the baseline). */
         for (int s = 0; s < n_series; s++) {
-            for (int i = 0; i < n_categories; i++) {
-                double lo, hi;
-                if (read_range(series[s].data, i, &lo, &hi) != 0) {
-                    if (self->strict) {
-                        zend_type_error("FastChart strict mode: floating-bar entries must be [min, max]");
-                        return -1;
-                    }
-                    continue;
-                }
+            for (int i = 0; i < series[s].len; i++) {
+                double lo = series[s].values[i];
+                double hi = series[s].values_max ? series[s].values_max[i] : NAN;
+                if (isnan(lo) || isnan(hi)) continue;
                 if (!seen) { dmin = lo; dmax = hi; seen = 1; }
                 else { if (lo < dmin) dmin = lo; if (hi > dmax) dmax = hi; }
             }
@@ -181,17 +73,9 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
         for (int i = 0; i < n_categories; i++) {
             double pos = 0, neg = 0;
             for (int s = 0; s < n_series; s++) {
-                double v;
-                if (read_value(series[s].data, i, &v) != 0) {
-                    if (self->strict) {
-                        zval *zv = zend_hash_index_find(series[s].data, i);
-                        if (zv && Z_TYPE_P(zv) != IS_LONG && Z_TYPE_P(zv) != IS_DOUBLE) {
-                            zend_type_error("FastChart strict mode: bar values must be numeric");
-                            return -1;
-                        }
-                    }
-                    continue;
-                }
+                if (i >= series[s].len) continue;
+                double v = series[s].values[i];
+                if (isnan(v)) continue;
                 if (v >= 0) pos += v; else neg += v;
             }
             if (!seen) { dmin = neg; dmax = pos; seen = 1; }
@@ -199,19 +83,12 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
         }
     } else {
         for (int s = 0; s < n_series; s++) {
-            zval *v;
-            ZEND_HASH_FOREACH_VAL(series[s].data, v) {
-                double d;
-                if (fastchart_zval_to_double(v, &d) != 0) {
-                    if (self->strict) {
-                        zend_type_error("FastChart strict mode: bar values must be numeric");
-                        return -1;
-                    }
-                    continue;
-                }
+            for (int i = 0; i < series[s].len; i++) {
+                double d = series[s].values[i];
+                if (isnan(d)) continue;
                 if (!seen) { dmin = dmax = d; seen = 1; }
                 else { if (d < dmin) dmin = d; if (d > dmax) dmax = d; }
-            } ZEND_HASH_FOREACH_END();
+            }
         }
     }
     if (!seen) {
@@ -296,7 +173,7 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
      * into the palette, not a packed 0xRRGGBB. Use the gdImageRed/
      * Green/Blue accessors so the unpack works for both truecolor
      * and paletted GdImage canvases. */
-    int layer_colors[MAX_SERIES] = {0};
+    int layer_colors[FASTCHART_MAX_SERIES] = {0};
     if (stack_layer && n_series > 1) {
         for (int s = 0; s < n_series; s++) {
             int c = pal.series[s % FASTCHART_PALETTE_SERIES_N];
@@ -315,10 +192,12 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
             /* Floating bar: each series carries [min, max] per slot;
              * draw between min and max instead of from zero. */
             for (int s = 0; s < n_series; s++) {
-                double lo, hi;
-                if (read_range(series[s].data, i, &lo, &hi) != 0) continue;
+                if (i >= series[s].len) continue;
+                double lo = series[s].values[i];
+                double hi = series[s].values_max ? series[s].values_max[i] : NAN;
+                if (isnan(lo) || isnan(hi)) continue;
                 int series_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-                int color = per_point_color(series[s].colors, i, series_color, im);
+                int color = bar_per_point_color(series[s].point_colors, i, series_color, im);
                 int y_lo = fastchart_y_to_pixel(lo, &range, &plot);
                 int y_hi = fastchart_y_to_pixel(hi, &range, &plot);
                 int y0 = y_hi < y_lo ? y_hi : y_lo;
@@ -336,8 +215,9 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
             /* Layered: all series anchor at zero with translucent
              * fills, painter overlay rather than cumulative. */
             for (int s = 0; s < n_series; s++) {
-                double v;
-                if (read_value(series[s].data, i, &v) != 0) continue;
+                if (i >= series[s].len) continue;
+                double v = series[s].values[i];
+                if (isnan(v)) continue;
                 int color = layer_colors[s];
                 int y_v = fastchart_y_to_pixel(v, &range, &plot);
                 int y0 = y_v < zero_y ? y_v : zero_y;
@@ -354,10 +234,11 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
         } else if (stacked && n_series > 1) {
             double pos_acc = 0, neg_acc = 0;
             for (int s = 0; s < n_series; s++) {
-                double v;
-                if (read_value(series[s].data, i, &v) != 0) continue;
+                if (i >= series[s].len) continue;
+                double v = series[s].values[i];
+                if (isnan(v)) continue;
                 int series_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-                int color = per_point_color(series[s].colors, i, series_color, im);
+                int color = bar_per_point_color(series[s].point_colors, i, series_color, im);
 
                 double a, b;
                 if (v >= 0) {
@@ -380,10 +261,11 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
             }
         } else {
             for (int s = 0; s < n_series; s++) {
-                double v;
-                if (read_value(series[s].data, i, &v) != 0) continue;
+                if (i >= series[s].len) continue;
+                double v = series[s].values[i];
+                if (isnan(v)) continue;
                 int series_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-                int color = per_point_color(series[s].colors, i, series_color, im);
+                int color = bar_per_point_color(series[s].point_colors, i, series_color, im);
                 int y_v = fastchart_y_to_pixel(v, &range, &plot);
 
                 int x0 = slot_left + s * sub_w + sub_inset;
@@ -411,8 +293,9 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
         for (int i = 0; i < n_categories; i++) {
             int slot_left = plot.x0 + i * slot_w + slot_pad;
             for (int s = 0; s < n_series; s++) {
-                double v;
-                if (read_value(series[s].data, i, &v) != 0) continue;
+                if (i >= series[s].len) continue;
+                double v = series[s].values[i];
+                if (isnan(v)) continue;
                 int y_v = fastchart_y_to_pixel(v, &range, &plot);
                 int x0 = slot_left + s * sub_w;
                 int x_center = x0 + sub_w / 2;
@@ -431,8 +314,8 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
     fastchart_draw_v_annotations_categorical(im, (fastchart_obj *)self, &plot, &pal, n_categories);
 
     if (n_series >= 2) {
-        int legend_colors[MAX_SERIES];
-        const char *legend_labels[MAX_SERIES];
+        int legend_colors[FASTCHART_MAX_SERIES];
+        const char *legend_labels[FASTCHART_MAX_SERIES];
         int legend_count = 0;
         for (int s = 0; s < n_series; s++) {
             if (!series[s].label) continue;
