@@ -746,18 +746,17 @@ FASTCHART_COLOR_OVERRIDE_SETTER(setTextColor,   text_color_override)
     { \
         zend_string *path = NULL; \
         double size = 0.0; \
-        bool path_is_null = true, size_is_null = true; \
+        bool size_is_null = true; \
         ZEND_PARSE_PARAMETERS_START(0, 2) \
             Z_PARAM_OPTIONAL \
             Z_PARAM_STR_OR_NULL(path) \
             Z_PARAM_DOUBLE_OR_NULL(size, size_is_null) \
         ZEND_PARSE_PARAMETERS_END(); \
-        path_is_null = (path == NULL); \
-        if (!path_is_null && memchr(ZSTR_VAL(path), 0, ZSTR_LEN(path)) != NULL) { \
+        if (path && memchr(ZSTR_VAL(path), 0, ZSTR_LEN(path)) != NULL) { \
             zend_value_error("FastChart\\Chart::" #name_ "() path contains an embedded NUL"); \
             RETURN_THROWS(); \
         } \
-        if (!path_is_null && php_check_open_basedir(ZSTR_VAL(path))) { \
+        if (path && php_check_open_basedir(ZSTR_VAL(path))) { \
             RETURN_THROWS(); \
         } \
         if (!size_is_null && !(size >= 1.0 && size <= 200.0)) { \
@@ -765,7 +764,7 @@ FASTCHART_COLOR_OVERRIDE_SETTER(setTextColor,   text_color_override)
             RETURN_THROWS(); \
         } \
         fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
-        if (!path_is_null) { \
+        if (path) { \
             if (self->path_field_) zend_string_release(self->path_field_); \
             self->path_field_ = ZSTR_LEN(path) == 0 ? NULL : zend_string_copy(path); \
         } \
@@ -1965,24 +1964,37 @@ ZEND_METHOD(FastChart_StockChart, setVolumeColors)
 
 /* ---------------- axis titles + label rotation ------------------- */
 
-#define FASTCHART_OPTSTR_SETTER(field_, where_) \
-    do { \
-        zend_string *txt; \
-        ZEND_PARSE_PARAMETERS_START(1, 1) \
-            Z_PARAM_STR(txt) \
-        ZEND_PARSE_PARAMETERS_END(); \
-        if (memchr(ZSTR_VAL(txt), 0, ZSTR_LEN(txt)) != NULL) { \
-            zend_value_error("FastChart\\Chart::" where_ "() text contains an embedded NUL"); \
-            RETURN_THROWS(); \
-        } \
-        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
-        if (self->field_) zend_string_release(self->field_); \
-        self->field_ = ZSTR_LEN(txt) == 0 ? NULL : zend_string_copy(txt); \
-        RETURN_ZVAL(ZEND_THIS, 1, 0); \
-    } while (0)
+ZEND_METHOD(FastChart_Chart, setXAxisTitle)
+{
+    zend_string *txt;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(txt)
+    ZEND_PARSE_PARAMETERS_END();
+    if (memchr(ZSTR_VAL(txt), 0, ZSTR_LEN(txt)) != NULL) {
+        zend_value_error("FastChart\\Chart::setXAxisTitle() text contains an embedded NUL");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (self->x_axis_title) zend_string_release(self->x_axis_title);
+    self->x_axis_title = ZSTR_LEN(txt) == 0 ? NULL : zend_string_copy(txt);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
-ZEND_METHOD(FastChart_Chart, setXAxisTitle) { FASTCHART_OPTSTR_SETTER(x_axis_title, "setXAxisTitle"); }
-ZEND_METHOD(FastChart_Chart, setYAxisTitle) { FASTCHART_OPTSTR_SETTER(y_axis_title, "setYAxisTitle"); }
+ZEND_METHOD(FastChart_Chart, setYAxisTitle)
+{
+    zend_string *txt;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(txt)
+    ZEND_PARSE_PARAMETERS_END();
+    if (memchr(ZSTR_VAL(txt), 0, ZSTR_LEN(txt)) != NULL) {
+        zend_value_error("FastChart\\Chart::setYAxisTitle() text contains an embedded NUL");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (self->y_axis_title) zend_string_release(self->y_axis_title);
+    self->y_axis_title = ZSTR_LEN(txt) == 0 ? NULL : zend_string_copy(txt);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
 ZEND_METHOD(FastChart_Chart, setXAxisLabelAngle)
 {
@@ -2405,7 +2417,7 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
  * the bodies are identical, so we cannot collapse them into one
  * shared ZEND_FUNCTION. They all just stash the array on `data`. */
 
-#define FASTCHART_SETTER_ARRAY(class_, method_, slot_, name_) \
+#define FASTCHART_SETTER_ARRAY(class_, method_, slot_) \
     ZEND_METHOD(class_, method_) \
     { \
         zval *arr; \
@@ -2415,15 +2427,14 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
         zval_ptr_dtor(&self->slot_); \
         ZVAL_COPY(&self->slot_, arr); \
-        (void)name_; \
         RETURN_ZVAL(ZEND_THIS, 1, 0); \
     }
 
-FASTCHART_SETTER_ARRAY(FastChart_LineChart,    setSeries, data, "setSeries")
-FASTCHART_SETTER_ARRAY(FastChart_BarChart,     setSeries, data, "setSeries")
-FASTCHART_SETTER_ARRAY(FastChart_PieChart,     setSlices, data, "setSlices")
-FASTCHART_SETTER_ARRAY(FastChart_ScatterChart, setPoints, data, "setPoints")
-FASTCHART_SETTER_ARRAY(FastChart_StockChart,   setOhlcv,  data, "setOhlcv")
+FASTCHART_SETTER_ARRAY(FastChart_LineChart,    setSeries, data)
+FASTCHART_SETTER_ARRAY(FastChart_BarChart,     setSeries, data)
+FASTCHART_SETTER_ARRAY(FastChart_PieChart,     setSlices, data)
+FASTCHART_SETTER_ARRAY(FastChart_ScatterChart, setPoints, data)
+FASTCHART_SETTER_ARRAY(FastChart_StockChart,   setOhlcv,  data)
 
 ZEND_METHOD(FastChart_BarChart, setStacked)
 {
@@ -2585,6 +2596,10 @@ PHP_MINIT_FUNCTION(fastchart)
     fastchart_object_handlers.offset    = offsetof(fastchart_obj, std);
     fastchart_object_handlers.free_obj  = fastchart_free_object;
     fastchart_object_handlers.clone_obj = fastchart_clone_object;
+    /* Wire dtor explicitly. The std default already routes here, but
+     * making it explicit means a future class with __destruct touching
+     * C state can't accidentally inherit a stale handler chain. */
+    fastchart_object_handlers.dtor_obj  = zend_objects_destroy_object;
 
     fastchart_chart_ce = register_class_FastChart_Chart();
     fastchart_chart_ce->create_object = fastchart_create_object;

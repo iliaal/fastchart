@@ -181,7 +181,7 @@ int fastchart_scatter_render_to_image(fastchart_obj *self, gdImagePtr im)
      * and emitting ticks at xrange values. */
     gdImageLine(im, plot.x0, plot.y1, plot.x1, plot.y1, pal.axis);
     const char *font = xrange.n_ticks > 0
-        ? fastchart_resolve_font(self, FC_FONT_XAXIS) : NULL;
+        ? fastchart_resolve_font(self, FC_FONT_AXIS) : NULL;
     if (font) {
         double size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
         int label_y = plot.y1 + 4 + (int)(size * 1.2);

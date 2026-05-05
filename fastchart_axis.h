@@ -145,18 +145,14 @@ int fastchart_zval_to_long(zval *zv, zend_long *out);
 void fastchart_draw_marker(gdImagePtr im, int x, int y,
                            int style, int size, int color);
 
-/* Font roles map the calling site (axis tick / axis title / chart
- * title / inline label / free annotation) to one of three setter
- * buckets (title, axis, label). Keep the role enum separate from
- * the bucket so font-size lookups can split later (e.g. yaxis !=
- * xaxis) without touching every call site. */
+/* Font roles map the calling site to one of three setter buckets
+ * (title, axis, label). Distinct X-axis vs Y-axis vs axis-title
+ * roles were collapsed because the resolver and the existing setter
+ * surface (setAxisFont) bucket them together; if a future API splits
+ * them, restore the per-axis variants here. */
 typedef enum {
     FC_FONT_TITLE,
     FC_FONT_AXIS,
-    FC_FONT_XAXIS,
-    FC_FONT_YAXIS,
-    FC_FONT_XTITLE,
-    FC_FONT_YTITLE,
     FC_FONT_LABEL,
     FC_FONT_ANNOTATION
 } fastchart_font_role;
