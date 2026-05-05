@@ -6,6 +6,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\BoxPlot(640, 400))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Response time distribution by service')
     ->setYAxisTitle('Latency (ms)')
     ->setBoxes([

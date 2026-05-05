@@ -23,6 +23,7 @@ $slices = [
 
 (new FastChart\PieChart(560, 400))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Browser share — without aggregation')
     ->setSlices($slices)
     ->setSliceLabelPosition(FastChart\Chart::LABEL_OUTSIDE)
@@ -31,6 +32,7 @@ $slices = [
 
 (new FastChart\PieChart(560, 400))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Browser share — slices < 2% rolled into "Other"')
     ->setSlices($slices)
     ->setOtherThreshold(2.0, 'Other')

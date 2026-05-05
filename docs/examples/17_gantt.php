@@ -10,6 +10,7 @@ $day  = 86400;
 
 (new FastChart\GanttChart(720, 380))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Q4 release timeline')
     ->setTimeRange($base, $base + 60 * $day)
     ->setTasks([

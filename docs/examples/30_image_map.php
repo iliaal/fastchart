@@ -14,6 +14,7 @@ require __DIR__ . '/_bootstrap.php';
 
 $chart = (new FastChart\ScatterChart(560, 360))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Quarterly revenue by region (clickable)')
     ->setXAxisTitle('Quarter')
     ->setYAxisTitle('Revenue ($M)')

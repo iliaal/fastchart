@@ -1,14 +1,21 @@
 <?php
-/* Shared font resolution for the example gallery. Picks a TrueType
- * face from common Linux paths; override at runtime with the
- * FC_FONT environment variable. Each example does:
+/* Shared font + DPI defaults for the example gallery. Picks a
+ * TrueType face from common Linux paths; override at runtime with
+ * the FC_FONT environment variable. Each example does:
  *
  *     require __DIR__ . '/_bootstrap.php';
- *     // ... ->setFontPath($font) ...
+ *     // ... ->setFontPath($font)->setDpi($dpi) ...
  *
- * fastchart's MINIT also probes these paths for an implicit default,
- * so the explicit setFontPath call is mainly belt-and-suspenders for
- * portability and self-documentation. */
+ * fastchart's MINIT also probes the font paths for an implicit
+ * default, so the explicit setFontPath call is mainly belt-and-
+ * suspenders for portability and self-documentation.
+ *
+ * The DPI default is 200 — examples render at roughly 2x the logical
+ * canvas dimensions (e.g. setSize(640, 320) -> 1333x667 pixels) and
+ * tag the PNG metadata as 200 DPI. Retina viewers and print pipelines
+ * display these at the intended physical size; embedding into a
+ * non-DPI-aware viewer just shows a higher-resolution image. Override
+ * via the FC_DPI env var if you want 96 (1x) or higher (300 print). */
 
 $font_candidates = [
     getenv('FC_FONT') ?: '',
@@ -37,5 +44,11 @@ foreach ($font_candidates as $candidate) {
 }
 if ($font === '') {
     fwrite(STDERR, "no TrueType font found; set FC_FONT=/path/to/Font.ttf\n");
+    exit(1);
+}
+
+$dpi = (int)(getenv('FC_DPI') ?: 200);
+if ($dpi < 24 || $dpi > 1200) {
+    fwrite(STDERR, "FC_DPI must be in [24, 1200]; got $dpi\n");
     exit(1);
 }

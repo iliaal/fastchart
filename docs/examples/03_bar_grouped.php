@@ -6,6 +6,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\BarChart(640, 380))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Monthly tickets opened vs closed')
     ->setSeries([
         ['label' => 'Opened', 'data' => [42, 38, 51, 47, 55, 49]],

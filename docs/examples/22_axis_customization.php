@@ -14,6 +14,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\LineChart(720, 380))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Log-scale revenue with rotated date labels')
     ->setSeries([
         ['data' => [120, 240, 480, 920, 1840, 3650, 7200, 14400, 28000, 56000]],
@@ -33,6 +34,7 @@ require __DIR__ . '/_bootstrap.php';
  * forcing visual focus on the line itself. */
 (new FastChart\LineChart(720, 380))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Linear with fixed range, axis lines off')
     ->setSeries([
         ['data' => [22, 35, 28, 41, 38, 47, 52, 49, 58, 65]],

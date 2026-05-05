@@ -7,6 +7,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\LineChart(720, 380))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Traffic vs revenue (independent scales)')
     ->setXAxisTitle('Week')
     ->setYAxisTitle('Page views')

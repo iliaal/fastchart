@@ -21,6 +21,7 @@ echo "fastchart version: ", FastChart\Chart::version(), "\n\n";
  * chains where the size is computed after the object is built. */
 $chart = (new FastChart\LineChart())
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setSize(640, 320)
     ->setTitle('setSize after construction')
     ->setSeries([['data' => [10, 20, 30, 25, 18, 22, 30]]])
@@ -38,12 +39,14 @@ $bg = imagecolorallocate($im, 0xF5, 0xF5, 0xF5);
 imagefilledrectangle($im, 0, 0, 799, 319, $bg);
 (new FastChart\LineChart(800, 320))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Left chart')
     ->setSeries([['data' => [22, 35, 28, 41, 38]]])
     ->setPlotRect(60, 30, 380, 280)
     ->draw($im);
 (new FastChart\BarChart(800, 320))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Right chart')
     ->setSeries([['data' => [12, 18, 15, 24, 21]]])
     ->setPlotRect(440, 30, 760, 280)
@@ -57,6 +60,7 @@ imagedestroy($im);
 try {
     (new FastChart\LineChart(400, 200))
     ->setFontPath($font)
+    ->setDpi($dpi)
         ->setStrict(true)
         ->setSeries([['data' => [1, 2, 'oops', 4]]]);
     echo "setStrict: no throw (unexpected)\n";
@@ -67,6 +71,7 @@ try {
 /* setBoxWidth: narrow the boxplot boxes to 40% of slot width. */
 (new FastChart\BoxPlot(640, 320))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Narrow boxes (setBoxWidth(40))')
     ->setBoxWidth(40)
     ->setBoxes([
@@ -91,6 +96,7 @@ imagedestroy($bg);
 
 (new FastChart\LineChart(640, 320))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Chart with background image')
     ->setSeries([['data' => [22, 35, 28, 41, 38, 47, 52]]])
     ->setCategoryLabels(['Mon','Tue','Wed','Thu','Fri','Sat','Sun'])

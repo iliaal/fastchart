@@ -19,6 +19,7 @@ for ($r = 0; $r < $rows; $r++) {
 
 (new FastChart\SurfaceChart(560, 320))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Surface heatmap')
     ->setGrid($grid)
     ->setColorRamp(0x1F4E79, 0xE34A6F)
@@ -27,6 +28,7 @@ for ($r = 0; $r < $rows; $r++) {
 
 (new FastChart\ContourChart(560, 320))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Filled contour at 6 levels')
     ->setGrid($grid)
     ->setLevels([-8, -4, -2, 0, 2, 4, 8])

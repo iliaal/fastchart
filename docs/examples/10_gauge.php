@@ -6,6 +6,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\GaugeChart(480, 320))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Server CPU utilization')
     ->setRange(0, 100)
     ->setValue(72)

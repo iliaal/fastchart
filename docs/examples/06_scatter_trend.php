@@ -14,6 +14,7 @@ for ($i = 0; $i < 60; $i++) {
 
 (new FastChart\ScatterChart(640, 400))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Page load time vs payload size')
     ->setXAxisTitle('Payload (KB)')
     ->setYAxisTitle('Time (s)')

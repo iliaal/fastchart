@@ -18,6 +18,7 @@ $serif   = '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf';
 /* Sizes default to 11px; per-role overrides are absolute in pixels. */
 (new FastChart\LineChart(640, 360))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Per-role font override')
     ->setFontPath(file_exists($default) ? $default : '')
     ->setFontSize(11)
@@ -31,6 +32,7 @@ $serif   = '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf';
 /* Thumbnail mode for inline tile previews. */
 (new FastChart\LineChart(220, 120))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Thumb')
     ->setSeries([['data' => [22, 35, 28, 41, 38, 47, 52]]])
     ->setCategoryLabels(['M','T','W','T','F','S','S'])

@@ -6,6 +6,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\RadarChart(560, 480))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Feature parity scorecard')
     ->setSeries([
         ['label' => 'Product A', 'data' => [8, 7, 9, 6, 8, 7]],

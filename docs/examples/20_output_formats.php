@@ -15,6 +15,7 @@ require __DIR__ . '/_bootstrap.php';
 
 $line = (new FastChart\LineChart(400, 200))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Output formats demo')
     ->setSeries([['data' => [10, 20, 15, 25, 22, 30]]])
     ->setCategoryLabels(['Mon','Tue','Wed','Thu','Fri','Sat']);

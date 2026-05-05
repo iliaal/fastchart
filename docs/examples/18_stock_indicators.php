@@ -29,6 +29,7 @@ for ($i = 0; $i < 60; $i++) {
 
 (new FastChart\StockChart(820, 520))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('ACME with RSI indicator pane')
     ->setOhlcv($rows)
     ->setMovingAverages([10, 20, 50])  // bulk shortcut, all SMAs

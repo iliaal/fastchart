@@ -33,6 +33,7 @@ $im = imagecreatetruecolor(720, 420);
 /* Step 1: render the chart into our caller-owned canvas. */
 (new FastChart\StockChart(720, 420))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('ACME — internal preview')
     ->setOhlcv($rows)
     ->addMovingAverage(20)

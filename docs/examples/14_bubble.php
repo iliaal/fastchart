@@ -6,6 +6,7 @@ require __DIR__ . '/_bootstrap.php';
 
 (new FastChart\BubbleChart(640, 400))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Project size vs delivery risk')
     ->setXAxisTitle('Estimated effort (story points)')
     ->setYAxisTitle('Risk score')

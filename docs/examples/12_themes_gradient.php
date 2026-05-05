@@ -10,6 +10,7 @@ $labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 (new FastChart\BarChart(420, 260))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Light theme')
     ->setSeries($data)
     ->setCategoryLabels($labels)
@@ -18,6 +19,7 @@ $labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 (new FastChart\BarChart(420, 260))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Dark theme')
     ->setSeries($data)
     ->setCategoryLabels($labels)
@@ -26,6 +28,7 @@ $labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 (new FastChart\BarChart(420, 260))
     ->setFontPath($font)
+    ->setDpi($dpi)
     ->setTitle('Gradient + shadow')
     ->setSeries($data)
     ->setCategoryLabels($labels)
