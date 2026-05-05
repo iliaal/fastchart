@@ -3414,9 +3414,96 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
 FASTCHART_SETTER_ARRAY(FastChart_RadarChart,   setSeries, data)
 FASTCHART_SETTER_ARRAY(FastChart_SurfaceChart, setGrid,   data)
 FASTCHART_SETTER_ARRAY(FastChart_GanttChart,   setTasks,  data)
-FASTCHART_SETTER_ARRAY(FastChart_BoxPlot,      setBoxes,  data)
 FASTCHART_SETTER_ARRAY(FastChart_PolarChart,   setSeries, data)
 FASTCHART_SETTER_ARRAY(FastChart_ContourChart, setGrid,   data)
+
+ZEND_METHOD(FastChart_BoxPlot, setBoxes)
+{
+    zval *arr;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(arr)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_boxplot_obj *self = Z_FASTCHART_BOXPLOT_OBJ_P(ZEND_THIS);
+    if (self->entries) {
+        for (int i = 0; i < self->entry_count; i++) {
+            fc_efree_opt(self->entries[i].label);
+            fc_efree_opt(self->entries[i].outliers);
+        }
+        efree(self->entries);
+        self->entries = NULL;
+    }
+    self->entry_count = 0;
+
+    HashTable *ht = Z_ARRVAL_P(arr);
+    int n = (int)zend_hash_num_elements(ht);
+    if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    if (n > FASTCHART_MAX_BOXPLOT_ENTRIES) n = FASTCHART_MAX_BOXPLOT_ENTRIES;
+    self->entries = ecalloc((size_t)n, sizeof(fastchart_boxplot_entry));
+    int slot = 0;
+
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (slot >= n) break;
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        HashTable *eh = Z_ARRVAL_P(entry);
+        fastchart_boxplot_entry *out = &self->entries[slot];
+        out->label = NULL;
+        out->outliers = NULL;
+        out->outlier_count = 0;
+
+        /* Two accepted shapes:
+         *   ['min'=>, 'q1'=>, 'median'=>, 'q3'=>, 'max'=>, 'label'?, 'outliers'?]
+         *   [min, q1, median, q3, max]  positional
+         * Detection: any 'min' string key triggers the dict shape. */
+        bool dict_shape = (zend_hash_str_find(eh, "min", 3) != NULL);
+        if (dict_shape) {
+            zval *zmin = zend_hash_str_find(eh, "min", 3);
+            zval *zq1  = zend_hash_str_find(eh, "q1",  2);
+            zval *zmed = zend_hash_str_find(eh, "median", 6);
+            zval *zq3  = zend_hash_str_find(eh, "q3",  2);
+            zval *zmax = zend_hash_str_find(eh, "max", 3);
+            if (!zmin || !zq1 || !zmed || !zq3 || !zmax) continue;
+            if (fastchart_zval_to_double(zmin, &out->min) != 0) continue;
+            if (fastchart_zval_to_double(zq1,  &out->q1) != 0) continue;
+            if (fastchart_zval_to_double(zmed, &out->median) != 0) continue;
+            if (fastchart_zval_to_double(zq3,  &out->q3) != 0) continue;
+            if (fastchart_zval_to_double(zmax, &out->max) != 0) continue;
+            zval *zlabel = zend_hash_str_find(eh, "label", 5);
+            out->label = fc_strdup_opt(fastchart_label_or_null(zlabel));
+            zval *zout = zend_hash_str_find(eh, "outliers", 8);
+            if (zout && Z_TYPE_P(zout) == IS_ARRAY) {
+                int on = (int)zend_hash_num_elements(Z_ARRVAL_P(zout));
+                if (on > 0) {
+                    out->outliers = ecalloc((size_t)on, sizeof(double));
+                    int k = 0;
+                    zval *v;
+                    ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(zout), v) {
+                        if (k >= on) break;
+                        double d;
+                        if (fastchart_zval_to_double(v, &d) == 0) out->outliers[k++] = d;
+                    } ZEND_HASH_FOREACH_END();
+                    out->outlier_count = k;
+                    if (k == 0) { efree(out->outliers); out->outliers = NULL; }
+                }
+            }
+        } else {
+            zval *z;
+            z = zend_hash_index_find(eh, 0); if (!z || fastchart_zval_to_double(z, &out->min) != 0) continue;
+            z = zend_hash_index_find(eh, 1); if (!z || fastchart_zval_to_double(z, &out->q1) != 0) continue;
+            z = zend_hash_index_find(eh, 2); if (!z || fastchart_zval_to_double(z, &out->median) != 0) continue;
+            z = zend_hash_index_find(eh, 3); if (!z || fastchart_zval_to_double(z, &out->q3) != 0) continue;
+            z = zend_hash_index_find(eh, 4); if (!z || fastchart_zval_to_double(z, &out->max) != 0) continue;
+        }
+        slot++;
+    } ZEND_HASH_FOREACH_END();
+    self->entry_count = slot;
+    if (slot == 0) {
+        efree(self->entries);
+        self->entries = NULL;
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
 ZEND_METHOD(FastChart_BubbleChart, setPoints)
 {
