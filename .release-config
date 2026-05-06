@@ -21,3 +21,9 @@ configure_base: "--enable-fastchart --enable-fastchart-dev"
 # vendored build) is wired up.
 windows_ci: false
 linux_prebuilt: false
+
+# PIE install + functional smoke test. Runs against php:8.x-cli with
+# libgd-dev and ext/gd provisioned inside the container, exercising the
+# documented "Source builds via PIE work fine on any host where libgd is
+# reachable" claim end-to-end.
+smoke_test: scripts/pie-smoke.sh

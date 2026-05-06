@@ -6141,8 +6141,20 @@ PHP_MINFO_FUNCTION(fastchart)
     php_info_print_table_end();
 }
 
+/* Runtime MINIT order: gd must run first so its class table entry for
+   GdImage and the php_gd_libgdimageptr_from_zval_p export are visible
+   before fastchart resolves them. PHP_ADD_EXTENSION_DEP(fastchart, gd)
+   in config.m4 only affects the build system; the engine ignores it at
+   load time. ZEND_MOD_REQUIRED("gd") is what reorders the MINIT chain
+   regardless of php.ini / conf.d / -d extension= load order. */
+static const zend_module_dep fastchart_deps[] = {
+    ZEND_MOD_REQUIRED("gd")
+    ZEND_MOD_END
+};
+
 zend_module_entry fastchart_module_entry = {
-    STANDARD_MODULE_HEADER,
+    STANDARD_MODULE_HEADER_EX, NULL,
+    fastchart_deps,
     "fastchart",
     NULL,                       /* function_entries */
     PHP_MINIT(fastchart),
