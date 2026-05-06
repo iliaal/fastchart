@@ -78,7 +78,11 @@ jobs:
       - name: Run tests
         run: |
           export TEST_PHP_EXECUTABLE=$(which php)
-          export TEST_PHP_ARGS="-d extension=gd -d extension=$(pwd)/modules/fastchart.so"
+          # gd is already loaded by shivammathur/setup-php's extensions: gd
+          # (writes extension=gd to php.ini). Adding -d extension=gd on top
+          # makes PHP 8.4+ emit "Module already loaded" warnings that
+          # prepend to every test's stdout and break --EXPECT-- matching.
+          export TEST_PHP_ARGS="-d extension=$(pwd)/modules/fastchart.so"
           export NO_INTERACTION=1
           # Stream output so failure context lands in the log even
           # when the run aborts before the trailing summary. Tee to
@@ -154,7 +158,11 @@ jobs:
       - name: Run tests under ASAN
         run: |
           export TEST_PHP_EXECUTABLE=/tmp/php-asan/bin/php
-          export TEST_PHP_ARGS="-d extension=gd -d extension=$(pwd)/modules/fastchart.so"
+          # gd is built into the ASAN PHP via --enable-gd above, so
+          # there's no shared-extension load needed and -d extension=gd
+          # on top would just emit "Module already loaded" warnings
+          # that prepend to every test's output.
+          export TEST_PHP_ARGS="-d extension=$(pwd)/modules/fastchart.so"
           export NO_INTERACTION=1
           /tmp/php-asan/bin/php run-tests.php --show-diff --asan -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt || true
           if grep -qP 'Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
@@ -200,7 +208,11 @@ jobs:
       - name: Run tests
         run: |
           export TEST_PHP_EXECUTABLE=$(which php)
-          export TEST_PHP_ARGS="-d extension=gd -d extension=$(pwd)/modules/fastchart.so"
+          # gd is already loaded by shivammathur/setup-php's extensions: gd
+          # (writes extension=gd to php.ini). Adding -d extension=gd on top
+          # makes PHP 8.4+ emit "Module already loaded" warnings that
+          # prepend to every test's stdout and break --EXPECT-- matching.
+          export TEST_PHP_ARGS="-d extension=$(pwd)/modules/fastchart.so"
           export NO_INTERACTION=1
           set +e
           php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt
