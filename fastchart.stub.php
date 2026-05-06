@@ -918,9 +918,19 @@ final class BoxPlot extends Chart
  */
 final class PolarChart extends Chart
 {
+    /** setStyle() — line/area mode (default): connect points into a polygon. */
+    const int STYLE_LINE = 0;
+    /** setStyle() — rose mode: each point is an angular wedge from the centre. */
+    const int STYLE_ROSE = 1;
+
     /**
      * Points (single series) or list of series with
      * `['data' => [[deg, r], ...], 'label' => 'name', 'color' => int]`.
+     *
+     * In `STYLE_ROSE`, each entry's angle is the wedge START and
+     * the angular width runs to the NEXT entry's angle (or evenly
+     * spaced when the series is uniformly distributed). Radius
+     * controls wedge length.
      */
     public function setSeries(array $series): static {}
 
@@ -929,6 +939,15 @@ final class PolarChart extends Chart
 
     /** Fill the polygon area in the series color (translucent). */
     public function setFilled(bool $filled): static {}
+
+    /**
+     * Switch between line/area mode and rose (angular bar) mode.
+     * `STYLE_LINE` (default) connects points into a polygon, optionally
+     * filled. `STYLE_ROSE` renders each (angle, radius) as a filled
+     * wedge — useful for histograms in polar coordinates (wind roses,
+     * bearing distributions).
+     */
+    public function setStyle(int $style): static {}
 
     public function draw(\GdImage $canvas): \GdImage {}
 }
@@ -985,6 +1004,115 @@ final class Treemap extends Chart
      * identity signal.
      */
     public function setShowLabels(bool $enabled): static {}
+
+    public function draw(\GdImage $canvas): \GdImage {}
+}
+
+/**
+ * Funnel chart: descending stacked horizontal trapezoids. Each
+ * stage's width is proportional to its value relative to the
+ * largest stage. Common use: conversion funnels, drop-off rates.
+ */
+final class Funnel extends Chart
+{
+    /**
+     * Stages, top to bottom. Each entry is
+     * `['label' => string?, 'value' => number, 'color' => int?]`.
+     * `value` is required and must be > 0; non-positive entries are
+     * silently dropped at setStages().
+     */
+    public function setStages(array $stages): static {}
+
+    /* setShowValues(bool, string $format = '%g') is inherited from
+     * Chart and toggles the value labels rendered next to each
+     * stage. The funnel default is to show values. */
+
+    public function draw(\GdImage $canvas): \GdImage {}
+}
+
+/**
+ * Waterfall chart: bar series with rising / falling / total
+ * semantics. Useful for income statements, budget breakdowns,
+ * step-change attribution. Each bar starts at the prior cumulative
+ * and runs to cumulative + value, except `'kind' => 'total'` which
+ * renders an absolute bar from zero.
+ */
+final class Waterfall extends Chart
+{
+    /**
+     * Bars, in display order. Each entry is
+     * `['label' => string, 'value' => number, 'kind' => 'delta'|'total']`.
+     * `kind` defaults to `'delta'`. Delta bars carry signed values;
+     * positive renders in the rise colour, negative in the fall
+     * colour. Total bars use the total colour and reset the running
+     * cumulative to their value.
+     */
+    public function setBars(array $bars): static {}
+
+    public function setRiseColor(int $rgb): static {}
+    public function setFallColor(int $rgb): static {}
+    public function setTotalColor(int $rgb): static {}
+
+    public function draw(\GdImage $canvas): \GdImage {}
+}
+
+/**
+ * Discrete heatmap: a 2D grid of cells coloured by value. Distinct
+ * from `ContourChart` (which interpolates isolines through the same
+ * input shape) — heatmap colours each cell directly from a low/high
+ * ramp, optionally writing the cell value inside.
+ */
+final class Heatmap extends Chart
+{
+    /** 2D array of numeric values. Rows of equal length expected. */
+    public function setGrid(array $grid): static {}
+
+    /**
+     * Color ramp for the cell-value→colour interpolation. Both
+     * arguments are 24-bit RGB. Defaults to a cool-blue → warm-red
+     * ramp.
+     */
+    public function setColorRamp(int $low, int $high): static {}
+
+    /* setShowValues(bool, string $format = '%g') is inherited from
+     * Chart; it toggles the per-cell value rendering AND sets the
+     * printf format used for it. */
+
+    public function draw(\GdImage $canvas): \GdImage {}
+}
+
+/**
+ * Linear meter: bar-shaped gauge. Same zone / value / format
+ * vocabulary as `GaugeChart`, rotated to a horizontal or vertical
+ * bar. Useful for compact status / capacity readouts where a
+ * round gauge is too tall.
+ */
+final class LinearMeter extends Chart
+{
+    const int METER_HORIZONTAL = 0;
+    const int METER_VERTICAL   = 1;
+
+    /** Set the meter's data range. min must be < max. */
+    public function setRange(float $min, float $max): static {}
+
+    /** Set the current value. Clamped to [min, max] at draw time. */
+    public function setValue(float $value): static {}
+
+    /** Choose horizontal or vertical orientation. Default horizontal. */
+    public function setOrientation(int $orientation): static {}
+
+    /**
+     * Coloured zones along the bar. Each entry:
+     * `['from' => number, 'to' => number, 'color' => int?]`. Up to
+     * 8 zones; out-of-range or empty zones are skipped.
+     */
+    public function setZones(array $zones): static {}
+
+    /**
+     * Printf format for the min / max / current-value labels.
+     * Default `%.0f`. Same validation rules as setYAxisLabelFormat.
+     */
+    public function setValueFormat(string $format): static {}
 
     public function draw(\GdImage $canvas): \GdImage {}
 }

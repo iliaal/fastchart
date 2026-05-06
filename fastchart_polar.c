@@ -94,9 +94,49 @@ int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
                 (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
         }
 
+        int upto = series[s].len < MAX_POLAR_POINTS ? series[s].len : MAX_POLAR_POINTS;
+
+        /* STYLE_ROSE: each (angle, radius) becomes an angular wedge
+         * extending from the centre out to `radius * r/rmax`. The
+         * angular width is the gap to the next point's angle (or
+         * 360/n if a single series is uniformly spaced). Wedges are
+         * filled with the series colour and outlined in the border
+         * colour for visual separation. The legacy line/area style
+         * stays as the default branch below. */
+        if (self->polar_style == FASTCHART_POLAR_STYLE_ROSE) {
+            if (upto < 1) continue;
+            for (int i = 0; i < upto; i++) {
+                double a0 = series[s].angles[i];
+                double a1 = (i + 1 < upto)
+                    ? series[s].angles[i + 1]
+                    : a0 + 360.0 / (double)upto;
+                double r = series[s].radii[i];
+                if (r <= 0) continue;
+                double rr_px = (double)radius * r / rmax;
+                /* libgd arc angles are clockwise with 0° at 3-o'clock;
+                 * our angles are CCW math angles. Convert by negating
+                 * and adding 360 so libgd renders the wedge oriented
+                 * the same way as the line/area branch. */
+                int gd_a = (int)((360.0 - a1)) % 360;
+                int gd_b = (int)((360.0 - a0)) % 360;
+                if (gd_a < 0) gd_a += 360;
+                if (gd_b < 0) gd_b += 360;
+                if (gd_b <= gd_a) gd_b += 360;
+                gdImageFilledArc(im, cx, cy, (int)(rr_px * 2), (int)(rr_px * 2),
+                                 gd_a, gd_b, color, gdPie);
+                gdImageArc(im, cx, cy, (int)(rr_px * 2), (int)(rr_px * 2),
+                           gd_a, gd_b, pal.border);
+            }
+            if (series[s].label && legend_count < FASTCHART_MAX_POLAR_SERIES) {
+                legend_colors[legend_count] = color;
+                legend_labels[legend_count] = series[s].label;
+                legend_count++;
+            }
+            continue;
+        }
+
         gdPoint poly[MAX_POLAR_POINTS];
         int n_pts = 0;
-        int upto = series[s].len < MAX_POLAR_POINTS ? series[s].len : MAX_POLAR_POINTS;
         for (int i = 0; i < upto; i++) {
             double a = series[s].angles[i];
             double r = series[s].radii[i];

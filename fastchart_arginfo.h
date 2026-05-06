@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 98914e55c3076e081a5770b6b3ff9e1b927bb2ac */
+ * Stub hash: 3dee25c89ce999c3840fe4bac2d911423ff73727 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -446,6 +446,8 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_PolarChart_setFilled arginfo_class_FastChart_RadarChart_setFilled
 
+#define arginfo_class_FastChart_PolarChart_setStyle arginfo_class_FastChart_Chart_setLineStyle
+
 #define arginfo_class_FastChart_PolarChart_draw arginfo_class_FastChart_Chart_draw
 
 #define arginfo_class_FastChart_ContourChart_setGrid arginfo_class_FastChart_SurfaceChart_setGrid
@@ -465,6 +467,42 @@ ZEND_END_ARG_INFO()
 #define arginfo_class_FastChart_Treemap_setShowLabels arginfo_class_FastChart_Chart_setSecondaryYAxis
 
 #define arginfo_class_FastChart_Treemap_draw arginfo_class_FastChart_Chart_draw
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Funnel_setStages, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, stages, IS_ARRAY, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_Funnel_draw arginfo_class_FastChart_Chart_draw
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Waterfall_setBars, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, bars, IS_ARRAY, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_Waterfall_setRiseColor arginfo_class_FastChart_Chart_setBackgroundColor
+
+#define arginfo_class_FastChart_Waterfall_setFallColor arginfo_class_FastChart_Chart_setBackgroundColor
+
+#define arginfo_class_FastChart_Waterfall_setTotalColor arginfo_class_FastChart_Chart_setBackgroundColor
+
+#define arginfo_class_FastChart_Waterfall_draw arginfo_class_FastChart_Chart_draw
+
+#define arginfo_class_FastChart_Heatmap_setGrid arginfo_class_FastChart_SurfaceChart_setGrid
+
+#define arginfo_class_FastChart_Heatmap_setColorRamp arginfo_class_FastChart_Chart_setColorRamp
+
+#define arginfo_class_FastChart_Heatmap_draw arginfo_class_FastChart_Chart_draw
+
+#define arginfo_class_FastChart_LinearMeter_setRange arginfo_class_FastChart_GaugeChart_setRange
+
+#define arginfo_class_FastChart_LinearMeter_setValue arginfo_class_FastChart_GaugeChart_setValue
+
+#define arginfo_class_FastChart_LinearMeter_setOrientation arginfo_class_FastChart_BarChart_setOrientation
+
+#define arginfo_class_FastChart_LinearMeter_setZones arginfo_class_FastChart_GaugeChart_setZones
+
+#define arginfo_class_FastChart_LinearMeter_setValueFormat arginfo_class_FastChart_Chart_setYAxisLabelFormat
+
+#define arginfo_class_FastChart_LinearMeter_draw arginfo_class_FastChart_Chart_draw
 
 ZEND_METHOD(FastChart_Chart, __construct);
 ZEND_METHOD(FastChart_Chart, version);
@@ -597,6 +635,7 @@ ZEND_METHOD(FastChart_BoxPlot, draw);
 ZEND_METHOD(FastChart_PolarChart, setSeries);
 ZEND_METHOD(FastChart_PolarChart, setMaxRadius);
 ZEND_METHOD(FastChart_PolarChart, setFilled);
+ZEND_METHOD(FastChart_PolarChart, setStyle);
 ZEND_METHOD(FastChart_PolarChart, draw);
 ZEND_METHOD(FastChart_ContourChart, setGrid);
 ZEND_METHOD(FastChart_ContourChart, setLevels);
@@ -605,6 +644,22 @@ ZEND_METHOD(FastChart_ContourChart, draw);
 ZEND_METHOD(FastChart_Treemap, setItems);
 ZEND_METHOD(FastChart_Treemap, setShowLabels);
 ZEND_METHOD(FastChart_Treemap, draw);
+ZEND_METHOD(FastChart_Funnel, setStages);
+ZEND_METHOD(FastChart_Funnel, draw);
+ZEND_METHOD(FastChart_Waterfall, setBars);
+ZEND_METHOD(FastChart_Waterfall, setRiseColor);
+ZEND_METHOD(FastChart_Waterfall, setFallColor);
+ZEND_METHOD(FastChart_Waterfall, setTotalColor);
+ZEND_METHOD(FastChart_Waterfall, draw);
+ZEND_METHOD(FastChart_Heatmap, setGrid);
+ZEND_METHOD(FastChart_Heatmap, setColorRamp);
+ZEND_METHOD(FastChart_Heatmap, draw);
+ZEND_METHOD(FastChart_LinearMeter, setRange);
+ZEND_METHOD(FastChart_LinearMeter, setValue);
+ZEND_METHOD(FastChart_LinearMeter, setOrientation);
+ZEND_METHOD(FastChart_LinearMeter, setZones);
+ZEND_METHOD(FastChart_LinearMeter, setValueFormat);
+ZEND_METHOD(FastChart_LinearMeter, draw);
 
 static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, __construct, arginfo_class_FastChart_Chart___construct, ZEND_ACC_PUBLIC)
@@ -791,6 +846,7 @@ static const zend_function_entry class_FastChart_PolarChart_methods[] = {
 	ZEND_ME(FastChart_PolarChart, setSeries, arginfo_class_FastChart_PolarChart_setSeries, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PolarChart, setMaxRadius, arginfo_class_FastChart_PolarChart_setMaxRadius, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PolarChart, setFilled, arginfo_class_FastChart_PolarChart_setFilled, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_PolarChart, setStyle, arginfo_class_FastChart_PolarChart_setStyle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PolarChart, draw, arginfo_class_FastChart_PolarChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
@@ -807,6 +863,38 @@ static const zend_function_entry class_FastChart_Treemap_methods[] = {
 	ZEND_ME(FastChart_Treemap, setItems, arginfo_class_FastChart_Treemap_setItems, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Treemap, setShowLabels, arginfo_class_FastChart_Treemap_setShowLabels, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Treemap, draw, arginfo_class_FastChart_Treemap_draw, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_FastChart_Funnel_methods[] = {
+	ZEND_ME(FastChart_Funnel, setStages, arginfo_class_FastChart_Funnel_setStages, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Funnel, draw, arginfo_class_FastChart_Funnel_draw, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_FastChart_Waterfall_methods[] = {
+	ZEND_ME(FastChart_Waterfall, setBars, arginfo_class_FastChart_Waterfall_setBars, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Waterfall, setRiseColor, arginfo_class_FastChart_Waterfall_setRiseColor, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Waterfall, setFallColor, arginfo_class_FastChart_Waterfall_setFallColor, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Waterfall, setTotalColor, arginfo_class_FastChart_Waterfall_setTotalColor, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Waterfall, draw, arginfo_class_FastChart_Waterfall_draw, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_FastChart_Heatmap_methods[] = {
+	ZEND_ME(FastChart_Heatmap, setGrid, arginfo_class_FastChart_Heatmap_setGrid, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Heatmap, setColorRamp, arginfo_class_FastChart_Heatmap_setColorRamp, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Heatmap, draw, arginfo_class_FastChart_Heatmap_draw, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_FastChart_LinearMeter_methods[] = {
+	ZEND_ME(FastChart_LinearMeter, setRange, arginfo_class_FastChart_LinearMeter_setRange, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_LinearMeter, setValue, arginfo_class_FastChart_LinearMeter_setValue, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_LinearMeter, setOrientation, arginfo_class_FastChart_LinearMeter_setOrientation, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_LinearMeter, setZones, arginfo_class_FastChart_LinearMeter_setZones, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_LinearMeter, setValueFormat, arginfo_class_FastChart_LinearMeter_setValueFormat, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_LinearMeter, draw, arginfo_class_FastChart_LinearMeter_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -1301,6 +1389,18 @@ static zend_class_entry *register_class_FastChart_PolarChart(zend_class_entry *c
 	INIT_NS_CLASS_ENTRY(ce, "FastChart", "PolarChart", class_FastChart_PolarChart_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
 
+	zval const_STYLE_LINE_value;
+	ZVAL_LONG(&const_STYLE_LINE_value, 0);
+	zend_string *const_STYLE_LINE_name = zend_string_init_interned("STYLE_LINE", sizeof("STYLE_LINE") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_STYLE_LINE_name, &const_STYLE_LINE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_STYLE_LINE_name);
+
+	zval const_STYLE_ROSE_value;
+	ZVAL_LONG(&const_STYLE_ROSE_value, 1);
+	zend_string *const_STYLE_ROSE_name = zend_string_init_interned("STYLE_ROSE", sizeof("STYLE_ROSE") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_STYLE_ROSE_name, &const_STYLE_ROSE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_STYLE_ROSE_name);
+
 	return class_entry;
 }
 
@@ -1320,6 +1420,58 @@ static zend_class_entry *register_class_FastChart_Treemap(zend_class_entry *clas
 
 	INIT_NS_CLASS_ENTRY(ce, "FastChart", "Treemap", class_FastChart_Treemap_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_FastChart_Funnel(zend_class_entry *class_entry_FastChart_Chart)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "FastChart", "Funnel", class_FastChart_Funnel_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_FastChart_Waterfall(zend_class_entry *class_entry_FastChart_Chart)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "FastChart", "Waterfall", class_FastChart_Waterfall_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_FastChart_Heatmap(zend_class_entry *class_entry_FastChart_Chart)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "FastChart", "Heatmap", class_FastChart_Heatmap_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_FastChart_LinearMeter(zend_class_entry *class_entry_FastChart_Chart)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "FastChart", "LinearMeter", class_FastChart_LinearMeter_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	zval const_METER_HORIZONTAL_value;
+	ZVAL_LONG(&const_METER_HORIZONTAL_value, 0);
+	zend_string *const_METER_HORIZONTAL_name = zend_string_init_interned("METER_HORIZONTAL", sizeof("METER_HORIZONTAL") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_METER_HORIZONTAL_name, &const_METER_HORIZONTAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_METER_HORIZONTAL_name);
+
+	zval const_METER_VERTICAL_value;
+	ZVAL_LONG(&const_METER_VERTICAL_value, 1);
+	zend_string *const_METER_VERTICAL_name = zend_string_init_interned("METER_VERTICAL", sizeof("METER_VERTICAL") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_METER_VERTICAL_name, &const_METER_VERTICAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_METER_VERTICAL_name);
 
 	return class_entry;
 }

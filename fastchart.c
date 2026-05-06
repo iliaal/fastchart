@@ -46,6 +46,10 @@ zend_class_entry *fastchart_box_plot_ce;
 zend_class_entry *fastchart_polar_chart_ce;
 zend_class_entry *fastchart_contour_chart_ce;
 zend_class_entry *fastchart_treemap_ce;
+zend_class_entry *fastchart_funnel_ce;
+zend_class_entry *fastchart_waterfall_ce;
+zend_class_entry *fastchart_heatmap_ce;
+zend_class_entry *fastchart_linear_meter_ce;
 zend_class_entry *fastchart_gd_image_ce = NULL;
 
 /* Auto-detected default font path. Probed at MINIT, used as the
@@ -76,6 +80,10 @@ static zend_object_handlers fastchart_boxplot_handlers;
 static zend_object_handlers fastchart_polar_handlers;
 static zend_object_handlers fastchart_contour_handlers;
 static zend_object_handlers fastchart_treemap_handlers;
+static zend_object_handlers fastchart_funnel_handlers;
+static zend_object_handlers fastchart_waterfall_handlers;
+static zend_object_handlers fastchart_heatmap_handlers;
+static zend_object_handlers fastchart_linear_meter_handlers;
 
 /* Base lifecycle. Operates on the common-initial-sequence layout —
  * any fastchart_X_obj* aliases as fastchart_obj* for these reads /
@@ -1036,6 +1044,7 @@ static void fastchart_polar_init_extras(fastchart_polar_obj *o)
 {
     o->polar_max_radius = 0.0;
     o->polar_filled = true;
+    o->polar_style = FASTCHART_POLAR_STYLE_LINE;
     o->n_series = 0;
     for (int i = 0; i < FASTCHART_MAX_POLAR_SERIES; i++) {
         o->series[i].angles = NULL;
@@ -1147,6 +1156,122 @@ static void fastchart_treemap_addref_extras(fastchart_treemap_obj *o)
     }
 }
 
+static void fastchart_funnel_init_extras(fastchart_funnel_obj *o)
+{
+    o->stages = NULL;
+    o->stage_count = 0;
+    /* Override the base default (false) — funnels typically want
+     * the per-stage value rendered next to the label. */
+    ((fastchart_obj *)o)->show_values = true;
+}
+static void fastchart_funnel_release_extras(fastchart_funnel_obj *o)
+{
+    if (o->stages) {
+        for (int i = 0; i < o->stage_count; i++) {
+            if (o->stages[i].label) efree(o->stages[i].label);
+        }
+        efree(o->stages);
+        o->stages = NULL;
+    }
+    o->stage_count = 0;
+}
+static void fastchart_funnel_addref_extras(fastchart_funnel_obj *o)
+{
+    if (o->stages && o->stage_count > 0) {
+        size_t bytes = (size_t)o->stage_count * sizeof(fastchart_funnel_stage);
+        fastchart_funnel_stage *copy = emalloc(bytes);
+        memcpy(copy, o->stages, bytes);
+        for (int i = 0; i < o->stage_count; i++) {
+            copy[i].label = fc_strdup_opt(o->stages[i].label);
+        }
+        o->stages = copy;
+    } else {
+        o->stages = NULL;
+    }
+}
+
+static void fastchart_waterfall_init_extras(fastchart_waterfall_obj *o)
+{
+    o->bars = NULL;
+    o->bar_count = 0;
+    o->rise_color = -1;
+    o->fall_color = -1;
+    o->total_color = -1;
+}
+static void fastchart_waterfall_release_extras(fastchart_waterfall_obj *o)
+{
+    if (o->bars) {
+        for (int i = 0; i < o->bar_count; i++) {
+            if (o->bars[i].label) efree(o->bars[i].label);
+        }
+        efree(o->bars);
+        o->bars = NULL;
+    }
+    o->bar_count = 0;
+}
+static void fastchart_waterfall_addref_extras(fastchart_waterfall_obj *o)
+{
+    if (o->bars && o->bar_count > 0) {
+        size_t bytes = (size_t)o->bar_count * sizeof(fastchart_waterfall_bar);
+        fastchart_waterfall_bar *copy = emalloc(bytes);
+        memcpy(copy, o->bars, bytes);
+        for (int i = 0; i < o->bar_count; i++) {
+            copy[i].label = fc_strdup_opt(o->bars[i].label);
+        }
+        o->bars = copy;
+    } else {
+        o->bars = NULL;
+    }
+}
+
+static void fastchart_heatmap_init_extras(fastchart_heatmap_obj *o)
+{
+    o->grid.cells = NULL;
+    o->grid.rows = 0;
+    o->grid.cols = 0;
+    o->color_low_rgb = -1;
+    o->color_high_rgb = -1;
+    /* show_values + value_format are base fields; the base init
+     * already sets them to false / NULL. */
+}
+static void fastchart_heatmap_release_extras(fastchart_heatmap_obj *o)
+{
+    if (o->grid.cells) { efree(o->grid.cells); o->grid.cells = NULL; }
+    /* base release frees value_format. */
+    o->grid.rows = 0;
+    o->grid.cols = 0;
+}
+static void fastchart_heatmap_addref_extras(fastchart_heatmap_obj *o)
+{
+    if (o->grid.cells && o->grid.rows > 0 && o->grid.cols > 0) {
+        size_t bytes = (size_t)o->grid.rows * (size_t)o->grid.cols * sizeof(double);
+        double *copy = emalloc(bytes);
+        memcpy(copy, o->grid.cells, bytes);
+        o->grid.cells = copy;
+    } else {
+        o->grid.cells = NULL;
+    }
+    /* base addref bumps value_format refcount. */
+}
+
+static void fastchart_linear_meter_init_extras(fastchart_linear_meter_obj *o)
+{
+    o->meter_value = 0.0;
+    o->meter_min = 0.0;
+    o->meter_max = 100.0;
+    o->meter_orientation = FASTCHART_METER_HORIZONTAL;
+    o->n_zones = 0;
+    o->meter_value_format = NULL;
+}
+static void fastchart_linear_meter_release_extras(fastchart_linear_meter_obj *o)
+{
+    if (o->meter_value_format) zend_string_release(o->meter_value_format);
+}
+static void fastchart_linear_meter_addref_extras(fastchart_linear_meter_obj *o)
+{
+    if (o->meter_value_format) zend_string_addref(o->meter_value_format);
+}
+
 /* Generates the create / free / clone trio for one chart class.
  * The handlers struct must already exist in static scope; MINIT
  * memcpy's std_object_handlers into it and sets offset / dtor. */
@@ -1197,6 +1322,10 @@ FASTCHART_DEFINE_LIFECYCLE(boxplot, fastchart_boxplot_obj)
 FASTCHART_DEFINE_LIFECYCLE(polar,   fastchart_polar_obj)
 FASTCHART_DEFINE_LIFECYCLE(contour, fastchart_contour_obj)
 FASTCHART_DEFINE_LIFECYCLE(treemap, fastchart_treemap_obj)
+FASTCHART_DEFINE_LIFECYCLE(funnel,  fastchart_funnel_obj)
+FASTCHART_DEFINE_LIFECYCLE(waterfall, fastchart_waterfall_obj)
+FASTCHART_DEFINE_LIFECYCLE(heatmap, fastchart_heatmap_obj)
+FASTCHART_DEFINE_LIFECYCLE(linear_meter, fastchart_linear_meter_obj)
 
 /* Common locations for a sans-serif TTF that ships by default on the
  * platforms PIE supports. Probed in order; the first existing path
@@ -3066,6 +3195,22 @@ ZEND_METHOD(FastChart_PolarChart, setMaxRadius)
 
 FASTCHART_BOOL_SETTER_AS(FastChart_PolarChart, setFilled, Z_FASTCHART_POLAR_OBJ_P, polar_filled)
 
+ZEND_METHOD(FastChart_PolarChart, setStyle)
+{
+    zend_long style;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(style)
+    ZEND_PARSE_PARAMETERS_END();
+    if (style != FASTCHART_POLAR_STYLE_LINE && style != FASTCHART_POLAR_STYLE_ROSE) {
+        zend_value_error(
+            "FastChart\\PolarChart::setStyle() expects STYLE_LINE or STYLE_ROSE");
+        RETURN_THROWS();
+    }
+    fastchart_polar_obj *self = Z_FASTCHART_POLAR_OBJ_P(ZEND_THIS);
+    self->polar_style = (int)style;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 ZEND_METHOD(FastChart_ContourChart, setLevels)
 {
     zval *levels;
@@ -3737,6 +3882,10 @@ static int dispatch_render(fastchart_obj *self, zend_class_entry *ce, gdImagePtr
     if (ce == fastchart_polar_chart_ce)   return fastchart_polar_render_to_image((fastchart_polar_obj *)self, im);
     if (ce == fastchart_contour_chart_ce) return fastchart_contour_render_to_image((fastchart_contour_obj *)self, im);
     if (ce == fastchart_treemap_ce)       return fastchart_treemap_render_to_image((fastchart_treemap_obj *)self, im);
+    if (ce == fastchart_funnel_ce)        return fastchart_funnel_render_to_image((fastchart_funnel_obj *)self, im);
+    if (ce == fastchart_waterfall_ce)     return fastchart_waterfall_render_to_image((fastchart_waterfall_obj *)self, im);
+    if (ce == fastchart_heatmap_ce)       return fastchart_heatmap_render_to_image((fastchart_heatmap_obj *)self, im);
+    if (ce == fastchart_linear_meter_ce)  return fastchart_linear_meter_render_to_image((fastchart_linear_meter_obj *)self, im);
     zend_throw_error(NULL, "FastChart: render dispatch found unknown class entry");
     return -1;
 }
@@ -5108,6 +5257,347 @@ ZEND_METHOD(FastChart_Treemap, setShowLabels)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+ZEND_METHOD(FastChart_Funnel, setStages)
+{
+    zval *stages;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(stages)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_funnel_obj *self = Z_FASTCHART_FUNNEL_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(stages);
+    uint32_t un = zend_hash_num_elements(ht);
+    if (un > FASTCHART_MAX_FUNNEL_STAGES) un = FASTCHART_MAX_FUNNEL_STAGES;
+    int n = (int)un;
+
+    if (self->stages) {
+        for (int i = 0; i < self->stage_count; i++) {
+            if (self->stages[i].label) efree(self->stages[i].label);
+        }
+        efree(self->stages);
+        self->stages = NULL;
+        self->stage_count = 0;
+    }
+    if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+
+    fastchart_funnel_stage *parsed = ecalloc((size_t)n, sizeof(*parsed));
+    int idx = 0;
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (idx >= n) break;
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        HashTable *eht = Z_ARRVAL_P(entry);
+
+        zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
+        if (!zv) continue;
+        double v;
+        if (fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) || v <= 0) continue;
+        parsed[idx].value = v;
+
+        zval *zl = zend_hash_str_find(eht, "label", sizeof("label") - 1);
+        if (zl && Z_TYPE_P(zl) == IS_STRING) {
+            size_t len = Z_STRLEN_P(zl);
+            const char *s = Z_STRVAL_P(zl);
+            if (len > 0 && memchr(s, 0, len) == NULL) {
+                parsed[idx].label = emalloc(len + 1);
+                memcpy(parsed[idx].label, s, len);
+                parsed[idx].label[len] = '\0';
+            }
+        }
+
+        parsed[idx].color_rgb = -1;
+        zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc && Z_TYPE_P(zc) == IS_LONG) {
+            zend_long c = Z_LVAL_P(zc);
+            if (c >= 0 && c <= 0xFFFFFF) parsed[idx].color_rgb = (int)c;
+        }
+        idx++;
+    } ZEND_HASH_FOREACH_END();
+
+    if (idx == 0) {
+        efree(parsed);
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
+    }
+    self->stages = parsed;
+    self->stage_count = idx;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* setShowValues(bool, string) is on the Chart base; Funnel uses it as-is. */
+
+ZEND_METHOD(FastChart_Waterfall, setBars)
+{
+    zval *bars;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(bars)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_waterfall_obj *self = Z_FASTCHART_WATERFALL_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(bars);
+    uint32_t un = zend_hash_num_elements(ht);
+    if (un > FASTCHART_MAX_WATERFALL_BARS) un = FASTCHART_MAX_WATERFALL_BARS;
+    int n = (int)un;
+
+    if (self->bars) {
+        for (int i = 0; i < self->bar_count; i++) {
+            if (self->bars[i].label) efree(self->bars[i].label);
+        }
+        efree(self->bars);
+        self->bars = NULL;
+        self->bar_count = 0;
+    }
+    if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+
+    fastchart_waterfall_bar *parsed = ecalloc((size_t)n, sizeof(*parsed));
+    int idx = 0;
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (idx >= n) break;
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        HashTable *eht = Z_ARRVAL_P(entry);
+
+        zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
+        if (!zv) continue;
+        double v;
+        if (fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v)) continue;
+        parsed[idx].value = v;
+
+        parsed[idx].kind = FASTCHART_WF_DELTA;
+        zval *zk = zend_hash_str_find(eht, "kind", sizeof("kind") - 1);
+        if (zk && Z_TYPE_P(zk) == IS_STRING) {
+            const char *s = Z_STRVAL_P(zk);
+            if (strncmp(s, "total", 5) == 0) parsed[idx].kind = FASTCHART_WF_TOTAL;
+        } else if (zk && Z_TYPE_P(zk) == IS_LONG) {
+            zend_long k = Z_LVAL_P(zk);
+            if (k == FASTCHART_WF_TOTAL) parsed[idx].kind = FASTCHART_WF_TOTAL;
+        }
+
+        zval *zl = zend_hash_str_find(eht, "label", sizeof("label") - 1);
+        if (zl && Z_TYPE_P(zl) == IS_STRING) {
+            size_t len = Z_STRLEN_P(zl);
+            const char *s = Z_STRVAL_P(zl);
+            if (len > 0 && memchr(s, 0, len) == NULL) {
+                parsed[idx].label = emalloc(len + 1);
+                memcpy(parsed[idx].label, s, len);
+                parsed[idx].label[len] = '\0';
+            }
+        }
+        idx++;
+    } ZEND_HASH_FOREACH_END();
+
+    if (idx == 0) {
+        efree(parsed);
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
+    }
+    self->bars = parsed;
+    self->bar_count = idx;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Waterfall, setRiseColor)
+{
+    zend_long rgb;
+    ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_LONG(rgb) ZEND_PARSE_PARAMETERS_END();
+    FASTCHART_VALIDATE_RGB_OR_DEFAULT(rgb, "FastChart\\Waterfall::setRiseColor");
+    fastchart_waterfall_obj *self = Z_FASTCHART_WATERFALL_OBJ_P(ZEND_THIS);
+    self->rise_color = (int)rgb;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+ZEND_METHOD(FastChart_Waterfall, setFallColor)
+{
+    zend_long rgb;
+    ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_LONG(rgb) ZEND_PARSE_PARAMETERS_END();
+    FASTCHART_VALIDATE_RGB_OR_DEFAULT(rgb, "FastChart\\Waterfall::setFallColor");
+    fastchart_waterfall_obj *self = Z_FASTCHART_WATERFALL_OBJ_P(ZEND_THIS);
+    self->fall_color = (int)rgb;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+ZEND_METHOD(FastChart_Waterfall, setTotalColor)
+{
+    zend_long rgb;
+    ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_LONG(rgb) ZEND_PARSE_PARAMETERS_END();
+    FASTCHART_VALIDATE_RGB_OR_DEFAULT(rgb, "FastChart\\Waterfall::setTotalColor");
+    fastchart_waterfall_obj *self = Z_FASTCHART_WATERFALL_OBJ_P(ZEND_THIS);
+    self->total_color = (int)rgb;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Heatmap, setGrid)
+{
+    zval *grid;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(grid)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_heatmap_obj *self = Z_FASTCHART_HEATMAP_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(grid);
+    uint32_t rows = zend_hash_num_elements(ht);
+    if (rows == 0) {
+        if (self->grid.cells) { efree(self->grid.cells); self->grid.cells = NULL; }
+        self->grid.rows = 0; self->grid.cols = 0;
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
+    }
+
+    /* First pass: width = max row length. Second pass: allocate +
+     * fill row-major. Missing or non-numeric cells become NaN — the
+     * renderer treats them as gaps, leaving the canvas bg showing. */
+    int max_cols = 0;
+    zval *row;
+    ZEND_HASH_FOREACH_VAL(ht, row) {
+        if (Z_TYPE_P(row) != IS_ARRAY) continue;
+        int rl = (int)zend_hash_num_elements(Z_ARRVAL_P(row));
+        if (rl > max_cols) max_cols = rl;
+    } ZEND_HASH_FOREACH_END();
+    if (max_cols == 0) {
+        if (self->grid.cells) { efree(self->grid.cells); self->grid.cells = NULL; }
+        self->grid.rows = 0; self->grid.cols = 0;
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
+    }
+
+    if (self->grid.cells) efree(self->grid.cells);
+    self->grid.rows = (int)rows;
+    self->grid.cols = max_cols;
+    self->grid.cells = ecalloc((size_t)rows * (size_t)max_cols, sizeof(double));
+    int r = 0;
+    ZEND_HASH_FOREACH_VAL(ht, row) {
+        if (Z_TYPE_P(row) != IS_ARRAY) {
+            for (int c = 0; c < max_cols; c++) {
+                self->grid.cells[r * max_cols + c] = NAN;
+            }
+            r++;
+            continue;
+        }
+        int c = 0;
+        zval *cell;
+        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(row), cell) {
+            if (c >= max_cols) break;
+            double v;
+            if (fastchart_zval_to_double(cell, &v) != 0 || !isfinite(v)) {
+                self->grid.cells[r * max_cols + c] = NAN;
+            } else {
+                self->grid.cells[r * max_cols + c] = v;
+            }
+            c++;
+        } ZEND_HASH_FOREACH_END();
+        for (; c < max_cols; c++) {
+            self->grid.cells[r * max_cols + c] = NAN;
+        }
+        r++;
+    } ZEND_HASH_FOREACH_END();
+
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Heatmap, setColorRamp)
+{
+    zend_long lo, hi;
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_LONG(lo)
+        Z_PARAM_LONG(hi)
+    ZEND_PARSE_PARAMETERS_END();
+    FASTCHART_VALIDATE_RGB(lo, "FastChart\\Heatmap::setColorRamp");
+    FASTCHART_VALIDATE_RGB(hi, "FastChart\\Heatmap::setColorRamp");
+    fastchart_heatmap_obj *self = Z_FASTCHART_HEATMAP_OBJ_P(ZEND_THIS);
+    self->color_low_rgb  = (int)lo;
+    self->color_high_rgb = (int)hi;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* setShowValues(bool, string) on the Chart base sets show_values
+ * AND value_format together — Heatmap consumes both. */
+
+ZEND_METHOD(FastChart_LinearMeter, setRange)
+{
+    double mn, mx;
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_DOUBLE(mn)
+        Z_PARAM_DOUBLE(mx)
+    ZEND_PARSE_PARAMETERS_END();
+    if (!isfinite(mn) || !isfinite(mx) || mx <= mn) {
+        zend_value_error("FastChart\\LinearMeter::setRange() requires finite min < max");
+        RETURN_THROWS();
+    }
+    fastchart_linear_meter_obj *self = Z_FASTCHART_LINEAR_METER_OBJ_P(ZEND_THIS);
+    self->meter_min = mn;
+    self->meter_max = mx;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_LinearMeter, setValue)
+{
+    double v;
+    ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_DOUBLE(v) ZEND_PARSE_PARAMETERS_END();
+    if (!isfinite(v)) {
+        zend_value_error("FastChart\\LinearMeter::setValue() requires a finite number");
+        RETURN_THROWS();
+    }
+    fastchart_linear_meter_obj *self = Z_FASTCHART_LINEAR_METER_OBJ_P(ZEND_THIS);
+    self->meter_value = v;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_LinearMeter, setOrientation)
+{
+    zend_long o;
+    ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_LONG(o) ZEND_PARSE_PARAMETERS_END();
+    if (o != FASTCHART_METER_HORIZONTAL && o != FASTCHART_METER_VERTICAL) {
+        zend_value_error("FastChart\\LinearMeter::setOrientation() expects METER_HORIZONTAL or METER_VERTICAL");
+        RETURN_THROWS();
+    }
+    fastchart_linear_meter_obj *self = Z_FASTCHART_LINEAR_METER_OBJ_P(ZEND_THIS);
+    self->meter_orientation = (int)o;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_LinearMeter, setZones)
+{
+    zval *zones;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(zones)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_linear_meter_obj *self = Z_FASTCHART_LINEAR_METER_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(zones);
+    int idx = 0;
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (idx >= FASTCHART_MAX_METER_ZONES) break;
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        HashTable *eht = Z_ARRVAL_P(entry);
+        double from, to;
+        zval *zfrom = zend_hash_str_find(eht, "from", sizeof("from") - 1);
+        zval *zto   = zend_hash_str_find(eht, "to",   sizeof("to") - 1);
+        if (!zfrom || !zto) continue;
+        if (fastchart_zval_to_double(zfrom, &from) != 0 || !isfinite(from)) continue;
+        if (fastchart_zval_to_double(zto, &to) != 0 || !isfinite(to)) continue;
+        if (to <= from) continue;
+        self->zones[idx].from = from;
+        self->zones[idx].to = to;
+        self->zones[idx].color_rgb = -1;
+        zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc && Z_TYPE_P(zc) == IS_LONG) {
+            zend_long c = Z_LVAL_P(zc);
+            if (c >= 0 && c <= 0xFFFFFF) self->zones[idx].color_rgb = (int)c;
+        }
+        idx++;
+    } ZEND_HASH_FOREACH_END();
+    self->n_zones = idx;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_LinearMeter, setValueFormat)
+{
+    zend_string *fmt;
+    ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_STR(fmt) ZEND_PARSE_PARAMETERS_END();
+    if (fastchart_validate_double_format(fmt, "LinearMeter::setValueFormat") != 0) {
+        RETURN_THROWS();
+    }
+    fastchart_linear_meter_obj *self = Z_FASTCHART_LINEAR_METER_OBJ_P(ZEND_THIS);
+    if (self->meter_value_format) zend_string_release(self->meter_value_format);
+    self->meter_value_format = zend_string_copy(fmt);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 PHP_MINIT_FUNCTION(fastchart)
 {
     /* Per-class handlers init. Each handlers struct gets its own
@@ -5140,6 +5630,10 @@ PHP_MINIT_FUNCTION(fastchart)
     FASTCHART_INIT_HANDLERS(polar,   fastchart_polar_obj);
     FASTCHART_INIT_HANDLERS(contour, fastchart_contour_obj);
 FASTCHART_INIT_HANDLERS(treemap, fastchart_treemap_obj);
+FASTCHART_INIT_HANDLERS(funnel,  fastchart_funnel_obj);
+FASTCHART_INIT_HANDLERS(waterfall, fastchart_waterfall_obj);
+FASTCHART_INIT_HANDLERS(heatmap, fastchart_heatmap_obj);
+FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
 #undef FASTCHART_INIT_HANDLERS
 
     /* Abstract base class: never instantiated directly, so it does
@@ -5191,6 +5685,18 @@ FASTCHART_INIT_HANDLERS(treemap, fastchart_treemap_obj);
 
     fastchart_treemap_ce       = register_class_FastChart_Treemap(fastchart_chart_ce);
     fastchart_treemap_ce->create_object = fastchart_treemap_create_object;
+
+    fastchart_funnel_ce        = register_class_FastChart_Funnel(fastchart_chart_ce);
+    fastchart_funnel_ce->create_object = fastchart_funnel_create_object;
+
+    fastchart_waterfall_ce     = register_class_FastChart_Waterfall(fastchart_chart_ce);
+    fastchart_waterfall_ce->create_object = fastchart_waterfall_create_object;
+
+    fastchart_heatmap_ce       = register_class_FastChart_Heatmap(fastchart_chart_ce);
+    fastchart_heatmap_ce->create_object = fastchart_heatmap_create_object;
+
+    fastchart_linear_meter_ce  = register_class_FastChart_LinearMeter(fastchart_chart_ce);
+    fastchart_linear_meter_ce->create_object = fastchart_linear_meter_create_object;
 
     fastchart_gd_image_ce = zend_hash_str_find_ptr(CG(class_table),
         "gdimage", sizeof("gdimage") - 1);
