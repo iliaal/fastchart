@@ -28,12 +28,14 @@ for ($i = 0; $i < 60; $i++) {
     $price  = $close;
 }
 
-/* Allocate the user canvas at the same physical size we want — note
- * that setDpi() is intentionally omitted on the chart side. With a
- * caller-owned canvas, fastchart can't resize the image to match the
- * DPI scale, so calling setDpi(200) here would make labels overflow
- * the fixed 720×420 area. setDpi only makes sense on render*() paths
- * where fastchart owns the canvas. */
+/* Allocate the user canvas at the size we want — and don't call
+ * setDpi() on this chart. With a caller-owned canvas fastchart can't
+ * resize the image, so a setDpi(200) here would scale layout margins
+ * and FreeType up while the canvas stays fixed at 720×420 — labels
+ * would overflow. setDpi() *can* be used on the draw($canvas) path
+ * when the caller pre-allocates a proportionally larger canvas (see
+ * the stub-doc note on draw); we keep it off here because this canvas
+ * is fixed. */
 $im = imagecreatetruecolor(720, 420);
 
 /* Step 1: render the chart into our caller-owned canvas. */
