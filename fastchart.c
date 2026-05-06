@@ -45,6 +45,7 @@ zend_class_entry *fastchart_gantt_chart_ce;
 zend_class_entry *fastchart_box_plot_ce;
 zend_class_entry *fastchart_polar_chart_ce;
 zend_class_entry *fastchart_contour_chart_ce;
+zend_class_entry *fastchart_treemap_ce;
 zend_class_entry *fastchart_gd_image_ce = NULL;
 
 /* Auto-detected default font path. Probed at MINIT, used as the
@@ -74,6 +75,7 @@ static zend_object_handlers fastchart_gantt_handlers;
 static zend_object_handlers fastchart_boxplot_handlers;
 static zend_object_handlers fastchart_polar_handlers;
 static zend_object_handlers fastchart_contour_handlers;
+static zend_object_handlers fastchart_treemap_handlers;
 
 /* Base lifecycle. Operates on the common-initial-sequence layout —
  * any fastchart_X_obj* aliases as fastchart_obj* for these reads /
@@ -1113,6 +1115,38 @@ static void fastchart_contour_addref_extras(fastchart_contour_obj *o)
     }
 }
 
+static void fastchart_treemap_init_extras(fastchart_treemap_obj *o)
+{
+    o->items = NULL;
+    o->item_count = 0;
+    o->show_labels = true;
+}
+static void fastchart_treemap_release_extras(fastchart_treemap_obj *o)
+{
+    if (o->items) {
+        for (int i = 0; i < o->item_count; i++) {
+            if (o->items[i].label) efree(o->items[i].label);
+        }
+        efree(o->items);
+        o->items = NULL;
+    }
+    o->item_count = 0;
+}
+static void fastchart_treemap_addref_extras(fastchart_treemap_obj *o)
+{
+    if (o->items && o->item_count > 0) {
+        size_t bytes = (size_t)o->item_count * sizeof(fastchart_treemap_item);
+        fastchart_treemap_item *copy = emalloc(bytes);
+        memcpy(copy, o->items, bytes);
+        for (int i = 0; i < o->item_count; i++) {
+            copy[i].label = fc_strdup_opt(o->items[i].label);
+        }
+        o->items = copy;
+    } else {
+        o->items = NULL;
+    }
+}
+
 /* Generates the create / free / clone trio for one chart class.
  * The handlers struct must already exist in static scope; MINIT
  * memcpy's std_object_handlers into it and sets offset / dtor. */
@@ -1162,6 +1196,7 @@ FASTCHART_DEFINE_LIFECYCLE(gantt,   fastchart_gantt_obj)
 FASTCHART_DEFINE_LIFECYCLE(boxplot, fastchart_boxplot_obj)
 FASTCHART_DEFINE_LIFECYCLE(polar,   fastchart_polar_obj)
 FASTCHART_DEFINE_LIFECYCLE(contour, fastchart_contour_obj)
+FASTCHART_DEFINE_LIFECYCLE(treemap, fastchart_treemap_obj)
 
 /* Common locations for a sans-serif TTF that ships by default on the
  * platforms PIE supports. Probed in order; the first existing path
@@ -3701,6 +3736,7 @@ static int dispatch_render(fastchart_obj *self, zend_class_entry *ce, gdImagePtr
     if (ce == fastchart_box_plot_ce)      return fastchart_boxplot_render_to_image((fastchart_boxplot_obj *)self, im);
     if (ce == fastchart_polar_chart_ce)   return fastchart_polar_render_to_image((fastchart_polar_obj *)self, im);
     if (ce == fastchart_contour_chart_ce) return fastchart_contour_render_to_image((fastchart_contour_obj *)self, im);
+    if (ce == fastchart_treemap_ce)       return fastchart_treemap_render_to_image((fastchart_treemap_obj *)self, im);
     zend_throw_error(NULL, "FastChart: render dispatch found unknown class entry");
     return -1;
 }
@@ -4977,6 +5013,101 @@ ZEND_METHOD(FastChart_StockChart, addOBV)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+ZEND_METHOD(FastChart_Treemap, setItems)
+{
+    zval *items;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(items)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_treemap_obj *self = Z_FASTCHART_TREEMAP_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(items);
+    uint32_t un = zend_hash_num_elements(ht);
+    if (un > FASTCHART_MAX_TREEMAP_ITEMS) un = FASTCHART_MAX_TREEMAP_ITEMS;
+    int n = (int)un;
+
+    /* Free any prior items (setItems is idempotent — replace, don't
+     * accumulate). */
+    if (self->items) {
+        for (int i = 0; i < self->item_count; i++) {
+            if (self->items[i].label) efree(self->items[i].label);
+        }
+        efree(self->items);
+        self->items = NULL;
+        self->item_count = 0;
+    }
+    if (n == 0) {
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
+    }
+
+    fastchart_treemap_item *parsed = ecalloc((size_t)n, sizeof(*parsed));
+    int idx = 0;
+
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (idx >= n) break;
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        HashTable *eht = Z_ARRVAL_P(entry);
+
+        /* Required: numeric `value`, must be > 0 to claim area.
+         * Items with non-positive values are silently dropped here
+         * to keep setItems() best-effort consistent with the other
+         * shape parsers (Pie, Scatter). */
+        zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
+        if (!zv) continue;
+        double v;
+        if (fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) || v <= 0) {
+            continue;
+        }
+        parsed[idx].value = v;
+
+        /* Optional `label`: clone into emalloc'd storage. NUL-bearing
+         * labels are dropped (rendered text would terminate at the
+         * NUL anyway). */
+        zval *zl = zend_hash_str_find(eht, "label", sizeof("label") - 1);
+        if (zl && Z_TYPE_P(zl) == IS_STRING) {
+            size_t len = Z_STRLEN_P(zl);
+            const char *s = Z_STRVAL_P(zl);
+            if (memchr(s, 0, len) == NULL && len > 0) {
+                parsed[idx].label = emalloc(len + 1);
+                memcpy(parsed[idx].label, s, len);
+                parsed[idx].label[len] = '\0';
+            }
+        }
+
+        /* Optional `color`: 24-bit RGB; out-of-range silently
+         * defaults to palette pick. */
+        parsed[idx].color_rgb = -1;
+        zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc && Z_TYPE_P(zc) == IS_LONG) {
+            zend_long c = Z_LVAL_P(zc);
+            if (c >= 0 && c <= 0xFFFFFF) parsed[idx].color_rgb = (int)c;
+        }
+
+        idx++;
+    } ZEND_HASH_FOREACH_END();
+
+    if (idx == 0) {
+        efree(parsed);
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
+    }
+    self->items = parsed;
+    self->item_count = idx;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Treemap, setShowLabels)
+{
+    bool flag;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(flag)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_treemap_obj *self = Z_FASTCHART_TREEMAP_OBJ_P(ZEND_THIS);
+    self->show_labels = flag;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 PHP_MINIT_FUNCTION(fastchart)
 {
     /* Per-class handlers init. Each handlers struct gets its own
@@ -5008,6 +5139,7 @@ PHP_MINIT_FUNCTION(fastchart)
     FASTCHART_INIT_HANDLERS(boxplot, fastchart_boxplot_obj);
     FASTCHART_INIT_HANDLERS(polar,   fastchart_polar_obj);
     FASTCHART_INIT_HANDLERS(contour, fastchart_contour_obj);
+FASTCHART_INIT_HANDLERS(treemap, fastchart_treemap_obj);
 #undef FASTCHART_INIT_HANDLERS
 
     /* Abstract base class: never instantiated directly, so it does
@@ -5056,6 +5188,9 @@ PHP_MINIT_FUNCTION(fastchart)
 
     fastchart_contour_chart_ce = register_class_FastChart_ContourChart(fastchart_chart_ce);
     fastchart_contour_chart_ce->create_object = fastchart_contour_create_object;
+
+    fastchart_treemap_ce       = register_class_FastChart_Treemap(fastchart_chart_ce);
+    fastchart_treemap_ce->create_object = fastchart_treemap_create_object;
 
     fastchart_gd_image_ce = zend_hash_str_find_ptr(CG(class_table),
         "gdimage", sizeof("gdimage") - 1);
