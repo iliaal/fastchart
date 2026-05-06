@@ -1423,6 +1423,26 @@ ZEND_METHOD(FastChart_Chart, setCategoryLabels)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+/* Validate that `var_` is a 24-bit RGB int (0..0xFFFFFF), throwing a
+ * ValueError that names `method_str_` if not. The _OR_DEFAULT variant
+ * additionally accepts -1 as the "use the theme default" sentinel.
+ * `method_str_` is the qualified method name as a string literal so
+ * message wording stays consistent across ~13 setters that previously
+ * each spelled the same range and boundary slightly differently. */
+#define FASTCHART_VALIDATE_RGB(var_, method_str_) do { \
+    if ((var_) < 0 || (var_) > 0xFFFFFF) { \
+        zend_value_error(method_str_ "() expects a 24-bit RGB int (0..0xFFFFFF)"); \
+        RETURN_THROWS(); \
+    } \
+} while (0)
+
+#define FASTCHART_VALIDATE_RGB_OR_DEFAULT(var_, method_str_) do { \
+    if ((var_) < -1 || (var_) > 0xFFFFFF) { \
+        zend_value_error(method_str_ "() expects -1 (theme default) or a 24-bit RGB int (0..0xFFFFFF)"); \
+        RETURN_THROWS(); \
+    } \
+} while (0)
+
 ZEND_METHOD(FastChart_Chart, setBackgroundColor)
 {
     zend_long rgb;
@@ -1855,26 +1875,6 @@ ZEND_METHOD(FastChart_Chart, addVerticalLine)
 
 FASTCHART_MARKER_SETTERS(FastChart_LineChart)
 FASTCHART_MARKER_SETTERS(FastChart_ScatterChart)
-
-/* Validate that `var_` is a 24-bit RGB int (0..0xFFFFFF), throwing a
- * ValueError that names `method_str_` if not. The _OR_DEFAULT variant
- * additionally accepts -1 as the "use the theme default" sentinel.
- * `method_str_` is the qualified method name as a string literal so
- * message wording stays consistent across ~13 setters that previously
- * each spelled the same range and boundary slightly differently. */
-#define FASTCHART_VALIDATE_RGB(var_, method_str_) do { \
-    if ((var_) < 0 || (var_) > 0xFFFFFF) { \
-        zend_value_error(method_str_ "() expects a 24-bit RGB int (0..0xFFFFFF)"); \
-        RETURN_THROWS(); \
-    } \
-} while (0)
-
-#define FASTCHART_VALIDATE_RGB_OR_DEFAULT(var_, method_str_) do { \
-    if ((var_) < -1 || (var_) > 0xFFFFFF) { \
-        zend_value_error(method_str_ "() expects -1 (theme default) or a 24-bit RGB int (0..0xFFFFFF)"); \
-        RETURN_THROWS(); \
-    } \
-} while (0)
 
 #define FASTCHART_COLOR_OVERRIDE_SETTER(name_, field_) \
     ZEND_METHOD(FastChart_Chart, name_) \
