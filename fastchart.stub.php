@@ -733,6 +733,46 @@ final class StockChart extends Chart
 
     public function addIndicatorPane(string $name, array $values, ?array $opts = null): static {}
 
+    /**
+     * Wilder's Relative Strength Index. Oscillator in [0, 100]
+     * computed from close-to-close differences over `$period` bars
+     * (default 14): seeds avg gain / loss with the SMA of the first
+     * window, then updates with the standard recurrence
+     * `avg = (avg * (p-1) + cur) / p`. Conventional reference lines:
+     * 30 (oversold) and 70 (overbought) — the pane renders 50 by
+     * default; lower it via setIndicatorPane opts if you prefer.
+     *
+     * Requires `setOhlcv()` to have been called first; the values
+     * are computed at this call. A subsequent `setOhlcv()` does NOT
+     * recompute — re-add the indicator after replacing the data.
+     */
+    public function addRSI(int $period = 14): static {}
+
+    /**
+     * Momentum oscillator: `close[i] - close[i-period]`. Centered
+     * on zero; positive values mean upward momentum over the
+     * window. Default `$period` is 10. Requires `setOhlcv()` first
+     * (see addRSI for the order constraint).
+     */
+    public function addMomentum(int $period = 10): static {}
+
+    /**
+     * Rate of change: `(close[i] / close[i-period] - 1) * 100`,
+     * expressed as a percentage. Centered on zero; default
+     * `$period` is 10. NaN when the comparison close was zero.
+     * Requires `setOhlcv()` first.
+     */
+    public function addROC(int $period = 10): static {}
+
+    /**
+     * On-balance volume: cumulative running sum of signed volume.
+     * Each bar contributes +volume if its close is above the
+     * previous close, -volume if below, 0 otherwise. Bars without
+     * a volume column contribute zero. Requires `setOhlcv()` first;
+     * starts the cumulative at 0 by convention.
+     */
+    public function addOBV(): static {}
+
     public function draw(\GdImage $canvas): \GdImage {}
 }
 

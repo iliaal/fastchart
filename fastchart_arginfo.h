@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 2e1f7e0fc3c2ccbe0eaa6c5f3898d2538bcbe235 */
+ * Stub hash: 9185deabfcefa62e204024b2b01e8c6809267fa5 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -361,6 +361,19 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_addIn
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, opts, IS_ARRAY, 1, "null")
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_addRSI, 0, 0, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, period, IS_LONG, 0, "14")
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_addMomentum, 0, 0, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, period, IS_LONG, 0, "10")
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_StockChart_addROC arginfo_class_FastChart_StockChart_addMomentum
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_addOBV, 0, 0, IS_STATIC, 0)
+ZEND_END_ARG_INFO()
+
 #define arginfo_class_FastChart_StockChart_draw arginfo_class_FastChart_Chart_draw
 
 #define arginfo_class_FastChart_RadarChart_setSeries arginfo_class_FastChart_LineChart_setSeries
@@ -547,6 +560,10 @@ ZEND_METHOD(FastChart_StockChart, setVolumePane);
 ZEND_METHOD(FastChart_StockChart, setVolumeColors);
 ZEND_METHOD(FastChart_StockChart, setCandleStyle);
 ZEND_METHOD(FastChart_StockChart, addIndicatorPane);
+ZEND_METHOD(FastChart_StockChart, addRSI);
+ZEND_METHOD(FastChart_StockChart, addMomentum);
+ZEND_METHOD(FastChart_StockChart, addROC);
+ZEND_METHOD(FastChart_StockChart, addOBV);
 ZEND_METHOD(FastChart_StockChart, draw);
 ZEND_METHOD(FastChart_RadarChart, setSeries);
 ZEND_METHOD(FastChart_RadarChart, setMaxValue);
@@ -706,6 +723,10 @@ static const zend_function_entry class_FastChart_StockChart_methods[] = {
 	ZEND_ME(FastChart_StockChart, setVolumeColors, arginfo_class_FastChart_StockChart_setVolumeColors, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, setCandleStyle, arginfo_class_FastChart_StockChart_setCandleStyle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, addIndicatorPane, arginfo_class_FastChart_StockChart_addIndicatorPane, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_StockChart, addRSI, arginfo_class_FastChart_StockChart_addRSI, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_StockChart, addMomentum, arginfo_class_FastChart_StockChart_addMomentum, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_StockChart, addROC, arginfo_class_FastChart_StockChart_addROC, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_StockChart, addOBV, arginfo_class_FastChart_StockChart_addOBV, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, draw, arginfo_class_FastChart_StockChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
