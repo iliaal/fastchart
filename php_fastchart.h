@@ -464,12 +464,30 @@ typedef struct {
 #define FASTCHART_MAX_RADAR_VALUES     128       /* per series */
 #define FASTCHART_MAX_POLAR_POINTS     1024      /* per series */
 #define FASTCHART_MAX_TREEMAP_ITEMS    256       /* total cells per chart */
+#define FASTCHART_MAX_FUNNEL_STAGES    32        /* per chart */
+#define FASTCHART_MAX_WATERFALL_BARS   128       /* per chart */
+#define FASTCHART_MAX_METER_ZONES      8         /* per chart */
 
 typedef struct {
     char *label;          /* malloc'd, NUL-terminated; NULL = no label */
     double value;         /* must be > 0 to take area; <= 0 dropped at setItems */
     int color_rgb;        /* -1 = use palette[i % N] */
 } fastchart_treemap_item;
+
+typedef struct {
+    char *label;
+    double value;         /* must be > 0 */
+    int color_rgb;        /* -1 = use palette */
+} fastchart_funnel_stage;
+
+#define FASTCHART_WF_DELTA  0
+#define FASTCHART_WF_TOTAL  1
+
+typedef struct {
+    char *label;
+    double value;         /* signed for delta; rendered absolute for total */
+    int kind;             /* FASTCHART_WF_DELTA or _TOTAL */
+} fastchart_waterfall_bar;
 
 typedef struct {
     FASTCHART_BASE_FIELDS
@@ -559,10 +577,14 @@ typedef struct {
     FASTCHART_BASE_FIELDS
     double polar_max_radius;
     bool polar_filled;
+    int polar_style;     /* 0 = line/area (default), 1 = rose (angular bars) */
     fastchart_polar_series series[FASTCHART_MAX_POLAR_SERIES];
     int n_series;
     zend_object std;
 } fastchart_polar_obj;
+
+#define FASTCHART_POLAR_STYLE_LINE  0
+#define FASTCHART_POLAR_STYLE_ROSE  1
 
 typedef struct {
     FASTCHART_BASE_FIELDS
@@ -580,6 +602,50 @@ typedef struct {
     bool show_labels;
     zend_object std;
 } fastchart_treemap_obj;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_funnel_stage *stages;    /* malloc'd, stage_count entries */
+    int stage_count;
+    /* show_values + value_format inherit from FASTCHART_BASE_FIELDS;
+     * the funnel default is to show values, set in init_extras after
+     * the base init defaults to false. */
+    zend_object std;
+} fastchart_funnel_obj;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_waterfall_bar *bars;     /* malloc'd, bar_count entries */
+    int bar_count;
+    int rise_color;                    /* -1 = use default */
+    int fall_color;
+    int total_color;
+    zend_object std;
+} fastchart_waterfall_obj;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_grid grid;               /* reuses contour's grid type */
+    int color_low_rgb;                 /* -1 = palette default low */
+    int color_high_rgb;                /* -1 = palette default high */
+    /* show_values + value_format inherit from FASTCHART_BASE_FIELDS. */
+    zend_object std;
+} fastchart_heatmap_obj;
+
+#define FASTCHART_METER_HORIZONTAL 0
+#define FASTCHART_METER_VERTICAL   1
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    double meter_value;
+    double meter_min;
+    double meter_max;
+    int meter_orientation;             /* FASTCHART_METER_* */
+    fastchart_gauge_zone zones[FASTCHART_MAX_METER_ZONES];
+    int n_zones;
+    zend_string *meter_value_format;   /* nullable */
+    zend_object std;
+} fastchart_linear_meter_obj;
 
 /* Walk back from zend_object* to the start of the containing per-type
  * struct using each class's handlers->offset. Cast to fastchart_obj*
@@ -605,6 +671,10 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define Z_FASTCHART_POLAR_OBJ_P(zv)   ((fastchart_polar_obj *)Z_FASTCHART_OBJ_P(zv))
 #define Z_FASTCHART_CONTOUR_OBJ_P(zv) ((fastchart_contour_obj *)Z_FASTCHART_OBJ_P(zv))
 #define Z_FASTCHART_TREEMAP_OBJ_P(zv) ((fastchart_treemap_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_FUNNEL_OBJ_P(zv)  ((fastchart_funnel_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_WATERFALL_OBJ_P(zv) ((fastchart_waterfall_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_HEATMAP_OBJ_P(zv) ((fastchart_heatmap_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_LINEAR_METER_OBJ_P(zv) ((fastchart_linear_meter_obj *)Z_FASTCHART_OBJ_P(zv))
 
 #define FASTCHART_DEFAULT_WIDTH      800
 #define FASTCHART_DEFAULT_HEIGHT     600
@@ -769,5 +839,9 @@ int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im
 int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im);
 int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im);
 int fastchart_treemap_render_to_image(fastchart_treemap_obj *self, gdImagePtr im);
+int fastchart_funnel_render_to_image(fastchart_funnel_obj *self, gdImagePtr im);
+int fastchart_waterfall_render_to_image(fastchart_waterfall_obj *self, gdImagePtr im);
+int fastchart_heatmap_render_to_image(fastchart_heatmap_obj *self, gdImagePtr im);
+int fastchart_linear_meter_render_to_image(fastchart_linear_meter_obj *self, gdImagePtr im);
 
 #endif /* PHP_FASTCHART_H */
