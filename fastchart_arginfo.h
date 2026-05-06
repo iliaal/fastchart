@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: e3c3b6dfefc147488b45090f2ef091c0793de576 */
+ * Stub hash: 2e1f7e0fc3c2ccbe0eaa6c5f3898d2538bcbe235 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
