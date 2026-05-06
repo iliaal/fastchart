@@ -10,7 +10,7 @@
  *     setSeries cells with a TypeError instead of silently coercing to NaN
  *   - setBoxWidth(percent)             — boxplot box width as a percent of
  *     the per-category slot
- *   - setBackgroundImage(path, alpha?) — overlay a background image
+ *   - setBackgroundImage(path) — overlay a background image
  */
 
 require __DIR__ . '/_bootstrap.php';

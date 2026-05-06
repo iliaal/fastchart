@@ -15,12 +15,16 @@ $default = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
 $bold    = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 $serif   = '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf';
 
-/* Sizes default to 11px; per-role overrides are absolute in pixels. */
+/* Sizes default to 11px; per-role overrides are absolute in pixels.
+ * Fall back to the bootstrap-resolved $font when the hard-coded
+ * DejaVu path isn't installed — the global setFontPath() rejects
+ * empty strings (it's not a "clear override" sentinel; that's only
+ * for the per-role setters below). */
 (new FastChart\LineChart(640, 360))
     ->setFontPath($font)
     ->setDpi($dpi)
     ->setTitle('Per-role font override')
-    ->setFontPath(file_exists($default) ? $default : '')
+    ->setFontPath(file_exists($default) ? $default : $font)
     ->setFontSize(11)
     ->setTitleFont(file_exists($bold) ? $bold : '', 18)
     ->setAxisFont(file_exists($default) ? $default : '', 10)
