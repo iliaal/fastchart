@@ -28,10 +28,10 @@ for ($i = 0; $i < 60; $i++) {
     $price  = $close;
 }
 
-/* Allocate the user canvas at the size we want — and don't call
+/* Allocate the user canvas at the size we want, and don't call
  * setDpi() on this chart. With a caller-owned canvas fastchart can't
  * resize the image, so a setDpi(200) here would scale layout margins
- * and FreeType up while the canvas stays fixed at 720×420 — labels
+ * and FreeType up while the canvas stays fixed at 720×420; labels
  * would overflow. setDpi() *can* be used on the draw($canvas) path
  * when the caller pre-allocates a proportionally larger canvas (see
  * the stub-doc note on draw); we keep it off here because this canvas
@@ -41,7 +41,7 @@ $im = imagecreatetruecolor(720, 420);
 /* Step 1: render the chart into our caller-owned canvas. */
 (new FastChart\StockChart(720, 420))
     ->setFontPath($font)
-    ->setTitle('ACME — internal preview')
+    ->setTitle('ACME internal preview')
     ->setOhlcv($rows)
     ->addMovingAverage(20)
     /* Calendar-aware stride keeps labels from overlapping each other
@@ -60,13 +60,13 @@ imagestring($im, 5, (int)$cx - 30, (int)$cy - 8, 'DRAFT', $watermark);
 /* Step 3: add a footer credit line. */
 $footer = imagecolorallocate($im, 100, 100, 100);
 imagestring($im, 2, 8, imagesy($im) - 16,
-            'Generated ' . date('Y-m-d') . ' — confidential', $footer);
+            'Generated ' . date('Y-m-d') . ' (confidential)', $footer);
 
 /* Step 4: draw a highlight ring around the most recent close.
  * The chart object doesn't expose pixel positions, but for an
  * overlay you control the canvas size and can derive coordinates
- * from your own data shape — here approximated as the last
- * candle's relative position. */
+ * from your own data shape (here approximated as the last
+ * candle's relative position). */
 $ring = imagecolorallocate($im, 255, 220, 0);
 imageellipse($im, imagesx($im) - 60, 200, 24, 24, $ring);
 imageellipse($im, imagesx($im) - 60, 200, 26, 26, $ring);

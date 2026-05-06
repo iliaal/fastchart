@@ -1,8 +1,8 @@
 <?php
 /* Font knobs:
- *   - setFontPath / setFontSize           — global default
+ *   - setFontPath / setFontSize           : global default
  *   - setTitleFont / setAxisFont / setLabelFont
- *                                         — per-role TTF override
+ *                                         : per-role TTF override
  *   - thumbnail_mode (via setThumbnailMode) suppresses labels and
  *     scales fonts down for tile-sized previews.
  *
@@ -17,7 +17,7 @@ $serif   = '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf';
 
 /* Sizes default to 11px; per-role overrides are absolute in pixels.
  * Fall back to the bootstrap-resolved $font when the hard-coded
- * DejaVu path isn't installed — the global setFontPath() rejects
+ * DejaVu path isn't installed; the global setFontPath() rejects
  * empty strings (it's not a "clear override" sentinel; that's only
  * for the per-role setters below). */
 (new FastChart\LineChart(640, 360))

@@ -6,7 +6,7 @@
  *   - STYLE_DIAMOND  (2): diamond-shaped body, useful for sparser data
  *   - STYLE_I_CAP    (3): I-beam / capped-bar style
  *   - STYLE_HOLLOW   (4): hollow up-candles, filled down-candles
- *   - STYLE_VOLUME   (5): equivolume — body width tracks volume
+ *   - STYLE_VOLUME   (5): equivolume; body width tracks volume
  *   - STYLE_VECTOR   (6): vector / kagi-like climax markers
  */
 
@@ -53,7 +53,7 @@ foreach ($styles as [$label, $style, $file]) {
         ->setTitle("STYLE_$label")
         ->setOhlcv($rows)
         ->setCandleStyle($style)
-        /* Stride the date axis to one tick per week — at 420×240
+        /* Stride the date axis to one tick per week. At 420×240
          * with 30 trading days we'd otherwise pack 8+ date labels
          * into a narrow strip and the "2023-11-14" strings would
          * collide. setDateAxisStride is the chart-aware way to

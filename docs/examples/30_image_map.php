@@ -34,7 +34,7 @@ $chart = (new FastChart\ScatterChart(560, 360))
 
 $chart->renderToFile(__DIR__ . '/30_image_map.png');
 
-/* getImageMap must run AFTER draw / render — the renderer is the one
+/* getImageMap must run AFTER draw / render: the renderer is the one
  * that pixel-maps each point. Schemes outside http(s)/mailto/relative
  * paths are silently rejected, attribute values are HTML-escaped. */
 $map = $chart->getImageMap('quarterly');

@@ -1,7 +1,7 @@
 <?php
 /* Linear meter: bar-shaped gauge. Same zone / value / format
  * vocabulary as GaugeChart, rotated to a horizontal or vertical
- * bar — better fit for compact status / capacity readouts where a
+ * bar; better fit for compact status / capacity readouts where a
  * round gauge would be too tall. */
 
 require __DIR__ . '/_bootstrap.php';

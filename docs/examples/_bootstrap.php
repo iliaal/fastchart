@@ -10,7 +10,7 @@
  * default, so the explicit setFontPath call is mainly belt-and-
  * suspenders for portability and self-documentation.
  *
- * The DPI default is 200 — examples render at roughly 2x the logical
+ * The DPI default is 200; examples render at roughly 2x the logical
  * canvas dimensions (e.g. setSize(640, 320) -> 1333x667 pixels) and
  * tag the PNG metadata as 200 DPI. Retina viewers and print pipelines
  * display these at the intended physical size; embedding into a
@@ -19,14 +19,14 @@
 
 $font_candidates = [
     getenv('FC_FONT') ?: '',
-    /* Lato preferred — UI-grade sans, hints cleanly at axis-label sizes. */
+    /* Lato preferred: UI-grade sans, hints cleanly at axis-label sizes. */
     '/usr/share/fonts/truetype/lato/Lato-Medium.ttf',            // Debian / Ubuntu (fonts-lato)
     '/usr/share/fonts/truetype/lato/Lato-Regular.ttf',
     '/usr/share/fonts/lato/Lato-Medium.ttf',                     // Fedora / RHEL
     '/usr/share/fonts/lato/Lato-Regular.ttf',
     '/usr/share/fonts/TTF/Lato-Medium.ttf',                      // Arch
     '/usr/share/fonts/TTF/Lato-Regular.ttf',
-    /* DejaVu fallback — present on most Linux base installs. */
+    /* DejaVu fallback: present on most Linux base installs. */
     '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
     '/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf',
     '/usr/share/fonts/TTF/DejaVuSans.ttf',

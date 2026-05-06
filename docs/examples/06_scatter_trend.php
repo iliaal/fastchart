@@ -1,6 +1,6 @@
 <?php
 /* Scatter plot with a least-squares trend line. The trend overlay
- * uses degree=2 (quadratic) — pass 1 for a straight regression. */
+ * uses degree=2 (quadratic). Pass 1 for a straight regression. */
 
 require __DIR__ . '/_bootstrap.php';
 

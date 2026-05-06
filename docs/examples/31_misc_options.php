@@ -1,16 +1,16 @@
 <?php
 /* Catch-all for the remaining utility setters:
- *   - FastChart\Chart::version()       — extension version string (static)
- *   - setSize(w, h)                    — change canvas size after construction
+ *   - FastChart\Chart::version()       : extension version string (static)
+ *   - setSize(w, h)                    : change canvas size after construction
  *     (constructor accepts the same args; setter is for already-built objects)
- *   - setPlotRect(x0, y0, x1, y1)      — pin the plot rectangle to fixed
+ *   - setPlotRect(x0, y0, x1, y1)      : pin the plot rectangle to fixed
  *     pixel coordinates instead of letting the layout helper pick. Useful
  *     when compositing multiple charts onto one canvas (alongside draw()).
- *   - setStrict(true)                  — reject non-numeric Line/Area/Bar
+ *   - setStrict(true)                  : reject non-numeric Line/Area/Bar
  *     setSeries cells with a TypeError instead of silently coercing to NaN
- *   - setBoxWidth(percent)             — boxplot box width as a percent of
+ *   - setBoxWidth(percent)             : boxplot box width as a percent of
  *     the per-category slot
- *   - setBackgroundImage(path) — overlay a background image
+ *   - setBackgroundImage(path)         : overlay a background image
  */
 
 require __DIR__ . '/_bootstrap.php';
@@ -33,9 +33,9 @@ $chart->renderToFile(__DIR__ . '/31a_setsize.png');
  *
  * Note: when setPlotRect is set, fastchart skips its canvas-wide bg
  * fill so it doesn't clobber neighbouring charts on the same image.
- * The caller pre-fills the canvas — here a soft #f5f5f5 backdrop. */
+ * The caller pre-fills the canvas (here a soft #f5f5f5 backdrop). */
 /* Note: don't call setDpi() on these two charts. With a caller-owned
- * canvas the chart can't resize the image — calling setDpi(200) on a
+ * canvas the chart can't resize the image; calling setDpi(200) on a
  * fixed 800x320 canvas would scale layout margins and FreeType up
  * while the canvas stays fixed and labels would overflow. setDpi()
  * *can* be used on the draw($canvas) path when the caller allocates
@@ -70,7 +70,7 @@ try {
         ->setSeries([['data' => [1, 2, 'oops', 4]]]);
     echo "setStrict: no throw (unexpected)\n";
 } catch (\TypeError $e) {
-    echo "setStrict: TypeError as expected — ", $e->getMessage(), "\n";
+    echo "setStrict: TypeError as expected: ", $e->getMessage(), "\n";
 }
 
 /* setBoxWidth: narrow the boxplot boxes to 40% of slot width. */

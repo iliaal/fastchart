@@ -3,13 +3,13 @@
  * candle array set by setOhlcv() and pushes a regular indicator
  * pane.
  *
- *   - addRSI($period = 14)        — Wilder's relative strength index
- *   - addMomentum($period = 10)   — close[i] - close[i-period]
- *   - addROC($period = 10)        — pct change vs `period` bars ago
- *   - addOBV()                    — cumulative signed volume
+ *   - addRSI($period = 14)        : Wilder's relative strength index
+ *   - addMomentum($period = 10)   : close[i] - close[i-period]
+ *   - addROC($period = 10)        : pct change vs `period` bars ago
+ *   - addOBV()                    : cumulative signed volume
  *
  * Up to 3 panes per chart; combine as needed. setOhlcv() must
- * precede the addX() call — the values are computed at add time. */
+ * precede the addX() call; the values are computed at add time. */
 
 require __DIR__ . '/_bootstrap.php';
 
@@ -49,7 +49,7 @@ for ($i = 0; $i < 60; $i++) {
     ->addROC(10)
     ->renderToFile(__DIR__ . '/38b_stock_momentum_roc.png');
 
-/* OBV — cumulative; works without a period. */
+/* OBV: cumulative; works without a period. */
 (new FastChart\StockChart(720, 480))
     ->setFontPath($font)
     ->setDpi($dpi)

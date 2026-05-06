@@ -1,4 +1,4 @@
-# fastchart — examples
+# fastchart examples
 
 Each example below is a self-contained PHP script that renders the
 chart shown beside it. The scripts are runnable as-is with `fastchart`
@@ -8,7 +8,7 @@ and `ext/gd` loaded:
 php -d extension=gd -d extension=fastchart docs/examples/01_line_basic.php
 ```
 
-Together the 31 scripts exercise every public method on the
+Together the 40 scripts exercise every public method on the
 `FastChart\*` classes (105/105 covered), so this gallery doubles as
 live documentation: if a knob exists, an example demonstrates it.
 
@@ -23,7 +23,7 @@ re-running it refreshes the corresponding image.
 
 ---
 
-## 1. Line — basic
+## 1. Line: basic
 
 A minimal line chart: one series, auto-scaled axes, category labels
 along X. `renderToFile` infers the format from the file extension.
@@ -40,7 +40,7 @@ along X. `renderToFile` infers the format from the file extension.
 
 ---
 
-## 2. Line — multi-series + smoothing
+## 2. Line: multi-series + smoothing
 
 Three named series, axis titles, Catmull-Rom smoothing, circle markers,
 top-left legend.
@@ -67,7 +67,7 @@ top-left legend.
 
 ---
 
-## 3. Bar — grouped (multi-series)
+## 3. Bar: grouped (multi-series)
 
 Side-by-side bars with custom palette, edge color, and per-bar value
 labels.
@@ -90,7 +90,7 @@ labels.
 
 ---
 
-## 4. Bar — horizontal with value-axis bands
+## 4. Bar: horizontal with value-axis bands
 
 `setOrientation(BAR_HORIZONTAL)` swaps the axes so long category labels
 fit comfortably along Y. Two `addVerticalBand` calls highlight the SLA
@@ -162,7 +162,7 @@ accepted.
 
 ---
 
-## 7. Stock — candlestick with MA overlays + volume
+## 7. Stock: candlestick with MA overlays + volume
 
 `setOhlcv` takes rows of `[timestamp, open, high, low, close, volume]`.
 `addMovingAverage` accepts SMA, EMA, or WMA and any period; up to 8
@@ -170,7 +170,7 @@ overlays per chart.
 
 ```php
 (new FastChart\StockChart(800, 460))
-    ->setTitle('ACME — 90 day OHLCV')
+    ->setTitle('ACME 90 day OHLCV')
     ->setOhlcv($rows)
     ->addMovingAverage(10, FastChart\StockChart::MA_SMA)
     ->addMovingAverage(20, FastChart\StockChart::MA_EMA)
@@ -480,13 +480,13 @@ convenient for HTTP responses, base64 data URIs, or hashing.
 layer additional graphics on top using stock `ext/gd` primitives. The
 example below renders a stock chart and then overlays a `DRAFT`
 watermark, a footer credit, and a highlight ring around a specific
-data point — all on the same canvas.
+data point, all on the same canvas.
 
 ```php
 $im = imagecreatetruecolor(720, 420);
 
 (new FastChart\StockChart(720, 420))
-    ->setTitle('ACME — internal preview')
+    ->setTitle('ACME internal preview')
     ->setOhlcv($rows)
     ->addMovingAverage(20)
     ->draw($im);
@@ -497,7 +497,7 @@ imagestring($im, 5, 330, 200, 'DRAFT', $watermark);
 
 /* Footer credit. */
 $footer = imagecolorallocate($im, 100, 100, 100);
-imagestring($im, 2, 8, 404, 'Generated 2025-05-05 — confidential', $footer);
+imagestring($im, 2, 8, 404, 'Generated 2025-05-05 (confidential)', $footer);
 
 /* Highlight ring. */
 $ring = imagecolorallocate($im, 255, 220, 0);
@@ -535,7 +535,7 @@ stride, tick mode, format strings, axis visibility, zero shelf.
 
 ---
 
-## 23. Custom styling — colors, borders, line style
+## 23. Custom styling: colors, borders, line style
 
 Color knobs for every painted surface: chart background, plot
 background, axis, grid, border, text, title, axis labels, axis
@@ -599,7 +599,7 @@ coordinates. `addIconAt` overlays an external image at a data point.
 
 ```php
 (new FastChart\LineChart(720, 380))
-    ->setTitle('Daily traffic — overlay + text + icon annotations')
+    ->setTitle('Daily traffic with overlay + text + icon annotations')
     ->setSeries([['label' => 'Visitors', 'data' => [/* … */]]])
     ->addOverlaySeries('line', [/* baseline values */],
                        ['color' => 0x9D9D9D, 'thickness' => 1])
@@ -633,7 +633,7 @@ Same OHLCV data rendered in every candle style fastchart supports.
 
 ---
 
-## 27. Area chart — stacked vs overlay
+## 27. Area chart: stacked vs overlay
 
 Stacked accumulates each series on top of the running total; overlay
 draws each series at zero baseline with translucent fills controlled
@@ -645,7 +645,7 @@ by `setFillOpacity`.
 
 ---
 
-## 28. Bar variants — floating + layered stack
+## 28. Bar variants: floating + layered stack
 
 `setFloating(true)` interprets each entry as `[min, max]` and draws
 bars between those bounds (Gantt-style). `setStackMode(STACK_LAYER)`
@@ -698,14 +698,14 @@ file_put_contents('chart.html', '<img src="30_image_map.png" usemap="#quarterly"
 ## 31. Misc utility setters
 
 The remaining catch-all knobs:
-- `FastChart\Chart::version()` — extension version (static)
-- `setSize(w, h)` — change canvas size after construction
-- `setPlotRect(x0, y0, x1, y1)` — pin the plot area to fixed pixel
+- `FastChart\Chart::version()`: extension version (static)
+- `setSize(w, h)`: change canvas size after construction
+- `setPlotRect(x0, y0, x1, y1)`: pin the plot area to fixed pixel
   coordinates; useful for compositing two charts on one canvas
-- `setStrict(true)` — TypeError on non-numeric Line/Area/Bar series
+- `setStrict(true)`: TypeError on non-numeric Line/Area/Bar series
   cells instead of silent NaN coercion
-- `setBoxWidth(percent)` — boxplot box width as a percent of slot
-- `setBackgroundImage(path)` — bitmap behind the chart;
+- `setBoxWidth(percent)`: boxplot box width as a percent of slot
+- `setBackgroundImage(path)`: bitmap behind the chart;
   open_basedir-checked at draw time
 
 ```php
@@ -746,12 +746,12 @@ imagepng($im, '31b_two_charts.png');
   types parse best-effort.
 - **Floating bars / setStrict / setFloating ordering.** A few setters
   must run **before** `setSeries` so the parser knows the input shape.
-  `setFloating(true)` is the most common — without it, the parser
+  `setFloating(true)` is the most common; without it, the parser
   expects scalars, not `[min, max]` tuples.
 
 ## See also
 
-- [`examples/`](examples/) — runnable PHP scripts for each chart above
-- [`tests/`](../tests/) — 86 phpt tests covering every public method
-- [`fastchart.stub.php`](../fastchart.stub.php) — full public API
+- [`examples/`](examples/): runnable PHP scripts for each chart above
+- [`tests/`](../tests/): 86 phpt tests covering every public method
+- [`fastchart.stub.php`](../fastchart.stub.php): full public API
   surface with docstrings

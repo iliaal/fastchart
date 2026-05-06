@@ -1,13 +1,13 @@
 <?php
 /* Every color / border / surface knob in one chart:
- *   - setBackgroundColor / setPlotBackgroundColor — chart vs plot rect
- *   - setTransparentBackground                    — alpha-clear chart bg
+ *   - setBackgroundColor / setPlotBackgroundColor : chart vs plot rect
+ *   - setTransparentBackground                    : alpha-clear chart bg
  *   - setAxisColor / setGridColor / setBorderColor / setTextColor
  *     setTitleColor / setAxisLabelColor / setAxisTitleColor
- *   - setBorderSides — bitmask of BORDER_TOP / RIGHT / BOTTOM / LEFT
- *   - setLineStyle  — LINE_SOLID / LINE_DASHED / LINE_DOTTED
- *   - setEdgeColor  — outline on filled shapes (bars, slices)
- *   - setBarWidth   — percent of slot width consumed by the bar (1..100)
+ *   - setBorderSides : bitmask of BORDER_TOP / RIGHT / BOTTOM / LEFT
+ *   - setLineStyle   : LINE_SOLID / LINE_DASHED / LINE_DOTTED
+ *   - setEdgeColor   : outline on filled shapes (bars, slices)
+ *   - setBarWidth    : percent of slot width consumed by the bar (1..100)
  */
 
 require __DIR__ . '/_bootstrap.php';

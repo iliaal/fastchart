@@ -1,12 +1,12 @@
 <?php
 /* Every way to get pixels out of a chart:
- *   - renderToFile($path)         — file, format inferred from extension
- *   - renderPng()                 — PNG bytes
- *   - renderJpeg($quality = 85)   — JPEG bytes
- *   - renderWebp($quality = 80)   — WebP bytes (libgd build-time toggle)
- *   - renderAvif($quality = 50)   — AVIF bytes (libgd 2.4+)
- *   - renderGif()                 — GIF bytes (paletted)
- *   - draw($gd_image)             — draw onto a caller-owned canvas
+ *   - renderToFile($path)         : file, format inferred from extension
+ *   - renderPng()                 : PNG bytes
+ *   - renderJpeg($quality = 85)   : JPEG bytes
+ *   - renderWebp($quality = 80)   : WebP bytes (libgd build-time toggle)
+ *   - renderAvif($quality = 50)   : AVIF bytes (libgd 2.4+)
+ *   - renderGif()                 : GIF bytes (paletted)
+ *   - draw($gd_image)             : draw onto a caller-owned canvas
  *
  * The bytes-returning helpers skip the encode-to-disk roundtrip and
  * are convenient for HTTP responses, base64 data URIs, or hashing. */
@@ -35,7 +35,7 @@ printf("jpeg: %d bytes, magic=%s\n",  strlen($jpg),  bin2hex(substr($jpg, 0, 4))
 printf("webp: %d bytes, magic=%s\n",  strlen($webp), bin2hex(substr($webp, 0, 4)));
 printf("gif:  %d bytes, magic=%s\n",  strlen($gif),  bin2hex(substr($gif, 0, 4)));
 
-/* AVIF is libgd >= 2.4 only — wrap in a try/catch so the example
+/* AVIF is libgd >= 2.4 only. Wrap in a try/catch so the example
  * still runs on older libgd. */
 try {
     $avif = $line->renderAvif(50);

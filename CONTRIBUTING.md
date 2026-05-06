@@ -14,7 +14,7 @@
   `make install` doesn't deploy it; AGENTS.md has the recipe).
 
 fastchart links libgd dynamically and shares ext/gd's `libgd.so.3`
-copy at runtime — there's no vendored library to bump.
+copy at runtime; there's no vendored library to bump.
 
 ## Bug reports
 
@@ -67,8 +67,8 @@ Before filing, try to reproduce against the latest `master` branch.
 - Short imperative subject line (≤ 72 chars).
 - Body wraps at 72 columns, explains **why** not **what**.
 - No `Co-Authored-By` lines. No AI attribution.
-- Audit the message against `git show --stat HEAD` before pushing —
-  if the subject claims a fix in `fastchart_axis.c`, the diff had
+- Audit the message against `git show --stat HEAD` before pushing.
+  If the subject claims a fix in `fastchart_axis.c`, the diff had
   better show it.
 
 ### Test guidelines
@@ -100,9 +100,9 @@ Before filing, try to reproduce against the latest `master` branch.
   not hand-edit `fastchart_arginfo.h`.** Run `/php-stub-regen` after
   any stub change.
 - Memory: use PHP's `emalloc` / `efree` at the Zend boundary.
-  `efree(NULL)` is undefined behavior in Zend — keep the `fc_efree_opt`
+  `efree(NULL)` is undefined behavior in Zend; keep the `fc_efree_opt`
   null-guard wrapper rather than removing it as "dead code".
-- Truecolor canvas only — `fastchart_require_truecolor()` rejects
+- Truecolor canvas only. `fastchart_require_truecolor()` rejects
   palette images at every `draw()` entry. New entry points must
   call it.
 - Per-class state lives on the chart's typed C struct
