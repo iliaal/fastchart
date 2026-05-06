@@ -14,6 +14,7 @@
 #include "config.h"
 #endif
 
+#include <math.h>
 #include <string.h>
 #include <gd.h>
 
@@ -127,7 +128,15 @@ int fastchart_text_draw_rotated(gdImagePtr im,
     char *err;
 
     /* Measure horizontally first so we can translate the anchor for
-     * non-LEFT alignment in the unrotated frame. */
+     * non-LEFT alignment. The shift must be applied along the rotated
+     * baseline direction — libgd's (x, y) is where the FIRST glyph's
+     * lower-left lands on the canvas, then the text walks at `angle`
+     * from there. For ALIGN_RIGHT we want the LAST glyph's baseline
+     * end to land at (x, y); that means starting at
+     *   (x - w*cos θ, y + w*sin θ)
+     * (Y inverts because libgd CCW rotates against image-Y-down).
+     * The previous version shifted by (-w, 0) regardless of angle,
+     * which placed rotated tick labels visibly off their tick. */
     if (align != FASTCHART_ALIGN_LEFT) {
         err = gdImageStringFTEx(NULL, brect, -(color),
                                 (char *)font_path, font_size, 0.0, 0, 0,
@@ -137,8 +146,10 @@ int fastchart_text_draw_rotated(gdImagePtr im,
             return -1;
         }
         int w = brect[2] - brect[6];
-        if (align == FASTCHART_ALIGN_CENTER) x -= w / 2;
-        else if (align == FASTCHART_ALIGN_RIGHT) x -= w;
+        double shift = (align == FASTCHART_ALIGN_CENTER) ? (double)w / 2.0
+                                                         : (double)w;
+        x -= (int)(shift * cos(rad) + 0.5);
+        y += (int)(shift * sin(rad) + 0.5);
     }
 
     err = gdImageStringFTEx(im, brect, -(color),
