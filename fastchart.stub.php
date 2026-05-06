@@ -179,6 +179,8 @@ abstract class Chart
      * silently skipped so a typo doesn't abort the whole render.
      * `$maxWidth` / `$maxHeight` cap the display size while preserving
      * the source aspect ratio (-1 = use the source dimension as-is).
+     * Source files larger than 8 MiB are silently skipped to bound
+     * worker memory if the path is fed from untrusted input.
      * Up to 32 icons per chart.
      */
     public function addIconAt(float $x, float $y, string $path,
@@ -257,6 +259,11 @@ abstract class Chart
      * any chart elements. Path is resolved through PHP's filesystem
      * policy (`open_basedir`). Supported source formats: PNG, JPEG,
      * WebP, GIF. The image is scaled to fill the entire canvas.
+     *
+     * Source-file size cap: the loader silently skips files larger
+     * than 8 MiB to bound worker memory if the path is fed from
+     * untrusted input. open_basedir is the primary access gate; the
+     * size cap is defense-in-depth.
      */
     public function setBackgroundImage(string $path): static {}
 
