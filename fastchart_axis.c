@@ -1223,6 +1223,19 @@ void fastchart_draw_x_axis_numeric(gdImagePtr im, fastchart_obj *chart,
     bool draw_labels = (chart->tick_mode & FASTCHART_TICK_LABELS) != 0;
     if (chart->thumbnail_mode) draw_labels = false;
 
+    /* Measure once: ascender pixel height at the chart's DPI so the
+     * label's TOP sits below plot.y1 + tick. Falls back to the
+     * point-size heuristic when measurement fails (no font installed,
+     * etc.). The previous heuristic of `size * 1.2` undersized the
+     * offset at all DPIs — the rendered ascender at 11pt + 96 DPI is
+     * already ~12px tall, leaving ~1px clearance over the plot rect. */
+    int probe_h = 0;
+    if (fastchart_text_measure(im, font, size, "Mg9", NULL, &probe_h, NULL, 0) != 0) {
+        probe_h = (int)(size * 1.2 * chart_dpi_scale(chart));
+    }
+    int label_y_base = plot->y1 + TICK_MARK_LEN(chart) + probe_h
+                     + (int)(4 * chart_dpi_scale(chart));
+
     char buf[32];
     for (int i = 0; i < range->n_ticks; i++) {
         double v = range->ticks[i];
@@ -1242,7 +1255,7 @@ void fastchart_draw_x_axis_numeric(gdImagePtr im, fastchart_obj *chart,
         } else {
             format_tick_label(v, range->tick_step, buf, sizeof(buf));
         }
-        int label_y = plot->y1 + TICK_MARK_LEN(chart) + (int)(size * 1.2 * chart_dpi_scale(chart));
+        int label_y = label_y_base;
         fastchart_text_draw(im, font, size, label_color,
                             x, label_y, FASTCHART_ALIGN_CENTER,
                             buf, NULL, 0);
@@ -1336,16 +1349,31 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
     bool draw_labels = (chart->tick_mode & FASTCHART_TICK_LABELS) != 0;
     if (chart->thumbnail_mode) draw_labels = false;
 
+    /* Stride caps horizontal labels to ~10; rotated labels are
+     * narrow enough that we can show all of them up to ~30. The
+     * user's setXLabelStride() multiplies on top of the auto value,
+     * so passing 1 (default) doesn't fight the auto-density. */
+    int max_visible = (angle == 0) ? 10 : 30;
+    int stride = 1;
+    if (n_categories > max_visible + 2) {
+        stride = (n_categories + max_visible - 1) / max_visible;
+    }
+    if (chart->x_label_stride > 1) {
+        stride *= (int)chart->x_label_stride;
+    }
+
     /* Rotated-label anchor offset: when text is rotated CCW around
      * the anchor point, the unrotated text extends upward-left (45°)
      * or fully upward (90°). label_y must clear the rotated label's
      * top edge, which sits at anchor - label_width * sin(angle).
-     * Measure the longest label so the offset matches the actual
-     * extent — fixed point-size multipliers undershoot at high DPI
-     * because rendered glyph width grows with dpi_scale. */
+     * Measure the longest label that will actually be drawn so the
+     * offset matches reality. Skip measurement entirely when labels
+     * are suppressed (TICK_POINTS / TICK_NONE / thumbnail) — the
+     * earlier unconditional walk burned >1s per render at 4096
+     * categories even though no label would touch the canvas. */
     int max_label_w = 0;
-    if (angle != 0 && labels) {
-        for (int i = 0; i < n_categories; i++) {
+    if (angle != 0 && draw_labels && labels) {
+        for (int i = 0; i < n_categories; i += stride) {
             if (!labels[i]) continue;
             int w = 0, h = 0;
             if (fastchart_text_measure(im, font, size, labels[i],
@@ -1355,10 +1383,19 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
         }
     }
 
+    /* Measure ascender height once at the chart's DPI so the label
+     * top sits below plot.y1 + tick. The point-size * 1.2 heuristic
+     * undershoots in mixed FreeType configurations and at high DPI,
+     * leaving the label clipping into the plot rect. */
+    int probe_h_x = 0;
+    if (fastchart_text_measure(im, font, size, "Mg9", NULL, &probe_h_x, NULL, 0) != 0) {
+        probe_h_x = (int)(size * 1.2 * chart_dpi_scale(chart));
+    }
     int label_y;
     fastchart_align align;
     if (angle == 0) {
-        label_y = plot->y1 + TICK_MARK_LEN(chart) + (int)(size * 1.2 * chart_dpi_scale(chart));
+        label_y = plot->y1 + TICK_MARK_LEN(chart) + probe_h_x
+                + (int)(4 * chart_dpi_scale(chart));
         align = FASTCHART_ALIGN_CENTER;
     } else if (angle == 45) {
         /* Push baseline far enough below plot so the rotated label's
@@ -1372,19 +1409,6 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
          * pre-rotation horizontal width. */
         label_y = plot->y1 + TICK_MARK_LEN(chart) + max_label_w + 4;
         align = FASTCHART_ALIGN_RIGHT;
-    }
-
-    /* Stride caps horizontal labels to ~10; rotated labels are
-     * narrow enough that we can show all of them up to ~30. The
-     * user's setXLabelStride() multiplies on top of the auto value,
-     * so passing 1 (default) doesn't fight the auto-density. */
-    int max_visible = (angle == 0) ? 10 : 30;
-    int stride = 1;
-    if (n_categories > max_visible + 2) {
-        stride = (n_categories + max_visible - 1) / max_visible;
-    }
-    if (chart->x_label_stride > 1) {
-        stride *= (int)chart->x_label_stride;
     }
 
     for (int i = 0; i < n_categories; i += stride) {
@@ -2075,13 +2099,22 @@ void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
     bool draw_labels = (chart->tick_mode & FASTCHART_TICK_LABELS) != 0;
     if (chart->thumbnail_mode) draw_labels = false;
 
+    /* Same measured-ascender rule as numeric/categorical: the
+     * fixed-multiplier heuristic clips into the plot rect when
+     * FreeType's ascender exceeds 1.2 * point-size at the chart's
+     * DPI. */
+    int probe_h_t = 0;
+    if (fastchart_text_measure(im, font, size, "Mg9", NULL, &probe_h_t, NULL, 0) != 0) {
+        probe_h_t = (int)(size * 1.2 * chart_dpi_scale(chart));
+    }
     int label_y;
     fastchart_align align;
     if (angle == 0) {
-        label_y = plot->y1 + TICK_MARK_LEN(chart) + (int)(size * 1.2 * chart_dpi_scale(chart));
+        label_y = plot->y1 + TICK_MARK_LEN(chart) + probe_h_t
+                + (int)(4 * chart_dpi_scale(chart));
         align = FASTCHART_ALIGN_CENTER;
     } else {
-        label_y = plot->y1 + TICK_MARK_LEN(chart) + (int)(size * 1.0 * chart_dpi_scale(chart));
+        label_y = plot->y1 + TICK_MARK_LEN(chart) + probe_h_t;
         align = FASTCHART_ALIGN_RIGHT;
     }
 
