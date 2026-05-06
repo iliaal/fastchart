@@ -463,6 +463,13 @@ typedef struct {
 #define FASTCHART_MAX_CATEGORY_LABELS  4096
 #define FASTCHART_MAX_RADAR_VALUES     128       /* per series */
 #define FASTCHART_MAX_POLAR_POINTS     1024      /* per series */
+#define FASTCHART_MAX_TREEMAP_ITEMS    256       /* total cells per chart */
+
+typedef struct {
+    char *label;          /* malloc'd, NUL-terminated; NULL = no label */
+    double value;         /* must be > 0 to take area; <= 0 dropped at setItems */
+    int color_rgb;        /* -1 = use palette[i % N] */
+} fastchart_treemap_item;
 
 typedef struct {
     FASTCHART_BASE_FIELDS
@@ -566,6 +573,14 @@ typedef struct {
     zend_object std;
 } fastchart_contour_obj;
 
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_treemap_item *items;     /* malloc'd, item_count entries */
+    int item_count;
+    bool show_labels;
+    zend_object std;
+} fastchart_treemap_obj;
+
 /* Walk back from zend_object* to the start of the containing per-type
  * struct using each class's handlers->offset. Cast to fastchart_obj*
  * is the common-initial-sequence access — base fields land at the
@@ -589,6 +604,7 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define Z_FASTCHART_BOXPLOT_OBJ_P(zv) ((fastchart_boxplot_obj *)Z_FASTCHART_OBJ_P(zv))
 #define Z_FASTCHART_POLAR_OBJ_P(zv)   ((fastchart_polar_obj *)Z_FASTCHART_OBJ_P(zv))
 #define Z_FASTCHART_CONTOUR_OBJ_P(zv) ((fastchart_contour_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_TREEMAP_OBJ_P(zv) ((fastchart_treemap_obj *)Z_FASTCHART_OBJ_P(zv))
 
 #define FASTCHART_DEFAULT_WIDTH      800
 #define FASTCHART_DEFAULT_HEIGHT     600
@@ -752,5 +768,6 @@ int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im);
 int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im);
 int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im);
 int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im);
+int fastchart_treemap_render_to_image(fastchart_treemap_obj *self, gdImagePtr im);
 
 #endif /* PHP_FASTCHART_H */

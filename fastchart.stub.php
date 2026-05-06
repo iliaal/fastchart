@@ -957,3 +957,34 @@ final class ContourChart extends Chart
 
     public function draw(\GdImage $canvas): \GdImage {}
 }
+
+/**
+ * Treemap: rectangle packing where each cell's area is proportional
+ * to its `value`. Useful for flattened-hierarchy weighted views —
+ * revenue-by-product, log-volume-by-source, market-cap-by-ticker.
+ *
+ * The squarify algorithm (Bruls / Huijsen / van Wijk) optimises
+ * cell aspect ratios so cells stay close to square. Items with
+ * non-positive `value` are silently dropped at setItems().
+ */
+final class Treemap extends Chart
+{
+    /**
+     * Cell list. Each entry is
+     * `['label' => string?, 'value' => number, 'color' => int?]`.
+     * `value` is required and must be > 0; non-positive entries are
+     * dropped. `label` is optional and centred in the cell; cells
+     * too small to fit the label leave it blank. `color` is a 24-bit
+     * RGB; missing draws from the theme palette.
+     */
+    public function setItems(array $items): static {}
+
+    /**
+     * Toggle rendering of cell labels. Default true. Disable for
+     * dense charts where labels clutter — colour carries the cell-
+     * identity signal.
+     */
+    public function setShowLabels(bool $enabled): static {}
+
+    public function draw(\GdImage $canvas): \GdImage {}
+}

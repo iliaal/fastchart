@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 9185deabfcefa62e204024b2b01e8c6809267fa5 */
+ * Stub hash: 98914e55c3076e081a5770b6b3ff9e1b927bb2ac */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -458,6 +458,14 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_ContourChart_draw arginfo_class_FastChart_Chart_draw
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Treemap_setItems, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, items, IS_ARRAY, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_Treemap_setShowLabels arginfo_class_FastChart_Chart_setSecondaryYAxis
+
+#define arginfo_class_FastChart_Treemap_draw arginfo_class_FastChart_Chart_draw
+
 ZEND_METHOD(FastChart_Chart, __construct);
 ZEND_METHOD(FastChart_Chart, version);
 ZEND_METHOD(FastChart_Chart, setSize);
@@ -594,6 +602,9 @@ ZEND_METHOD(FastChart_ContourChart, setGrid);
 ZEND_METHOD(FastChart_ContourChart, setLevels);
 ZEND_METHOD(FastChart_ContourChart, setFilled);
 ZEND_METHOD(FastChart_ContourChart, draw);
+ZEND_METHOD(FastChart_Treemap, setItems);
+ZEND_METHOD(FastChart_Treemap, setShowLabels);
+ZEND_METHOD(FastChart_Treemap, draw);
 
 static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, __construct, arginfo_class_FastChart_Chart___construct, ZEND_ACC_PUBLIC)
@@ -789,6 +800,13 @@ static const zend_function_entry class_FastChart_ContourChart_methods[] = {
 	ZEND_ME(FastChart_ContourChart, setLevels, arginfo_class_FastChart_ContourChart_setLevels, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ContourChart, setFilled, arginfo_class_FastChart_ContourChart_setFilled, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ContourChart, draw, arginfo_class_FastChart_ContourChart_draw, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_FastChart_Treemap_methods[] = {
+	ZEND_ME(FastChart_Treemap, setItems, arginfo_class_FastChart_Treemap_setItems, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Treemap, setShowLabels, arginfo_class_FastChart_Treemap_setShowLabels, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Treemap, draw, arginfo_class_FastChart_Treemap_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -1291,6 +1309,16 @@ static zend_class_entry *register_class_FastChart_ContourChart(zend_class_entry 
 	zend_class_entry ce, *class_entry;
 
 	INIT_NS_CLASS_ENTRY(ce, "FastChart", "ContourChart", class_FastChart_ContourChart_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_FastChart_Treemap(zend_class_entry *class_entry_FastChart_Chart)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "FastChart", "Treemap", class_FastChart_Treemap_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
 
 	return class_entry;
