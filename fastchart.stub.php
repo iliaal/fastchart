@@ -109,9 +109,9 @@ abstract class Chart
      * Misnomer note: the setter is named for the Y axis because every
      * chart family except horizontal BarChart puts values on Y.
      * BarChart with `setOrientation(BAR_HORIZONTAL)` puts values on
-     * the X axis, but still consults this setter — i.e. on horizontal
+     * the X axis, but still consults this setter (i.e. on horizontal
      * bar charts, `setYAxisScale(SCALE_LOG)` actually configures the
-     * X axis. The name is preserved across types so callers don't
+     * X axis). The name is preserved across types so callers don't
      * need a chart-specific setter.
      */
     public function setYAxisScale(int $scale): static {}
@@ -124,7 +124,7 @@ abstract class Chart
      * `AreaChart::setSeries`, `BarChart::setSeries`. Other setters
      * (Pie / Scatter / Stock / BoxPlot / Radar / Polar / Bubble /
      * Gantt) silently skip malformed entries regardless of this
-     * flag — those shapes are best-effort.
+     * flag; those shapes are best-effort.
      */
     public function setStrict(bool $strict): static {}
 
@@ -642,8 +642,8 @@ final class ScatterChart extends Chart
     /**
      * Overlay a least-squares regression curve over the scatter
      * points. `$degree = 1` (default) is the linear fit; 2 or 3
-     * fits a polynomial of that order. Higher degrees are rejected
-     * — quartic / quintic fits over noisy scatter data overfit and
+     * fits a polynomial of that order. Higher degrees are rejected;
+     * quartic / quintic fits over noisy scatter data overfit and
      * are numerically fragile. Pass `$enabled = false` (default) to
      * suppress.
      */
@@ -715,17 +715,17 @@ final class StockChart extends Chart
 
     /**
      * OHLC presentation style.
-     *   - `STYLE_CANDLE` (default) — filled body + high-low wick.
-     *   - `STYLE_BAR` — vertical wick + left tick at open + right
+     *   - `STYLE_CANDLE` (default): filled body + high-low wick.
+     *   - `STYLE_BAR`: vertical wick + left tick at open + right
      *     tick at close (classic Western HLC bar).
-     *   - `STYLE_DIAMOND` — diamond at close + high-low wick.
-     *   - `STYLE_I_CAP` — wick with horizontal caps at high and low.
-     *   - `STYLE_HOLLOW` — outlined-only body for bullish bars,
+     *   - `STYLE_DIAMOND`: diamond at close + high-low wick.
+     *   - `STYLE_I_CAP`: wick with horizontal caps at high and low.
+     *   - `STYLE_HOLLOW`: outlined-only body for bullish bars,
      *     filled body for bearish bars (TradingView convention).
-     *   - `STYLE_VOLUME` — body width scales with the bar's volume
+     *   - `STYLE_VOLUME`: body width scales with the bar's volume
      *     relative to the rolling-average volume (requires the OHLCV
      *     row to carry a volume column).
-     *   - `STYLE_VECTOR` — six-color scheme based on (direction) ×
+     *   - `STYLE_VECTOR`: six-color scheme based on (direction) ×
      *     (volume strength: climax / rising / neutral). Uses the
      *     same algorithm as the pinescript "Vector Candles"
      *     indicator: climax when volume >= 2× avg or
@@ -742,12 +742,12 @@ final class StockChart extends Chart
      * (default 14): seeds avg gain / loss with the SMA of the first
      * window, then updates with the standard recurrence
      * `avg = (avg * (p-1) + cur) / p`. Conventional reference lines:
-     * 30 (oversold) and 70 (overbought) — the pane renders 50 by
+     * 30 (oversold) and 70 (overbought); the pane renders 50 by
      * default; lower it via setIndicatorPane opts if you prefer.
      *
      * Requires `setOhlcv()` to have been called first; the values
      * are computed at this call. A subsequent `setOhlcv()` does NOT
-     * recompute — re-add the indicator after replacing the data.
+     * recompute. Re-add the indicator after replacing the data.
      */
     public function addRSI(int $period = 14): static {}
 
@@ -778,7 +778,7 @@ final class StockChart extends Chart
 
     /**
      * MACD (Moving Average Convergence Divergence): a separate
-     * pane with three series — MACD line (EMA fast minus EMA slow),
+     * pane with three series: MACD line (EMA fast minus EMA slow),
      * signal line (EMA of MACD with `signal` period), and a
      * histogram of MACD minus signal coloured by sign.
      *
@@ -796,15 +796,15 @@ final class StockChart extends Chart
      *
      * Default (14, 3) matches the conventional fast / smooth setup.
      * Range pinned to [0, 100]; reference lines at 20 (oversold)
-     * and 80 (overbought) by convention — the renderer draws no
+     * and 80 (overbought) by convention; the renderer draws no
      * reference; configure setIndicatorPane opts on the resulting
      * pane if you want them.
      */
     public function addStochastic(int $period = 14, int $smooth = 3): static {}
 
     /**
-     * Bollinger Bands: three lines OVERLAID on the price pane —
-     * the middle SMA(close, period), an upper band at +n·σ above,
+     * Bollinger Bands: three lines OVERLAID on the price pane.
+     * The middle SMA(close, period), an upper band at +n·σ above,
      * and a lower band at −n·σ below. Default (20, 2.0). Doesn't
      * consume an indicator-pane slot; uses the price-overlay
      * budget (4 overlays).
@@ -965,9 +965,9 @@ final class BoxPlot extends Chart
  */
 final class PolarChart extends Chart
 {
-    /** setStyle() — line/area mode (default): connect points into a polygon. */
+    /** setStyle(): line/area mode (default), connect points into a polygon. */
     const int STYLE_LINE = 0;
-    /** setStyle() — rose mode: each point is an angular wedge from the centre. */
+    /** setStyle(): rose mode, each point is an angular wedge from the centre. */
     const int STYLE_ROSE = 1;
 
     /**
@@ -991,7 +991,7 @@ final class PolarChart extends Chart
      * Switch between line/area mode and rose (angular bar) mode.
      * `STYLE_LINE` (default) connects points into a polygon, optionally
      * filled. `STYLE_ROSE` renders each (angle, radius) as a filled
-     * wedge — useful for histograms in polar coordinates (wind roses,
+     * wedge, useful for histograms in polar coordinates (wind roses,
      * bearing distributions).
      */
     public function setStyle(int $style): static {}
@@ -1026,7 +1026,7 @@ final class ContourChart extends Chart
 
 /**
  * Treemap: rectangle packing where each cell's area is proportional
- * to its `value`. Useful for flattened-hierarchy weighted views —
+ * to its `value`. Useful for flattened-hierarchy weighted views:
  * revenue-by-product, log-volume-by-source, market-cap-by-ticker.
  *
  * The squarify algorithm (Bruls / Huijsen / van Wijk) optimises
@@ -1047,7 +1047,7 @@ final class Treemap extends Chart
 
     /**
      * Toggle rendering of cell labels. Default true. Disable for
-     * dense charts where labels clutter — colour carries the cell-
+     * dense charts where labels clutter; colour carries the cell-
      * identity signal.
      */
     public function setShowLabels(bool $enabled): static {}
@@ -1106,7 +1106,7 @@ final class Waterfall extends Chart
 /**
  * Discrete heatmap: a 2D grid of cells coloured by value. Distinct
  * from `ContourChart` (which interpolates isolines through the same
- * input shape) — heatmap colours each cell directly from a low/high
+ * input shape); heatmap colours each cell directly from a low/high
  * ramp, optionally writing the cell value inside.
  */
 final class Heatmap extends Chart

@@ -1,10 +1,10 @@
 <?php
 /* Three more annotation-family helpers in one chart:
- *   - addOverlaySeries(type, values, opts)   — extra polyline / area
+ *   - addOverlaySeries(type, values, opts)   : extra polyline / area
  *     traced on top of the main chart, with its own color/thickness
- *   - addTextAnnotation(text, x, y, color?)  — free-floating text at
+ *   - addTextAnnotation(text, x, y, color?)  : free-floating text at
  *     a chart-local coordinate (data X categorical index, data Y)
- *   - addIconAt(x, y, path, w?, h?)          — overlay an external
+ *   - addIconAt(x, y, path, w?, h?)          : overlay an external
  *     image at data coordinates. Useful for inline event markers,
  *     logos, or status icons. */
 
@@ -26,7 +26,7 @@ imagedestroy($icon);
 (new FastChart\LineChart(720, 380))
     ->setFontPath($font)
     ->setDpi($dpi)
-    ->setTitle('Daily traffic — overlay + text + icon annotations')
+    ->setTitle('Daily traffic with overlay + text + icon annotations')
     ->setSeries([
         ['label' => 'Visitors',
          'data'  => [4200, 4500, 4100, 5200, 6800, 7100, 5400, 4900, 6200, 7800]],

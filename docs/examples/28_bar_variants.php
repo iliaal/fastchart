@@ -6,8 +6,8 @@
  *   - setStackMode(STACK_LAYER): when stacked, layer translucent
  *     series in painter order at the same baseline instead of
  *     summing them. Useful for "is series A always larger than B?".
- *   - setStackMode(STACK_BESIDE): equivalent to setStacked(false)
- *     — keeps the chart in stacked-mode-API but renders side-by-side.
+ *   - setStackMode(STACK_BESIDE): equivalent to setStacked(false);
+ *     keeps the chart in stacked-mode-API but renders side-by-side.
  */
 
 require __DIR__ . '/_bootstrap.php';

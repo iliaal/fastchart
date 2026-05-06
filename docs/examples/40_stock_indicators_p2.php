@@ -11,7 +11,7 @@
  *   - addParabolicSAR($af_init = 0.02, $af_max = 0.2)
  *       Wilder's trend-following stop. Dot-per-bar overlay.
  *
- * setOhlcv() must precede the addX() call — values are computed
+ * setOhlcv() must precede the addX() call: values are computed
  * eagerly and don't recompute on a subsequent setOhlcv. */
 
 require __DIR__ . '/_bootstrap.php';
@@ -68,8 +68,8 @@ for ($i = 0; $i < 80; $i++) {
     ->addParabolicSAR()
     ->renderToFile(__DIR__ . '/40d_stock_psar.png');
 
-/* Combined chart: Bollinger + PSAR overlays + MACD + Stoch panes
- * — typical multi-indicator workflow. */
+/* Combined chart: Bollinger + PSAR overlays + MACD + Stoch panes;
+ * a typical multi-indicator workflow. */
 (new FastChart\StockChart(720, 600))
     ->setFontPath($font)
     ->setDpi($dpi)

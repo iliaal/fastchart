@@ -27,7 +27,7 @@ for ($d = 0; $d < 7; $d++) {
 (new FastChart\Heatmap(720, 280))
     ->setFontPath($font)
     ->setDpi($dpi)
-    ->setTitle('Hourly traffic — last week')
+    ->setTitle('Hourly traffic, last week')
     ->setGrid($grid)
     ->setColorRamp(0xF1F5F9, 0xE34A6F)   /* near-white → warm red */
     ->renderToFile(__DIR__ . '/35_heatmap.png');

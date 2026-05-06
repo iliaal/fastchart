@@ -21,7 +21,7 @@ for ($i = 0; $i < 90; $i++) {
 (new FastChart\StockChart(800, 460))
     ->setFontPath($font)
     ->setDpi($dpi)
-    ->setTitle('ACME — 90 day OHLCV')
+    ->setTitle('ACME 90 day OHLCV')
     ->setOhlcv($rows)
     ->addMovingAverage(10, FastChart\StockChart::MA_SMA)
     ->addMovingAverage(20, FastChart\StockChart::MA_EMA)

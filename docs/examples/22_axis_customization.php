@@ -1,13 +1,13 @@
 <?php
 /* Every axis-tuning knob in one chart:
- *   - setYAxisRange(min, max, interval) — force fixed bounds + step
- *   - setYAxisScale(SCALE_LOG)         — log10 Y axis (positive data only)
- *   - setYAxisLabelFormat / setXAxisLabelFormat — printf format for ticks
- *   - setXAxisLabelAngle               — rotate X labels (0/45/90)
- *   - setXLabelStride                  — show every Nth label
- *   - setTickMode                      — TICK_LABELS / TICK_POINTS / TICK_BOTH / TICK_NONE
- *   - setXAxisVisible / setYAxisVisible — hide an axis entirely
- *   - setZeroShelf                     — heavier line at y=0 when data crosses zero
+ *   - setYAxisRange(min, max, interval) : force fixed bounds + step
+ *   - setYAxisScale(SCALE_LOG)          : log10 Y axis (positive data only)
+ *   - setYAxisLabelFormat / setXAxisLabelFormat : printf format for ticks
+ *   - setXAxisLabelAngle                : rotate X labels (0/45/90)
+ *   - setXLabelStride                   : show every Nth label
+ *   - setTickMode                       : TICK_LABELS / TICK_POINTS / TICK_BOTH / TICK_NONE
+ *   - setXAxisVisible / setYAxisVisible : hide an axis entirely
+ *   - setZeroShelf                      : heavier line at y=0 when data crosses zero
  */
 
 require __DIR__ . '/_bootstrap.php';

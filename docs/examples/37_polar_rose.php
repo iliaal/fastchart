@@ -2,7 +2,7 @@
 /* Polar rose: angular-bar variant of PolarChart. Each (angle,
  * radius) entry renders as a wedge from the centre to that radius;
  * the wedge's angular width runs to the next entry's angle. The
- * canonical use is a wind rose — bearing distribution where
+ * canonical use is a wind rose: bearing distribution where
  * direction matters as much as magnitude. */
 
 require __DIR__ . '/_bootstrap.php';

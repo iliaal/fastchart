@@ -47,13 +47,13 @@ In scope:
   array-to-typed-C parsers under `fastchart_*.c`.
 - Arginfo / ZPP mismatches that cause undefined behavior reachable
   from PHP.
-- Embedded-NUL handling in scalar setters and label arrays — the
+- Embedded-NUL handling in scalar setters and label arrays. The
   intended contract is "scalar setters reject, per-element labels
   drop silently"; deviations from that contract are bugs.
-- File-path arguments to `setBackgroundImage()` and `renderToFile()`
-  — these go through PHP's `php_check_open_basedir`; bypasses are in
+- File-path arguments to `setBackgroundImage()` and `renderToFile()`.
+  These go through PHP's `php_check_open_basedir`; bypasses are in
   scope.
-- Palette-canvas / non-truecolor `\GdImage` inputs — `draw()` rejects
+- Palette-canvas / non-truecolor `\GdImage` inputs. `draw()` rejects
   them with `ValueError`; a bypass that lets a palette canvas reach
   libgd's AA path is in scope.
 
@@ -71,5 +71,5 @@ Out of scope:
   but does not bound canvas dimensions; the caller controls
   `imagecreatetruecolor()`.
 - Behavior of the `setStrict(false)` default mode for chart types
-  outside Line / Area / Bar — silent drop of malformed entries is
+  outside Line / Area / Bar. Silent drop of malformed entries is
   documented (see AGENTS.md "Strict-mode coverage gap").

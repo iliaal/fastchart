@@ -1,6 +1,6 @@
 <?php
 /* Same data drawn three ways: light theme, dark theme, and a
- * gradient-fill bar chart with a drop shadow on the bars — to show
+ * gradient-fill bar chart with a drop shadow on the bars, to show
  * how the presentation knobs compose. Three charts on three files. */
 
 require __DIR__ . '/_bootstrap.php';
