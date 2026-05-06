@@ -1429,10 +1429,7 @@ ZEND_METHOD(FastChart_Chart, setBackgroundColor)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(rgb)
     ZEND_PARSE_PARAMETERS_END();
-    if (rgb < -1 || rgb > 0xFFFFFF) {
-        zend_value_error("FastChart\\Chart::setBackgroundColor() expects -1 (theme default) or 0..0xFFFFFF");
-        RETURN_THROWS();
-    }
+    FASTCHART_VALIDATE_RGB_OR_DEFAULT(rgb, "FastChart\\Chart::setBackgroundColor");
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     self->bg_override = rgb;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -1444,10 +1441,7 @@ ZEND_METHOD(FastChart_Chart, setPlotBackgroundColor)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(rgb)
     ZEND_PARSE_PARAMETERS_END();
-    if (rgb < -1 || rgb > 0xFFFFFF) {
-        zend_value_error("FastChart\\Chart::setPlotBackgroundColor() expects -1 (theme default) or 0..0xFFFFFF");
-        RETURN_THROWS();
-    }
+    FASTCHART_VALIDATE_RGB_OR_DEFAULT(rgb, "FastChart\\Chart::setPlotBackgroundColor");
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     self->plot_bg_override = rgb;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -1473,10 +1467,7 @@ ZEND_METHOD(FastChart_Chart, setSeriesColors)
             RETURN_THROWS();
         }
         zend_long c = Z_LVAL_P(v);
-        if (c < 0 || c > 0xFFFFFF) {
-            zend_value_error("FastChart\\Chart::setSeriesColors() entry out of range; expected 0..0xFFFFFF");
-            RETURN_THROWS();
-        }
+        FASTCHART_VALIDATE_RGB(c, "FastChart\\Chart::setSeriesColors");
         parsed[n++] = (int)c;
     } ZEND_HASH_FOREACH_END();
 
@@ -1610,9 +1601,8 @@ ZEND_METHOD(FastChart_Chart, addHorizontalLine)
     if (fastchart_reject_non_finite(value, "FastChart\\Chart::addHorizontalLine()") != 0) {
         RETURN_THROWS();
     }
-    if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
-        zend_value_error("FastChart\\Chart::addHorizontalLine() color out of range; expected 0..0xFFFFFF");
-        RETURN_THROWS();
+    if (!color_is_null) {
+        FASTCHART_VALIDATE_RGB(color, "FastChart\\Chart::addHorizontalLine");
     }
     if (label && memchr(ZSTR_VAL(label), 0, ZSTR_LEN(label)) != NULL) {
         zend_value_error("FastChart\\Chart::addHorizontalLine() label contains an embedded NUL");
@@ -1644,10 +1634,7 @@ ZEND_METHOD(FastChart_Chart, addHorizontalBand)
         fastchart_reject_non_finite(high, "FastChart\\Chart::addHorizontalBand()") != 0) {
         RETURN_THROWS();
     }
-    if (color < 0 || color > 0xFFFFFF) {
-        zend_value_error("FastChart\\Chart::addHorizontalBand() color out of range; expected 0..0xFFFFFF");
-        RETURN_THROWS();
-    }
+    FASTCHART_VALIDATE_RGB(color, "FastChart\\Chart::addHorizontalBand");
     if (alpha < 0 || alpha > 127) {
         zend_value_error("FastChart\\Chart::addHorizontalBand() alpha out of range; expected 0..127");
         RETURN_THROWS();
@@ -1710,10 +1697,7 @@ ZEND_METHOD(FastChart_Chart, addVerticalBand)
         fastchart_reject_non_finite(high, "FastChart\\Chart::addVerticalBand()") != 0) {
         RETURN_THROWS();
     }
-    if (color < 0 || color > 0xFFFFFF) {
-        zend_value_error("FastChart\\Chart::addVerticalBand() color out of range; expected 0..0xFFFFFF");
-        RETURN_THROWS();
-    }
+    FASTCHART_VALIDATE_RGB(color, "FastChart\\Chart::addVerticalBand");
     if (alpha < 0 || alpha > 127) {
         zend_value_error("FastChart\\Chart::addVerticalBand() alpha out of range; expected 0..127");
         RETURN_THROWS();
@@ -1826,9 +1810,8 @@ ZEND_METHOD(FastChart_Chart, addVerticalLine)
     if (fastchart_reject_non_finite(position, "FastChart\\Chart::addVerticalLine()") != 0) {
         RETURN_THROWS();
     }
-    if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
-        zend_value_error("FastChart\\Chart::addVerticalLine() color out of range; expected 0..0xFFFFFF");
-        RETURN_THROWS();
+    if (!color_is_null) {
+        FASTCHART_VALIDATE_RGB(color, "FastChart\\Chart::addVerticalLine");
     }
     if (label && memchr(ZSTR_VAL(label), 0, ZSTR_LEN(label)) != NULL) {
         zend_value_error("FastChart\\Chart::addVerticalLine() label contains an embedded NUL");
@@ -1873,6 +1856,26 @@ ZEND_METHOD(FastChart_Chart, addVerticalLine)
 FASTCHART_MARKER_SETTERS(FastChart_LineChart)
 FASTCHART_MARKER_SETTERS(FastChart_ScatterChart)
 
+/* Validate that `var_` is a 24-bit RGB int (0..0xFFFFFF), throwing a
+ * ValueError that names `method_str_` if not. The _OR_DEFAULT variant
+ * additionally accepts -1 as the "use the theme default" sentinel.
+ * `method_str_` is the qualified method name as a string literal so
+ * message wording stays consistent across ~13 setters that previously
+ * each spelled the same range and boundary slightly differently. */
+#define FASTCHART_VALIDATE_RGB(var_, method_str_) do { \
+    if ((var_) < 0 || (var_) > 0xFFFFFF) { \
+        zend_value_error(method_str_ "() expects a 24-bit RGB int (0..0xFFFFFF)"); \
+        RETURN_THROWS(); \
+    } \
+} while (0)
+
+#define FASTCHART_VALIDATE_RGB_OR_DEFAULT(var_, method_str_) do { \
+    if ((var_) < -1 || (var_) > 0xFFFFFF) { \
+        zend_value_error(method_str_ "() expects -1 (theme default) or a 24-bit RGB int (0..0xFFFFFF)"); \
+        RETURN_THROWS(); \
+    } \
+} while (0)
+
 #define FASTCHART_COLOR_OVERRIDE_SETTER(name_, field_) \
     ZEND_METHOD(FastChart_Chart, name_) \
     { \
@@ -1880,10 +1883,7 @@ FASTCHART_MARKER_SETTERS(FastChart_ScatterChart)
         ZEND_PARSE_PARAMETERS_START(1, 1) \
             Z_PARAM_LONG(rgb) \
         ZEND_PARSE_PARAMETERS_END(); \
-        if (rgb < -1 || rgb > 0xFFFFFF) { \
-            zend_value_error("FastChart\\Chart::" #name_ "() expects -1 or 0..0xFFFFFF"); \
-            RETURN_THROWS(); \
-        } \
+        FASTCHART_VALIDATE_RGB_OR_DEFAULT(rgb, "FastChart\\Chart::" #name_); \
         fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS); \
         self->field_ = rgb; \
         RETURN_ZVAL(ZEND_THIS, 1, 0); \
@@ -2190,10 +2190,7 @@ ZEND_METHOD(FastChart_Chart, setEdgeColor)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(rgb)
     ZEND_PARSE_PARAMETERS_END();
-    if (rgb < -1 || rgb > 0xFFFFFF) {
-        zend_value_error("FastChart\\Chart::setEdgeColor() expects -1 or 0..0xFFFFFF");
-        RETURN_THROWS();
-    }
+    FASTCHART_VALIDATE_RGB_OR_DEFAULT(rgb, "FastChart\\Chart::setEdgeColor");
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     self->edge_color = rgb;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -2249,10 +2246,8 @@ ZEND_METHOD(FastChart_Chart, setColorRamp)
         Z_PARAM_LONG(lo)
         Z_PARAM_LONG(hi)
     ZEND_PARSE_PARAMETERS_END();
-    if (lo < 0 || lo > 0xFFFFFF || hi < 0 || hi > 0xFFFFFF) {
-        zend_value_error("FastChart\\Chart::setColorRamp() colors must be 0..0xFFFFFF");
-        RETURN_THROWS();
-    }
+    FASTCHART_VALIDATE_RGB(lo, "FastChart\\Chart::setColorRamp");
+    FASTCHART_VALIDATE_RGB(hi, "FastChart\\Chart::setColorRamp");
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     self->color_ramp_low = lo;
     self->color_ramp_high = hi;
@@ -2274,9 +2269,8 @@ ZEND_METHOD(FastChart_Chart, addTextAnnotation)
         Z_PARAM_LONG_OR_NULL(color, color_is_null)
     ZEND_PARSE_PARAMETERS_END();
 
-    if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
-        zend_value_error("FastChart\\Chart::addTextAnnotation() color must be 0..0xFFFFFF or null");
-        RETURN_THROWS();
+    if (!color_is_null) {
+        FASTCHART_VALIDATE_RGB(color, "FastChart\\Chart::addTextAnnotation");
     }
     if (x < INT_MIN || x > INT_MAX || y < INT_MIN || y > INT_MAX) {
         zend_value_error("FastChart\\Chart::addTextAnnotation() x and y must fit in a 32-bit int");
@@ -2349,14 +2343,8 @@ ZEND_METHOD(FastChart_Chart, setGradientFill)
         Z_PARAM_LONG(to)
         Z_PARAM_LONG(dir)
     ZEND_PARSE_PARAMETERS_END();
-    if (from != -1 && (from < 0 || from > 0xFFFFFF)) {
-        zend_value_error("FastChart\\Chart::setGradientFill() $from must be -1 or 0..0xFFFFFF");
-        RETURN_THROWS();
-    }
-    if (to != -1 && (to < 0 || to > 0xFFFFFF)) {
-        zend_value_error("FastChart\\Chart::setGradientFill() $to must be -1 or 0..0xFFFFFF");
-        RETURN_THROWS();
-    }
+    FASTCHART_VALIDATE_RGB_OR_DEFAULT(from, "FastChart\\Chart::setGradientFill");
+    FASTCHART_VALIDATE_RGB_OR_DEFAULT(to,   "FastChart\\Chart::setGradientFill");
     if (dir != FASTCHART_GRADIENT_VERTICAL && dir != FASTCHART_GRADIENT_HORIZONTAL) {
         zend_value_error("FastChart\\Chart::setGradientFill() $direction must be GRADIENT_VERTICAL or GRADIENT_HORIZONTAL");
         RETURN_THROWS();
@@ -2385,9 +2373,8 @@ ZEND_METHOD(FastChart_Chart, setDropShadow)
         zend_value_error("FastChart\\Chart::setDropShadow() offsets must be in [-50, 50]");
         RETURN_THROWS();
     }
-    if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
-        zend_value_error("FastChart\\Chart::setDropShadow() color must be 0..0xFFFFFF");
-        RETURN_THROWS();
+    if (!color_is_null) {
+        FASTCHART_VALIDATE_RGB(color, "FastChart\\Chart::setDropShadow");
     }
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
@@ -2427,9 +2414,8 @@ ZEND_METHOD(FastChart_ScatterChart, setTrendLine)
         Z_PARAM_LONG(degree)
     ZEND_PARSE_PARAMETERS_END();
 
-    if (!color_is_null && (color < 0 || color > 0xFFFFFF)) {
-        zend_value_error("FastChart\\ScatterChart::setTrendLine() color must be 0..0xFFFFFF");
-        RETURN_THROWS();
+    if (!color_is_null) {
+        FASTCHART_VALIDATE_RGB(color, "FastChart\\ScatterChart::setTrendLine");
     }
     if (degree < 1 || degree > 3) {
         zend_value_error("FastChart\\ScatterChart::setTrendLine() degree must be in [1, 3]");
