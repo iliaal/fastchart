@@ -130,8 +130,16 @@ int fastchart_funnel_render_to_image(fastchart_funnel_obj *self, gdImagePtr im)
                                 self->stages[i].label, NULL, 0);
         }
         if (label_font && ((fastchart_obj *)self)->show_values) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "%.0f", v_top);
+            /* Honour the inherited setShowValues($flag, $format)
+             * format string when present; fall back to "%.0f" for
+             * the unconfigured case. */
+            const char *fmt = "%.0f";
+            fastchart_obj *base = (fastchart_obj *)self;
+            if (base->value_format && ZSTR_LEN(base->value_format) > 0) {
+                fmt = ZSTR_VAL(base->value_format);
+            }
+            char buf[64];
+            snprintf(buf, sizeof(buf), fmt, v_top);
             fastchart_text_draw(im, label_font, label_size, pal.text,
                                 x_right + 8, yc, FASTCHART_ALIGN_LEFT,
                                 buf, NULL, 0);
