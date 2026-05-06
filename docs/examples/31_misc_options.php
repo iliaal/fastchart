@@ -34,12 +34,13 @@ $chart->renderToFile(__DIR__ . '/31a_setsize.png');
  * Note: when setPlotRect is set, fastchart skips its canvas-wide bg
  * fill so it doesn't clobber neighbouring charts on the same image.
  * The caller pre-fills the canvas — here a soft #f5f5f5 backdrop. */
-/* Note: setDpi is intentionally NOT called here. With a user-allocated
- * canvas, the chart can't resize the canvas to match the DPI scale —
- * it just reads the existing pixel dimensions. Calling setDpi(200) on
- * a fixed 800x320 canvas would make labels overflow because layout
- * margins scale up but the canvas doesn't. setDpi only makes sense on
- * the renderToFile / renderPng paths where fastchart owns the canvas. */
+/* Note: don't call setDpi() on these two charts. With a caller-owned
+ * canvas the chart can't resize the image — calling setDpi(200) on a
+ * fixed 800x320 canvas would scale layout margins and FreeType up
+ * while the canvas stays fixed and labels would overflow. setDpi()
+ * *can* be used on the draw($canvas) path when the caller allocates
+ * a proportionally larger canvas (see the stub doc note on draw);
+ * we keep it off here because this canvas is fixed. */
 $im = imagecreatetruecolor(800, 320);
 $bg = imagecolorallocate($im, 0xF5, 0xF5, 0xF5);
 imagefilledrectangle($im, 0, 0, 799, 319, $bg);
