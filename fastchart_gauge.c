@@ -38,19 +38,14 @@ static double gauge_value_to_deg(double v, double mn, double mx)
 
 int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
 {
+    /* Per-render entry: invalidate the font cache (so a runtime
+     * open_basedir narrowing between draws is honored) and stamp DPI
+     * on the canvas. Must come BEFORE any palette / text work. */
+    fastchart_begin_render((fastchart_obj *)self, im);
+
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
-
-    /* Stamp DPI on the canvas — feeds gdImage's resolution
-     * metadata + FreeType hinting via fastchart_text_draw's
-     * gdImageStringFTEx call. Renderers that go through
-     * fastchart_compute_layout already get this; this one
-     * does not, so the call is local. */
-    if (((fastchart_obj *)self)->dpi > 0) {
-        gdImageSetResolution(im, (unsigned int)((fastchart_obj *)self)->dpi,
-                              (unsigned int)((fastchart_obj *)self)->dpi);
-    }
 
     int W = gdImageSX(im);
     int H = gdImageSY(im);
