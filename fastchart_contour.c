@@ -92,10 +92,15 @@ int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im
     }
 
     /* Levels: user-supplied via setLevels (typed) or 5 evenly spaced. */
-    double levels[16];
+    /* Match the public setter cap (FASTCHART_MAX_LEVELS = 32) so all
+     * accepted levels render. The previous 16 silently dropped the
+     * upper half of a setLevels() call at the advertised maximum. */
+    double levels[FASTCHART_MAX_LEVELS];
     int n_levels = 0;
     if (self->levels && self->level_count > 0) {
-        n_levels = self->level_count > 16 ? 16 : self->level_count;
+        n_levels = self->level_count > FASTCHART_MAX_LEVELS
+            ? FASTCHART_MAX_LEVELS
+            : self->level_count;
         for (int k = 0; k < n_levels; k++) levels[k] = self->levels[k];
     }
     if (n_levels == 0) {
@@ -105,19 +110,14 @@ int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im
         }
     }
 
+    /* Per-render entry: invalidate the font cache (so a runtime
+     * open_basedir narrowing between draws is honored) and stamp DPI
+     * on the canvas. Must come BEFORE any palette / text work. */
+    fastchart_begin_render((fastchart_obj *)self, im);
+
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
-
-    /* Stamp DPI on the canvas — feeds gdImage's resolution
-     * metadata + FreeType hinting via fastchart_text_draw's
-     * gdImageStringFTEx call. Renderers that go through
-     * fastchart_compute_layout already get this; this one
-     * does not, so the call is local. */
-    if (((fastchart_obj *)self)->dpi > 0) {
-        gdImageSetResolution(im, (unsigned int)((fastchart_obj *)self)->dpi,
-                              (unsigned int)((fastchart_obj *)self)->dpi);
-    }
 
     int W = gdImageSX(im);
     int H = gdImageSY(im);

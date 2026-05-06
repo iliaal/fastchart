@@ -17,6 +17,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 
 #include "php_fastchart.h"
@@ -362,18 +363,19 @@ void fastchart_draw_marker(gdImagePtr im, int x, int y,
     }
 }
 
-void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
-                              int has_y_axis, int has_x_axis,
-                              const char *const *cat_y_labels,
-                              int n_cat_y_labels,
-                              fastchart_rect *out_plot)
+void fastchart_begin_render(fastchart_obj *chart, gdImagePtr im)
 {
-    /* Every renderer calls compute_layout exactly once at draw entry,
-     * so this is the single chokepoint for invalidating per-draw
-     * caches. Any ini_set narrowing between draws is caught the next
-     * time fastchart_resolve_font runs after this point; the shadow
-     * color is re-allocated against the new gdImage `im` on first
-     * shadow draw. */
+    /* Single chokepoint for per-draw cache invalidation. Any ini_set
+     * narrowing of open_basedir between two draws of the same chart
+     * object must NOT let the prior draw's resolved font path leak
+     * past — fastchart_resolve_font re-runs check_font_path() on the
+     * first call after this point. The shadow color is re-allocated
+     * against the new gdImage `im` on the first shadow draw.
+     *
+     * Renderers that call fastchart_compute_layout get this for free
+     * (compute_layout calls us). Non-layout renderers (gauge, radar,
+     * polar, surface, contour) must call this directly at draw entry,
+     * before resolving any fonts or palette colors. */
     chart->font_cache_valid = false;
     chart->shadow_color_valid = false;
 
@@ -385,12 +387,21 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
      *     which controls glyph hinting. Higher DPI -> finer hinting.
      * Without this call libgd defaults the resolution to 96 (image
      * meta) and FreeType defaults to 100 (hinting), leaving us with
-     * inconsistent state. Setting both via gdImageResolution keeps
+     * inconsistent state. Setting both via gdImageSetResolution keeps
      * them aligned. */
     if (chart->dpi > 0) {
         gdImageSetResolution(im, (unsigned int)chart->dpi,
                               (unsigned int)chart->dpi);
     }
+}
+
+void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
+                              int has_y_axis, int has_x_axis,
+                              const char *const *cat_y_labels,
+                              int n_cat_y_labels,
+                              fastchart_rect *out_plot)
+{
+    fastchart_begin_render(chart, im);
 
     int W = gdImageSX(im);
     int H = gdImageSY(im);
@@ -723,6 +734,30 @@ int fastchart_y_categorical_center(const fastchart_rect *plot, int idx, int n)
     return plot->y0 + (int)(step * (idx + 0.5));
 }
 
+/* Source-image budget: reject files larger than 8 MiB before
+ * handing them to libgd. open_basedir already gates which paths
+ * are reachable; this cap is defense-in-depth so a caller who
+ * passes a user-supplied background or icon path can't make
+ * libgd allocate hundreds of MiB to decode a single image.
+ *
+ * The cap intentionally lives at the source-load helper, not on
+ * the public setter — setter time is too early to know whether
+ * the file at that path is still the same size (or exists at all)
+ * by the time draw() runs. */
+#define FASTCHART_SOURCE_IMAGE_MAX_BYTES (8 * 1024 * 1024)
+
+static gdImagePtr fastchart_load_source_image(const char *path)
+{
+    struct stat sb;
+    if (stat(path, &sb) != 0) return NULL;
+    if (!S_ISREG(sb.st_mode)) return NULL;
+    if (sb.st_size <= 0) return NULL;
+    if (sb.st_size > FASTCHART_SOURCE_IMAGE_MAX_BYTES) return NULL;
+    /* gdImageCreateFromFile picks the right loader by signature
+     * (libgd 2.2.0+). Failure returns NULL. */
+    return gdImageCreateFromFile(path);
+}
+
 /* Load and composite a background image onto the canvas. Format
  * detected from extension. Silently no-ops on load failure -- the
  * chart still renders, just without the bg image.
@@ -740,9 +775,7 @@ static void composite_bg_image(gdImagePtr im, const char *path)
     int W = gdImageSX(im);
     int H = gdImageSY(im);
 
-    /* gdImageCreateFromFile picks the right loader by signature
-     * (libgd 2.2.0+). Failure returns NULL. */
-    gdImagePtr src = gdImageCreateFromFile(path);
+    gdImagePtr src = fastchart_load_source_image(path);
     if (!src) return;
 
     gdImageCopyResampled(im, src, 0, 0, 0, 0,
@@ -756,7 +789,7 @@ void fastchart_blit_icon(gdImagePtr im, const fastchart_icon *icon,
 {
     if (!icon->path) return;
     if (php_check_open_basedir_ex(icon->path, /*warn=*/0) != 0) return;
-    gdImagePtr src = gdImageCreateFromFile(icon->path);
+    gdImagePtr src = fastchart_load_source_image(icon->path);
     if (!src) return;
 
     int sw = gdImageSX(src);
@@ -1481,9 +1514,13 @@ void fastchart_draw_legend(gdImagePtr im, fastchart_obj *chart,
                            const char *const *labels)
 {
     if (n_entries < 1) return;
-    if (!chart->font_path) return;
     if (chart->legend_position == FASTCHART_LEGEND_NONE) return;
 
+    /* Defer the "no usable font" decision to fastchart_resolve_font:
+     * it knows about per-role overrides, so a chart with no global
+     * font_path but an explicit setLabelFont() must still draw the
+     * legend. The earlier `if (!chart->font_path) return;` short-
+     * circuited that path. */
     double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
     const char *font = fastchart_resolve_font(chart, FC_FONT_LABEL);
     if (!font) return;

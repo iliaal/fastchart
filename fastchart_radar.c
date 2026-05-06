@@ -25,7 +25,11 @@
 
 #include <math.h>
 
-#define MAX_RADAR_AXES   32
+/* Match the public setter cap so accepted axes render end-to-end.
+ * 128 gdPoint = 1 KB on the stack. The previous 32 silently dropped
+ * axes 33..N from charts whose series were built within the
+ * advertised FASTCHART_MAX_RADAR_VALUES limit. */
+#define MAX_RADAR_AXES   FASTCHART_MAX_RADAR_VALUES
 
 /* Read a typed-series cell, treating out-of-range as 0. */
 static inline double radar_read_d(const fastchart_radar_series *s, int i)
@@ -67,19 +71,14 @@ int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
     if (self->radar_max > 0) dmax = self->radar_max;
     if (dmax <= 0) dmax = 1.0;
 
+    /* Per-render entry: invalidate the font cache (so a runtime
+     * open_basedir narrowing between draws is honored) and stamp DPI
+     * on the canvas. Must come BEFORE any palette / text work. */
+    fastchart_begin_render((fastchart_obj *)self, im);
+
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
-
-    /* Stamp DPI on the canvas — feeds gdImage's resolution
-     * metadata + FreeType hinting via fastchart_text_draw's
-     * gdImageStringFTEx call. Renderers that go through
-     * fastchart_compute_layout already get this; this one
-     * does not, so the call is local. */
-    if (((fastchart_obj *)self)->dpi > 0) {
-        gdImageSetResolution(im, (unsigned int)((fastchart_obj *)self)->dpi,
-                              (unsigned int)((fastchart_obj *)self)->dpi);
-    }
 
     int W = gdImageSX(im);
     int H = gdImageSY(im);

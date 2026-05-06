@@ -33,6 +33,16 @@ typedef struct {
     double ticks[FASTCHART_MAX_TICKS];
 } fastchart_value_range;
 
+/* Per-render entry hook. Invalidates the font-path cache and the
+ * shadow-color cache (so the next resolve_font / shadow_alloc call
+ * re-runs open_basedir checks against the current ini state and
+ * re-allocates against the current gdImage), and stamps the chart's
+ * DPI on the canvas. Every renderer must call this at draw entry,
+ * BEFORE any palette / text / background work. fastchart_compute_layout
+ * already calls it; non-layout renderers (gauge, radar, polar, surface,
+ * contour) need to call it directly. */
+void fastchart_begin_render(fastchart_obj *chart, gdImagePtr im);
+
 /* Compute the plot rectangle inside the canvas after subtracting space
  * for title (top), x-axis labels (bottom), and y-axis labels (left).
  * Right margin grows when the chart has a secondary Y axis. Axis

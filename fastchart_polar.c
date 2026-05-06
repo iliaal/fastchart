@@ -25,7 +25,10 @@
 
 #include <math.h>
 
-#define MAX_POLAR_POINTS 512
+/* Match the public setter cap so accepted data renders end-to-end.
+ * 1024 gdPoint = 8 KB on the stack, well within budget. The previous
+ * 512 silently dropped half of an at-cap series. */
+#define MAX_POLAR_POINTS FASTCHART_MAX_POLAR_POINTS
 
 int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
 {
@@ -47,19 +50,14 @@ int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
     if (self->polar_max_radius > 0) rmax = self->polar_max_radius;
     if (rmax <= 0) rmax = 1.0;
 
+    /* Per-render entry: invalidate the font cache (so a runtime
+     * open_basedir narrowing between draws is honored) and stamp DPI
+     * on the canvas. Must come BEFORE any palette / text work. */
+    fastchart_begin_render((fastchart_obj *)self, im);
+
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
-
-    /* Stamp DPI on the canvas — feeds gdImage's resolution
-     * metadata + FreeType hinting via fastchart_text_draw's
-     * gdImageStringFTEx call. Renderers that go through
-     * fastchart_compute_layout already get this; this one
-     * does not, so the call is local. */
-    if (((fastchart_obj *)self)->dpi > 0) {
-        gdImageSetResolution(im, (unsigned int)((fastchart_obj *)self)->dpi,
-                              (unsigned int)((fastchart_obj *)self)->dpi);
-    }
 
     int W = gdImageSX(im);
     int H = gdImageSY(im);
