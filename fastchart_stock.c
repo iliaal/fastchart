@@ -197,26 +197,56 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
 
     if (candle_style == FASTCHART_STYLE_VECTOR) {
         va = ecalloc(n, sizeof(int));
+        /* Monotone-decreasing deque for the sliding-window max of
+         * climax_value = volume * (high - low) over the previous baseT
+         * bars. Front holds the max; tail entries with cv <= incoming
+         * are dominated and dropped before push. baseT=10 keeps the
+         * deque tiny — the previous nested loop was O(n*baseT)
+         * which is fine in practice but the deque is genuinely O(n)
+         * and reads cleaner. Indices stored as a ring buffer of size
+         * baseT + 1 so head==tail unambiguously means empty. */
+        int dq[baseT + 1];
+        int dq_head = 0, dq_tail = 0;
+        const int DQ_CAP = baseT + 1;
         for (int i = 0; i < n; i++) {
-            /* Window for step i = [max(0,i-baseT) .. i-1]. */
+            /* Volume-avg window for step i = previous baseT bars. */
             if (i >= 1 && candles[i - 1].has_volume) {
                 win_sum += candles[i - 1].volume; win_cnt++;
             }
             if (i >= baseT + 1 && candles[i - 1 - baseT].has_volume) {
                 win_sum -= candles[i - 1 - baseT].volume; win_cnt--;
             }
+            /* Push (i-1) into climax-max deque: drop tail entries
+             * whose value is <= the new one (they can never be the
+             * max of any future window that includes i-1). Skip bars
+             * without volume — the original loop did the same. */
+            if (i >= 1 && candles[i - 1].has_volume) {
+                double cv_new = candles[i - 1].volume *
+                    (candles[i - 1].high - candles[i - 1].low);
+                while (dq_head != dq_tail) {
+                    int back = (dq_tail == 0) ? DQ_CAP - 1 : dq_tail - 1;
+                    int bidx = dq[back];
+                    double cv_back = candles[bidx].volume *
+                        (candles[bidx].high - candles[bidx].low);
+                    if (cv_back > cv_new) break;
+                    dq_tail = back;
+                }
+                dq[dq_tail] = i - 1;
+                dq_tail = (dq_tail + 1) % DQ_CAP;
+            }
+            /* Drop stale front: indices < i - baseT have aged out. */
+            while (dq_head != dq_tail && dq[dq_head] < i - baseT) {
+                dq_head = (dq_head + 1) % DQ_CAP;
+            }
             if (!candles[i].has_volume) { va[i] = 0; continue; }
             double avg = win_cnt > 0 ? win_sum / win_cnt : candles[i].volume;
-            /* Climax-max stays as a baseT-bounded inner pass; the window
-             * shape is volume*range, not volume, and baseT=10 keeps the
-             * constant factor negligible. */
-            double climax = candles[i].volume * (candles[i].high - candles[i].low);
+            double climax = candles[i].volume *
+                (candles[i].high - candles[i].low);
             double climax_max = 0;
-            for (int k = 1; k <= baseT && i - k >= 0; k++) {
-                if (!candles[i - k].has_volume) continue;
-                double c = candles[i - k].volume *
-                    (candles[i - k].high - candles[i - k].low);
-                if (c > climax_max) climax_max = c;
+            if (dq_head != dq_tail) {
+                int fidx = dq[dq_head];
+                climax_max = candles[fidx].volume *
+                    (candles[fidx].high - candles[fidx].low);
             }
             if (avg > 0 && (candles[i].volume >= avg * 2 || climax >= climax_max)) {
                 va[i] = 1;
