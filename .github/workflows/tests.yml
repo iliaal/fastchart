@@ -88,6 +88,74 @@ jobs:
             exit 1
           fi
 
+  asan:
+    name: PHP ${{ matrix.php }} - ASAN
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.4']
+
+    env:
+      ASAN_OPTIONS: exitcode=139:verify_asan_link_order=0:detect_odr_violation=0
+      UBSAN_OPTIONS: print_stacktrace=1
+      USE_ZEND_ALLOC: 0
+      USE_TRACKED_ALLOC: 1
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y llvm clang re2c bison autoconf libgd-dev pkg-config
+
+      - name: Build PHP with ASAN + ext/gd
+        # -shared-libasan keeps __cxa_throw resolvable across dlopen
+        # boundaries when fastchart.so is loaded into php-cli.
+        # ext/gd is built directly into the ASAN PHP so the GdImage
+        # class entry exists at MINIT (fastchart's MINIT looks it up
+        # in the class table).
+        run: |
+          git clone --depth=1 --branch=PHP-${{ matrix.php }} https://github.com/php/php-src.git /tmp/php-src
+          cd /tmp/php-src
+          ./buildconf --force
+          CC=clang CXX=clang++ \
+          CFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -shared-libasan -DZEND_TRACK_ARENA_ALLOC" \
+          LDFLAGS="-fsanitize=address,undefined -shared-libasan" \
+          ./configure \
+            --enable-debug \
+            --disable-zts \
+            --disable-all \
+            --enable-cli \
+            --enable-gd \
+            --with-external-gd \
+            --prefix=/tmp/php-asan
+          make -j$(nproc)
+          make install
+
+      - name: Build fastchart with ASAN
+        run: |
+          export PATH="/tmp/php-asan/bin:$PATH"
+          phpize
+          CC=clang CXX=clang++ \
+          CFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -shared-libasan -DZEND_TRACK_ARENA_ALLOC" \
+          CXXFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -shared-libasan -DZEND_TRACK_ARENA_ALLOC" \
+          LDFLAGS="-fsanitize=address,undefined -shared-libasan" \
+          ./configure \
+            --enable-fastchart --enable-fastchart-dev \
+            --with-php-config=/tmp/php-asan/bin/php-config
+          make -j$(nproc)
+
+      - name: Run tests under ASAN
+        run: |
+          export TEST_PHP_EXECUTABLE=/tmp/php-asan/bin/php
+          export TEST_PHP_ARGS="-d extension=gd -d extension=$(pwd)/modules/fastchart.so"
+          export NO_INTERACTION=1
+          /tmp/php-asan/bin/php run-tests.php --show-diff --asan -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt || true
+          if grep -qP 'Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
+            echo "::error::Tests failed under ASAN"
+            exit 1
+          fi
+
   macos:
     name: PHP ${{ matrix.php }} - macOS
     runs-on: macos-latest

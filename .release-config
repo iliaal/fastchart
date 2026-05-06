@@ -11,5 +11,13 @@ build_matrix:
   - PHP-8.4
   - PHP-8.5
 configure_base: "--enable-fastchart --enable-fastchart-dev"
+
+# Prebuilt-binary release lanes are off because fastchart links
+# libgd directly (PHP_ADD_LIBRARY(gd) in config.m4). Neither
+# php/php-windows-builder nor php/pie-ext-binary-builder install
+# libgd-dev, so they fail at link time. Source builds via PIE work
+# fine on any host where libgd is reachable. Re-enable these lanes
+# once a libgd-bundling story (system package per runner, or a
+# vendored build) is wired up.
 windows_ci: false
 linux_prebuilt: false
