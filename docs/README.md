@@ -705,7 +705,7 @@ The remaining catch-all knobs:
 - `setStrict(true)` — TypeError on non-numeric Line/Area/Bar series
   cells instead of silent NaN coercion
 - `setBoxWidth(percent)` — boxplot box width as a percent of slot
-- `setBackgroundImage(path, alpha?)` — bitmap behind the chart;
+- `setBackgroundImage(path)` — bitmap behind the chart;
   open_basedir-checked at draw time
 
 ```php
