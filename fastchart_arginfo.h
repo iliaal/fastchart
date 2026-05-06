@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 3dee25c89ce999c3840fe4bac2d911423ff73727 */
+ * Stub hash: f15a19057f33a49d1e7115178d7034862490ac03 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -374,6 +374,27 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_addOBV, 0, 0, IS_STATIC, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_addMACD, 0, 0, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, fast, IS_LONG, 0, "12")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, slow, IS_LONG, 0, "26")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, signal, IS_LONG, 0, "9")
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_addStochastic, 0, 0, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, period, IS_LONG, 0, "14")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, smooth, IS_LONG, 0, "3")
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_addBollingerBands, 0, 0, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, period, IS_LONG, 0, "20")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, stddev, IS_DOUBLE, 0, "2.0")
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_addParabolicSAR, 0, 0, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, af_init, IS_DOUBLE, 0, "0.02")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, af_max, IS_DOUBLE, 0, "0.2")
+ZEND_END_ARG_INFO()
+
 #define arginfo_class_FastChart_StockChart_draw arginfo_class_FastChart_Chart_draw
 
 #define arginfo_class_FastChart_RadarChart_setSeries arginfo_class_FastChart_LineChart_setSeries
@@ -610,6 +631,10 @@ ZEND_METHOD(FastChart_StockChart, addRSI);
 ZEND_METHOD(FastChart_StockChart, addMomentum);
 ZEND_METHOD(FastChart_StockChart, addROC);
 ZEND_METHOD(FastChart_StockChart, addOBV);
+ZEND_METHOD(FastChart_StockChart, addMACD);
+ZEND_METHOD(FastChart_StockChart, addStochastic);
+ZEND_METHOD(FastChart_StockChart, addBollingerBands);
+ZEND_METHOD(FastChart_StockChart, addParabolicSAR);
 ZEND_METHOD(FastChart_StockChart, draw);
 ZEND_METHOD(FastChart_RadarChart, setSeries);
 ZEND_METHOD(FastChart_RadarChart, setMaxValue);
@@ -793,6 +818,10 @@ static const zend_function_entry class_FastChart_StockChart_methods[] = {
 	ZEND_ME(FastChart_StockChart, addMomentum, arginfo_class_FastChart_StockChart_addMomentum, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, addROC, arginfo_class_FastChart_StockChart_addROC, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, addOBV, arginfo_class_FastChart_StockChart_addOBV, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_StockChart, addMACD, arginfo_class_FastChart_StockChart_addMACD, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_StockChart, addStochastic, arginfo_class_FastChart_StockChart_addStochastic, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_StockChart, addBollingerBands, arginfo_class_FastChart_StockChart_addBollingerBands, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_StockChart, addParabolicSAR, arginfo_class_FastChart_StockChart_addParabolicSAR, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, draw, arginfo_class_FastChart_StockChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };

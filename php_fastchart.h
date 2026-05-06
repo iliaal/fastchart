@@ -447,7 +447,35 @@ typedef struct {
     double min;
     bool has_max;
     double max;
+    /* Optional secondary / tertiary series for multi-line indicators
+     * (MACD = MACD line + signal line + histogram; Stochastic = %K +
+     * %D). NULL by default. value_count applies to all of them.
+     * histogram_third renders values3 as bars from baseline 0
+     * instead of as a connected line. */
+    double *values2;       /* nullable; second line series */
+    int color2_rgb;        /* -1 = palette pick */
+    double *values3;       /* nullable; third line OR histogram series */
+    int color3_rgb;        /* -1 = palette pick */
+    bool histogram_third;
 } fastchart_indicator_pane;
+
+/* Phase-2 price-pane overlays (Bollinger Bands, Parabolic SAR).
+ * Computed at addX() time from the typed candle array, drawn as
+ * an overlay on the price pane during stock render. Up to 4
+ * overlays per chart. */
+#define FASTCHART_OVERLAY_BOLL  0   /* Bollinger Bands: line + line + line */
+#define FASTCHART_OVERLAY_PSAR  1   /* Parabolic SAR: dot per bar */
+
+typedef struct {
+    int kind;
+    int n;                 /* equals candle_count when computed */
+    double *a;             /* first series (Bollinger middle / PSAR dots) */
+    double *b;             /* second series (Bollinger upper)              */
+    double *c;             /* third series  (Bollinger lower)              */
+    int color_rgb;         /* user colour override; -1 = palette */
+} fastchart_price_overlay;
+
+#define FASTCHART_MAX_PRICE_OVERLAYS 4
 
 #define FASTCHART_MAX_CANDLES         4096
 #define FASTCHART_MAX_SMA             8
@@ -503,6 +531,8 @@ typedef struct {
     int sma_count;
     fastchart_indicator_pane indicator_panes[FASTCHART_MAX_INDICATOR_PANES];
     int indicator_pane_count;
+    fastchart_price_overlay overlays[FASTCHART_MAX_PRICE_OVERLAYS];
+    int overlay_count;
     zend_object std;
 } fastchart_stock_obj;
 
