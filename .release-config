@@ -1,4 +1,6 @@
-# Read by /release-ext. Schema documented in ~/.claude/commands/release-ext.md.
+# Release metadata for this extension: name, version macro location,
+# repo slug, supported PHP build matrix, configure flags. Consumed by
+# the release tooling at tag time.
 
 extension: fastchart
 version_macro: PHP_FASTCHART_VERSION
