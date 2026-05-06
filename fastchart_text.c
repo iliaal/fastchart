@@ -25,6 +25,31 @@
  * antialiasing path. Use that for visible text. */
 static int aa(int color) { return -(color); }
 
+/* Per-line vertical advance used when the input string carries
+ * embedded newlines. Probes the "Mg9j" extents at the chart's DPI
+ * so the advance reflects FreeType's actual ascender + descender at
+ * that size, then adds a 20% leading. Falls back to size*1.4 if
+ * measurement fails. */
+static int line_advance(gdImagePtr im, const char *font_path, double font_size)
+{
+    gdFTStringExtra strex;
+    memset(&strex, 0, sizeof(strex));
+    int dpi = im ? (int)gdImageResolutionX(im) : 0;
+    if (dpi > 0) {
+        strex.flags = gdFTEX_RESOLUTION;
+        strex.hdpi  = dpi;
+        strex.vdpi  = dpi;
+    }
+    int brect[8];
+    char *err = gdImageStringFTEx(NULL, brect, -1,
+                                  (char *)font_path, font_size, 0.0, 0, 0,
+                                  "Mg9j", &strex);
+    if (err) return (int)(font_size * 1.4 + 0.5);
+    int h = brect[1] - brect[7];
+    if (h <= 0) return (int)(font_size * 1.4 + 0.5);
+    return h * 6 / 5;  /* +20% leading */
+}
+
 /* Build a gdFTStringExtra that hands the gdImage's resolution
  * setting through to FreeType. Without this, FreeType defaults to
  * 100 DPI internally regardless of what the user set via
@@ -49,23 +74,17 @@ static int canvas_dpi(gdImagePtr im)
     return d > 0 ? d : 0;
 }
 
-int fastchart_text_draw(gdImagePtr im,
-                        const char *font_path, double font_size,
-                        int color, int x, int y,
-                        fastchart_align align,
-                        const char *text,
-                        char *err_buf, size_t err_buf_n)
+/* Single-line draw — the core path used both for plain strings and
+ * for each line of a multi-line string. Returns 0 on success or -1
+ * on FreeType failure (libgd writes a message to *err which we
+ * propagate to err_buf). */
+static int draw_single_line(gdImagePtr im,
+                            const char *font_path, double font_size,
+                            int color, int x, int y,
+                            fastchart_align align,
+                            const char *text,
+                            char *err_buf, size_t err_buf_n)
 {
-    if (!font_path || !*font_path) {
-        if (err_buf && err_buf_n) {
-            snprintf(err_buf, err_buf_n, "no font path set");
-        }
-        return -1;
-    }
-    if (!text || !*text) {
-        return 0;  /* nothing to draw */
-    }
-
     gdFTStringExtra strex;
     prep_strex(&strex, canvas_dpi(im));
 
@@ -80,27 +99,72 @@ int fastchart_text_draw(gdImagePtr im,
                                 (char *)font_path, font_size, 0.0, 0, 0,
                                 (char *)text, &strex);
         if (err != NULL) {
-            if (err_buf && err_buf_n) {
-                snprintf(err_buf, err_buf_n, "%s", err);
-            }
+            if (err_buf && err_buf_n) snprintf(err_buf, err_buf_n, "%s", err);
             return -1;
         }
         int w = brect[2] - brect[6];
-        if (align == FASTCHART_ALIGN_CENTER) {
-            x -= w / 2;
-        } else { /* RIGHT */
-            x -= w;
-        }
+        if (align == FASTCHART_ALIGN_CENTER) x -= w / 2;
+        else                                  x -= w;
     }
 
     err = gdImageStringFTEx(im, brect, aa(color),
                             (char *)font_path, font_size, 0.0, x, y,
                             (char *)text, &strex);
     if (err != NULL) {
-        if (err_buf && err_buf_n) {
-            snprintf(err_buf, err_buf_n, "%s", err);
-        }
+        if (err_buf && err_buf_n) snprintf(err_buf, err_buf_n, "%s", err);
         return -1;
+    }
+    return 0;
+}
+
+int fastchart_text_draw(gdImagePtr im,
+                        const char *font_path, double font_size,
+                        int color, int x, int y,
+                        fastchart_align align,
+                        const char *text,
+                        char *err_buf, size_t err_buf_n)
+{
+    if (!font_path || !*font_path) {
+        if (err_buf && err_buf_n) snprintf(err_buf, err_buf_n, "no font path set");
+        return -1;
+    }
+    if (!text || !*text) return 0;  /* nothing to draw */
+
+    /* Common case: no newline. Single-line draw at (x, y). */
+    const char *nl = strchr(text, '\n');
+    if (!nl) {
+        return draw_single_line(im, font_path, font_size, color, x, y,
+                                align, text, err_buf, err_buf_n);
+    }
+
+    /* Multi-line: each line is drawn at the same x with its
+     * baseline stepping down by `adv`. The caller-supplied (x, y)
+     * anchors the FIRST line, matching the single-line semantics
+     * so existing layout math doesn't shift. */
+    int adv = line_advance(im, font_path, font_size);
+
+    /* Walk in-place, copying each line into a stack buffer that's
+     * NUL-terminated. Lines longer than the buffer are truncated;
+     * 1024 chars is far above any realistic title / label length. */
+    char buf[1024];
+    int line_y = y;
+    const char *p = text;
+    while (1) {
+        const char *end = strchr(p, '\n');
+        size_t len = end ? (size_t)(end - p) : strlen(p);
+        if (len >= sizeof(buf)) len = sizeof(buf) - 1;
+        memcpy(buf, p, len);
+        buf[len] = '\0';
+
+        if (len > 0) {
+            if (draw_single_line(im, font_path, font_size, color, x, line_y,
+                                 align, buf, err_buf, err_buf_n) != 0) {
+                return -1;
+            }
+        }
+        if (!end) break;
+        p = end + 1;
+        line_y += adv;
     }
     return 0;
 }
@@ -185,6 +249,41 @@ int fastchart_text_measure(gdImagePtr im,
      * draws at 200 DPI will be off by ~2x. */
     gdFTStringExtra strex;
     prep_strex(&strex, canvas_dpi(im));
+
+    /* Multi-line: width = max line width, height = first ascender +
+     * (n_lines - 1) * advance. Mirror the draw path's per-line
+     * stepping so layout reservations match what gets drawn. */
+    if (strchr(text, '\n')) {
+        int adv = line_advance(im, font_path, font_size);
+        int max_w = 0, n_lines = 0;
+        int first_h = 0;
+        char buf[1024];
+        const char *p = text;
+        while (1) {
+            const char *end = strchr(p, '\n');
+            size_t len = end ? (size_t)(end - p) : strlen(p);
+            if (len >= sizeof(buf)) len = sizeof(buf) - 1;
+            memcpy(buf, p, len);
+            buf[len] = '\0';
+            n_lines++;
+            if (len > 0) {
+                int brect[8];
+                char *err = gdImageStringFTEx(NULL, brect, -1,
+                                              (char *)font_path, font_size, 0.0, 0, 0,
+                                              buf, &strex);
+                if (err == NULL) {
+                    int w = brect[2] - brect[6];
+                    if (w > max_w) max_w = w;
+                    if (first_h == 0) first_h = brect[1] - brect[7];
+                }
+            }
+            if (!end) break;
+            p = end + 1;
+        }
+        if (out_w) *out_w = max_w;
+        if (out_h) *out_h = first_h + (n_lines - 1) * adv;
+        return 0;
+    }
 
     int brect[8];
     char *err = gdImageStringFTEx(NULL, brect, -1,
