@@ -64,7 +64,7 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
     fastchart_value_range_compute(x_min, x_max, 6, &xrange);
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, NULL, 0, &plot);
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);

@@ -53,7 +53,7 @@ int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
     fastchart_value_range_compute(xmin, xmax, 6, &xrange);
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, NULL, 0, &plot);
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);

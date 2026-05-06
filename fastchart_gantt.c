@@ -55,7 +55,7 @@ int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
     fastchart_gradient_cache_reset(&grad_cache);
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, NULL, 0, &plot);
 
     /* Reserve a left margin for task name labels. */
     int label_pad = 0;

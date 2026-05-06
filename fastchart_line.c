@@ -85,7 +85,7 @@ int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im)
     }
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, NULL, 0, &plot);
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);

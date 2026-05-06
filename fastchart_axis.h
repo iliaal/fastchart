@@ -36,9 +36,17 @@ typedef struct {
 /* Compute the plot rectangle inside the canvas after subtracting space
  * for title (top), x-axis labels (bottom), and y-axis labels (left).
  * Right margin grows when the chart has a secondary Y axis. Axis
- * titles, when set on the chart, also reserve space. */
+ * titles, when set on the chart, also reserve space.
+ *
+ * `cat_y_labels` / `n_cat_y_labels` switch the left-margin reservation
+ * from the numeric "999999" probe to the actual widest categorical
+ * label width — needed for horizontal-bar layouts where the Y axis is
+ * categorical and label widths are arbitrary. Pass NULL / 0 for the
+ * default numeric Y axis. */
 void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
                               int has_y_axis, int has_x_axis,
+                              const char *const *cat_y_labels,
+                              int n_cat_y_labels,
                               fastchart_rect *out_plot);
 
 /* "Nice" rounded value range that brackets [dmin, dmax]. Picks tick
