@@ -773,6 +773,50 @@ final class StockChart extends Chart
      */
     public function addOBV(): static {}
 
+    /**
+     * MACD (Moving Average Convergence Divergence): a separate
+     * pane with three series — MACD line (EMA fast minus EMA slow),
+     * signal line (EMA of MACD with `signal` period), and a
+     * histogram of MACD minus signal coloured by sign.
+     *
+     * Defaults are the classical (12, 26, 9). Requires
+     * `setOhlcv()` first; the values are computed at this call.
+     * Each pane counts against the 3-pane indicator cap.
+     */
+    public function addMACD(int $fast = 12, int $slow = 26, int $signal = 9): static {}
+
+    /**
+     * Stochastic oscillator: a pane with two lines, %K and %D.
+     *   - %K[i] = (close[i] − lowest_low(period)) /
+     *             (highest_high(period) − lowest_low(period)) × 100
+     *   - %D    = SMA(%K, smooth)
+     *
+     * Default (14, 3) matches the conventional fast / smooth setup.
+     * Range pinned to [0, 100]; reference lines at 20 (oversold)
+     * and 80 (overbought) by convention — the renderer draws no
+     * reference; configure setIndicatorPane opts on the resulting
+     * pane if you want them.
+     */
+    public function addStochastic(int $period = 14, int $smooth = 3): static {}
+
+    /**
+     * Bollinger Bands: three lines OVERLAID on the price pane —
+     * the middle SMA(close, period), an upper band at +n·σ above,
+     * and a lower band at −n·σ below. Default (20, 2.0). Doesn't
+     * consume an indicator-pane slot; uses the price-overlay
+     * budget (4 overlays).
+     */
+    public function addBollingerBands(int $period = 20, float $stddev = 2.0): static {}
+
+    /**
+     * Parabolic SAR (Wilder): a dot per bar overlaid on the price
+     * pane, indicating the trailing stop level for the current
+     * trend. `af_init` is the starting acceleration factor (default
+     * 0.02), `af_max` the cap (default 0.2). Requires `setOhlcv()`
+     * first and at least 3 candles. Uses the price-overlay budget.
+     */
+    public function addParabolicSAR(float $af_init = 0.02, float $af_max = 0.2): static {}
+
     public function draw(\GdImage $canvas): \GdImage {}
 }
 

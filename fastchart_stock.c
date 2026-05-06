@@ -512,6 +512,51 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
         gdImageSetThickness(im, 1);
     }
 
+    /* Phase-2 price overlays: Bollinger Bands (3 lines) and
+     * Parabolic SAR (dot per bar). Drawn on the price pane in the
+     * price y-range so they sit alongside the candles. */
+    for (int o = 0; o < self->overlay_count; o++) {
+        fastchart_price_overlay *ov = &self->overlays[o];
+        int color = ov->color_rgb >= 0
+            ? gdImageColorAllocate(im,
+                (ov->color_rgb >> 16) & 0xFF,
+                (ov->color_rgb >>  8) & 0xFF,
+                 ov->color_rgb        & 0xFF)
+            : pal.series[(self->sma_count + o + 1) % FASTCHART_PALETTE_SERIES_N];
+        if (ov->kind == FASTCHART_OVERLAY_BOLL) {
+            /* Three lines: middle, upper, lower. The middle is the
+             * SMA used to centre the bands and is drawn at full
+             * weight; upper/lower share the same colour but lighter
+             * via the AA mode (libgd has no built-in dimming for a
+             * single colour). NaN warm-up region is broken correctly. */
+            const double *lines[3] = { ov->a, ov->b, ov->c };
+            for (int s_idx = 0; s_idx < 3 && lines[s_idx]; s_idx++) {
+                gdImageSetThickness(im, s_idx == 0 ? 2 : 1);
+                gdImageSetAntiAliased(im, color);
+                int prev_x = 0, prev_y = 0, has_prev = 0;
+                for (int i = 0; i < ov->n; i++) {
+                    if (isnan(lines[s_idx][i])) { has_prev = 0; continue; }
+                    int x = fastchart_x_time_to_pixel(&price_pane,
+                                                      candles[i].ts, t_min, t_max);
+                    int y = fastchart_y_to_pixel(lines[s_idx][i], &yrange, &price_pane);
+                    if (has_prev) gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
+                    prev_x = x; prev_y = y; has_prev = 1;
+                }
+            }
+            gdImageSetThickness(im, 1);
+        } else if (ov->kind == FASTCHART_OVERLAY_PSAR) {
+            /* SAR is a dot per bar. Draw a small filled circle at
+             * (bar_x, sar_y) for each non-NaN SAR value. */
+            for (int i = 0; i < ov->n; i++) {
+                if (isnan(ov->a[i])) continue;
+                int x = fastchart_x_time_to_pixel(&price_pane,
+                                                  candles[i].ts, t_min, t_max);
+                int y = fastchart_y_to_pixel(ov->a[i], &yrange, &price_pane);
+                gdImageFilledEllipse(im, x, y, 4, 4, color);
+            }
+        }
+    }
+
     /* Volume pane: filled bars from baseline up. Default color
      * tracks candle direction (up-day green, down-day red) but the
      * setVolumeColors() override wins when present. */
@@ -568,16 +613,22 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
             fastchart_indicator_pane *pane = &self->indicator_panes[slot];
             if (!pane->values || pane->value_count == 0) continue;
 
-            /* Compute the data-driven y-range; opts.min / opts.max
-             * (if set at addIndicatorPane time) override afterwards. */
+            /* Multi-series pane (MACD, Stochastic): pmin/pmax must
+             * span all populated series so the layout fits each line.
+             * The histogram series (when set) also contributes to
+             * the y-range. */
+            const double *all_series[3] = { pane->values, pane->values2, pane->values3 };
             int valid = 0;
             double pmin = 0, pmax = 0;
             int upto = pane->value_count < n ? pane->value_count : n;
-            for (int i = 0; i < upto; i++) {
-                double d = pane->values[i];
-                if (isnan(d)) continue;
-                if (!valid) { pmin = pmax = d; valid = 1; }
-                else { if (d < pmin) pmin = d; if (d > pmax) pmax = d; }
+            for (int s = 0; s < 3; s++) {
+                if (!all_series[s]) continue;
+                for (int i = 0; i < upto; i++) {
+                    double d = all_series[s][i];
+                    if (isnan(d)) continue;
+                    if (!valid) { pmin = pmax = d; valid = 1; }
+                    else { if (d < pmin) pmin = d; if (d > pmax) pmax = d; }
+                }
             }
             if (!valid) continue;
             if (pane->has_min) pmin = pane->min;
@@ -605,23 +656,68 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
                 }
             }
 
-            gdImageSetThickness(im, 2);
-            gdImageSetAntiAliased(im, color);
-            int prev_x = 0, prev_y = 0;
-            int has_prev = 0;
-            for (int i = 0; i < upto; i++) {
-                if (isnan(pane->values[i])) { has_prev = 0; continue; }
-                int x = fastchart_x_time_to_pixel(&indicator_panes[slot],
-                                                  candles[i].ts, t_min, t_max);
-                int y = fastchart_y_to_pixel(pane->values[i], &pr, &indicator_panes[slot]);
-                if (has_prev) {
-                    gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
+            /* Histogram (third series) drawn FIRST so the line series
+             * sit on top. Bars span baseline 0 to value, half-cell
+             * wide. Per-bar colour: pal.up if value >= 0, pal.down
+             * otherwise — matches the conventional MACD histogram. */
+            if (pane->values3 && pane->histogram_third) {
+                int baseline_y = fastchart_y_to_pixel(0.0, &pr, &indicator_panes[slot]);
+                int span = indicator_panes[slot].x1 - indicator_panes[slot].x0;
+                int bar_w = (n > 1) ? (int)((double)span / (double)(n + 1) * 0.6) : 4;
+                if (bar_w < 1) bar_w = 1;
+                if (bar_w > 10) bar_w = 10;
+                for (int i = 0; i < upto; i++) {
+                    if (isnan(pane->values3[i])) continue;
+                    int x = fastchart_x_time_to_pixel(&indicator_panes[slot],
+                                                      candles[i].ts, t_min, t_max);
+                    int y = fastchart_y_to_pixel(pane->values3[i], &pr, &indicator_panes[slot]);
+                    int top = y < baseline_y ? y : baseline_y;
+                    int bot = y > baseline_y ? y : baseline_y;
+                    int hcol = pane->values3[i] >= 0 ? pal.up : pal.down;
+                    gdImageFilledRectangle(im, x - bar_w / 2, top, x + bar_w / 2, bot, hcol);
                 }
-                prev_x = x;
-                prev_y = y;
-                has_prev = 1;
             }
-            gdImageSetThickness(im, 1);
+
+            /* Up to three line series. Histogram already drawn above
+             * is skipped here. */
+            for (int s_idx = 0; s_idx < 3; s_idx++) {
+                const double *vals = all_series[s_idx];
+                if (!vals) continue;
+                if (s_idx == 2 && pane->histogram_third) continue;
+                int line_color = color;
+                if (s_idx == 1) {
+                    line_color = pane->color2_rgb >= 0
+                        ? gdImageColorAllocate(im,
+                            (pane->color2_rgb >> 16) & 0xFF,
+                            (pane->color2_rgb >>  8) & 0xFF,
+                             pane->color2_rgb        & 0xFF)
+                        : pal.series[(slot + 5) % FASTCHART_PALETTE_SERIES_N];
+                } else if (s_idx == 2) {
+                    line_color = pane->color3_rgb >= 0
+                        ? gdImageColorAllocate(im,
+                            (pane->color3_rgb >> 16) & 0xFF,
+                            (pane->color3_rgb >>  8) & 0xFF,
+                             pane->color3_rgb        & 0xFF)
+                        : pal.series[(slot + 6) % FASTCHART_PALETTE_SERIES_N];
+                }
+                gdImageSetThickness(im, 2);
+                gdImageSetAntiAliased(im, line_color);
+                int prev_x = 0, prev_y = 0;
+                int has_prev = 0;
+                for (int i = 0; i < upto; i++) {
+                    if (isnan(vals[i])) { has_prev = 0; continue; }
+                    int x = fastchart_x_time_to_pixel(&indicator_panes[slot],
+                                                      candles[i].ts, t_min, t_max);
+                    int y = fastchart_y_to_pixel(vals[i], &pr, &indicator_panes[slot]);
+                    if (has_prev) {
+                        gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
+                    }
+                    prev_x = x;
+                    prev_y = y;
+                    has_prev = 1;
+                }
+                gdImageSetThickness(im, 1);
+            }
 
             if (font && pane->name) {
                 fastchart_text_draw(im, font, size * 0.9, color,

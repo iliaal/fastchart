@@ -769,6 +769,18 @@ static void fastchart_stock_init_extras(fastchart_stock_obj *o)
         o->indicator_panes[i].name = NULL;
         o->indicator_panes[i].values = NULL;
         o->indicator_panes[i].value_count = 0;
+        o->indicator_panes[i].values2 = NULL;
+        o->indicator_panes[i].values3 = NULL;
+        o->indicator_panes[i].color2_rgb = -1;
+        o->indicator_panes[i].color3_rgb = -1;
+        o->indicator_panes[i].histogram_third = false;
+    }
+    o->overlay_count = 0;
+    for (int i = 0; i < FASTCHART_MAX_PRICE_OVERLAYS; i++) {
+        o->overlays[i].a = NULL;
+        o->overlays[i].b = NULL;
+        o->overlays[i].c = NULL;
+        o->overlays[i].n = 0;
     }
 }
 static void fastchart_stock_release_extras(fastchart_stock_obj *o)
@@ -776,14 +788,27 @@ static void fastchart_stock_release_extras(fastchart_stock_obj *o)
     if (o->candles)        { efree(o->candles);        o->candles = NULL; }
     if (o->volume_colors)  { efree(o->volume_colors);  o->volume_colors = NULL; }
     for (int i = 0; i < o->indicator_pane_count; i++) {
-        if (o->indicator_panes[i].name)   efree(o->indicator_panes[i].name);
-        if (o->indicator_panes[i].values) efree(o->indicator_panes[i].values);
+        if (o->indicator_panes[i].name)    efree(o->indicator_panes[i].name);
+        if (o->indicator_panes[i].values)  efree(o->indicator_panes[i].values);
+        if (o->indicator_panes[i].values2) efree(o->indicator_panes[i].values2);
+        if (o->indicator_panes[i].values3) efree(o->indicator_panes[i].values3);
         o->indicator_panes[i].name = NULL;
         o->indicator_panes[i].values = NULL;
+        o->indicator_panes[i].values2 = NULL;
+        o->indicator_panes[i].values3 = NULL;
+    }
+    for (int i = 0; i < o->overlay_count; i++) {
+        if (o->overlays[i].a) efree(o->overlays[i].a);
+        if (o->overlays[i].b) efree(o->overlays[i].b);
+        if (o->overlays[i].c) efree(o->overlays[i].c);
+        o->overlays[i].a = NULL;
+        o->overlays[i].b = NULL;
+        o->overlays[i].c = NULL;
     }
     o->candle_count = 0;
     o->volume_colors_count = 0;
     o->indicator_pane_count = 0;
+    o->overlay_count = 0;
     o->sma_count = 0;
 }
 /* Clone deep-copies the malloc'd candle / volume_color / indicator-
@@ -816,14 +841,41 @@ static void fastchart_stock_addref_extras(fastchart_stock_obj *o)
             memcpy(copy, p->name, name_len + 1);
             p->name = copy;
         }
+        size_t vbytes = (size_t)p->value_count * sizeof(double);
         if (p->values && p->value_count > 0) {
-            size_t bytes = (size_t)p->value_count * sizeof(double);
-            double *copy = emalloc(bytes);
-            memcpy(copy, p->values, bytes);
+            double *copy = emalloc(vbytes);
+            memcpy(copy, p->values, vbytes);
             p->values = copy;
-        } else {
-            p->values = NULL;
-        }
+        } else { p->values = NULL; }
+        if (p->values2 && p->value_count > 0) {
+            double *copy = emalloc(vbytes);
+            memcpy(copy, p->values2, vbytes);
+            p->values2 = copy;
+        } else { p->values2 = NULL; }
+        if (p->values3 && p->value_count > 0) {
+            double *copy = emalloc(vbytes);
+            memcpy(copy, p->values3, vbytes);
+            p->values3 = copy;
+        } else { p->values3 = NULL; }
+    }
+    for (int i = 0; i < o->overlay_count; i++) {
+        fastchart_price_overlay *ov = &o->overlays[i];
+        size_t bytes = (size_t)ov->n * sizeof(double);
+        if (ov->a && ov->n > 0) {
+            double *copy = emalloc(bytes);
+            memcpy(copy, ov->a, bytes);
+            ov->a = copy;
+        } else { ov->a = NULL; }
+        if (ov->b && ov->n > 0) {
+            double *copy = emalloc(bytes);
+            memcpy(copy, ov->b, bytes);
+            ov->b = copy;
+        } else { ov->b = NULL; }
+        if (ov->c && ov->n > 0) {
+            double *copy = emalloc(bytes);
+            memcpy(copy, ov->c, bytes);
+            ov->c = copy;
+        } else { ov->c = NULL; }
     }
 }
 
@@ -5157,6 +5209,368 @@ ZEND_METHOD(FastChart_StockChart, addOBV)
         zend_value_error(
             "FastChart\\StockChart::addOBV() exceeds the indicator-pane cap of %d",
             FASTCHART_MAX_INDICATOR_PANES);
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* Compute an EMA series of length n from `src` with the given period.
+ * Seeds with the SMA of the first `period` values to keep the warm-up
+ * region stable. Out indices [0..period-1] are NaN. */
+static void compute_ema(const double *src, int n, int period, double *out)
+{
+    for (int i = 0; i < n && i < period; i++) out[i] = NAN;
+    if (n <= period) return;
+    double sum = 0;
+    for (int i = 0; i < period; i++) sum += src[i];
+    double ema = sum / (double)period;
+    out[period - 1] = ema;
+    double alpha = 2.0 / ((double)period + 1.0);
+    for (int i = period; i < n; i++) {
+        ema = alpha * src[i] + (1.0 - alpha) * ema;
+        out[i] = ema;
+    }
+}
+
+ZEND_METHOD(FastChart_StockChart, addMACD)
+{
+    zend_long fast = 12, slow = 26, signal_p = 9;
+    ZEND_PARSE_PARAMETERS_START(0, 3)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(fast)
+        Z_PARAM_LONG(slow)
+        Z_PARAM_LONG(signal_p)
+    ZEND_PARSE_PARAMETERS_END();
+    if (fast < 2 || slow < 2 || signal_p < 2 ||
+        fast >= slow || slow > FASTCHART_MAX_INDICATOR_VALUES) {
+        zend_value_error(
+            "FastChart\\StockChart::addMACD() requires 2 <= fast < slow and signal >= 2 (default 12, 26, 9)");
+        RETURN_THROWS();
+    }
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self,
+        "FastChart\\StockChart::addMACD()", &n);
+    if (!c) RETURN_THROWS();
+    if ((int)slow >= n) {
+        zend_value_error(
+            "FastChart\\StockChart::addMACD() slow period (%d) must be < candle count (%d)",
+            (int)slow, n);
+        RETURN_THROWS();
+    }
+
+    /* MACD line = EMA(fast) - EMA(slow); signal = EMA(MACD, signal);
+     * histogram = MACD - signal. We collect everything into three
+     * parallel arrays and stash them on the pane via the multi-series
+     * fields. NaN fills the warm-up region. */
+    double *closes = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) closes[i] = c[i].close;
+
+    double *ema_fast = emalloc((size_t)n * sizeof(double));
+    double *ema_slow = emalloc((size_t)n * sizeof(double));
+    compute_ema(closes, n, (int)fast, ema_fast);
+    compute_ema(closes, n, (int)slow, ema_slow);
+
+    double *macd = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) {
+        macd[i] = (isnan(ema_fast[i]) || isnan(ema_slow[i]))
+            ? NAN : ema_fast[i] - ema_slow[i];
+    }
+
+    /* Signal: EMA over MACD. Skip the warm-up NaN region by feeding
+     * the first `signal_p` non-NaN MACD values as the seed. */
+    double *signal = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) signal[i] = NAN;
+    int first_valid = (int)slow - 1;
+    if (first_valid + (int)signal_p <= n) {
+        double sum = 0;
+        for (int i = first_valid; i < first_valid + (int)signal_p; i++) sum += macd[i];
+        double sig = sum / (double)signal_p;
+        signal[first_valid + (int)signal_p - 1] = sig;
+        double a = 2.0 / ((double)signal_p + 1.0);
+        for (int i = first_valid + (int)signal_p; i < n; i++) {
+            sig = a * macd[i] + (1.0 - a) * sig;
+            signal[i] = sig;
+        }
+    }
+
+    double *hist = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) {
+        hist[i] = (isnan(macd[i]) || isnan(signal[i])) ? NAN : macd[i] - signal[i];
+    }
+
+    efree(closes);
+    efree(ema_fast);
+    efree(ema_slow);
+
+    char name[40];
+    snprintf(name, sizeof(name), "MACD(%d,%d,%d)",
+             (int)fast, (int)slow, (int)signal_p);
+    if (push_indicator_pane(self, name, macd, n,
+                            true, 0.0,
+                            false, 0.0,
+                            false, 0.0) != 0) {
+        efree(signal);
+        efree(hist);
+        zend_value_error(
+            "FastChart\\StockChart::addMACD() exceeds the indicator-pane cap of %d",
+            FASTCHART_MAX_INDICATOR_PANES);
+        RETURN_THROWS();
+    }
+    fastchart_indicator_pane *p = &self->indicator_panes[self->indicator_pane_count - 1];
+    p->values2 = signal;
+    p->values3 = hist;
+    p->histogram_third = true;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_StockChart, addStochastic)
+{
+    zend_long period = 14, smooth = 3;
+    ZEND_PARSE_PARAMETERS_START(0, 2)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(period)
+        Z_PARAM_LONG(smooth)
+    ZEND_PARSE_PARAMETERS_END();
+    if (period < 2 || smooth < 1 || period > FASTCHART_MAX_INDICATOR_VALUES) {
+        zend_value_error(
+            "FastChart\\StockChart::addStochastic() requires period >= 2 and smooth >= 1");
+        RETURN_THROWS();
+    }
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self,
+        "FastChart\\StockChart::addStochastic()", &n);
+    if (!c) RETURN_THROWS();
+    if ((int)period >= n) {
+        zend_value_error(
+            "FastChart\\StockChart::addStochastic() period (%d) must be < candle count (%d)",
+            (int)period, n);
+        RETURN_THROWS();
+    }
+
+    /* %K[i] = (close[i] - low_p[i]) / (high_p[i] - low_p[i]) * 100
+     *   where high_p / low_p are the rolling max(high) / min(low)
+     *   over the previous `period` bars (inclusive of i).
+     * %D = SMA(%K, smooth). Values outside the warm-up window are
+     * NaN. */
+    double *k = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) k[i] = NAN;
+    int p = (int)period;
+    for (int i = p - 1; i < n; i++) {
+        double hh = c[i].high, ll = c[i].low;
+        for (int j = i - p + 1; j <= i; j++) {
+            if (c[j].high > hh) hh = c[j].high;
+            if (c[j].low  < ll) ll = c[j].low;
+        }
+        k[i] = (hh > ll) ? (c[i].close - ll) / (hh - ll) * 100.0 : 50.0;
+    }
+    double *d = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) d[i] = NAN;
+    int s = (int)smooth;
+    if (s > 1) {
+        for (int i = p - 1 + s - 1; i < n; i++) {
+            double sum = 0;
+            for (int j = i - s + 1; j <= i; j++) sum += k[j];
+            d[i] = sum / (double)s;
+        }
+    } else {
+        for (int i = 0; i < n; i++) d[i] = k[i];
+    }
+
+    char name[40];
+    snprintf(name, sizeof(name), "Stoch(%d,%d)", (int)period, (int)smooth);
+    if (push_indicator_pane(self, name, k, n,
+                            false, 0.0,
+                            true, 0.0,
+                            true, 100.0) != 0) {
+        efree(d);
+        zend_value_error(
+            "FastChart\\StockChart::addStochastic() exceeds the indicator-pane cap of %d",
+            FASTCHART_MAX_INDICATOR_PANES);
+        RETURN_THROWS();
+    }
+    fastchart_indicator_pane *pane = &self->indicator_panes[self->indicator_pane_count - 1];
+    pane->values2 = d;
+    pane->histogram_third = false;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* Push a freshly-computed price overlay onto `self`. Takes
+ * ownership of a/b/c (efree'd by the dtor on success or here on
+ * failure). Returns 0 on success, -1 if the overlay cap is full. */
+static int push_price_overlay(fastchart_stock_obj *self, int kind,
+                              double *a, double *b, double *c, int n,
+                              int color_rgb)
+{
+    if (self->overlay_count >= FASTCHART_MAX_PRICE_OVERLAYS) {
+        if (a) efree(a);
+        if (b) efree(b);
+        if (c) efree(c);
+        return -1;
+    }
+    fastchart_price_overlay *ov = &self->overlays[self->overlay_count];
+    ov->kind = kind;
+    ov->a = a; ov->b = b; ov->c = c; ov->n = n;
+    ov->color_rgb = color_rgb;
+    self->overlay_count++;
+    return 0;
+}
+
+ZEND_METHOD(FastChart_StockChart, addBollingerBands)
+{
+    zend_long period = 20;
+    double n_stddev = 2.0;
+    ZEND_PARSE_PARAMETERS_START(0, 2)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(period)
+        Z_PARAM_DOUBLE(n_stddev)
+    ZEND_PARSE_PARAMETERS_END();
+    if (period < 2 || period > FASTCHART_MAX_INDICATOR_VALUES ||
+        !isfinite(n_stddev) || n_stddev <= 0) {
+        zend_value_error(
+            "FastChart\\StockChart::addBollingerBands() requires period >= 2 and n_stddev > 0");
+        RETURN_THROWS();
+    }
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self,
+        "FastChart\\StockChart::addBollingerBands()", &n);
+    if (!c) RETURN_THROWS();
+    if ((int)period >= n) {
+        zend_value_error(
+            "FastChart\\StockChart::addBollingerBands() period (%d) must be < candle count (%d)",
+            (int)period, n);
+        RETURN_THROWS();
+    }
+
+    /* Middle = SMA(close, period). Standard deviation over the
+     * same window. Upper = middle + n*sigma; lower = middle - n*sigma. */
+    double *mid = emalloc((size_t)n * sizeof(double));
+    double *up  = emalloc((size_t)n * sizeof(double));
+    double *lo  = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) mid[i] = up[i] = lo[i] = NAN;
+    int p = (int)period;
+    double sum = 0, sum_sq = 0;
+    for (int i = 0; i < p; i++) {
+        sum    += c[i].close;
+        sum_sq += c[i].close * c[i].close;
+    }
+    /* Sliding-window mean+variance: O(n). */
+    for (int i = p - 1; i < n; i++) {
+        if (i >= p) {
+            double drop = c[i - p].close;
+            double add  = c[i].close;
+            sum    += add - drop;
+            sum_sq += add * add - drop * drop;
+        }
+        double mean = sum / (double)p;
+        double var  = sum_sq / (double)p - mean * mean;
+        if (var < 0) var = 0;  /* float guard */
+        double sigma = sqrt(var);
+        mid[i] = mean;
+        up[i]  = mean + n_stddev * sigma;
+        lo[i]  = mean - n_stddev * sigma;
+    }
+
+    if (push_price_overlay(self, FASTCHART_OVERLAY_BOLL, mid, up, lo, n, -1) != 0) {
+        zend_value_error(
+            "FastChart\\StockChart::addBollingerBands() exceeds the price-overlay cap of %d",
+            FASTCHART_MAX_PRICE_OVERLAYS);
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_StockChart, addParabolicSAR)
+{
+    double af_init = 0.02;
+    double af_max  = 0.2;
+    ZEND_PARSE_PARAMETERS_START(0, 2)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_DOUBLE(af_init)
+        Z_PARAM_DOUBLE(af_max)
+    ZEND_PARSE_PARAMETERS_END();
+    if (!isfinite(af_init) || !isfinite(af_max) ||
+        af_init <= 0 || af_max <= 0 || af_init > af_max) {
+        zend_value_error(
+            "FastChart\\StockChart::addParabolicSAR() requires 0 < af_init <= af_max");
+        RETURN_THROWS();
+    }
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self,
+        "FastChart\\StockChart::addParabolicSAR()", &n);
+    if (!c) RETURN_THROWS();
+    if (n < 3) {
+        zend_value_error(
+            "FastChart\\StockChart::addParabolicSAR() needs >= 3 candles");
+        RETURN_THROWS();
+    }
+
+    /* Wilder's Parabolic SAR. State: trend (up/down), SAR price,
+     * extreme point EP, acceleration factor AF.
+     *
+     *   - On each bar: SAR(i+1) = SAR(i) + AF * (EP - SAR(i)),
+     *     bounded by the prior two bars' lows (uptrend) or highs
+     *     (downtrend).
+     *   - When price crosses SAR, flip the trend: new SAR = old EP,
+     *     reset AF, set EP to the bar's price extreme.
+     *   - When the bar's extreme exceeds the EP, advance EP and
+     *     bump AF by af_init (capped at af_max).
+     *
+     * Seed: assume an uptrend, EP = candle 0 high, SAR = candle 0
+     * low. Output at index 0 is the seed SAR (slightly below price);
+     * subsequent indices are the projected SAR for that bar. */
+    double *sar = emalloc((size_t)n * sizeof(double));
+    int up = 1;
+    double ep = c[0].high;
+    double s  = c[0].low;
+    double af = af_init;
+    sar[0] = s;
+    for (int i = 1; i < n; i++) {
+        s = s + af * (ep - s);
+        if (up) {
+            /* Bound by min(low[i-1], low[i-2]) — SAR can't exceed
+             * the prior two candles' lows in an uptrend. */
+            if (i >= 2 && c[i - 2].low < s) s = c[i - 2].low;
+            if (c[i - 1].low < s)           s = c[i - 1].low;
+            if (c[i].low < s) {
+                /* Flip to downtrend. */
+                up = 0;
+                s = ep;
+                ep = c[i].low;
+                af = af_init;
+            } else {
+                if (c[i].high > ep) {
+                    ep = c[i].high;
+                    af += af_init;
+                    if (af > af_max) af = af_max;
+                }
+            }
+        } else {
+            if (i >= 2 && c[i - 2].high > s) s = c[i - 2].high;
+            if (c[i - 1].high > s)           s = c[i - 1].high;
+            if (c[i].high > s) {
+                up = 1;
+                s = ep;
+                ep = c[i].high;
+                af = af_init;
+            } else {
+                if (c[i].low < ep) {
+                    ep = c[i].low;
+                    af += af_init;
+                    if (af > af_max) af = af_max;
+                }
+            }
+        }
+        sar[i] = s;
+    }
+
+    if (push_price_overlay(self, FASTCHART_OVERLAY_PSAR, sar, NULL, NULL, n, -1) != 0) {
+        zend_value_error(
+            "FastChart\\StockChart::addParabolicSAR() exceeds the price-overlay cap of %d",
+            FASTCHART_MAX_PRICE_OVERLAYS);
         RETURN_THROWS();
     }
     RETURN_ZVAL(ZEND_THIS, 1, 0);
