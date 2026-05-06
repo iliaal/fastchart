@@ -4723,6 +4723,260 @@ ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+/* Take ownership of `values` (efree'd by the dtor on failure or with
+ * the chart on success) and clone the literal `name` into emalloc'd
+ * storage. Returns 0 on success, -1 if the indicator-pane cap is
+ * exhausted. The four native indicators below funnel through this
+ * helper so all of them share the existing pane render path. */
+static int push_indicator_pane(fastchart_stock_obj *self,
+                               const char *name, double *values, int n,
+                               bool has_reference, double reference,
+                               bool has_min, double min,
+                               bool has_max, double max)
+{
+    if (self->indicator_pane_count >= FASTCHART_MAX_INDICATOR_PANES) {
+        if (values) efree(values);
+        return -1;
+    }
+    fastchart_indicator_pane *p = &self->indicator_panes[self->indicator_pane_count];
+    size_t len = strlen(name);
+    p->name = emalloc(len + 1);
+    memcpy(p->name, name, len + 1);
+    p->values = values;
+    p->value_count = n;
+    p->has_color = false; p->color_rgb = 0;
+    p->has_reference = has_reference; p->reference = reference;
+    p->has_min = has_min; p->min = min;
+    p->has_max = has_max; p->max = max;
+    self->indicator_pane_count++;
+    return 0;
+}
+
+/* Common preamble for native stock indicators: require setOhlcv
+ * to have been called and return the candle pointer + count. The
+ * indicators are computed eagerly at add() time, so the candle
+ * data must already be present; calling setOhlcv() AFTER an
+ * addX() leaves the panes pointing at values from the prior
+ * candle set. Documented in the stub. */
+static fastchart_candle *stock_require_candles(fastchart_stock_obj *self,
+                                               const char *method_str,
+                                               int *out_n)
+{
+    if (!self->candles || self->candle_count == 0) {
+        zend_throw_error(NULL,
+            "%s requires setOhlcv() to have been called first", method_str);
+        return NULL;
+    }
+    *out_n = self->candle_count;
+    return self->candles;
+}
+
+ZEND_METHOD(FastChart_StockChart, addRSI)
+{
+    zend_long period = 14;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(period)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (period < 2 || period > FASTCHART_MAX_INDICATOR_VALUES) {
+        zend_value_error(
+            "FastChart\\StockChart::addRSI() period must be in [2, %d]",
+            FASTCHART_MAX_INDICATOR_VALUES);
+        RETURN_THROWS();
+    }
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self, "FastChart\\StockChart::addRSI()", &n);
+    if (!c) RETURN_THROWS();
+    if ((int)period >= n) {
+        zend_value_error(
+            "FastChart\\StockChart::addRSI() period (%d) must be < candle count (%d)",
+            (int)period, n);
+        RETURN_THROWS();
+    }
+
+    /* Wilder's RSI: seed avg_gain / avg_loss with the SMA of the
+     * first `period` close-to-close differences, then update with
+     * the standard recurrence avg = (avg*(p-1) + cur) / p. The
+     * warm-up window [0..period] stays NaN so the renderer breaks
+     * the line at the gap. */
+    double *out = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) out[i] = NAN;
+
+    double avg_gain = 0, avg_loss = 0;
+    int p = (int)period;
+    for (int i = 1; i <= p; i++) {
+        double diff = c[i].close - c[i - 1].close;
+        if (diff > 0) avg_gain += diff;
+        else          avg_loss -= diff;
+    }
+    avg_gain /= (double)p;
+    avg_loss /= (double)p;
+    out[p] = avg_loss == 0.0 ? 100.0
+                             : 100.0 - 100.0 / (1.0 + avg_gain / avg_loss);
+
+    double inv_p = 1.0 / (double)p;
+    for (int i = p + 1; i < n; i++) {
+        double diff = c[i].close - c[i - 1].close;
+        double gain = diff > 0 ? diff : 0.0;
+        double loss = diff < 0 ? -diff : 0.0;
+        avg_gain = (avg_gain * (double)(p - 1) + gain) * inv_p;
+        avg_loss = (avg_loss * (double)(p - 1) + loss) * inv_p;
+        out[i] = avg_loss == 0.0 ? 100.0
+                                 : 100.0 - 100.0 / (1.0 + avg_gain / avg_loss);
+    }
+
+    char name[32];
+    snprintf(name, sizeof(name), "RSI(%d)", p);
+    if (push_indicator_pane(self, name, out, n,
+                            true, 50.0,
+                            true, 0.0,
+                            true, 100.0) != 0) {
+        zend_value_error(
+            "FastChart\\StockChart::addRSI() exceeds the indicator-pane cap of %d",
+            FASTCHART_MAX_INDICATOR_PANES);
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_StockChart, addMomentum)
+{
+    zend_long period = 10;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(period)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (period < 1 || period > FASTCHART_MAX_INDICATOR_VALUES) {
+        zend_value_error(
+            "FastChart\\StockChart::addMomentum() period must be in [1, %d]",
+            FASTCHART_MAX_INDICATOR_VALUES);
+        RETURN_THROWS();
+    }
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self,
+        "FastChart\\StockChart::addMomentum()", &n);
+    if (!c) RETURN_THROWS();
+    if ((int)period >= n) {
+        zend_value_error(
+            "FastChart\\StockChart::addMomentum() period (%d) must be < candle count (%d)",
+            (int)period, n);
+        RETURN_THROWS();
+    }
+
+    /* Plain difference: close[i] - close[i-period]. NaN before warm-up. */
+    double *out = emalloc((size_t)n * sizeof(double));
+    int p = (int)period;
+    for (int i = 0; i < p; i++) out[i] = NAN;
+    for (int i = p; i < n; i++) {
+        out[i] = c[i].close - c[i - p].close;
+    }
+
+    char name[32];
+    snprintf(name, sizeof(name), "MOM(%d)", p);
+    if (push_indicator_pane(self, name, out, n,
+                            true, 0.0,
+                            false, 0.0,
+                            false, 0.0) != 0) {
+        zend_value_error(
+            "FastChart\\StockChart::addMomentum() exceeds the indicator-pane cap of %d",
+            FASTCHART_MAX_INDICATOR_PANES);
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_StockChart, addROC)
+{
+    zend_long period = 10;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(period)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (period < 1 || period > FASTCHART_MAX_INDICATOR_VALUES) {
+        zend_value_error(
+            "FastChart\\StockChart::addROC() period must be in [1, %d]",
+            FASTCHART_MAX_INDICATOR_VALUES);
+        RETURN_THROWS();
+    }
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self,
+        "FastChart\\StockChart::addROC()", &n);
+    if (!c) RETURN_THROWS();
+    if ((int)period >= n) {
+        zend_value_error(
+            "FastChart\\StockChart::addROC() period (%d) must be < candle count (%d)",
+            (int)period, n);
+        RETURN_THROWS();
+    }
+
+    /* Rate of change: (close[i] / close[i-period] - 1) * 100. NaN
+     * before warm-up; NaN if the prior close was zero (avoids /0). */
+    double *out = emalloc((size_t)n * sizeof(double));
+    int p = (int)period;
+    for (int i = 0; i < p; i++) out[i] = NAN;
+    for (int i = p; i < n; i++) {
+        double prev = c[i - p].close;
+        out[i] = prev == 0.0 ? NAN : (c[i].close / prev - 1.0) * 100.0;
+    }
+
+    char name[32];
+    snprintf(name, sizeof(name), "ROC(%d)", p);
+    if (push_indicator_pane(self, name, out, n,
+                            true, 0.0,
+                            false, 0.0,
+                            false, 0.0) != 0) {
+        zend_value_error(
+            "FastChart\\StockChart::addROC() exceeds the indicator-pane cap of %d",
+            FASTCHART_MAX_INDICATOR_PANES);
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_StockChart, addOBV)
+{
+    ZEND_PARSE_PARAMETERS_NONE();
+
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self,
+        "FastChart\\StockChart::addOBV()", &n);
+    if (!c) RETURN_THROWS();
+
+    /* On-balance volume: cumulative sum of signed volume. Sign flips
+     * with the close-to-close direction. Bars with no volume
+     * (has_volume == 0) contribute 0, matching the convention used
+     * by the volume-pane renderer for missing data. The first bar
+     * has no prior close, so OBV[0] = 0 by definition. */
+    double *out = emalloc((size_t)n * sizeof(double));
+    out[0] = 0.0;
+    double running = 0.0;
+    for (int i = 1; i < n; i++) {
+        if (c[i].has_volume) {
+            if (c[i].close > c[i - 1].close)      running += c[i].volume;
+            else if (c[i].close < c[i - 1].close) running -= c[i].volume;
+        }
+        out[i] = running;
+    }
+
+    if (push_indicator_pane(self, "OBV", out, n,
+                            false, 0.0,
+                            false, 0.0,
+                            false, 0.0) != 0) {
+        zend_value_error(
+            "FastChart\\StockChart::addOBV() exceeds the indicator-pane cap of %d",
+            FASTCHART_MAX_INDICATOR_PANES);
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 PHP_MINIT_FUNCTION(fastchart)
 {
     /* Per-class handlers init. Each handlers struct gets its own
