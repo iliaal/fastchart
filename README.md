@@ -24,7 +24,7 @@ pipeline (PDF page, sprite sheet, dashboard tile).
 
 ## Status
 
-Working. 19 chart types, 105 public methods, 86 phpt tests. The OO
+Working. 19 chart types, 105 public methods, 97 phpt tests. The OO
 surface is stable for the v0.1 line. See
 [`CHANGELOG.md`](CHANGELOG.md) for what's shipped.
 

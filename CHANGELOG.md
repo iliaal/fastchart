@@ -7,4 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-[Unreleased]: https://github.com/iliaal/fastchart/commits/master
+## [0.1.0] - 2026-05-06
+
+### Added
+- Initial public release of fastchart.
+
+[Unreleased]: https://github.com/iliaal/fastchart/compare/0.1.0...HEAD
+[0.1.0]: https://github.com/iliaal/fastchart/releases/tag/0.1.0
