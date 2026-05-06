@@ -80,11 +80,15 @@ jobs:
           export TEST_PHP_EXECUTABLE=$(which php)
           export TEST_PHP_ARGS="-d extension=gd -d extension=$(pwd)/modules/fastchart.so"
           export NO_INTERACTION=1
-          RESULT=$(php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1)
-          echo "$RESULT"
-          FAILED=$(echo "$RESULT" | grep 'Tests failed' | grep -oP '\d+' | head -1)
-          if [ "$FAILED" -gt 0 ]; then
-            echo "::error::$FAILED test(s) failed"
+          # Stream output so failure context lands in the log even
+          # when the run aborts before the trailing summary. Tee to
+          # a file so we can assert "Tests failed: N" cleanly.
+          set +e
+          php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt
+          set -e
+          if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
+            echo "::error::Tests failed on PHP ${{ matrix.php }} - Linux"
+            grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
             exit 1
           fi
 
@@ -109,18 +113,20 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y llvm clang re2c bison autoconf libgd-dev pkg-config
 
       - name: Build PHP with ASAN + ext/gd
-        # -shared-libasan keeps __cxa_throw resolvable across dlopen
-        # boundaries when fastchart.so is loaded into php-cli.
-        # ext/gd is built directly into the ASAN PHP so the GdImage
-        # class entry exists at MINIT (fastchart's MINIT looks it up
-        # in the class table).
+        # Static libasan (default — no -shared-libasan flag) keeps
+        # the configure-time C-program test happy on the ubuntu
+        # runner. ASan symbols live in the php-cli binary; fastchart.so
+        # gets instrumented and resolves callbacks against the host
+        # process. ext/gd is built directly into the ASAN PHP so the
+        # GdImage class entry exists at MINIT (fastchart's MINIT
+        # looks it up in the class table).
         run: |
           git clone --depth=1 --branch=PHP-${{ matrix.php }} https://github.com/php/php-src.git /tmp/php-src
           cd /tmp/php-src
           ./buildconf --force
           CC=clang CXX=clang++ \
-          CFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -shared-libasan -DZEND_TRACK_ARENA_ALLOC" \
-          LDFLAGS="-fsanitize=address,undefined -shared-libasan" \
+          CFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -DZEND_TRACK_ARENA_ALLOC" \
+          LDFLAGS="-fsanitize=address,undefined" \
           ./configure \
             --enable-debug \
             --disable-zts \
@@ -137,9 +143,9 @@ jobs:
           export PATH="/tmp/php-asan/bin:$PATH"
           phpize
           CC=clang CXX=clang++ \
-          CFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -shared-libasan -DZEND_TRACK_ARENA_ALLOC" \
-          CXXFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -shared-libasan -DZEND_TRACK_ARENA_ALLOC" \
-          LDFLAGS="-fsanitize=address,undefined -shared-libasan" \
+          CFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -DZEND_TRACK_ARENA_ALLOC" \
+          CXXFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -DZEND_TRACK_ARENA_ALLOC" \
+          LDFLAGS="-fsanitize=address,undefined" \
           ./configure \
             --enable-fastchart --enable-fastchart-dev \
             --with-php-config=/tmp/php-asan/bin/php-config
@@ -179,6 +185,14 @@ jobs:
 
       - name: Build extension
         run: |
+          # macOS Homebrew installs gd into /opt/homebrew (Apple
+          # Silicon) or /usr/local (Intel). configure's
+          # gdImageCreateTrueColor-in--lgd probe doesn't search
+          # those by default — point CPPFLAGS / LDFLAGS at the
+          # right prefix or the build fails with "libgd not found".
+          GD_PREFIX="$(brew --prefix gd)"
+          export CPPFLAGS="-I${GD_PREFIX}/include"
+          export LDFLAGS="-L${GD_PREFIX}/lib"
           phpize
           ./configure --enable-fastchart
           make -j$(sysctl -n hw.ncpu)
@@ -188,10 +202,11 @@ jobs:
           export TEST_PHP_EXECUTABLE=$(which php)
           export TEST_PHP_ARGS="-d extension=gd -d extension=$(pwd)/modules/fastchart.so"
           export NO_INTERACTION=1
-          RESULT=$(php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1)
-          echo "$RESULT"
-          FAILED=$(echo "$RESULT" | grep 'Tests failed' | grep -oP '\d+' | head -1)
-          if [ "$FAILED" -gt 0 ]; then
-            echo "::error::$FAILED test(s) failed"
+          set +e
+          php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt
+          set -e
+          if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
+            echo "::error::Tests failed on PHP ${{ matrix.php }} - macOS"
+            grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
             exit 1
           fi
