@@ -10,7 +10,6 @@ $icon_path = __DIR__ . "/__icon82.png";
 $icon = imagecreatetruecolor(12, 12);
 imagefilledrectangle($icon, 0, 0, 11, 11, 0x0080FF);
 imagepng($icon, $icon_path);
-imagedestroy($icon);
 
 /* === addVerticalBand on different X-axis kinds === */
 

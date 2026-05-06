@@ -86,7 +86,6 @@ $tmp_small = tempnam(sys_get_temp_dir(), 'fc_png_small_') . '.png';
 $im = imagecreatetruecolor(32, 32);
 imagefill($im, 0, 0, imagecolorallocate($im, 0xCC, 0x33, 0x66));
 imagepng($im, $tmp_small);
-imagedestroy($im);
 $with_small_bg = (new FastChart\LineChart(160, 100))
     ->setSeries([['data' => [1, 2, 3]]])
     ->setBackgroundImage($tmp_small)
