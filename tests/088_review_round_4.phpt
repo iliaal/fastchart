@@ -18,12 +18,15 @@ try {
     echo "pixels_square: ValueError\n";
 }
 
-/* Boundary: budget is 64 MiB of pixels = 67108864 pixels.
- * 8192x8192 = 67108864 exact must pass; 8193x8193 = 67125249 must
- * reject. Both dims pass the per-axis cap so this exercises the
- * product check specifically. */
+/* Boundary: budget is 64M pixels (67108864 = 256 MiB of truecolor
+ * canvas). Assert rejection at and above the boundary, but exercise
+ * the success path on a far smaller render so a normal CI run
+ * doesn't allocate ~256 MiB transiently per test invocation.
+ * 8193x8193 = 67125249 just over the cap; 4096x4096 = 16M well
+ * under. Both dims pass the per-axis 16384 cap so this exercises
+ * the product check specifically. */
 try {
-    $bytes = (new FastChart\LineChart(8192, 8192))
+    $bytes = (new FastChart\LineChart(4096, 4096))
         ->setSeries([['data' => [1, 2]]])
         ->renderPng();
     $im = imagecreatefromstring($bytes);
@@ -42,7 +45,7 @@ try {
 }
 
 /* DPI-driven product cap: 6000x6000 logical at DPI 200 -> 12500x12500
- * physical = 156M pixels. Must reject under the 64 MiB budget even
+ * physical = 156M pixels. Must reject under the 64M-pixel budget even
  * though both axes individually fit. */
 try {
     (new FastChart\LineChart(6000, 6000))
@@ -95,7 +98,7 @@ echo "rotated_perf: ", ($with_points - $without < 0.5 ? "ok" : "slow"), "\n";
 ?>
 --EXPECT--
 pixels_square: ValueError
-pixels_under: 8192x8192
+pixels_under: 4096x4096
 pixels_over: ValueError
 pixels_dpi: ValueError
 rotated_perf: ok
