@@ -78,7 +78,7 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
     fastchart_rect plot;
     /* No axes for pie charts -- pass 0/0 so layout reserves space
      * only for the title. */
-    fastchart_compute_layout((fastchart_obj *)self, im, 0, 0, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, im, 0, 0, NULL, 0, &plot);
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);

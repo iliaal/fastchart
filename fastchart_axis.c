@@ -364,6 +364,8 @@ void fastchart_draw_marker(gdImagePtr im, int x, int y,
 
 void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
                               int has_y_axis, int has_x_axis,
+                              const char *const *cat_y_labels,
+                              int n_cat_y_labels,
                               fastchart_rect *out_plot)
 {
     /* Every renderer calls compute_layout exactly once at draw entry,
@@ -449,11 +451,32 @@ void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
         }
     }
 
-    /* Y-axis: reserve enough room for a 6-char numeric label. The
-     * actual label width is data-dependent; we pick a conservative
-     * "999999" sample so layout is stable across data ranges. */
+    /* Y-axis: reserve enough room for the widest tick label.
+     *
+     * For numeric Y axes the actual label width is data-dependent;
+     * we pick a conservative "999999" sample so layout is stable
+     * across data ranges.
+     *
+     * For categorical Y axes (horizontal-bar) the labels can be
+     * arbitrarily long ("/api/v2/exports", etc.) — measure the
+     * widest one so it doesn't get clipped at the canvas edge.
+     * Falls back to the numeric probe if none of the labels can be
+     * measured. */
     if (labels_drawn && has_y_axis && probe_ok) {
-        left += probe_w + tick_mark_len + y_label_pad;
+        int y_label_w = probe_w;
+        if (cat_y_labels && n_cat_y_labels > 0 && axis_font) {
+            int widest = 0;
+            for (int i = 0; i < n_cat_y_labels; i++) {
+                if (!cat_y_labels[i]) continue;
+                int w = 0;
+                if (fastchart_text_measure(im, axis_font, size, cat_y_labels[i],
+                                           &w, NULL, NULL, 0) == 0 && w > widest) {
+                    widest = w;
+                }
+            }
+            if (widest > y_label_w) y_label_w = widest;
+        }
+        left += y_label_w + tick_mark_len + y_label_pad;
     }
 
     /* Y-axis title: rotated 90deg on the left of the y-axis labels.

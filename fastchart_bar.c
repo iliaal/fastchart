@@ -138,7 +138,7 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
     }
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, NULL, 0, &plot);
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
@@ -409,8 +409,15 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
         fastchart_value_range_apply_override((fastchart_obj *)self, &range);
     }
 
+    /* Borrow category labels up front so layout can size the left
+     * margin to the widest one — categorical Y labels can be far
+     * wider than the numeric "999999" probe (e.g. "/api/v2/exports").
+     * Same buffer is then handed to the categorical Y-axis renderer. */
+    const char **label_ptrs = fastchart_borrow_category_labels((fastchart_obj *)self, n_categories);
+
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1,
+                             label_ptrs, n_categories, &plot);
 
     fastchart_palette pal;
     fastchart_palette_init(im, (int)self->theme, &pal);
@@ -420,7 +427,6 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
     fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_x_axis_numeric(im, (fastchart_obj *)self, &plot, &pal, &range);
 
-    const char **label_ptrs = fastchart_borrow_category_labels((fastchart_obj *)self, n_categories);
     fastchart_draw_y_axis_categorical(im, (fastchart_obj *)self, &plot, &pal, n_categories, label_ptrs);
     if (label_ptrs) efree((void *)label_ptrs);
 
