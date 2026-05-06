@@ -179,9 +179,10 @@ abstract class Chart
      * silently skipped so a typo doesn't abort the whole render.
      * `$maxWidth` / `$maxHeight` cap the display size while preserving
      * the source aspect ratio (-1 = use the source dimension as-is).
-     * Source files larger than 8 MiB are silently skipped to bound
-     * worker memory if the path is fed from untrusted input.
-     * Up to 32 icons per chart.
+     * Source files larger than 8 MiB OR with declared dimensions
+     * over 4096px on either axis OR a pixel product over 16M are
+     * silently skipped to bound worker memory if the path is fed
+     * from untrusted input. Up to 32 icons per chart.
      */
     public function addIconAt(float $x, float $y, string $path,
                               int $maxWidth = -1,
@@ -260,10 +261,12 @@ abstract class Chart
      * policy (`open_basedir`). Supported source formats: PNG, JPEG,
      * WebP, GIF. The image is scaled to fill the entire canvas.
      *
-     * Source-file size cap: the loader silently skips files larger
-     * than 8 MiB to bound worker memory if the path is fed from
-     * untrusted input. open_basedir is the primary access gate; the
-     * size cap is defense-in-depth.
+     * Source-file caps: the loader silently skips files larger
+     * than 8 MiB on disk OR with declared dimensions over 4096px
+     * on either axis OR a pixel product over 16M. open_basedir is
+     * the primary access gate; these caps are defense-in-depth so
+     * an untrusted path can't make libgd allocate hundreds of MiB
+     * to decode a small JPEG with declared 100000x100000 size.
      */
     public function setBackgroundImage(string $path): static {}
 

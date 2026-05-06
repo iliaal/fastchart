@@ -52,6 +52,26 @@ int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
         if (candles[i].has_volume && candles[i].volume > v_max) v_max = candles[i].volume;
     }
 
+    /* Expand the price y-range to include any finite values in the
+     * price overlays (Bollinger upper / lower bands, Parabolic SAR
+     * dots). Without this, an overlay value outside the candle
+     * high/low gets clamped against the plot edge by
+     * fastchart_y_to_pixel() and visually flattens against the
+     * boundary instead of telling the user something useful. */
+    for (int o = 0; o < self->overlay_count; o++) {
+        const fastchart_price_overlay *ov = &self->overlays[o];
+        const double *bufs[3] = { ov->a, ov->b, ov->c };
+        for (int b = 0; b < 3; b++) {
+            if (!bufs[b]) continue;
+            for (int i = 0; i < ov->n; i++) {
+                double d = bufs[b][i];
+                if (!isfinite(d)) continue;
+                if (d < y_min) y_min = d;
+                if (d > y_max) y_max = d;
+            }
+        }
+    }
+
     bool show_volume = self->volume_pane && any_volume;
 
     /* MA periods were validated as >= 2 in addMovingAverage() /

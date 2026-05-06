@@ -5241,10 +5241,16 @@ ZEND_METHOD(FastChart_StockChart, addMACD)
         Z_PARAM_LONG(slow)
         Z_PARAM_LONG(signal_p)
     ZEND_PARSE_PARAMETERS_END();
+    /* Upper-bound every period before the cast to int. signal_p in
+     * particular is later used as an array index — an unbounded
+     * zend_long becomes a wraparound int and walks the buffer. */
     if (fast < 2 || slow < 2 || signal_p < 2 ||
-        fast >= slow || slow > FASTCHART_MAX_INDICATOR_VALUES) {
+        fast >= slow ||
+        slow > FASTCHART_MAX_INDICATOR_VALUES ||
+        signal_p > FASTCHART_MAX_INDICATOR_VALUES) {
         zend_value_error(
-            "FastChart\\StockChart::addMACD() requires 2 <= fast < slow and signal >= 2 (default 12, 26, 9)");
+            "FastChart\\StockChart::addMACD() requires 2 <= fast < slow and 2 <= signal <= %d (default 12, 26, 9)",
+            FASTCHART_MAX_INDICATOR_VALUES);
         RETURN_THROWS();
     }
     fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
@@ -5332,9 +5338,15 @@ ZEND_METHOD(FastChart_StockChart, addStochastic)
         Z_PARAM_LONG(period)
         Z_PARAM_LONG(smooth)
     ZEND_PARSE_PARAMETERS_END();
-    if (period < 2 || smooth < 1 || period > FASTCHART_MAX_INDICATOR_VALUES) {
+    /* Upper-bound smooth before any cast — same reasoning as
+     * addMACD: smooth drives index arithmetic at draw time and an
+     * unbounded zend_long wraps to a destructive int. */
+    if (period < 2 || smooth < 1 ||
+        period > FASTCHART_MAX_INDICATOR_VALUES ||
+        smooth > FASTCHART_MAX_INDICATOR_VALUES) {
         zend_value_error(
-            "FastChart\\StockChart::addStochastic() requires period >= 2 and smooth >= 1");
+            "FastChart\\StockChart::addStochastic() requires 2 <= period <= %d and 1 <= smooth <= %d",
+            FASTCHART_MAX_INDICATOR_VALUES, FASTCHART_MAX_INDICATOR_VALUES);
         RETURN_THROWS();
     }
     fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
@@ -5779,8 +5791,13 @@ ZEND_METHOD(FastChart_Waterfall, setBars)
         parsed[idx].kind = FASTCHART_WF_DELTA;
         zval *zk = zend_hash_str_find(eht, "kind", sizeof("kind") - 1);
         if (zk && Z_TYPE_P(zk) == IS_STRING) {
-            const char *s = Z_STRVAL_P(zk);
-            if (strncmp(s, "total", 5) == 0) parsed[idx].kind = FASTCHART_WF_TOTAL;
+            /* Length-aware compare: "totalXYZ" must NOT match
+             * "total" via strncmp prefix, otherwise typos silently
+             * change chart semantics. */
+            if (Z_STRLEN_P(zk) == 5 &&
+                memcmp(Z_STRVAL_P(zk), "total", 5) == 0) {
+                parsed[idx].kind = FASTCHART_WF_TOTAL;
+            }
         } else if (zk && Z_TYPE_P(zk) == IS_LONG) {
             zend_long k = Z_LVAL_P(zk);
             if (k == FASTCHART_WF_TOTAL) parsed[idx].kind = FASTCHART_WF_TOTAL;
@@ -5843,62 +5860,18 @@ ZEND_METHOD(FastChart_Heatmap, setGrid)
         Z_PARAM_ARRAY(grid)
     ZEND_PARSE_PARAMETERS_END();
 
+    /* Reuse the shared grid parser so Heatmap honours the same
+     * overflow guard and FASTCHART_MAX_GRID_CELLS cap as
+     * SurfaceChart and ContourChart. The previous inline copy
+     * skipped both checks, allowing a sparse PHP input to amplify
+     * into a multi-hundred-MB native allocation. */
     fastchart_heatmap_obj *self = Z_FASTCHART_HEATMAP_OBJ_P(ZEND_THIS);
-    HashTable *ht = Z_ARRVAL_P(grid);
-    uint32_t rows = zend_hash_num_elements(ht);
-    if (rows == 0) {
-        if (self->grid.cells) { efree(self->grid.cells); self->grid.cells = NULL; }
-        self->grid.rows = 0; self->grid.cols = 0;
-        RETURN_ZVAL(ZEND_THIS, 1, 0);
+    fastchart_grid parsed = { NULL, 0, 0 };
+    if (fastchart_parse_grid(grid, &parsed, "FastChart\\Heatmap::setGrid()") != 0) {
+        RETURN_THROWS();
     }
-
-    /* First pass: width = max row length. Second pass: allocate +
-     * fill row-major. Missing or non-numeric cells become NaN — the
-     * renderer treats them as gaps, leaving the canvas bg showing. */
-    int max_cols = 0;
-    zval *row;
-    ZEND_HASH_FOREACH_VAL(ht, row) {
-        if (Z_TYPE_P(row) != IS_ARRAY) continue;
-        int rl = (int)zend_hash_num_elements(Z_ARRVAL_P(row));
-        if (rl > max_cols) max_cols = rl;
-    } ZEND_HASH_FOREACH_END();
-    if (max_cols == 0) {
-        if (self->grid.cells) { efree(self->grid.cells); self->grid.cells = NULL; }
-        self->grid.rows = 0; self->grid.cols = 0;
-        RETURN_ZVAL(ZEND_THIS, 1, 0);
-    }
-
     if (self->grid.cells) efree(self->grid.cells);
-    self->grid.rows = (int)rows;
-    self->grid.cols = max_cols;
-    self->grid.cells = ecalloc((size_t)rows * (size_t)max_cols, sizeof(double));
-    int r = 0;
-    ZEND_HASH_FOREACH_VAL(ht, row) {
-        if (Z_TYPE_P(row) != IS_ARRAY) {
-            for (int c = 0; c < max_cols; c++) {
-                self->grid.cells[r * max_cols + c] = NAN;
-            }
-            r++;
-            continue;
-        }
-        int c = 0;
-        zval *cell;
-        ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(row), cell) {
-            if (c >= max_cols) break;
-            double v;
-            if (fastchart_zval_to_double(cell, &v) != 0 || !isfinite(v)) {
-                self->grid.cells[r * max_cols + c] = NAN;
-            } else {
-                self->grid.cells[r * max_cols + c] = v;
-            }
-            c++;
-        } ZEND_HASH_FOREACH_END();
-        for (; c < max_cols; c++) {
-            self->grid.cells[r * max_cols + c] = NAN;
-        }
-        r++;
-    } ZEND_HASH_FOREACH_END();
-
+    self->grid = parsed;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -6008,7 +5981,10 @@ ZEND_METHOD(FastChart_LinearMeter, setValueFormat)
     }
     fastchart_linear_meter_obj *self = Z_FASTCHART_LINEAR_METER_OBJ_P(ZEND_THIS);
     if (self->meter_value_format) zend_string_release(self->meter_value_format);
-    self->meter_value_format = zend_string_copy(fmt);
+    /* Empty string is the documented "clear / use default" sentinel —
+     * mirror Gauge::setValueFormat. Storing the empty literal would
+     * produce blank labels at draw time. */
+    self->meter_value_format = ZSTR_LEN(fmt) == 0 ? NULL : zend_string_copy(fmt);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
