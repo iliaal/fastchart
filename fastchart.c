@@ -3781,9 +3781,12 @@ static int fastchart_resolve_canvas_dims(const fastchart_obj *self,
      * combined with sub-96 DPI (e.g. 1x1 at 24 DPI rounds to 0). */
     if (pw < 1) pw = 1;
     if (ph < 1) ph = 1;
-    /* 16384 is libgd's de-facto safe upper bound on a single dimension;
-     * 16384 * 16384 * 4 = 1 GiB which is also our absolute pixel-count
-     * cap. */
+    /* 16384 is libgd's de-facto safe upper bound on a single
+     * dimension. The product cap is the load-bearing one: libgd
+     * truecolor stores 4 bytes per pixel, so 16384 * 16384 alone is
+     * 1 GiB before encoder buffers, and any caller with both axes
+     * unconstrained can drive a single render-helper call into a
+     * native allocation that pins the worker. */
     const int MAX_PHYS_DIM = 16384;
     if (pw > MAX_PHYS_DIM || ph > MAX_PHYS_DIM) {
         zend_value_error(
@@ -3792,6 +3795,23 @@ static int fastchart_resolve_canvas_dims(const fastchart_obj *self,
             "Reduce setSize() or setDpi().",
             (long long)self->width, (long long)self->height,
             (long)self->dpi, pw, ph);
+        return -1;
+    }
+    /* Product cap: 64M pixels = 256 MiB at 4 bytes/pixel for the
+     * truecolor canvas, plus comparable encoder buffers. Square
+     * worst case (16384 * 16384 = 268M) is rejected here even
+     * though both dims pass MAX_PHYS_DIM. Multiply as int64 so the
+     * arithmetic itself can't overflow before the comparison. */
+    const long long MAX_PHYS_PIXELS = 64LL * 1024LL * 1024LL;
+    long long pixels = (long long)pw * (long long)ph;
+    if (pixels > MAX_PHYS_PIXELS) {
+        zend_value_error(
+            "FastChart: physical canvas pixel count exceeds the %lld "
+            "budget (setSize=%lldx%lld, setDpi=%ld -> %dx%d = %lld pixels). "
+            "Reduce setSize() or setDpi().",
+            MAX_PHYS_PIXELS,
+            (long long)self->width, (long long)self->height,
+            (long)self->dpi, pw, ph, pixels);
         return -1;
     }
     *out_w = pw;
