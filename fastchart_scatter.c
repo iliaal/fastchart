@@ -88,12 +88,23 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
         ? fastchart_resolve_font((fastchart_obj *)self, FC_FONT_AXIS) : NULL;
     if (font) {
         double size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-        int label_y = plot.y1 + 4 + (int)(size * 1.2);
+        /* Match the shared numeric x-axis: scale tick length and
+         * label offset with DPI, and use a measured ascender so the
+         * label TOP sits below plot.y1 + tick rather than clipping
+         * into the plot rect at higher DPIs. */
+        double dpi_scale = ((fastchart_obj *)self)->dpi > 96
+            ? (double)((fastchart_obj *)self)->dpi / 96.0 : 1.0;
+        int tick_len = (int)(4 * dpi_scale + 0.5);
+        int probe_h = 0;
+        if (fastchart_text_measure(im, font, size, "Mg9", NULL, &probe_h, NULL, 0) != 0) {
+            probe_h = (int)(size * 1.2 * dpi_scale);
+        }
+        int label_y = plot.y1 + tick_len + probe_h + (int)(4 * dpi_scale);
         for (int t = 0; t < xrange.n_ticks; t++) {
             double v = xrange.ticks[t];
             double frac = (v - xrange.min) / (xrange.max - xrange.min);
             int x = plot.x0 + (int)(frac * (plot.x1 - plot.x0) + 0.5);
-            gdImageLine(im, x, plot.y1 + 1, x, plot.y1 + 4, pal.axis);
+            gdImageLine(im, x, plot.y1 + 1, x, plot.y1 + tick_len, pal.axis);
 
             char buf[32];
             if (self->x_axis_label_format) {
