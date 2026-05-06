@@ -22,7 +22,6 @@
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 #include "fastchart_effects.h"
-#include "fastchart_aa.h"
 
 #include <math.h>
 
@@ -108,19 +107,9 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
      * (right). Zones are pre-parsed into typed C state by setZones. */
     int default_color = pal.series[0];
 
-    /* Coverage-based AA via NanoSVG rasterizer. The libgd polygon-AA
-     * helper (fastchart_filled_wedge_aa in fastchart_effects.c) only
-     * adds a 1px AA outline on top of a hard-edged fill — visually
-     * subtle. NanoSVG rasterizes the entire shape with fractional
-     * coverage per pixel, which is what makes Cairo / Skia / browser
-     * canvas output look smooth. The temp rasterizer is allocated
-     * once and reused for all wedges in this draw. */
-    fastchart_aa_ctx *aa = fastchart_aa_open();
-
     if (self->zones && self->n_zones > 0) {
         /* Background fill (a thin ring, drawn as a fat arc). */
-        if (aa) fastchart_aa_filled_wedge(aa, im, cx, cy, diameter, 180, 360, pal.grid);
-        else    fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
+        fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
         for (int i = 0; i < self->n_zones; i++) {
             const fastchart_gauge_zone *zn = &self->zones[i];
             int color = default_color;
@@ -146,19 +135,16 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
             int end   = (int)(180 + frac_b * 180);
             if (start > end) { int t = start; start = end; end = t; }
             if (end <= start) continue;  /* empty zone, skip */
-            if (aa) fastchart_aa_filled_wedge(aa, im, cx, cy, diameter, start, end, color);
-            else    fastchart_filled_wedge_aa(im, cx, cy, diameter, start, end, color);
+            fastchart_filled_wedge_aa(im, cx, cy, diameter, start, end, color);
         }
     } else {
         /* Single-color sweep from min to value, with the rest in grid color. */
-        if (aa) fastchart_aa_filled_wedge(aa, im, cx, cy, diameter, 180, 360, pal.grid);
-        else    fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
+        fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
         double aV = gauge_value_to_deg(v, mn, mx);
         int start = 180;
         int end = 180 + (int)(180 - aV);
         if (end > start) {
-            if (aa) fastchart_aa_filled_wedge(aa, im, cx, cy, diameter, start, end, default_color);
-            else    fastchart_filled_wedge_aa(im, cx, cy, diameter, start, end, default_color);
+            fastchart_filled_wedge_aa(im, cx, cy, diameter, start, end, default_color);
         }
     }
 
@@ -176,29 +162,22 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
     double rad = aV * M_PI / 180.0;
     int nx = cx + (int)((double)(radius - 6) * cos(rad));
     int ny = cy - (int)((double)(radius - 6) * sin(rad));
-    /* Needle thickness scales with the gauge size so the line stays
-     * visible at a 1200x800 canvas without dominating a 480x320 one.
-     * NanoSVG strokes the line with proper coverage AA — replaces the
-     * libgd "thick non-AA + 1px AA spine" hack which left visible
-     * staircase along diagonals at high resolution. */
+    /* Needle thickness scales with gauge size — visible on a 1200x800
+     * canvas, not dominant on a 480x320 one. libgd has no proper
+     * thick-AA primitive, so paint the body thick (no AA) then
+     * overdraw a 1px AA spine to soften diagonals. */
     double needle_thickness = (double)diameter / 200.0 + 2.0;
     if (needle_thickness < 3.0) needle_thickness = 3.0;
-    if (aa) {
-        fastchart_aa_stroke_line(aa, im, cx, cy, nx, ny,
-                                 needle_thickness, pal.text);
-    } else {
-        gdImageSetThickness(im, (int)needle_thickness);
-        gdImageLine(im, cx, cy, nx, ny, pal.text);
-        gdImageSetThickness(im, 1);
-        gdImageSetAntiAliased(im, pal.text);
-        gdImageLine(im, cx, cy, nx, ny, gdAntiAliased);
-    }
+    gdImageSetThickness(im, (int)needle_thickness);
+    gdImageLine(im, cx, cy, nx, ny, pal.text);
+    gdImageSetThickness(im, 1);
+    gdImageSetAntiAliased(im, pal.text);
+    gdImageLine(im, cx, cy, nx, ny, gdAntiAliased);
+
     /* Hub: scale with diameter so it doesn't look tiny on a large canvas. */
     int hub = diameter / 60;
     if (hub < 8) hub = 8;
     gdImageFilledEllipse(im, cx, cy, hub, hub, pal.text);
-
-    fastchart_aa_close(aa);
 
     /* Center value label. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);

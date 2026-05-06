@@ -71,8 +71,7 @@ if test "$PHP_FASTCHART" != "no"; then
     fastchart_boxplot.c \
     fastchart_polar.c \
     fastchart_contour.c \
-    fastchart_effects.c \
-    fastchart_aa.c"
+    fastchart_effects.c"
 
   dnl -Wall -Wextra are on by default so wrapper regressions get caught
   dnl in every local build; --enable-fastchart-dev upgrades warnings to
@@ -83,14 +82,7 @@ if test "$PHP_FASTCHART" != "no"; then
     FASTCHART_CFLAGS="$FASTCHART_CFLAGS -Werror -Wstrict-prototypes"
   fi
 
-  dnl Vendored NanoSVG rasterizer header lives under vendor/nanosvg/.
-  dnl It's a single-translation-unit body in fastchart_aa.c (defines
-  dnl NANOSVGRAST_IMPLEMENTATION before #include) so no separate compile
-  dnl unit; we only need the include path. The rasterizer's prototypes
-  dnl happen to be -Wstrict-prototypes-clean against this libgd version,
-  dnl so no per-file flag override is needed today.
   PHP_ADD_INCLUDE([$ext_srcdir])
-  PHP_ADD_BUILD_DIR([$ext_builddir/vendor/nanosvg], 1)
 
   PHP_NEW_EXTENSION(fastchart,
     $WRAPPER_SOURCES,
