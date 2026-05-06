@@ -23,7 +23,6 @@ fclose($fh);
 $im = imagecreatetruecolor(32, 32);
 imagefill($im, 0, 0, imagecolorallocate($im, 0xCC, 0x33, 0x66));
 imagepng($im, $tmp_small);
-imagedestroy($im);
 
 /* Baseline render (no background). */
 $base = (new FastChart\LineChart(160, 100))

@@ -17,22 +17,24 @@ echo "gif_size_sane: ", (strlen($gif) > 200 ? "yes" : "no"), "\n";
 // AVIF "ftypavif" / "ftypheic" box at offset 4, or fails with a
 // known runtime exception.
 try {
-    $avif = $base->renderAvif();
+    $avif = @$base->renderAvif();
     $head = substr($avif, 4, 8);
     $ok = $head === 'ftypavif' || $head === 'ftypheic' || $head === 'ftypmif1' || $head === 'ftypavis';
     echo "avif: ", ($ok ? "ok" : "unknown ftyp ($head)"), "\n";
-} catch (\Exception $e) {
-    /* libgd lacks AVIF -- acceptable on stripped builds. */
+} catch (\Throwable $e) {
+    /* libgd lacks AVIF -- acceptable on stripped builds. fastchart
+     * throws \Error (gd encoder produced no output), which is not a
+     * \Exception, so catch \Throwable. */
     echo "avif_unavailable_or_ok: ok\n";
 }
 
 // Bad quality bounds for both new formats.
 try {
-    $base->renderAvif(101);
+    @$base->renderAvif(101);
     echo "avif_q101: no throw\n";
 } catch (\ValueError $e) {
     echo "avif_q101: ValueError ok\n";
-} catch (\Exception $e) {
+} catch (\Throwable $e) {
     echo "avif_q101: ValueError ok\n";  /* AVIF not available -- accept */
 }
 ?>

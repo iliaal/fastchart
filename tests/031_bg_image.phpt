@@ -12,7 +12,6 @@ $pink = imagecolorallocate($bg, 0xFF, 0x00, 0xCC);
 imagefilledrectangle($bg, 0, 0, 99, 99, $pink);
 $bg_path = sys_get_temp_dir() . '/fc_bg_test.png';
 imagepng($bg, $bg_path);
-imagedestroy($bg);
 
 $bytes = (new FastChart\LineChart(400, 300))
     ->setBackgroundImage($bg_path)

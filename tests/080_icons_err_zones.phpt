@@ -10,7 +10,6 @@ $icon_path = __DIR__ . "/__icon.png";
 $icon = imagecreatetruecolor(16, 16);
 imagefilledrectangle($icon, 0, 0, 15, 15, 0xFF0000);
 imagepng($icon, $icon_path);
-imagedestroy($icon);
 
 /* IconPlot on ScatterChart at data coords. */
 $im = imagecreatetruecolor(400, 200);

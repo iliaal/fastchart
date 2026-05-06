@@ -38,7 +38,6 @@ function dark_pixels(string $bytes): int {
             if ((imagecolorat($im, $x, $y) & 0xFF) < 80) $n++;
         }
     }
-    imagedestroy($im);
     return $n;
 }
 $single_n = dark_pixels($single);
