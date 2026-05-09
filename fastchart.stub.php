@@ -1277,7 +1277,7 @@ final class Code128 extends Barcode
  * **Input encoding:** `setData()` payloads must be valid UTF-8 (or
  * the ASCII subset thereof). The underlying encoder treats the
  * string as UTF-8 text and selects the most compact QR mode that
- * fits — numeric, alphanumeric, byte, or kanji. Invalid UTF-8 byte
+ * fits — numeric, alphanumeric, or byte. Invalid UTF-8 byte
  * sequences are not rejected by `setData()` (which only forbids
  * embedded NULs) but produce QR symbols that decode back to garbage
  * or unspecified bytes. If you need to encode arbitrary binary data,
