@@ -1,0 +1,12 @@
+# nayuki/QR-Code-generator — vendored under vendor/qrcodegen/ for the
+# FastChart\QrCode encoder. C variant (qrcodegen.c + qrcodegen.h),
+# MIT licensed. The freshness gate compares the pinned commit against
+# upstream HEAD; bump `pinned` here when re-syncing the vendor copy.
+
+resolver: github
+repo: nayuki/QR-Code-generator
+# Upstream uses commit SHAs, not release tags, for the C variant.
+# tag_regex matches a 40-char hex; pinned tracks the SHA the vendor
+# directory currently mirrors.
+tag_regex: "([0-9a-f]{40})"
+pinned: 2c9044de6b049ca25cb3cd1649ed7e27aa055138

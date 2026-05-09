@@ -2146,6 +2146,14 @@ FASTCHART_COLOR_OVERRIDE_SETTER(setTextColor,   text_color_override)
             RETURN_THROWS(); \
         } \
         if (path && php_check_open_basedir(ZSTR_VAL(path))) { \
+            /* php_check_open_basedir emits E_WARNING but does not set \
+             * EG(exception). Without an explicit throw, RETURN_THROWS \
+             * asserts under debug builds. */ \
+            if (!EG(exception)) { \
+                zend_throw_error(NULL, \
+                    "FastChart\\Chart::" #name_ "() open_basedir restriction " \
+                    "prevents access to %s", ZSTR_VAL(path)); \
+            } \
             RETURN_THROWS(); \
         } \
         if (!size_is_null && !(size >= 1.0 && size <= 200.0)) { \
@@ -2296,6 +2304,14 @@ ZEND_METHOD(FastChart_Chart, setBackgroundImage)
             RETURN_THROWS();
         }
         if (php_check_open_basedir(ZSTR_VAL(path))) {
+            /* php_check_open_basedir emits E_WARNING but does not set
+             * EG(exception); throw explicitly so RETURN_THROWS does not
+             * assert under debug builds. */
+            if (!EG(exception)) {
+                zend_throw_error(NULL,
+                    "FastChart\\Chart::setBackgroundImage() open_basedir "
+                    "restriction prevents access to %s", ZSTR_VAL(path));
+            }
             RETURN_THROWS();
         }
     }
@@ -4261,6 +4277,14 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         }
     }
     if (php_check_open_basedir(ZSTR_VAL(path))) {
+        /* php_check_open_basedir emits E_WARNING but does not set
+         * EG(exception); throw explicitly so RETURN_THROWS does not
+         * assert under debug builds. */
+        if (!EG(exception)) {
+            zend_throw_error(NULL,
+                "FastChart\\Chart::renderToFile() open_basedir restriction "
+                "prevents access to %s", ZSTR_VAL(path));
+        }
         RETURN_THROWS();
     }
 
@@ -4301,6 +4325,14 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         REPORT_ERRORS, NULL);
     if (!stream) {
         gdFree(bytes);
+        /* REPORT_ERRORS emits E_WARNING but does not set EG(exception).
+         * Throw explicitly so RETURN_THROWS does not assert under
+         * debug builds. */
+        if (!EG(exception)) {
+            zend_throw_error(NULL,
+                "FastChart\\Chart::renderToFile() could not open %s for writing",
+                ZSTR_VAL(path));
+        }
         RETURN_THROWS();
     }
 

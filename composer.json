@@ -3,7 +3,7 @@
     "type": "php-ext",
     "description": "Native C PHP extension for fast chart rendering: 19 families (line, bar, pie, scatter, bubble, stock with technical indicators, radar, polar, surface, contour, treemap, funnel, waterfall, heatmap, gauge, linear meter, gantt, box plot, area) drawn onto ext/gd \\GdImage canvases via libgd.",
     "keywords": ["chart", "graph", "gd", "visualization", "php-extension", "pie", "candlestick", "ohlcv", "technical-indicators", "treemap", "heatmap", "funnel", "waterfall", "gauge", "polar", "radar", "contour", "surface", "gantt", "boxplot"],
-    "license": "BSD-3-Clause",
+    "license": "(BSD-3-Clause AND MIT)",
     "homepage": "https://github.com/iliaal/fastchart",
     "authors": [
         {

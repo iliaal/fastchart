@@ -196,7 +196,7 @@ Cross-cutting features available on most chart types:
 ## Examples
 
 A gallery of code + rendered chart pairs lives in
-[`docs/README.md`](docs/README.md). Forty runnable scripts in
+[`docs/README.md`](docs/README.md). Forty-two runnable scripts in
 [`docs/examples/`](docs/examples/) regenerate the images and exercise
 every public method on the API surface.
 
@@ -262,7 +262,10 @@ Companion native PHP extensions for high-throughput PHP workloads:
 
 ## License
 
-BSD 3-Clause. See [`LICENSE`](LICENSE).
+BSD 3-Clause for the extension itself; see [`LICENSE`](LICENSE).
+The vendored QR encoder under `vendor/qrcodegen/` (nayuki/QR-Code-generator,
+C variant) is MIT — see [`vendor/qrcodegen/LICENSE`](vendor/qrcodegen/LICENSE).
+SPDX: `(BSD-3-Clause AND MIT)`.
 
 ---
 

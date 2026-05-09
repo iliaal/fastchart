@@ -772,15 +772,18 @@ overlaid with a logo; L for QR codes embedded in clean digital
 pipelines.
 
 ```php
-foreach ([
-    FastChart\QrCode::ECC_L, FastChart\QrCode::ECC_M,
-    FastChart\QrCode::ECC_Q, FastChart\QrCode::ECC_H,
-] as $ecc) {
+$levels = [
+    ['L', FastChart\QrCode::ECC_L, '42a_qrcode_ecc_l.png'],
+    ['M', FastChart\QrCode::ECC_M, '42b_qrcode_ecc_m.png'],
+    ['Q', FastChart\QrCode::ECC_Q, '42c_qrcode_ecc_q.png'],
+    ['H', FastChart\QrCode::ECC_H, '42d_qrcode_ecc_h.png'],
+];
+foreach ($levels as [$label, $ecc, $file]) {
     (new FastChart\QrCode())
         ->setData('https://github.com/iliaal/fastchart')
         ->setSize(300, 300)
         ->setEcc($ecc)
-        ->renderToFile("42_qrcode_ecc_$ecc.png");
+        ->renderToFile($file);
 }
 ```
 
