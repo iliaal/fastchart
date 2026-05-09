@@ -1163,3 +1163,159 @@ final class LinearMeter extends Chart
 
     public function draw(\GdImage $canvas): \GdImage {}
 }
+
+/**
+ * Symbol family: 1D barcodes and 2D matrix codes (QR). Render-only
+ * surface — no `draw(\GdImage)` entry, so Symbol classes never accept a
+ * caller-supplied canvas. Use the render*() / renderToFile() helpers
+ * to materialise the symbol; reload via `imagecreatefromstring()` if
+ * compositing onto another image is needed.
+ *
+ * Symbol does not extend `Chart`; the two hierarchies share no state
+ * (axes, palettes, plot rect, font cache do not apply to symbologies).
+ */
+abstract class Symbol
+{
+    /**
+     * Logical canvas size in pixels. Both arguments must be positive
+     * and ≤ 65535. Setting size 0 is rejected; if you want the
+     * class default, simply do not call `setSize()`. Physical
+     * dimensions scale with `setDpi()` and are capped at 16384px /
+     * 64M pixels — see Chart::setDpi() docs for the cap policy.
+     */
+    public function setSize(int $width, int $height): static {}
+
+    /**
+     * Payload to encode. Embedded NUL bytes are rejected with
+     * `\ValueError` (gd's text path truncates at NUL; we reject
+     * rather than encode a different string than the user passed in).
+     * Empty strings are also rejected.
+     */
+    public function setData(string $data): static {}
+
+    /**
+     * Quiet-zone (whitespace) margin around the symbol. Units are
+     * per-class: `Code128` measures it in pixels (default 10× the
+     * narrowest bar), `QrCode` measures it in modules (default 4 per
+     * the QR spec). Pass -1 to revert to the class default; any
+     * other negative value is rejected.
+     */
+    public function setQuietZone(int $units): static {}
+
+    /** Foreground colour as 24-bit RGB (0..0xFFFFFF). Default 0x000000. */
+    public function setForeground(int $rgb): static {}
+
+    /** Background colour as 24-bit RGB (0..0xFFFFFF). Default 0xFFFFFF. */
+    public function setBackground(int $rgb): static {}
+
+    /**
+     * Make the background transparent in the encoded output. Honoured
+     * by PNG / WebP / AVIF; JPEG and GIF fall through to the
+     * background colour because the format can't carry alpha.
+     */
+    public function setTransparentBackground(bool $enabled): static {}
+
+    /**
+     * Output DPI, between 24 and 1200. Default 96. Matches
+     * `Chart::setDpi()` semantics: logical canvas size stays the
+     * same, physical canvas grows for crisper rendering.
+     */
+    public function setDpi(int $dpi): static {}
+
+    public function renderPng(): string {}
+    public function renderJpeg(int $quality = 90): string {}
+    public function renderWebp(int $quality = 90): string {}
+    public function renderGif(): string {}
+    public function renderAvif(int $quality = 60): string {}
+
+    /**
+     * Render and write to `$path`. Format inferred from extension;
+     * supports .png / .jpg / .jpeg / .webp / .gif / .avif. Honours
+     * `open_basedir`. Returns bytes written.
+     */
+    public function renderToFile(string $path, int $quality = 90): int {}
+}
+
+/**
+ * Abstract 1D linear-barcode base. Concrete subclass: `Code128`.
+ * Other 1D symbologies (Code 39, EAN/UPC, ITF, Codabar, ...) will
+ * subclass this base when implemented; each declares its own
+ * text-rendering / checksum setters because the supported character
+ * set and human-readable layout differ per symbology.
+ */
+abstract class Barcode extends Symbol
+{
+}
+
+/**
+ * Code 128: high-density alphanumeric 1D barcode with three subsets
+ * (A: control + uppercase, B: full ASCII printable, C: digit pairs).
+ * The encoder auto-switches between subsets to minimise encoded
+ * length; mod-103 checksum is appended automatically. ISO/IEC 15417.
+ *
+ * Default canvas size when `setSize()` is not called: 300x80.
+ */
+final class Code128 extends Barcode
+{
+    /**
+     * Render the human-readable payload below the bar pattern.
+     * Default false. The font follows the same auto-detection chain
+     * as Chart's label font.
+     */
+    public function setShowText(bool $enabled): static {}
+}
+
+/**
+ * QR Code (ISO/IEC 18004). Two-dimensional matrix code with four
+ * error-correction levels. Encoder is the vendored nayuki C library
+ * (versions 1..40; auto-pick within the requested range).
+ *
+ * Default canvas size when `setSize()` is not called: 300x300.
+ * Default ECC: M (~15% recovery). Default version range: 1..40 (the
+ * encoder picks the smallest version that fits the data).
+ *
+ * **Input encoding:** `setData()` payloads must be valid UTF-8 (or
+ * the ASCII subset thereof). The underlying encoder treats the
+ * string as UTF-8 text and selects the most compact QR mode that
+ * fits — numeric, alphanumeric, byte, or kanji. Invalid UTF-8 byte
+ * sequences are not rejected by `setData()` (which only forbids
+ * embedded NULs) but produce QR symbols that decode back to garbage
+ * or unspecified bytes. If you need to encode arbitrary binary data,
+ * base64-encode upstream and decode after scan.
+ */
+final class QrCode extends Symbol
+{
+    /** ECC level L: ~7% recovery. */
+    const int ECC_L = 0;
+    /** ECC level M: ~15% recovery (default). */
+    const int ECC_M = 1;
+    /** ECC level Q: ~25% recovery. */
+    const int ECC_Q = 2;
+    /** ECC level H: ~30% recovery. */
+    const int ECC_H = 3;
+
+    /**
+     * Set the MINIMUM error-correction level. Pass one of the ECC_*
+     * class constants. The encoder may raise the effective ECC level
+     * if there is spare codeword space at the chosen version (the
+     * "boost ECC" feature of the underlying nayuki encoder), which
+     * means the resulting symbol has at LEAST the requested error-
+     * correction tolerance and possibly more. The version range
+     * (`setMinVersion()` / `setMaxVersion()`) is honoured strictly;
+     * only the ECC level may be boosted within that range.
+     */
+    public function setEcc(int $level): static {}
+
+    /**
+     * Floor of the version range the encoder will consider. Range
+     * 1..40. Defaults to 1.
+     */
+    public function setMinVersion(int $version): static {}
+
+    /**
+     * Ceiling of the version range the encoder will consider. Range
+     * 1..40. Defaults to 40. The encoder fails the render if the
+     * data + ECC level cannot fit at any version ≤ this ceiling.
+     */
+    public function setMaxVersion(int $version): static {}
+}

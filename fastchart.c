@@ -27,6 +27,7 @@
 #include <sys/stat.h>
 
 #include "php_fastchart.h"
+#include "fastchart_render_helpers.h"
 #include "fastchart_axis.h"
 
 /* gen_stub.php on PHP 8.4+ emits the 6-arg ZEND_RAW_FENTRY form (the
@@ -62,13 +63,20 @@ zend_class_entry *fastchart_funnel_ce;
 zend_class_entry *fastchart_waterfall_ce;
 zend_class_entry *fastchart_heatmap_ce;
 zend_class_entry *fastchart_linear_meter_ce;
+zend_class_entry *fastchart_symbol_ce;
+zend_class_entry *fastchart_barcode_ce;
+zend_class_entry *fastchart_code128_ce;
+zend_class_entry *fastchart_qrcode_ce;
 zend_class_entry *fastchart_gd_image_ce = NULL;
 
 /* Auto-detected default font path. Probed at MINIT, used as the
  * initial font_path on every newly-allocated chart instance. NULL
  * if no probe candidate exists on the system; users must then call
- * setFontPath() before any text-rendering chart method. */
-static zend_string *fastchart_default_font_path = NULL;
+ * setFontPath() before any text-rendering chart method. Non-static
+ * so the Symbol family (fastchart_code128.c) can share the same
+ * fallback for show_text rendering without duplicating the probe
+ * chain. */
+zend_string *fastchart_default_font_path = NULL;
 
 /* Per-class object_handlers. Each chart class's std offset varies
  * because per-type fields shift std's position within its struct.
@@ -3957,9 +3965,13 @@ static int dispatch_render(fastchart_obj *self, zend_class_entry *ce, gdImagePtr
 /* Encode a rendered gdImagePtr in the requested format. Returns
  * malloc'd bytes via *out_bytes / *out_sz; caller gdFree's. NULL
  * out_bytes on failure (caller throws). `format`: 0 PNG, 1 JPEG,
- * 2 WebP, 3 GIF, 4 AVIF. */
-static int encode_image(gdImagePtr im, int format, int quality,
-                        void **out_bytes, int *out_sz)
+ * 2 WebP, 3 GIF, 4 AVIF.
+ *
+ * Non-static so fastchart_symbol.c's render shortcuts share the
+ * exact same encoder dispatch (single source of truth for AVIF
+ * fallback + format range). Declared in fastchart_render_helpers.h. */
+int fastchart_encode_image(gdImagePtr im, int format, int quality,
+                           void **out_bytes, int *out_sz)
 {
     *out_bytes = NULL;
     *out_sz = 0;
@@ -3984,16 +3996,16 @@ static int encode_image(gdImagePtr im, int format, int quality,
 }
 
 /* HiDPI canvas scale derived from setDpi(). 96 DPI = 1.0×; 200 DPI =
- * 200/96 ≈ 2.08×. The user-supplied size is the LOGICAL size; the
- * actual pixel canvas allocated for the render*() helpers grows with
+ * 200/96 ≈ 2.08×. The logical width/height is the user-supplied size;
+ * the physical canvas allocated for the render*() helpers grows with
  * DPI so the chart keeps its apparent layout while every glyph and
  * shape gains pixel density. The PNG metadata then reports the same
  * DPI so retina viewers / print pipelines display the image at its
- * intended physical size. */
-static double fastchart_dpi_scale(const fastchart_obj *self)
+ * intended physical size. Static — only resolve_canvas_dims uses it. */
+static double fastchart_dpi_scale_for(zend_long dpi)
 {
-    if (self->dpi <= 0 || self->dpi == 96) return 1.0;
-    return (double)self->dpi / 96.0;
+    if (dpi <= 0 || dpi == 96) return 1.0;
+    return (double)dpi / 96.0;
 }
 
 /* Resolve the physical (allocated) canvas dimensions from the logical
@@ -4003,15 +4015,20 @@ static double fastchart_dpi_scale(const fastchart_obj *self)
  * here keeps gdImageCreateTrueColor inside libgd's safe range. Also
  * clamps below: setDpi(24) on a 1x1 canvas would otherwise round to
  * 0x0 and crash libgd. Returns 0 on success, -1 with a thrown
- * ValueError otherwise. */
-static int fastchart_resolve_canvas_dims(const fastchart_obj *self,
-                                         int *out_w, int *out_h)
+ * ValueError otherwise.
+ *
+ * Takes scalars instead of a base-struct pointer so the Chart and
+ * Symbol families (with separate base layouts) share one
+ * implementation. Non-static; declared in fastchart_render_helpers.h. */
+int fastchart_resolve_canvas_dims(zend_long width, zend_long height,
+                                  zend_long dpi,
+                                  int *out_w, int *out_h)
 {
-    double scale = fastchart_dpi_scale(self);
+    double scale = fastchart_dpi_scale_for(dpi);
     /* Round to int first so the cap comparison is on the actual
      * dimension we'll allocate (16384 exact must pass). */
-    int pw = (int)((double)self->width  * scale + 0.5);
-    int ph = (int)((double)self->height * scale + 0.5);
+    int pw = (int)((double)width  * scale + 0.5);
+    int ph = (int)((double)height * scale + 0.5);
     /* Clamp below to avoid 0x0 allocations on tiny logical sizes
      * combined with sub-96 DPI (e.g. 1x1 at 24 DPI rounds to 0). */
     if (pw < 1) pw = 1;
@@ -4028,8 +4045,8 @@ static int fastchart_resolve_canvas_dims(const fastchart_obj *self,
             "FastChart: physical canvas dimensions exceed the 16384px cap "
             "(setSize=%lldx%lld, setDpi=%ld -> %dx%d). "
             "Reduce setSize() or setDpi().",
-            (long long)self->width, (long long)self->height,
-            (long)self->dpi, pw, ph);
+            (long long)width, (long long)height,
+            (long)dpi, pw, ph);
         return -1;
     }
     /* Product cap: 64M pixels = 256 MiB at 4 bytes/pixel for the
@@ -4045,8 +4062,8 @@ static int fastchart_resolve_canvas_dims(const fastchart_obj *self,
             "budget (setSize=%lldx%lld, setDpi=%ld -> %dx%d = %lld pixels). "
             "Reduce setSize() or setDpi().",
             MAX_PHYS_PIXELS,
-            (long long)self->width, (long long)self->height,
-            (long)self->dpi, pw, ph, pixels);
+            (long long)width, (long long)height,
+            (long)dpi, pw, ph, pixels);
         return -1;
     }
     *out_w = pw;
@@ -4064,7 +4081,7 @@ static void fastchart_render_to_string(INTERNAL_FUNCTION_PARAMETERS, int format,
     }
 
     int alloc_w, alloc_h;
-    if (fastchart_resolve_canvas_dims(self, &alloc_w, &alloc_h) != 0) {
+    if (fastchart_resolve_canvas_dims(self->width, self->height, self->dpi, &alloc_w, &alloc_h) != 0) {
         RETURN_THROWS();
     }
     gdImagePtr im = gdImageCreateTrueColor(alloc_w, alloc_h);
@@ -4080,7 +4097,7 @@ static void fastchart_render_to_string(INTERNAL_FUNCTION_PARAMETERS, int format,
 
     void *bytes = NULL;
     int sz = 0;
-    if (encode_image(im, format, (int)quality, &bytes, &sz) != 0) {
+    if (fastchart_encode_image(im, format, (int)quality, &bytes, &sz) != 0) {
         if (bytes) gdFree(bytes);
         gdImageDestroy(im);
         if (!EG(exception)) {
@@ -4157,7 +4174,9 @@ ZEND_METHOD(FastChart_Chart, renderAvif)
  * Path extension picks the format. Honors open_basedir. Writes via
  * the Zend stream layer so wrapper paths (file://, sftp://) work
  * within open_basedir constraints. */
-static int format_from_path(const char *path, size_t len)
+/* Non-static so Symbol::renderToFile reuses the same extension table.
+ * Declared in fastchart_render_helpers.h. */
+int fastchart_format_from_path(const char *path, size_t len)
 {
     /* Walk back to find the last '.'; bounded to avoid scanning a
      * megabyte of pathological input. */
@@ -4191,7 +4210,7 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         Z_PARAM_LONG(quality)
     ZEND_PARSE_PARAMETERS_END();
 
-    int format = format_from_path(ZSTR_VAL(path), ZSTR_LEN(path));
+    int format = fastchart_format_from_path(ZSTR_VAL(path), ZSTR_LEN(path));
     if (format < 0) {
         zend_value_error("FastChart\\Chart::renderToFile() could not infer format from extension; expected .png/.jpg/.jpeg/.webp/.gif/.avif");
         RETURN_THROWS();
@@ -4226,7 +4245,7 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
     }
 
     int alloc_w, alloc_h;
-    if (fastchart_resolve_canvas_dims(self, &alloc_w, &alloc_h) != 0) {
+    if (fastchart_resolve_canvas_dims(self->width, self->height, self->dpi, &alloc_w, &alloc_h) != 0) {
         RETURN_THROWS();
     }
     gdImagePtr im = gdImageCreateTrueColor(alloc_w, alloc_h);
@@ -4242,7 +4261,7 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
 
     void *bytes = NULL;
     int sz = 0;
-    if (encode_image(im, format, (int)quality, &bytes, &sz) != 0) {
+    if (fastchart_encode_image(im, format, (int)quality, &bytes, &sz) != 0) {
         if (bytes) gdFree(bytes);
         gdImageDestroy(im);
         if (!EG(exception)) {
@@ -6036,6 +6055,11 @@ FASTCHART_INIT_HANDLERS(funnel,  fastchart_funnel_obj);
 FASTCHART_INIT_HANDLERS(waterfall, fastchart_waterfall_obj);
 FASTCHART_INIT_HANDLERS(heatmap, fastchart_heatmap_obj);
 FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
+    /* Symbol family handlers. Same pattern as the chart classes; the
+     * lifecycle macro in fastchart_symbol.c emits the create / free /
+     * clone trio with external linkage so this MINIT can wire them in. */
+    FASTCHART_INIT_HANDLERS(code128, fastchart_code128_obj);
+    FASTCHART_INIT_HANDLERS(qrcode,  fastchart_qrcode_obj);
 #undef FASTCHART_INIT_HANDLERS
 
     /* Abstract base class: never instantiated directly, so it does
@@ -6099,6 +6123,27 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
 
     fastchart_linear_meter_ce  = register_class_FastChart_LinearMeter(fastchart_chart_ce);
     fastchart_linear_meter_ce->create_object = fastchart_linear_meter_create_object;
+
+    /* Symbol family. Parallel hierarchy to Chart: Symbol (abstract)
+     * → Barcode (abstract, 1D) and Symbol → QrCode (final, 2D).
+     * Code128 sits below Barcode. ZEND_ACC_ABSTRACT blocks
+     * `new FastChart\Symbol()` directly, but a userland subclass
+     * (`class MySym extends FastChart\Symbol {}`) would inherit the
+     * abstract base's create_object and bypass that check; without a
+     * sentinel handler it'd allocate a vanilla zend_object that
+     * cannot back the typed C struct, and any inherited setter would
+     * read out-of-bounds. The sentinel throws on any such path; the
+     * concrete internal classes override it with their own handler
+     * immediately after registration, so the sentinel only fires on
+     * unsupported userland subclassing. */
+    fastchart_symbol_ce  = register_class_FastChart_Symbol();
+    fastchart_symbol_ce->create_object  = fastchart_symbol_abstract_create_object;
+    fastchart_barcode_ce = register_class_FastChart_Barcode(fastchart_symbol_ce);
+    fastchart_barcode_ce->create_object = fastchart_symbol_abstract_create_object;
+    fastchart_code128_ce = register_class_FastChart_Code128(fastchart_barcode_ce);
+    fastchart_code128_ce->create_object = fastchart_code128_create_object;
+    fastchart_qrcode_ce  = register_class_FastChart_QrCode(fastchart_symbol_ce);
+    fastchart_qrcode_ce->create_object  = fastchart_qrcode_create_object;
 
     fastchart_gd_image_ce = zend_hash_str_find_ptr(CG(class_table),
         "gdimage", sizeof("gdimage") - 1);

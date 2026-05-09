@@ -59,6 +59,17 @@ extern zend_class_entry *fastchart_box_plot_ce;
 extern zend_class_entry *fastchart_polar_chart_ce;
 extern zend_class_entry *fastchart_contour_chart_ce;
 
+/* Symbol family (1D/2D codes). Parallel hierarchy to Chart: the slim
+ * fastchart_symbol_obj base shares none of FASTCHART_BASE_FIELDS, since
+ * axes / palettes / plot rect / font cache do not apply to symbologies.
+ * Symbol classes never accept a caller-supplied \GdImage; render-only
+ * surface (renderPng/Jpeg/Webp/Avif/Gif/toFile) avoids any ext/gd
+ * class-entry coupling. */
+extern zend_class_entry *fastchart_symbol_ce;
+extern zend_class_entry *fastchart_barcode_ce;
+extern zend_class_entry *fastchart_code128_ce;
+extern zend_class_entry *fastchart_qrcode_ce;
+
 /* Cached \GdImage class entry, resolved at MINIT via direct
  * CG(class_table) lookup. ext/gd defines gd_image_ce file-static
  * with no PHPAPI export so we cannot link against it; the autoload
@@ -873,5 +884,118 @@ int fastchart_funnel_render_to_image(fastchart_funnel_obj *self, gdImagePtr im);
 int fastchart_waterfall_render_to_image(fastchart_waterfall_obj *self, gdImagePtr im);
 int fastchart_heatmap_render_to_image(fastchart_heatmap_obj *self, gdImagePtr im);
 int fastchart_linear_meter_render_to_image(fastchart_linear_meter_obj *self, gdImagePtr im);
+
+/* --- Symbol family (1D/2D codes) ----------------------------------
+ *
+ * Slim base independent of FASTCHART_BASE_FIELDS. Each concrete class
+ * (Code128, QrCode) gets its own struct + create_object handler. The
+ * abstract `Barcode` intermediate is PHP-side only and has no C struct.
+ * Lifecycle uses the parallel FASTCHART_DEFINE_SYMBOL_LIFECYCLE macro
+ * (see fastchart_symbol.c) which calls fastchart_symbol_base_init_*
+ * helpers instead of the chart-base equivalents.
+ *
+ * Layout matches the chart per-type pattern:
+ *   { FASTCHART_SYMBOL_BASE_FIELDS, <per-type fields>, zend_object std }
+ * so per-class handlers->offset = offsetof(class_struct, std) and the
+ * Z_FASTCHART_*_OBJ_P macros below land on the start of the struct
+ * (= the base layout) regardless of which concrete subclass we're in. */
+#define FASTCHART_SYMBOL_BASE_FIELDS \
+    zend_long width;            /* logical pixels; 0 = use class default */ \
+    zend_long height;           /* logical pixels; 0 = use class default */ \
+    zend_long dpi;              /* HiDPI scale, same semantics as Chart */ \
+    zend_string *data;          /* user payload, owned; NUL-free */ \
+    zend_long fg_rgb;           /* 0..0xFFFFFF; default 0x000000 */ \
+    zend_long bg_rgb;           /* 0..0xFFFFFF; default 0xFFFFFF */ \
+    bool transparent_bg;        /* honoured by PNG/WebP/AVIF encoders */ \
+    zend_long quiet_zone;       /* per-class units; -1 = class default */
+
+typedef struct _fastchart_symbol_obj { FASTCHART_SYMBOL_BASE_FIELDS } fastchart_symbol_obj;
+
+/* Code 128: auto-switching A/B/C subset encoder. show_text toggles the
+ * human-readable payload below the bars; text_font_path is owned (NULL
+ * falls back to the auto-detected sans-serif resolved at MINIT);
+ * text_font_size 0 means "scale from canvas height". */
+typedef struct {
+    FASTCHART_SYMBOL_BASE_FIELDS
+    bool show_text;
+    zend_string *text_font_path;
+    double text_font_size;
+    zend_object std;
+} fastchart_code128_obj;
+
+/* QR Code: thin wrapper over the vendored nayuki encoder. ecc maps
+ * 1:1 onto enum qrcodegen_Ecc (0..3). min_version / max_version
+ * default to 1 / 40 (encoder picks the smallest fitting version). */
+typedef struct {
+    FASTCHART_SYMBOL_BASE_FIELDS
+    zend_long ecc;
+    zend_long min_version;
+    zend_long max_version;
+    zend_object std;
+} fastchart_qrcode_obj;
+
+/* QrCode ECC-level constants. Match the qrcodegen_Ecc enum in
+ * vendor/qrcodegen/qrcodegen.h verbatim so the cast in
+ * fastchart_qrcode_render_to_image is straight-through. */
+#define FASTCHART_QR_ECC_L 0
+#define FASTCHART_QR_ECC_M 1
+#define FASTCHART_QR_ECC_Q 2
+#define FASTCHART_QR_ECC_H 3
+
+/* Class-default canvas dimensions when setSize() was not called.
+ * Code 128: 300x80 mirrors JpGraph's typical 1D output aspect.
+ * QrCode: 300x300 sits in the comfortable scan range for phone cameras
+ * across versions 1..10. */
+#define FASTCHART_CODE128_DEFAULT_W  300
+#define FASTCHART_CODE128_DEFAULT_H   80
+#define FASTCHART_QRCODE_DEFAULT_W   300
+#define FASTCHART_QRCODE_DEFAULT_H   300
+
+static inline fastchart_symbol_obj *fastchart_symbol_obj_from_zend(zend_object *obj) {
+    return (fastchart_symbol_obj *)((char *)(obj) - obj->handlers->offset);
+}
+
+#define Z_FASTCHART_SYMBOL_OBJ_P(zv)  fastchart_symbol_obj_from_zend(Z_OBJ_P(zv))
+#define Z_FASTCHART_CODE128_OBJ_P(zv) ((fastchart_code128_obj *)Z_FASTCHART_SYMBOL_OBJ_P(zv))
+#define Z_FASTCHART_QRCODE_OBJ_P(zv)  ((fastchart_qrcode_obj *)Z_FASTCHART_SYMBOL_OBJ_P(zv))
+
+int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im);
+int fastchart_qrcode_render_to_image(fastchart_qrcode_obj *self, gdImagePtr im);
+
+/* Fill `im` with the configured background, honouring `transparent_bg`.
+ * libgd quirk: gdImageColorTransparent() does NOT rewrite truecolor
+ * pixel alpha — pixels themselves must carry alpha=127 for the
+ * encoded PNG/WebP/AVIF output to be transparent. Sets alphaBlending
+ * back to 1 on exit so subsequent fg draws composite normally. */
+void fastchart_symbol_fill_background(fastchart_symbol_obj *self, gdImagePtr im);
+
+/* Symbol-family lifecycle handlers and storage. The lifecycle macro in
+ * fastchart_symbol.c emits external symbols so fastchart.c MINIT can
+ * wire them into the per-class handler struct (offset / dtor / clone)
+ * and the class entry's create_object slot. */
+extern zend_object_handlers fastchart_code128_handlers;
+extern zend_object_handlers fastchart_qrcode_handlers;
+extern zend_object *fastchart_code128_create_object(zend_class_entry *ce);
+extern zend_object *fastchart_qrcode_create_object(zend_class_entry *ce);
+extern void fastchart_code128_free_object(zend_object *object);
+extern void fastchart_qrcode_free_object(zend_object *object);
+extern zend_object *fastchart_code128_clone_object(zend_object *src_obj);
+extern zend_object *fastchart_qrcode_clone_object(zend_object *src_obj);
+
+/* Sentinel create_object handler attached to the abstract Symbol and
+ * Barcode class entries. ZEND_ACC_ABSTRACT only blocks `new Symbol()`
+ * at the engine level; userland subclasses (`class MySym extends
+ * FastChart\Symbol {}`) bypass that and would otherwise allocate a
+ * vanilla zend_object whose layout cannot back the typed C struct
+ * Z_FASTCHART_SYMBOL_OBJ_P expects — every inherited method would
+ * read out-of-bounds. This handler throws on any such instantiation. */
+extern zend_object *fastchart_symbol_abstract_create_object(zend_class_entry *ce);
+
+/* Auto-detected sans-serif TTF path probed at MINIT in fastchart.c.
+ * Owned (zend_string with persistent=1). NULL when no candidate
+ * existed on the system. Shared between the Chart family
+ * (fastchart_resolve_font) and the Symbol family
+ * (fastchart_code128.c, for show_text). */
+extern zend_string *fastchart_default_font_path;
 
 #endif /* PHP_FASTCHART_H */
