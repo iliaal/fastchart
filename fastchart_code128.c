@@ -569,6 +569,14 @@ int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im
             int text_w = brect[2] - brect[0];
             int text_h = brect[1] - brect[7];
             int tx = (W - text_w) / 2;
+            /* Clamp tx to a non-negative left margin. On tall-narrow
+             * canvases with long payloads, text_w can exceed W and tx
+             * goes negative — gdImageStringFT then renders the leading
+             * glyphs off the left edge instead of clipping the trailing
+             * tail. Left-aligning with a small padding reads better
+             * (the right tail clips into the canvas edge, which is the
+             * normal "your text is too long" failure mode). */
+            if (tx < 2) tx = 2;
             int ty = bar_bottom + 2 + text_h;
             if (ty + 2 > H) ty = H - 2;
             gdImageStringFT(im, brect, fg, (char *)text_font, pt, 0.0,

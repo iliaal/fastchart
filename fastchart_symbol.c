@@ -526,6 +526,15 @@ ZEND_METHOD(FastChart_Symbol, renderToFile)
         }
     }
     if (php_check_open_basedir(ZSTR_VAL(path))) {
+        /* php_check_open_basedir emits E_WARNING but does not set
+         * EG(exception); RETURN_THROWS's ZEND_ASSERT requires it
+         * under debug builds. Throw an explicit Error so the caller
+         * gets a structured exception, not a debug-build abort. */
+        if (!EG(exception)) {
+            zend_throw_error(NULL,
+                "FastChart\\Symbol::renderToFile() open_basedir restriction "
+                "prevents access to %s", ZSTR_VAL(path));
+        }
         RETURN_THROWS();
     }
 
@@ -582,6 +591,14 @@ ZEND_METHOD(FastChart_Symbol, renderToFile)
         REPORT_ERRORS, NULL);
     if (!stream) {
         gdFree(bytes);
+        /* php_stream_open_wrapper with REPORT_ERRORS emits E_WARNING
+         * on failure but does not set EG(exception). Throw explicitly
+         * so RETURN_THROWS does not assert under debug builds. */
+        if (!EG(exception)) {
+            zend_throw_error(NULL,
+                "FastChart\\Symbol::renderToFile() could not open %s for writing",
+                ZSTR_VAL(path));
+        }
         RETURN_THROWS();
     }
 

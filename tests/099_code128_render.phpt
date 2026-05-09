@@ -89,6 +89,25 @@ foreach (['Jpeg' => 90, 'Webp' => 80] as $fmt => $q) {
 $bytes = (new FastChart\Code128())->setData('12345')->setSize(99, 50)->renderPng();
 var_dump(strlen($bytes) > 0);
 
+// Odd-tail-before-≥6 ordering: "ABC1234567" has digits_here=7 at
+// the tail position, which matches BOTH the ≥6 branch (would switch
+// to C and encode 3 pairs + CODE_B + trailing '7' in B = 5 codes for
+// the 7 digits) AND the odd_tail branch (emits 1 in B, then 6-even
+// remainder switches to C = 4 codes). The reorder fix ensures
+// odd_tail wins. Result: 9 data codes + checksum + STOP = 11 codes
+// = 123 modules. With auto quiet (20 modules), needed width = 143
+// at module_px=1. Pre-reorder needed 154.
+$bytes = (new FastChart\Code128())->setData('ABC1234567')->setSize(143, 50)->renderPng();
+var_dump(strlen($bytes) > 0);
+// At W=142 the encoded bars need 1 extra pixel beyond what fits.
+// Pre-reorder this would have needed even more width.
+try {
+    (new FastChart\Code128())->setData('ABC1234567')->setSize(142, 50)->renderPng();
+    echo "ERR: W=142 should reject\n";
+} catch (\ValueError $e) {
+    echo "ABC1234567-w142-reject: ok\n";
+}
+
 // DPI metadata flows through to the encoded PNG. setDpi(200) must
 // stamp 200 DPI in the PNG pHYs chunk; libgd defaults to 96 if
 // gdImageSetResolution is not called.
@@ -128,6 +147,8 @@ bool(true)
 bool(true)
 bool(true)
 bool(true)
+bool(true)
+ABC1234567-w142-reject: ok
 bool(true)
 bool(true)
 bool(true)
