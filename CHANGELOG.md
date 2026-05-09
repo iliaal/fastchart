@@ -23,6 +23,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `setTransparentBackground()`, and `setDpi()` (with PNG/JPEG metadata
   written via `gdImageSetResolution`).
 
+### Fixed
+- `StockChart::setOhlcv()` now clears overlay (Bollinger / SAR) and
+  indicator-pane buffers when the new candle count is shorter than
+  the previous one. Previously the overlay's `n` field kept the old
+  length and the renderer walked off the end of the new candle
+  array — a use-after-realloc OOB read on the candle pointer.
+- Setters that accept paths (`setFont`, `setBackgroundImage`,
+  `addIconAt`) now throw an explicit `Error` before
+  `RETURN_THROWS` when `php_check_open_basedir` blocks the path.
+  `php_check_open_basedir` only emits `E_WARNING` and does not set
+  `EG(exception)`, so `RETURN_THROWS` asserted under a debug PHP
+  build.
+- `QrCode::setQuietZone()` rejects quiet zones above 256 modules
+  with a `ValueError` instead of silently clamping.
+
+### Changed
+- `composer.json` license expression is now
+  `(BSD-3-Clause AND MIT)`. fastchart's own code is unchanged
+  BSD-3-Clause; the composite expression declares the MIT-licensed
+  nayuki QR encoder vendored under `vendor/qrcodegen/`.
+
 ## [0.1.1] - 2026-05-06
 
 ### Fixed
