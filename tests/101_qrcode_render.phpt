@@ -53,7 +53,6 @@ var_dump($sample(75, 75));    // top-left finder centre — dark
 var_dump(!$sample(55, 55));   // top-left finder white ring — light
 var_dump($sample(215, 75));   // top-right finder centre — dark
 var_dump($sample(75, 215));   // bottom-left finder centre — dark
-imagedestroy($im);
 
 // All four ECC levels encode and render.
 foreach ([
@@ -84,7 +83,6 @@ $bytes = (new FastChart\QrCode())
 var_dump($bytes > 0);
 $decoded = imagecreatefromstring(file_get_contents($tmp));
 var_dump(imagesx($decoded) === 250 && imagesy($decoded) === 250);
-imagedestroy($decoded);
 unlink($tmp);
 
 // Larger payload requires a higher version automatically. Encoder
@@ -122,7 +120,6 @@ $png = (new FastChart\QrCode())
     ->renderPng();
 $im = imagecreatefromstring($png);
 $res = imageresolution($im);
-imagedestroy($im);
 var_dump($res === [300, 300]);
 
 ?>
