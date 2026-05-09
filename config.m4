@@ -76,7 +76,11 @@ if test "$PHP_FASTCHART" != "no"; then
     fastchart_waterfall.c \
     fastchart_heatmap.c \
     fastchart_linear_meter.c \
-    fastchart_effects.c"
+    fastchart_effects.c \
+    fastchart_symbol.c \
+    fastchart_code128.c \
+    fastchart_qrcode.c \
+    vendor/qrcodegen/qrcodegen.c"
 
   dnl -Wall -Wextra are on by default so wrapper regressions get caught
   dnl in every local build; --enable-fastchart-dev upgrades warnings to
@@ -88,6 +92,19 @@ if test "$PHP_FASTCHART" != "no"; then
   fi
 
   PHP_ADD_INCLUDE([$ext_srcdir])
+  dnl Vendored nayuki QR encoder lives under vendor/qrcodegen/. Adding
+  dnl its parent dir to the include path lets fastchart_qrcode.c (and
+  dnl any future Symbol class needing the encoder) say
+  dnl `#include "qrcodegen.h"` without a relative path. Uses
+  dnl $abs_srcdir (autoconf-standard, always populated before this
+  dnl macro fires) rather than $ext_srcdir, which is unset at this
+  dnl point in m4 expansion order and would resolve to /vendor/qrcodegen.
+  PHP_ADD_INCLUDE([$abs_srcdir/vendor/qrcodegen])
+  dnl PHP_NEW_EXTENSION will compile vendor/qrcodegen/qrcodegen.c into
+  dnl vendor/qrcodegen/qrcodegen.lo — for VPATH / out-of-tree builds the
+  dnl matching directory must exist under $ext_builddir or libtool will
+  dnl fail to write the .lo file. Mirrors ext/fileinfo's libmagic wiring.
+  PHP_ADD_BUILD_DIR([$ext_builddir/vendor/qrcodegen])
 
   PHP_NEW_EXTENSION(fastchart,
     $WRAPPER_SOURCES,

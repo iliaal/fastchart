@@ -727,6 +727,74 @@ imagepng($im, '31b_two_charts.png');
 
 ---
 
+## 41. Code 128 barcode (1D)
+
+`FastChart\Code128` ships a complete ISO/IEC 15417 encoder. Three
+subsets (A: control + uppercase, B: full ASCII printable, C: digit
+pairs) auto-switch within a single payload to minimise encoded
+length; mod-103 checksum is appended automatically. `setShowText(true)`
+renders the human-readable payload below the bars using the
+auto-detected default font.
+
+```php
+(new FastChart\Code128())
+    ->setData('FASTCHART-12345')
+    ->setSize(400, 100)
+    ->setShowText(true)
+    ->renderToFile('41a_code128_alphanumeric.png');
+
+(new FastChart\Code128())
+    ->setData('0123456789012345')   // pure digits → subset C dense
+    ->setSize(360, 80)
+    ->setShowText(true)
+    ->renderToFile('41b_code128_numeric.png');
+
+(new FastChart\Code128())
+    ->setData('FASTCHART-12345')
+    ->setSize(400, 60)
+    ->setShowText(false)             // bars-only compact form
+    ->renderToFile('41c_code128_compact.png');
+```
+
+| Alphanumeric (B + tail-C) | Pure digits (subset C) | Compact (no text) |
+|---|---|---|
+| ![](examples/41a_code128_alphanumeric.png) | ![](examples/41b_code128_numeric.png) | ![](examples/41c_code128_compact.png) |
+
+## 42. QR code (2D)
+
+`FastChart\QrCode` wraps the vendored nayuki QR encoder
+(`vendor/qrcodegen/`, MIT). Four error-correction levels: L (~7%
+recovery), M (~15%, default), Q (~25%), H (~30%). Higher ECC eats
+codeword space and may push the encoder up a version (more modules
+per side, denser look), but the decoded payload survives more pixel
+damage. Use H for QR codes physically printed on rough surfaces or
+overlaid with a logo; L for QR codes embedded in clean digital
+pipelines.
+
+```php
+foreach ([
+    FastChart\QrCode::ECC_L, FastChart\QrCode::ECC_M,
+    FastChart\QrCode::ECC_Q, FastChart\QrCode::ECC_H,
+] as $ecc) {
+    (new FastChart\QrCode())
+        ->setData('https://github.com/iliaal/fastchart')
+        ->setSize(300, 300)
+        ->setEcc($ecc)
+        ->renderToFile("42_qrcode_ecc_$ecc.png");
+}
+```
+
+| ECC_L (~7%) | ECC_M (~15%) | ECC_Q (~25%) | ECC_H (~30%) |
+|---|---|---|---|
+| ![](examples/42a_qrcode_ecc_l.png) | ![](examples/42b_qrcode_ecc_m.png) | ![](examples/42c_qrcode_ecc_q.png) | ![](examples/42d_qrcode_ecc_h.png) |
+
+Symbol classes don't accept a caller-supplied `\GdImage`; the render
+path always allocates a fresh canvas. Reload the encoded bytes via
+`imagecreatefromstring()` if you want to composite the symbol onto
+an existing image.
+
+---
+
 ## Common patterns
 
 - **`renderToFile($path)` is the simple path.** Format infers from the
@@ -752,6 +820,6 @@ imagepng($im, '31b_two_charts.png');
 ## See also
 
 - [`examples/`](examples/): runnable PHP scripts for each chart above
-- [`tests/`](../tests/): 86 phpt tests covering every public method
+- [`tests/`](../tests/): 104 phpt tests covering every public method
 - [`fastchart.stub.php`](../fastchart.stub.php): full public API
   surface with docstrings

@@ -144,8 +144,8 @@ Iteration counts via `FC_BENCH_SMALL_ITERS` (default 200) and
 
 ## What you can render
 
-19 chart classes, all under the `FastChart\` namespace. Each name
-links to its rendered example image:
+19 chart classes plus a 2-class symbology family, all under the
+`FastChart\` namespace. Each name links to its rendered example image:
 
 - **Cartesian:** [`LineChart`](docs/examples/01_line_basic.png),
   [`AreaChart`](docs/examples/27a_area_stacked.png),
@@ -172,6 +172,10 @@ links to its rendered example image:
   [`Funnel`](docs/examples/33_funnel.png),
   [`Waterfall`](docs/examples/34_waterfall.png),
   [`Heatmap`](docs/examples/35_heatmap.png).
+- **Symbology:** [`Code128`](docs/examples/41a_code128_alphanumeric.png)
+  (1D barcode, ISO/IEC 15417, auto-switching A/B/C subsets, optional
+  human-readable text), [`QrCode`](docs/examples/42b_qrcode_ecc_m.png)
+  (2D matrix code, ISO/IEC 18004, ECC L/M/Q/H, versions 1..40).
 
 Cross-cutting features available on most chart types:
 
@@ -222,6 +226,31 @@ All under the `FastChart\` namespace:
 Every setter returns `static`, so a single fluent expression configures
 and emits a chart. `draw($canvas)` returns the same `\GdImage` for the
 same reason.
+
+The Symbol family lives parallel to `Chart` (no shared base — axes /
+palettes / plot rect have no meaning for a barcode):
+
+- `Symbol`: abstract base for all 1D + 2D codes. Carries shared
+  setters: `setSize()`, `setData()`, `setQuietZone()`, `setForeground()`,
+  `setBackground()`, `setTransparentBackground()`, `setDpi()`, plus
+  the same `renderPng()` / `renderJpeg()` / `renderWebp()` /
+  `renderGif()` / `renderAvif()` / `renderToFile()` helpers as `Chart`.
+  No `draw(\GdImage)` entry — symbol renders are produced fresh each
+  call; reload via `imagecreatefromstring()` to composite onto an
+  existing canvas.
+- `Barcode`: abstract 1D linear-barcode base.
+- `Code128` (extends `Barcode`): ISO/IEC 15417, alphanumeric, three
+  subsets (A: control + uppercase, B: full ASCII printable, C: digit
+  pairs). Auto-switches between subsets to minimise encoded length;
+  mod-103 checksum appended automatically. `setShowText(true)`
+  renders the human-readable payload below the bars using the
+  auto-detected default font.
+- `QrCode` (extends `Symbol`): ISO/IEC 18004, four error-correction
+  levels (`ECC_L` ~7%, `ECC_M` ~15%, `ECC_Q` ~25%, `ECC_H` ~30%),
+  versions 1..40. Encoder is the vendored nayuki/QR-Code-generator
+  C library. `setMinVersion()` / `setMaxVersion()` pin the symbol
+  size; the encoder picks the smallest version that fits within the
+  range. Input must be valid UTF-8.
 
 ## 🔗 PHP Performance Toolkit
 

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Symbol family.** Two-class symbology hierarchy parallel to `Chart`:
+  `FastChart\Code128` (1D barcode, ISO/IEC 15417) and
+  `FastChart\QrCode` (2D matrix code, ISO/IEC 18004). Render-only API
+  (`renderPng()`, `renderJpeg()`, `renderWebp()`, `renderGif()`,
+  `renderAvif()`, `renderToFile()`) — Symbol classes do not accept a
+  caller-supplied `\GdImage`. `Code128` auto-switches between subsets
+  A/B/C with an odd-tail-to-C optimisation; mod-103 checksum is
+  appended automatically; `setShowText(true)` renders the human-
+  readable payload below the bars. `QrCode` ships with all four ECC
+  levels (`ECC_L`/`M`/`Q`/`H`) and versions 1..40 via the vendored
+  nayuki QR encoder under `vendor/qrcodegen/`. Both classes honour
+  `setSize()`, `setQuietZone()`, `setForeground()`, `setBackground()`,
+  `setTransparentBackground()`, and `setDpi()` (with PNG/JPEG metadata
+  written via `gdImageSetResolution`).
+
 ## [0.1.1] - 2026-05-06
 
 ### Fixed
