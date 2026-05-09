@@ -113,7 +113,6 @@ $png = (new FastChart\QrCode())
 $im = imagecreatefromstring($png);
 $bg_pixel = imagecolorat($im, 0, 0);
 $alpha = ($bg_pixel >> 24) & 0x7F;
-imagedestroy($im);
 var_dump($alpha === 127);  // 127 = fully transparent in libgd's 0..127 alpha range
 
 // Without transparent_bg, the same pixel is fully opaque (alpha = 0).
@@ -125,7 +124,6 @@ $png = (new FastChart\QrCode())
 $im = imagecreatefromstring($png);
 $bg_pixel = imagecolorat($im, 0, 0);
 $alpha = ($bg_pixel >> 24) & 0x7F;
-imagedestroy($im);
 var_dump($alpha === 0);
 
 // Validation rejects out-of-range arguments.
