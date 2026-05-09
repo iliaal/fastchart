@@ -3495,6 +3495,32 @@ ZEND_METHOD(FastChart_StockChart, setOhlcv)
     self->candles = parsed;
     self->candle_count = n;
     self->any_volume = any_volume;
+
+    /* Price overlays (Bollinger Bands, Parabolic SAR) carry a/b/c
+     * arrays sized parallel to the candle array at the time of the
+     * addBollingerBands() / addParabolicSAR() call. Replacing the
+     * candle buffer here invalidates those arrays — `ov->n` still
+     * reflects the OLD candle count, so the overlay render loop
+     * (fastchart_stock.c, Bollinger and PSAR branches) would index
+     * candles[i] for i up to the OLD count, reading past the end of
+     * the new (possibly shorter) candle buffer. Mirrors the
+     * destructor at fastchart_stock_release_extras: free the parallel
+     * arrays, zero the per-overlay state, reset overlay_count. The
+     * caller must re-call addBollingerBands / addParabolicSAR to
+     * recompute against the new candles. Indicator panes (RSI, MACD,
+     * etc.) take caller-supplied values, not candle-derived data, so
+     * they are intentionally NOT cleared. */
+    for (int k = 0; k < self->overlay_count; k++) {
+        if (self->overlays[k].a) efree(self->overlays[k].a);
+        if (self->overlays[k].b) efree(self->overlays[k].b);
+        if (self->overlays[k].c) efree(self->overlays[k].c);
+        self->overlays[k].a = NULL;
+        self->overlays[k].b = NULL;
+        self->overlays[k].c = NULL;
+        self->overlays[k].n = 0;
+    }
+    self->overlay_count = 0;
+
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
