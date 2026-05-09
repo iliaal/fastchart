@@ -41,7 +41,6 @@ for ($x = 0; $x < $W; $x++) {
     if ($prev_dark !== null && $is_dark !== $prev_dark) $transitions++;
     $prev_dark = $is_dark;
 }
-imagedestroy($im);
 
 // At least 30 transitions on the mid-row.
 var_dump($transitions >= 30);
@@ -68,7 +67,6 @@ for ($x = 0; $x < imagesx($im2); $x++) {
     $rgb = imagecolorat($im2, $x, 30) & 0xFFFFFF;
     if ($rgb < 0x808080) $bar_dark_pixels++;
 }
-imagedestroy($im2);
 var_dump($bar_dark_pixels > 30);
 
 // Render JPEG / WebP / AVIF too — round-trip through the dispatch.
@@ -114,7 +112,6 @@ try {
 $png = (new FastChart\Code128())->setData('ABC')->setSize(200, 80)->setDpi(200)->renderPng();
 $im = imagecreatefromstring($png);
 $res = imageresolution($im);
-imagedestroy($im);
 var_dump($res === [200, 200]);
 
 // Subsets cover printable ASCII, control chars (subset A via shift),
