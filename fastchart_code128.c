@@ -281,27 +281,30 @@ static int code128_encode(const char *data, size_t len,
         }
         else if (subset == 'B') {
             /* Switch to C if we have a long-enough digit run.
-             * Threshold ≥6 mid-stream (saves 3+ codes after paying
-             * the switch cost) or ≥4 if the run is the tail of input.
              *
-             * Odd-tail optimisation: when the tail is ≥5 digits and
-             * odd-length, encode one digit in B then re-enter the
-             * loop. The remaining run is now even and the tail_run
-             * branch above will switch to C. Saves one code (= 11
-             * modules) per shortened encoding; matters because the
-             * auto module_px scales with total bar count. */
+             * Order matters: `odd_tail` must be checked BEFORE the
+             * generic `≥6 || (tail_run && ≥4)` branch. For an odd
+             * digit tail like 7, the generic branch sees ≥6 and
+             * switches to C, which then handles 3 pairs + a single
+             * trailing digit (CODE_B + 1 in B = 2 extra codes for
+             * the tail). The `odd_tail` path emits one digit in B
+             * first, so the remaining 6-digit even tail switches to
+             * C cleanly (CODE_C + 3 pairs). One fewer code (= 11
+             * fewer modules); matters because auto module_px scales
+             * with total bar count. */
             int tail_run = (digits_here >= 2 && (size_t)(i + digits_here) == len &&
                             (digits_here % 2) == 0);
             int odd_tail = (digits_here >= 5 && (size_t)(i + digits_here) == len &&
                             (digits_here % 2) == 1);
-            if (digits_here >= 6 || (tail_run && digits_here >= 4)) {
-                EMIT(C128_CODE_C); subset = 'C';
-                continue;
-            }
             if (odd_tail) {
-                /* Emit one digit in B, fall through to next iteration. */
+                /* Emit one digit in B, let the next iteration's
+                 * tail_run branch switch to C for the even remainder. */
                 EMIT(c - 32);
                 i++;
+                continue;
+            }
+            if (digits_here >= 6 || (tail_run && digits_here >= 4)) {
+                EMIT(C128_CODE_C); subset = 'C';
                 continue;
             }
 
@@ -325,19 +328,24 @@ static int code128_encode(const char *data, size_t len,
             }
         }
         else {  /* subset == 'A' */
+            /* Same odd-tail-before-≥6 ordering as the B branch above;
+             * see comment there. */
             int tail_run = (digits_here >= 2 && (size_t)(i + digits_here) == len &&
                             (digits_here % 2) == 0);
             int odd_tail = (digits_here >= 5 && (size_t)(i + digits_here) == len &&
                             (digits_here % 2) == 1);
-            if (digits_here >= 6 || (tail_run && digits_here >= 4)) {
-                EMIT(C128_CODE_C); subset = 'C';
+            if (odd_tail) {
+                /* Emit one digit in A, then let the next iteration's
+                 * tail_run branch switch to C. Subset A maps ASCII
+                 * 32..95 to values 0..63 (digits '0'..'9' → 16..25),
+                 * so the encoding is identical to subset B for the
+                 * digit characters. */
+                EMIT(c - 32);
+                i++;
                 continue;
             }
-            if (odd_tail) {
-                /* Emit one digit in A, fall through to next iteration
-                 * which will then switch to C for the even tail. */
-                EMIT(c - 32);  /* A: digits 32..63 → values 0..31 */
-                i++;
+            if (digits_here >= 6 || (tail_run && digits_here >= 4)) {
+                EMIT(C128_CODE_C); subset = 'C';
                 continue;
             }
 
@@ -501,8 +509,17 @@ int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im
         (int)(base->fg_rgb & 0xFF));
 
     /* Walk codes, emitting bars. The first width is always a bar;
-     * widths alternate space / bar / space / ... thereafter. */
-    int x = quiet_px;
+     * widths alternate space / bar / space / ... thereafter.
+     *
+     * Centre the bars on the canvas. With integer-rounded module_px,
+     * bars + 2*quiet_px rarely consume the whole canvas; left-aligning
+     * at quiet_px would dump all the slack on the right edge. The
+     * `quiet_px` value is treated as the MINIMUM quiet zone — actual
+     * quiet on each side is at least quiet_px and may be larger when
+     * the canvas has slack from rounding. Mirrors the QR renderer's
+     * centring convention in fastchart_qrcode.c. */
+    int bars_px = total_modules * module_px;
+    int x = (W - bars_px) / 2;
     for (int k = 0; k < n_codes; k++) {
         const uint8_t *pattern;
         int n_widths;
