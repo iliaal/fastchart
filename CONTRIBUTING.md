@@ -52,13 +52,28 @@ Before filing, try to reproduce against the latest `master` branch.
        --enable-fastchart --enable-fastchart-dev
    make -j$(nproc)
 
-   ASAN_OPTIONS=detect_leaks=0 \
    TEST_PHP_EXECUTABLE=$HOME/php-install-PHP-8.4/bin/php \
    TEST_PHP_ARGS="-d extension=$HOME/php-src-8.4/ext/gd/modules/gd.so \
                   -d extension=$(pwd)/modules/fastchart.so" \
    NO_INTERACTION=1 \
    $HOME/php-install-PHP-8.4/bin/php run-tests.php tests/
    ```
+
+   `detect_leaks=0` is no longer needed. fastchart 1.0 has zero
+   LSan-reported leaks of its own; the ASAN CI job (`.github/
+   workflows/tests.yml`) runs with `detect_leaks=1` and a
+   suppressions file (`.github/lsan-suppressions.txt`) that covers
+   only ext/gd's MINIT-time persistent allocations. To exercise
+   the same leak-detection locally without ext/gd in the picture:
+
+   ```sh
+   ~/php-install-PHP-8.4/bin/php \
+       -d extension=$(pwd)/modules/fastchart.so \
+       scripts/asan-render-smoke.php
+   ```
+
+   Any `LeakSanitizer: detected memory leaks` output is a fastchart
+   regression and must be fixed before the PR lands.
 
 6. Verify zero compiler warnings (`--enable-fastchart-dev` adds
    `-Werror -Wextra -Wstrict-prototypes`; the release matrix treats

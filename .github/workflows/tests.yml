@@ -34,7 +34,8 @@ jobs:
       - name: Install PIE build prerequisites
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends bison libtool-bin libgd-dev
+          sudo apt-get install -y --no-install-recommends bison libtool-bin \
+            libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev pkg-config
       - name: Download PIE
         run: |
           curl -fsSL -o /tmp/pie.phar https://github.com/php/pie/releases/latest/download/pie.phar
@@ -55,8 +56,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install libgd
-        run: sudo apt-get update -qq && sudo apt-get install -y libgd-dev
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev pkg-config
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -79,9 +83,11 @@ jobs:
         run: |
           export TEST_PHP_EXECUTABLE=$(which php)
           # gd is already loaded by shivammathur/setup-php's extensions: gd
-          # (writes extension=gd to php.ini). Adding -d extension=gd on top
-          # makes PHP 8.4+ emit "Module already loaded" warnings that
-          # prepend to every test's stdout and break --EXPECT-- matching.
+          # (writes extension=gd to php.ini) and is used by tests for PHP-
+          # side image validation (imagecreatefromstring / imagesx).
+          # Adding -d extension=gd on top makes PHP 8.4+ emit "Module
+          # already loaded" warnings that prepend to every test's stdout
+          # and break --EXPECT-- matching.
           export TEST_PHP_ARGS="-d extension=$(pwd)/modules/fastchart.so"
           export NO_INTERACTION=1
           # Stream output so failure context lands in the log even
@@ -105,7 +111,13 @@ jobs:
         php: ['8.4']
 
     env:
-      ASAN_OPTIONS: exitcode=139:verify_asan_link_order=0:detect_odr_violation=0
+      # detect_leaks=1 is the default but pinning it makes intent
+      # explicit so a future ASAN_OPTIONS edit can't silently turn
+      # leak detection off. The suppressions file
+      # .github/lsan-suppressions.txt is loaded automatically by
+      # run-tests.php --asan; it covers ext/gd's MINIT-time persistent
+      # allocations (intentional, not bugs) and nothing else.
+      ASAN_OPTIONS: exitcode=139:verify_asan_link_order=0:detect_odr_violation=0:detect_leaks=1
       UBSAN_OPTIONS: print_stacktrace=1
       USE_ZEND_ALLOC: 0
       USE_TRACKED_ALLOC: 1
@@ -114,22 +126,28 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install build dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y llvm clang re2c bison autoconf libgd-dev pkg-config
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            llvm clang re2c bison autoconf pkg-config \
+            libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev libgd-dev
 
       - name: Build PHP with ASAN + ext/gd
         # Static libasan (default — no -shared-libasan flag) keeps
         # the configure-time C-program test happy on the ubuntu
         # runner. ASan symbols live in the php-cli binary; fastchart.so
         # gets instrumented and resolves callbacks against the host
-        # process. ext/gd is built directly into the ASAN PHP so the
-        # GdImage class entry exists at MINIT (fastchart's MINIT
-        # looks it up in the class table).
+        # process. ext/gd is built directly into the ASAN PHP for the
+        # PHP-side image validation that the tests use; libgd-dev is
+        # only here to satisfy that build, fastchart itself no longer
+        # links libgd. The -g flag preserves symbols so LSan stack
+        # frames resolve against the suppressions file.
         run: |
           git clone --depth=1 --branch=PHP-${{ matrix.php }} https://github.com/php/php-src.git /tmp/php-src
           cd /tmp/php-src
           ./buildconf --force
           CC=clang CXX=clang++ \
-          CFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -DZEND_TRACK_ARENA_ALLOC" \
+          CFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -DZEND_TRACK_ARENA_ALLOC -g" \
           LDFLAGS="-fsanitize=address,undefined" \
           ./configure \
             --enable-debug \
@@ -147,13 +165,27 @@ jobs:
           export PATH="/tmp/php-asan/bin:$PATH"
           phpize
           CC=clang CXX=clang++ \
-          CFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -DZEND_TRACK_ARENA_ALLOC" \
-          CXXFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -DZEND_TRACK_ARENA_ALLOC" \
+          CFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -DZEND_TRACK_ARENA_ALLOC -g" \
+          CXXFLAGS="-fsanitize=address,undefined -fno-sanitize=function,vptr -DZEND_TRACK_ARENA_ALLOC -g" \
           LDFLAGS="-fsanitize=address,undefined" \
           ./configure \
             --enable-fastchart --enable-fastchart-dev \
             --with-php-config=/tmp/php-asan/bin/php-config
           make -j$(nproc)
+
+      - name: Render-only leak smoke (no ext/gd)
+        # fastchart itself must report zero LSan leaks. ext/gd is
+        # excluded here so any reported leak is fastchart's. This is
+        # a gate against regressions in the FT_Library / target /
+        # encoder lifecycles.
+        run: |
+          /tmp/php-asan/bin/php \
+            -d extension=$(pwd)/modules/fastchart.so \
+            scripts/asan-render-smoke.php 2>&1 | tee /tmp/render-asan.txt
+          if grep -q 'LeakSanitizer: detected memory leaks' /tmp/render-asan.txt; then
+            echo "::error::fastchart-only render reported LSan leaks"
+            exit 1
+          fi
 
       - name: Run tests under ASAN
         run: |
@@ -164,9 +196,23 @@ jobs:
           # that prepend to every test's output.
           export TEST_PHP_ARGS="-d extension=$(pwd)/modules/fastchart.so"
           export NO_INTERACTION=1
-          /tmp/php-asan/bin/php run-tests.php --show-diff --asan -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt || true
-          if grep -qP 'Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
+          # --asan auto-loads .github/lsan-suppressions.txt and sets
+          # USE_TRACKED_ALLOC. Drop `|| true` so a crashing run-tests.php
+          # also fails the job — previously a non-zero exit was masked.
+          set +e
+          /tmp/php-asan/bin/php run-tests.php --show-diff --asan -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::run-tests.php exited $rc under ASAN"
+            exit 1
+          fi
+          if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
             echo "::error::Tests failed under ASAN"
+            exit 1
+          fi
+          if grep -qP '^Tests leaked\s*:\s*[1-9]' /tmp/test-output.txt; then
+            echo "::error::Tests leaked under ASAN (LSan reported memory leaks)"
             exit 1
           fi
 
@@ -181,8 +227,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install libgd
-        run: brew install gd
+      - name: Install build dependencies
+        run: brew install freetype libpng jpeg-turbo webp pkg-config
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -193,14 +239,11 @@ jobs:
 
       - name: Build extension
         run: |
-          # macOS Homebrew installs gd into /opt/homebrew (Apple
-          # Silicon) or /usr/local (Intel). configure's
-          # gdImageCreateTrueColor-in--lgd probe doesn't search
-          # those by default — point CPPFLAGS / LDFLAGS at the
-          # right prefix or the build fails with "libgd not found".
-          GD_PREFIX="$(brew --prefix gd)"
-          export CPPFLAGS="-I${GD_PREFIX}/include"
-          export LDFLAGS="-L${GD_PREFIX}/lib"
+          # On Apple Silicon Homebrew installs into /opt/homebrew;
+          # PKG_CONFIG_PATH usually picks up keg-only / non-default
+          # prefixes automatically, but jpeg-turbo is keg-only so we
+          # add it explicitly.
+          export PKG_CONFIG_PATH="$(brew --prefix jpeg-turbo)/lib/pkgconfig:$(brew --prefix freetype)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
           phpize
           ./configure --enable-fastchart
           make -j$(sysctl -n hw.ncpu)
