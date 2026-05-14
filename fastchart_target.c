@@ -49,7 +49,8 @@ void fastchart_target_from_gd(fastchart_target_t *t, gdImagePtr im, int dpi)
 }
 
 void fastchart_target_from_svg(fastchart_target_t *t, smart_str *buf,
-                                int width, int height, int dpi)
+                                int width, int height, int dpi,
+                                int text_mode)
 {
     memset(t, 0, sizeof(*t));
     t->kind = FASTCHART_TARGET_SVG;
@@ -68,6 +69,9 @@ void fastchart_target_from_svg(fastchart_target_t *t, smart_str *buf,
     (void)dpi;
     t->u.svg.dpi = 96;
     t->u.svg.next_clip_id = 1;
+    t->u.svg.text_mode = (text_mode == FASTCHART_SVG_TEXT_NATIVE)
+        ? FASTCHART_SVG_TEXT_NATIVE
+        : FASTCHART_SVG_TEXT_PATHS;
 }
 
 /* ============================================================ *
@@ -457,12 +461,18 @@ void fastchart_target_text(fastchart_target_t *t,
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
     char family[64];
     fastchart_target_resolve_font_family(t, font_path, family, sizeof(family));
-    /* FUTURE: setSvgTextMode(SVG_TEXT_PATHS) for path-embedded
-     * glyphs. Today we emit a CSS `<text>` element with the family
-     * resolved above; viewers without the named font fall through
-     * to `sans-serif`. */
-    fc_svg_emit_text(t->u.svg.buf, x, y, family, size_px,
-                      rgba, angle_deg, align, text, strlen(text));
+
+    if (t->u.svg.text_mode == FASTCHART_SVG_TEXT_PATHS) {
+        /* Flatten each glyph to <path> via FreeType outline
+         * decomposition. Self-contained — renders in plutovg / any
+         * SVG rasterizer without text infrastructure. */
+        fc_svg_emit_text_as_path(t->u.svg.buf, x, y, font_path, size_px,
+                                  rgba, angle_deg, align, text, strlen(text));
+    } else {
+        /* Native <text>: smaller files; needs consumer text support. */
+        fc_svg_emit_text(t->u.svg.buf, x, y, family, size_px,
+                          rgba, angle_deg, align, text, strlen(text));
+    }
 }
 
 /* ============================================================ *

@@ -88,6 +88,20 @@ void fc_svg_emit_text(smart_str *buf,
                        uint32_t rgba, double angle_deg, int align,
                        const char *text, size_t text_len);
 
+/* Flatten `text` into glyph outline paths via FT_Outline_Decompose.
+ * Emits a single <g transform="translate(x y) rotate(-angle_deg)"
+ * fill="..."><path d="..."/></g>, where the path data concatenates
+ * each glyph's contours pre-translated by the cumulative pen advance.
+ * Alignment shifts the translate-x by 0 / -w/2 / -w for left / center
+ * / right respectively. font_path is loaded via FT_New_Face. On any
+ * FT failure the function emits nothing (silent fallback — the text
+ * is simply missing rather than producing a broken SVG). */
+void fc_svg_emit_text_as_path(smart_str *buf,
+                               double x, double y,
+                               const char *font_path, double size_px,
+                               uint32_t rgba, double angle_deg, int align,
+                               const char *text, size_t text_len);
+
 /* Open a clip-path scope. Caller picks a unique `id`. After this
  * call subsequent primitives are clipped to (x,y,w,h) until the
  * matching close. */

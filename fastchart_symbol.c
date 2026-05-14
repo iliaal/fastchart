@@ -49,6 +49,8 @@ void fastchart_symbol_base_init_defaults(fastchart_symbol_obj *b)
     b->bg_rgb = 0xFFFFFF;
     b->transparent_bg = false;
     b->quiet_zone = -1;      /* -1 = pick class default at render time */
+    b->svg_text_mode = FASTCHART_SVG_TEXT_PATHS;
+    b->jpeg_quality = 88;
 }
 
 void fastchart_symbol_base_release_owned(fastchart_symbol_obj *b)
@@ -387,7 +389,8 @@ static void fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAMETERS,
     fc_svg_emit_g_open(&buf, "fastchart-symbol");
 
     fastchart_target_t t;
-    fastchart_target_from_svg(&t, &buf, (int)lw, (int)lh, (int)self->dpi);
+    fastchart_target_from_svg(&t, &buf, (int)lw, (int)lh, (int)self->dpi,
+                               (int)self->svg_text_mode);
 
     if (dispatch_symbol_svg_render(self, ce, &t) != 0 || EG(exception)) {
         smart_str_free(&buf);
@@ -436,7 +439,8 @@ static void fastchart_symbol_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS,
     fc_svg_emit_g_open(&buf, "fastchart-symbol");
 
     fastchart_target_t t;
-    fastchart_target_from_svg(&t, &buf, (int)lw, (int)lh, (int)self->dpi);
+    fastchart_target_from_svg(&t, &buf, (int)lw, (int)lh, (int)self->dpi,
+                               (int)self->svg_text_mode);
 
     if (dispatch_symbol_svg_render(self, ce, &t) != 0 || EG(exception)) {
         smart_str_free(&buf);
@@ -600,6 +604,37 @@ ZEND_METHOD(FastChart_Symbol, setDpi)
     }
     fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
     self->dpi = dpi;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Symbol, setSvgTextMode)
+{
+    zend_long mode;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(mode)
+    ZEND_PARSE_PARAMETERS_END();
+    if (mode != FASTCHART_SVG_TEXT_NATIVE && mode != FASTCHART_SVG_TEXT_PATHS) {
+        zend_value_error("FastChart\\Symbol::setSvgTextMode() expects "
+                         "Symbol::SVG_TEXT_PATHS or Symbol::SVG_TEXT_NATIVE");
+        RETURN_THROWS();
+    }
+    fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
+    self->svg_text_mode = mode;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Symbol, setJpegQuality)
+{
+    zend_long q;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(q)
+    ZEND_PARSE_PARAMETERS_END();
+    if (q < 1 || q > 100) {
+        zend_value_error("FastChart\\Symbol::setJpegQuality() must be in [1, 100]");
+        RETURN_THROWS();
+    }
+    fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
+    self->jpeg_quality = q;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 

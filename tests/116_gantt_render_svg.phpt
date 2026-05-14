@@ -16,6 +16,7 @@ $c->setTitle('Gantt SVG')
       ['name' => 'Ship',  'start' => 1701123200, 'end' => 1701123200, 'milestone' => true, 'depends' => [2]],
   ]);
 
+$c->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $svg = $c->renderSvg();
 
 var_dump(is_string($svg));

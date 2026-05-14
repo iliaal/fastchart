@@ -192,7 +192,9 @@ int fastchart_text_draw(fastchart_target_t *t,
     /* SVG path. text-anchor handles horizontal alignment so we don't
      * pre-measure; pass the alignment hint through and emit one
      * <text> per line. size_pt -> CSS px at 96 DPI baseline:
-     * px = pt * 4/3. 20% leading matches the GD path's line advance. */
+     * px = pt * 4/3. 20% leading matches the GD path's line advance.
+     * Branch on the target's text mode: PATHS flattens to <path>
+     * glyphs via FreeType; NATIVE keeps <text>. */
     char family[64];
     fastchart_target_resolve_font_family(t, font_path, family, sizeof(family));
     double size_px = font_size * (4.0 / 3.0);
@@ -211,9 +213,15 @@ int fastchart_text_draw(fastchart_target_t *t,
         buf[len] = '\0';
 
         if (len > 0) {
-            fc_svg_emit_text(t->u.svg.buf, (double)x, line_y,
-                             family, size_px, rgba,
-                             0.0, svg_align, buf, len);
+            if (t->u.svg.text_mode == FASTCHART_SVG_TEXT_PATHS) {
+                fc_svg_emit_text_as_path(t->u.svg.buf, (double)x, line_y,
+                                          font_path, size_px, rgba,
+                                          0.0, svg_align, buf, len);
+            } else {
+                fc_svg_emit_text(t->u.svg.buf, (double)x, line_y,
+                                 family, size_px, rgba,
+                                 0.0, svg_align, buf, len);
+            }
         }
         if (!end) break;
         p = end + 1;
@@ -288,15 +296,22 @@ int fastchart_text_draw_rotated(fastchart_target_t *t,
 
     /* SVG path. fc_svg_emit_text handles rotation via transform=
      * "rotate(angle, x, y)"; text-anchor handles alignment. No
-     * pre-measurement needed. */
+     * pre-measurement needed. Branch on text mode same as the
+     * single-line path. */
     char family[64];
     fastchart_target_resolve_font_family(t, font_path, family, sizeof(family));
     double size_px = font_size * (4.0 / 3.0);
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
     int svg_align = align_to_target(align);
-    fc_svg_emit_text(t->u.svg.buf, (double)x, (double)y,
-                     family, size_px, rgba,
-                     angle_deg, svg_align, text, strlen(text));
+    if (t->u.svg.text_mode == FASTCHART_SVG_TEXT_PATHS) {
+        fc_svg_emit_text_as_path(t->u.svg.buf, (double)x, (double)y,
+                                  font_path, size_px, rgba,
+                                  angle_deg, svg_align, text, strlen(text));
+    } else {
+        fc_svg_emit_text(t->u.svg.buf, (double)x, (double)y,
+                         family, size_px, rgba,
+                         angle_deg, svg_align, text, strlen(text));
+    }
     return 0;
 }
 

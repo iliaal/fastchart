@@ -21,6 +21,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#include FT_OUTLINE_H
+
 #include "fastchart_target.h"
 #include "fastchart_svg.h"
 
@@ -411,6 +415,236 @@ void fc_svg_emit_text(smart_str *buf,
     smart_str_appendc(buf, '>');
     fc_svg_escape(buf, text, text_len);
     FC_APPENDS(buf, "</text>\n");
+}
+
+/* --- Glyph-to-path text emission ---------------------------------- *
+ *
+ * Walks each codepoint, FT_Load_Glyphs the outline (unhinted, no
+ * bitmap), and runs FT_Outline_Decompose with callbacks that
+ * accumulate path-d data into a smart_str. Output goes inside one
+ * <g transform="translate(x y) [rotate(-angle x y)]" fill="#rrggbb">
+ * containing a single <path d="..."/> with all glyphs pre-translated
+ * by their cumulative pen advance.
+ *
+ * Coordinate system flip: FreeType outlines have +y up. SVG has +y
+ * down. We negate y in each point as we emit, so the path data is
+ * directly in SVG coordinates and no scale(1,-1) wrapper is needed.
+ *
+ * Errors: any FT_* failure produces an empty <g> (nothing emitted).
+ * The chart still renders; the text is simply absent. Loud errors
+ * here would break otherwise-fine raster output.                       */
+
+typedef struct {
+	smart_str *buf;     /* destination */
+	int        emitted; /* >0 once any contour wrote a Move */
+	double     pen_x;   /* current pen advance in pixels (FT 26.6 / 64) */
+	double     scale;   /* outline unit -> pixel; (1/64) for FT loaded at px */
+	double     last_x;  /* last emitted point — used to skip degenerate */
+	double     last_y;
+} fc_path_emit_ctx;
+
+static void fc_emit_num(smart_str *buf, double v)
+{
+	if (v == 0.0) { smart_str_appendc(buf, '0'); return; }
+	char tmp[32];
+	int n = snprintf(tmp, sizeof(tmp), "%.2f", v);
+	if (n <= 0 || (size_t)n >= sizeof(tmp)) {
+		smart_str_appendc(buf, '0'); return;
+	}
+	/* strip trailing zeros + trailing dot */
+	while (n > 1 && tmp[n - 1] == '0') n--;
+	if (n > 1 && tmp[n - 1] == '.') n--;
+	smart_str_appendl(buf, tmp, n);
+}
+
+static int fc_path_move(const FT_Vector *to, void *u)
+{
+	fc_path_emit_ctx *c = u;
+	double xx = c->pen_x + to->x * c->scale;
+	double yy = -to->y * c->scale;
+	smart_str_appendc(c->buf, 'M');
+	fc_emit_num(c->buf, xx);
+	smart_str_appendc(c->buf, ' ');
+	fc_emit_num(c->buf, yy);
+	c->last_x = xx; c->last_y = yy;
+	c->emitted = 1;
+	return 0;
+}
+static int fc_path_line(const FT_Vector *to, void *u)
+{
+	fc_path_emit_ctx *c = u;
+	double xx = c->pen_x + to->x * c->scale;
+	double yy = -to->y * c->scale;
+	smart_str_appendc(c->buf, 'L');
+	fc_emit_num(c->buf, xx);
+	smart_str_appendc(c->buf, ' ');
+	fc_emit_num(c->buf, yy);
+	c->last_x = xx; c->last_y = yy;
+	return 0;
+}
+static int fc_path_conic(const FT_Vector *ctrl, const FT_Vector *to, void *u)
+{
+	fc_path_emit_ctx *c = u;
+	double cx = c->pen_x + ctrl->x * c->scale;
+	double cy = -ctrl->y * c->scale;
+	double xx = c->pen_x + to->x * c->scale;
+	double yy = -to->y * c->scale;
+	smart_str_appendc(c->buf, 'Q');
+	fc_emit_num(c->buf, cx);
+	smart_str_appendc(c->buf, ' ');
+	fc_emit_num(c->buf, cy);
+	smart_str_appendc(c->buf, ' ');
+	fc_emit_num(c->buf, xx);
+	smart_str_appendc(c->buf, ' ');
+	fc_emit_num(c->buf, yy);
+	c->last_x = xx; c->last_y = yy;
+	return 0;
+}
+static int fc_path_cubic(const FT_Vector *c1, const FT_Vector *c2,
+                          const FT_Vector *to, void *u)
+{
+	fc_path_emit_ctx *c = u;
+	double x1 = c->pen_x + c1->x * c->scale;
+	double y1 = -c1->y * c->scale;
+	double x2 = c->pen_x + c2->x * c->scale;
+	double y2 = -c2->y * c->scale;
+	double xx = c->pen_x + to->x * c->scale;
+	double yy = -to->y * c->scale;
+	smart_str_appendc(c->buf, 'C');
+	fc_emit_num(c->buf, x1); smart_str_appendc(c->buf, ' ');
+	fc_emit_num(c->buf, y1); smart_str_appendc(c->buf, ' ');
+	fc_emit_num(c->buf, x2); smart_str_appendc(c->buf, ' ');
+	fc_emit_num(c->buf, y2); smart_str_appendc(c->buf, ' ');
+	fc_emit_num(c->buf, xx); smart_str_appendc(c->buf, ' ');
+	fc_emit_num(c->buf, yy);
+	c->last_x = xx; c->last_y = yy;
+	return 0;
+}
+
+static const FT_Outline_Funcs fc_path_funcs = {
+	fc_path_move, fc_path_line, fc_path_conic, fc_path_cubic, 0, 0
+};
+
+/* Minimal inline UTF-8 -> codepoint walk. Returns next cursor or NULL
+ * on truncation. *out_cp is set to the codepoint (replacement char on
+ * invalid sequences). */
+static const unsigned char *fc_utf8_next(const unsigned char *p,
+                                          const unsigned char *end,
+                                          uint32_t *out_cp)
+{
+	if (p >= end) return NULL;
+	if (*p < 0x80) { *out_cp = *p; return p + 1; }
+	if ((*p & 0xE0) == 0xC0 && p + 1 < end) {
+		*out_cp = ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+		return p + 2;
+	}
+	if ((*p & 0xF0) == 0xE0 && p + 2 < end) {
+		*out_cp = ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+		return p + 3;
+	}
+	if ((*p & 0xF8) == 0xF0 && p + 3 < end) {
+		*out_cp = ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12)
+		       | ((p[2] & 0x3F) << 6)  |  (p[3] & 0x3F);
+		return p + 4;
+	}
+	*out_cp = 0xFFFD;
+	return p + 1;
+}
+
+/* FreeType library is created lazily per call. The cost is small
+ * (~10us per FT_Init_FreeType call); chart families call text helpers
+ * 10-200 times per render. If profiling shows this is hot, hoist into
+ * the target's font_cache or a request-global slot. */
+void fc_svg_emit_text_as_path(smart_str *buf,
+                               double x, double y,
+                               const char *font_path, double size_px,
+                               uint32_t rgba, double angle_deg, int align,
+                               const char *text, size_t text_len)
+{
+	if (!text || text_len == 0 || !font_path) return;
+
+	FT_Library lib = NULL;
+	FT_Face    face = NULL;
+	if (FT_Init_FreeType(&lib)) return;
+	if (FT_New_Face(lib, font_path, 0, &face)) {
+		FT_Done_FreeType(lib);
+		return;
+	}
+
+	FT_UInt pix = (FT_UInt)(size_px + 0.5);
+	if (pix < 1) pix = 1;
+	if (FT_Set_Pixel_Sizes(face, 0, pix)) {
+		FT_Done_Face(face);
+		FT_Done_FreeType(lib);
+		return;
+	}
+
+	/* Pass 1: measure total advance for alignment. */
+	double total_w = 0.0;
+	{
+		const unsigned char *p = (const unsigned char *)text;
+		const unsigned char *e = p + text_len;
+		uint32_t cp;
+		while ((p = fc_utf8_next(p, e, &cp))) {
+			FT_UInt gi = FT_Get_Char_Index(face, cp);
+			if (FT_Load_Glyph(face, gi,
+			                   FT_LOAD_NO_BITMAP | FT_LOAD_NO_HINTING)) continue;
+			total_w += face->glyph->advance.x / 64.0;
+		}
+	}
+
+	double shift = 0.0;
+	if (align == FASTCHART_TARGET_ALIGN_CENTER) shift = -total_w / 2.0;
+	else if (align == FASTCHART_TARGET_ALIGN_RIGHT) shift = -total_w;
+
+	/* Build a single combined path 'd' for all glyphs. Pen translates
+	 * each glyph's outline by the cumulative advance. */
+	smart_str d = {0};
+	fc_path_emit_ctx ctx = {0};
+	ctx.buf = &d;
+	ctx.scale = 1.0 / 64.0;
+	ctx.pen_x = 0.0;
+
+	{
+		const unsigned char *p = (const unsigned char *)text;
+		const unsigned char *e = p + text_len;
+		uint32_t cp;
+		while ((p = fc_utf8_next(p, e, &cp))) {
+			FT_UInt gi = FT_Get_Char_Index(face, cp);
+			if (FT_Load_Glyph(face, gi,
+			                   FT_LOAD_NO_BITMAP | FT_LOAD_NO_HINTING)) continue;
+			FT_Outline_Decompose(&face->glyph->outline, &fc_path_funcs, &ctx);
+			ctx.pen_x += face->glyph->advance.x / 64.0;
+		}
+	}
+
+	smart_str_0(&d);
+
+	if (d.s && ZSTR_LEN(d.s) > 0) {
+		FC_APPENDS(buf, "<g transform=\"translate(");
+		fc_svg_fmt_num(buf, x + shift);
+		smart_str_appendc(buf, ' ');
+		fc_svg_fmt_num(buf, y);
+		smart_str_appendc(buf, ')');
+		if (angle_deg != 0.0) {
+			/* libgd / fastchart_text_draw_rotated rotates CCW; SVG
+			 * rotate() is CW. Apply at the post-translated origin
+			 * (the alignment-shifted anchor), matching the existing
+			 * <text> path. */
+			FC_APPENDS(buf, " rotate(");
+			fc_svg_fmt_num(buf, -angle_deg);
+			FC_APPENDS(buf, ")");
+		}
+		FC_APPENDS(buf, "\" fill=\"");
+		fc_svg_fmt_color(buf, rgba);
+		FC_APPENDS(buf, "\"><path d=\"");
+		smart_str_append_smart_str(buf, &d);
+		FC_APPENDS(buf, "\"/></g>\n");
+	}
+
+	smart_str_free(&d);
+	FT_Done_Face(face);
+	FT_Done_FreeType(lib);
 }
 
 void fc_svg_emit_clip_open(smart_str *buf, int id,

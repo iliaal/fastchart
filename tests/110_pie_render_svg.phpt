@@ -11,6 +11,7 @@ $c = new FastChart\PieChart(360, 320);
 $c->setSlices(["alpha" => 25, "beta" => 40, "gamma" => 15, "delta" => 20])
   ->setTitle("Pie SVG");
 
+$c->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $svg = $c->renderSvg();
 
 // Basic shape.
@@ -38,6 +39,7 @@ var_dump(strpos($svg, 'viewBox="0 0 360 320"') !== false);
 $d = new FastChart\PieChart(300, 300);
 $d->setSlices(["a" => 30, "b" => 25, "c" => 20, "d" => 25])
   ->setDonutHoleRatio(0.4);
+$d->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $svg2 = $d->renderSvg();
 $circle_n = substr_count($svg2, "<circle");
 echo "donut hole circle>=1: ", ($circle_n >= 1 ? "yes" : "no ($circle_n)"), "\n";
