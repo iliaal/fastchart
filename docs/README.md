@@ -460,15 +460,21 @@ $line = (new FastChart\LineChart(400, 200))
     ->setSeries([['data' => [10, 20, 15, 25, 22, 30]]]);
 
 $line->renderToFile('out.png');           // file, format from extension
+$line->renderToFile('out.svg');           // SVG goes through the same call
 $png  = $line->renderPng();               // PNG bytes
 $jpg  = $line->renderJpeg(85);            // JPEG bytes (quality 1..100)
 $webp = $line->renderWebp(80);            // WebP bytes
 $avif = $line->renderAvif(50);            // AVIF bytes (libgd 2.4+)
 $gif  = $line->renderGif();               // GIF bytes (paletted)
+$svg  = $line->renderSvg();               // SVG document (vector)
+$frag = $line->drawSvgFragment();         // <g class="fastchart">…</g>
 ```
 
 The bytes-returning helpers skip the encode-to-disk roundtrip and are
-convenient for HTTP responses, base64 data URIs, or hashing.
+convenient for HTTP responses, base64 data URIs, or hashing. SVG uses
+native `<text>` (selectable, accessible) with font family resolved
+through FreeType. `drawSvgFragment()` is meant for stitching several
+charts into one outer `<svg>` document.
 
 ![](examples/20a_renderToFile.png)
 

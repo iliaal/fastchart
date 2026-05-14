@@ -8,8 +8,13 @@
 - `phpize` and `php-config` (from `php-dev` / `php8.x-dev`)
 - GNU Make
 - libgd development headers (`libgd-dev` on Debian / Ubuntu,
-  `gd-devel` on RHEL / Fedora). FreeType comes in as a transitive
-  dependency on every Linux distribution.
+  `gd-devel` on RHEL / Fedora).
+- FreeType development headers (`libfreetype-dev` on Debian / Ubuntu,
+  `freetype-devel` on RHEL / Fedora). FreeType has always been a
+  runtime dependency via libgd's TrueType text path; the headers are
+  now needed at build time so fastchart can resolve TTF family names
+  via `FT_New_Face` for SVG `<text>` emission. The `config.m4` probe
+  is `pkg-config freetype2`.
 - ext/gd loaded at runtime (build it once against your PHP install if
   `make install` doesn't deploy it; AGENTS.md has the recipe).
 
