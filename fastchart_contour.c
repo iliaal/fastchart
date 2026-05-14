@@ -19,6 +19,7 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 #include "fastchart_effects.h"
@@ -65,6 +66,8 @@ static double t_cross(double a, double b, double level)
 
 int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im)
 {
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
     if (!self->grid.cells || self->grid.rows < 2 || self->grid.cols < 2) {
         zend_throw_error(NULL,
             "FastChart\\ContourChart::draw() requires setGrid() with at least a 2x2 grid");
@@ -113,15 +116,15 @@ int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im
     /* Per-render entry: invalidate the font cache (so a runtime
      * open_basedir narrowing between draws is honored) and stamp DPI
      * on the canvas. Must come BEFORE any palette / text work. */
-    fastchart_begin_render((fastchart_obj *)self, im);
+    fastchart_begin_render((fastchart_obj *)self, &t);
 
     fastchart_palette pal;
-    fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(&t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
 
     int W = gdImageSX(im);
     int H = gdImageSY(im);
-    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, pal.bg);
+    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, fastchart_target_color_to_gd(&t, pal.bg));
 
     int top = (self->title && ZSTR_LEN(self->title) > 0) ? 32 : 12;
     int margin = 30;
@@ -248,18 +251,18 @@ int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im
 
     /* Frame. */
     if (self->border_sides & FASTCHART_BORDER_TOP)
-        gdImageLine(im, x0, y0, x1, y0, pal.border);
+        gdImageLine(im, x0, y0, x1, y0, fastchart_target_color_to_gd(&t, pal.border));
     if (self->border_sides & FASTCHART_BORDER_BOTTOM)
-        gdImageLine(im, x0, y1, x1, y1, pal.border);
+        gdImageLine(im, x0, y1, x1, y1, fastchart_target_color_to_gd(&t, pal.border));
     if (self->border_sides & FASTCHART_BORDER_LEFT)
-        gdImageLine(im, x0, y0, x0, y1, pal.border);
+        gdImageLine(im, x0, y0, x0, y1, fastchart_target_color_to_gd(&t, pal.border));
     if (self->border_sides & FASTCHART_BORDER_RIGHT)
-        gdImageLine(im, x1, y0, x1, y1, pal.border);
+        gdImageLine(im, x1, y0, x1, y1, fastchart_target_color_to_gd(&t, pal.border));
 
     /* Title. */
-    fastchart_draw_floating_title(im, (fastchart_obj *)self, &pal, W / 2, 24);
+    fastchart_draw_floating_title(&t, (fastchart_obj *)self, &pal, W / 2, 24);
 
-    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
     return 0;
 #undef G
 }

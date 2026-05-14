@@ -23,11 +23,12 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 #include "fastchart_effects.h"
 
-int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
+int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *t)
 {
     if (self->slice_count == 0) {
         zend_throw_error(NULL,
@@ -78,14 +79,14 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
     fastchart_rect plot;
     /* No axes for pie charts -- pass 0/0 so layout reserves space
      * only for the title. */
-    fastchart_compute_layout((fastchart_obj *)self, im, 0, 0, NULL, 0, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, t, 0, 0, NULL, 0, &plot);
 
     fastchart_palette pal;
-    fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
 
     /* Pie geometry: largest disk that fits, centered in the plot
      * rect, with a margin reserved for label leaders / outside text. */
@@ -101,29 +102,33 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
     const zend_long *explode = self->explode;
     int explode_count = self->explode_count;
 
-    /* Slices via gdImageFilledArc. gdPie produces a filled wedge;
-     * gdNoFill + gdEdged outlines without filling. We draw the wedge
-     * with gdPie + a thin outline pass for slice separation.
-     *
-     * Resolve every slice's color once before the draw loop so the
-     * loop body reads from a flat int[] instead of calling
-     * gdImageColorAllocate per slice. */
+    /* Resolve every slice's color once into a target color HANDLE.
+     * The GD path consults the gd-int via fastchart_target_color_to_gd
+     * inside fastchart_filled_wedge_aa; the SVG path emits the rgba
+     * directly from the handle. */
     int *slice_colors = ecalloc((size_t)n_slices, sizeof(int));
     for (int i = 0; i < n_slices; i++) {
         if (slices[i].color_rgb >= 0) {
-            slice_colors[i] = gdImageColorAllocate(im,
-                (slices[i].color_rgb >> 16) & 0xFF,
-                (slices[i].color_rgb >>  8) & 0xFF,
-                 slices[i].color_rgb        & 0xFF);
+            slice_colors[i] = fastchart_target_color_rgb(t, slices[i].color_rgb);
         } else {
             slice_colors[i] = pal.series[i % FASTCHART_PALETTE_SERIES_N];
         }
     }
 
+    bool gd = (t->kind == FASTCHART_TARGET_GD);
+    gdImagePtr im = gd ? t->u.gd.im : NULL;
+
+    int edge_handle = self->edge_color >= 0
+        ? fastchart_target_color_rgb(t, (int)self->edge_color)
+        : pal.border;
+
+    int radius = diameter / 2;
     double start_deg = -90.0;  /* 12 o'clock */
     for (int i = 0; i < n_slices; i++) {
         double sweep = 360.0 * (slices[i].value / total);
         int color = slice_colors[i];
+        double s_deg = floor(start_deg);
+        double e_deg = ceil(start_deg + sweep);
 
         /* Explode this slice radially outward by `offset` pixels
          * along its mid-angle. Slices not mentioned stay at center. */
@@ -137,44 +142,63 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
             }
         }
 
-        fastchart_shadow_filled_arc(im, (fastchart_obj *)self, slice_cx, slice_cy, diameter,
-                                    (int)floor(start_deg),
-                                    (int)ceil(start_deg + sweep));
-        /* Wedge fill + AA outline of arc and radial edges in the slice
-         * color softens the angled boundary. The separator stroke
-         * below then lays a 1px AA line in the border color over the
-         * outline so adjacent slices remain visually distinct. */
-        fastchart_filled_wedge_aa(im, slice_cx, slice_cy, diameter,
-                                  (int)floor(start_deg),
-                                  (int)ceil(start_deg + sweep),
-                                  color);
-        int edge = self->edge_color >= 0 ? (int)self->edge_color : pal.border;
-        gdImageSetAntiAliased(im, edge);
-        gdImageArc(im, slice_cx, slice_cy, diameter, diameter,
-                   (int)floor(start_deg), (int)ceil(start_deg + sweep),
-                   gdAntiAliased);
-        int radius = diameter / 2;
-        double rs = floor(start_deg) * M_PI / 180.0;
-        double re = ceil(start_deg + sweep) * M_PI / 180.0;
-        gdImageLine(im, slice_cx, slice_cy,
-                    slice_cx + (int)((double)radius * cos(rs)),
-                    slice_cy + (int)((double)radius * sin(rs)),
-                    gdAntiAliased);
-        gdImageLine(im, slice_cx, slice_cy,
-                    slice_cx + (int)((double)radius * cos(re)),
-                    slice_cy + (int)((double)radius * sin(re)),
-                    gdAntiAliased);
+        if (gd) {
+            /* GD path: keep libgd's drop-shadow + AA-edge wedge
+             * helpers for visual fidelity. The wedge fill + AA outline
+             * needs a gd-int color, so resolve the target handle. */
+            int gd_color = fastchart_target_color_to_gd(t, color);
+            fastchart_shadow_filled_arc(im, (fastchart_obj *)self,
+                                        slice_cx, slice_cy, diameter,
+                                        (int)s_deg, (int)e_deg);
+            fastchart_filled_wedge_aa(im, slice_cx, slice_cy, diameter,
+                                      (int)s_deg, (int)e_deg, gd_color);
+            int gd_edge = fastchart_target_color_to_gd(t, edge_handle);
+            gdImageSetAntiAliased(im, gd_edge);
+            gdImageArc(im, slice_cx, slice_cy, diameter, diameter,
+                       (int)s_deg, (int)e_deg, gdAntiAliased);
+            double rs = s_deg * M_PI / 180.0;
+            double re = e_deg * M_PI / 180.0;
+            gdImageLine(im, slice_cx, slice_cy,
+                        slice_cx + (int)((double)radius * cos(rs)),
+                        slice_cy + (int)((double)radius * sin(rs)),
+                        gdAntiAliased);
+            gdImageLine(im, slice_cx, slice_cy,
+                        slice_cx + (int)((double)radius * cos(re)),
+                        slice_cy + (int)((double)radius * sin(re)),
+                        gdAntiAliased);
+        } else {
+            /* SVG path: emit a filled wedge via the target arc
+             * primitive; outline with a thin stroke along the same
+             * sweep. Drop-shadow and AA-blend effects are GD-only
+             * for now. */
+            fastchart_target_arc(t, slice_cx, slice_cy, radius, radius,
+                                 s_deg, e_deg, color, 1, 0);
+            fastchart_target_arc(t, slice_cx, slice_cy, radius, radius,
+                                 s_deg, e_deg, edge_handle, 0, 1);
+            double rs = s_deg * M_PI / 180.0;
+            double re = e_deg * M_PI / 180.0;
+            fastchart_target_line(t, slice_cx, slice_cy,
+                slice_cx + (int)((double)radius * cos(rs)),
+                slice_cy + (int)((double)radius * sin(rs)),
+                edge_handle, 1, FASTCHART_DASH_SOLID);
+            fastchart_target_line(t, slice_cx, slice_cy,
+                slice_cx + (int)((double)radius * cos(re)),
+                slice_cy + (int)((double)radius * sin(re)),
+                edge_handle, 1, FASTCHART_DASH_SOLID);
+        }
         start_deg += sweep;
     }
 
     /* Donut overdraw: paint a plot-bg-colored disk over the center.
-     * Note: with explode, the donut hole stays centered (which is
-     * the standard appearance -- exploding slices leave the center
+     * With explode, the donut hole stays centered (which is the
+     * standard appearance — exploding slices leave the center
      * looking ring-broken on purpose). */
     if (donut > 0) {
         int hole = (int)((double)diameter * donut);
         if (hole < 4) hole = 4;
-        gdImageFilledEllipse(im, cx, cy, hole, hole, pal.plot_bg);
+        int hole_r = hole / 2;
+        fastchart_target_ellipse(t, cx, cy, hole_r, hole_r,
+                                 pal.plot_bg, 1, 0);
     }
 
     /* Slice labels: percentage at the slice's mid-angle. Position
@@ -216,12 +240,21 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
                 int ly = cy + (int)(outside_r * sin_mid);
                 int rim_x = cx + (int)((diameter / 2.0) * cos_mid);
                 int rim_y = cy + (int)((diameter / 2.0) * sin_mid);
-                gdImageSetAntiAliased(im, pal.axis);
-                gdImageLine(im, rim_x, rim_y, lx, ly, gdAntiAliased);
+                /* libgd has native AA for short diagonal leader lines;
+                 * keep it on the GD path. SVG strokes are AA'd by the
+                 * renderer so no special case is needed. */
+                if (gd) {
+                    gdImageSetAntiAliased(im,
+                        fastchart_target_color_to_gd(t, pal.axis));
+                    gdImageLine(im, rim_x, rim_y, lx, ly, gdAntiAliased);
+                } else {
+                    fastchart_target_line(t, rim_x, rim_y, lx, ly,
+                                          pal.axis, 1, FASTCHART_DASH_SOLID);
+                }
                 fastchart_align align = right_side
                     ? FASTCHART_ALIGN_LEFT : FASTCHART_ALIGN_RIGHT;
                 int anchor_x = lx + (right_side ? 4 : -4);
-                fastchart_text_draw(im, font, size, pal.text,
+                fastchart_text_draw(t, font, size, pal.text,
                                     anchor_x, ly + (int)(size * 0.35),
                                     align, buf, NULL, 0);
             } else if (self->slice_label_position == FASTCHART_LABEL_OUTSIDE) {
@@ -230,13 +263,19 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
                 /* Tiny leader line from rim to label anchor. */
                 int rim_x = cx + (int)((diameter / 2.0) * cos_mid);
                 int rim_y = cy + (int)((diameter / 2.0) * sin_mid);
-                gdImageSetAntiAliased(im, pal.axis);
-                gdImageLine(im, rim_x, rim_y, lx, ly, gdAntiAliased);
+                if (gd) {
+                    gdImageSetAntiAliased(im,
+                        fastchart_target_color_to_gd(t, pal.axis));
+                    gdImageLine(im, rim_x, rim_y, lx, ly, gdAntiAliased);
+                } else {
+                    fastchart_target_line(t, rim_x, rim_y, lx, ly,
+                                          pal.axis, 1, FASTCHART_DASH_SOLID);
+                }
                 bool right_side = (cos_mid >= 0);
                 fastchart_align align = right_side
                     ? FASTCHART_ALIGN_LEFT : FASTCHART_ALIGN_RIGHT;
                 int anchor_x = lx + (right_side ? 4 : -4);
-                fastchart_text_draw(im, font, size, pal.text,
+                fastchart_text_draw(t, font, size, pal.text,
                                     anchor_x, ly + (int)(size * 0.35),
                                     align, buf, NULL, 0);
             } else {
@@ -246,7 +285,7 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
                 if (sweep >= 8.0) {
                     int lx = cx + (int)(inside_r * cos_mid);
                     int ly = cy + (int)(inside_r * sin_mid);
-                    fastchart_text_draw(im, font, size, pal.text,
+                    fastchart_text_draw(t, font, size, pal.text,
                                         lx, ly + (int)(size * 0.35),
                                         FASTCHART_ALIGN_CENTER, buf, NULL, 0);
                 }
@@ -255,9 +294,17 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
         }
     }
 
-    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     efree(slice_colors);
     return 0;
+}
+
+/* GD-only shim. */
+int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
+    return fastchart_pie_render_to_target(self, &t);
 }
 
 ZEND_METHOD(FastChart_PieChart, draw)

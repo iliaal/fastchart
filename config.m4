@@ -46,6 +46,21 @@ if test "$PHP_FASTCHART" != "no"; then
     AC_DEFINE(HAVE_GD_AVIF, 1, [libgd has AVIF / gdImageAvifPtrEx])
   ],[])
 
+  dnl FreeType direct access. The SVG output backend reads TTF family
+  dnl names via FT_New_Face to emit accurate CSS font-family attributes.
+  dnl libgd already loads libfreetype.so at runtime (it's how
+  dnl gdImageStringFT works); we additionally need the headers + an
+  dnl explicit -lfreetype to call FT_New_Face from fastchart_target.c.
+  dnl pkg-config is the portable resolver across Debian/RHEL/macOS.
+  AC_PATH_PROG(FC_PKGCFG, pkg-config, no)
+  if test "$FC_PKGCFG" = "no" || ! $FC_PKGCFG --exists freetype2; then
+    AC_MSG_ERROR([pkg-config freetype2 not found. Install libfreetype-dev (Debian/Ubuntu) or freetype-devel (RHEL).])
+  fi
+  FREETYPE_CFLAGS=`$FC_PKGCFG --cflags freetype2`
+  FREETYPE_LIBS=`$FC_PKGCFG --libs freetype2`
+  PHP_EVAL_INCLINE([$FREETYPE_CFLAGS])
+  PHP_EVAL_LIBLINE([$FREETYPE_LIBS], FASTCHART_SHARED_LIBADD)
+
   PHP_SUBST(FASTCHART_SHARED_LIBADD)
 
   dnl ext/gd must load before fastchart so php_gd_libgdimageptr_from_zval_p
@@ -56,6 +71,8 @@ if test "$PHP_FASTCHART" != "no"; then
   WRAPPER_SOURCES="fastchart.c \
     fastchart_palette.c \
     fastchart_text.c \
+    fastchart_target.c \
+    fastchart_svg.c \
     fastchart_axis.c \
     fastchart_line.c \
     fastchart_area.c \

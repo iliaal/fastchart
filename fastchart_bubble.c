@@ -19,6 +19,7 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_effects.h"
 
@@ -27,6 +28,8 @@
 /* Bubble: each entry is [x, y, size] or [x, y, size, rgb_color]. */
 int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
 {
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
     if (self->point_count == 0) {
         zend_throw_error(NULL,
             "FastChart\\BubbleChart::draw() requires setPoints() with non-empty data");
@@ -53,20 +56,20 @@ int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
     fastchart_value_range_compute(xmin, xmax, 6, &xrange);
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, NULL, 0, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, &t, 1, 1, NULL, 0, &plot);
 
     fastchart_palette pal;
-    fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(&t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
 
     fastchart_color_cache color_cache;
     fastchart_color_cache_init(&color_cache);
 
-    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_y_axis(im, (fastchart_obj *)self, &plot, &pal, &yrange);
-    fastchart_draw_plot_bands(im, (fastchart_obj *)self, &plot, &yrange, &pal);
-    fastchart_draw_v_plot_bands_xrange(im, (fastchart_obj *)self, &plot,
+    fastchart_draw_frame(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_y_axis(&t, (fastchart_obj *)self, &plot, &pal, &yrange);
+    fastchart_draw_plot_bands(&t, (fastchart_obj *)self, &plot, &yrange, &pal);
+    fastchart_draw_v_plot_bands_xrange(&t, (fastchart_obj *)self, &plot,
                                        &xrange, &pal);
 
     /* Categorical x labels would mismatch the continuous data; draw a
@@ -74,9 +77,9 @@ int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
      * synthetic timestamps... actually for a bubble chart, just draw
      * the X axis line and let the user supplement with axis title. */
     if (self->x_axis_visible) {
-        gdImageLine(im, plot.x0, plot.y1, plot.x1, plot.y1, pal.axis);
+        gdImageLine(im, plot.x0, plot.y1, plot.x1, plot.y1, fastchart_target_color_to_gd(&t, pal.axis));
     }
-    fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_axis_titles(&t, (fastchart_obj *)self, &plot, &pal);
 
     /* Map size to radius: max bubble = ~5% of plot width. */
     double plot_w = plot.x1 - plot.x0;
@@ -126,16 +129,16 @@ int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
     }
     gdImageAlphaBlending(im, 0);
 
-    fastchart_draw_h_annotations(im, (fastchart_obj *)self, &plot, &pal, &yrange);
-    fastchart_draw_v_annotations_continuous(im, (fastchart_obj *)self, &plot, &pal, &xrange);
-    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+    fastchart_draw_h_annotations(&t, (fastchart_obj *)self, &plot, &pal, &yrange);
+    fastchart_draw_v_annotations_continuous(&t, (fastchart_obj *)self, &plot, &pal, &xrange);
+    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
 
     if (self->icons && self->n_icons > 0) {
         for (int i = 0; i < self->n_icons; i++) {
             const fastchart_icon *ic = &self->icons[i];
             int px = fastchart_x_to_pixel(ic->x, &xrange, &plot);
             int py = fastchart_y_to_pixel(ic->y, &yrange, &plot);
-            fastchart_blit_icon(im, ic, px, py);
+            fastchart_blit_icon(&t, ic, px, py);
         }
     }
     return 0;

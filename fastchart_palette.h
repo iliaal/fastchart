@@ -14,6 +14,7 @@
 #define FASTCHART_PALETTE_H
 
 #include <gd.h>
+#include "fastchart_target.h"
 
 #define FASTCHART_PALETTE_SERIES_N 8
 
@@ -30,18 +31,21 @@ typedef struct {
     int series[FASTCHART_PALETTE_SERIES_N];
 } fastchart_palette;
 
-/* Allocate gd colors on `im` for `theme` (0=light, 1=dark) and fill
- * in the palette struct. Idempotent: a second call re-allocates. */
-void fastchart_palette_init(gdImagePtr im, int theme, fastchart_palette *pal);
+/* Allocate target colors for `theme` (0=light, 1=dark) and fill in the
+ * palette struct. Field values are opaque target color handles —
+ * resolve to gd-ints via fastchart_target_color_to_gd(t, handle) when
+ * passing to a raw gdImage* call. Idempotent: a second call
+ * re-allocates. */
+void fastchart_palette_init(fastchart_target_t *t, int theme, fastchart_palette *pal);
 
 /* Forward decl to avoid pulling php_fastchart.h here. */
 struct _fastchart_obj;
 
 /* Apply per-instance overrides (setBackgroundColor /
  * setPlotBackgroundColor / setSeriesColors) on top of the
- * theme-derived palette. Re-allocates the affected gd colors so
- * the palette struct holds valid color indices for `im`. */
-void fastchart_palette_apply_overrides(gdImagePtr im,
+ * theme-derived palette. Re-allocates the affected target colors so
+ * the palette struct holds valid handles for `t`. */
+void fastchart_palette_apply_overrides(fastchart_target_t *t,
                                         const struct _fastchart_obj *chart,
                                         fastchart_palette *pal);
 
@@ -53,7 +57,12 @@ void fastchart_palette_apply_overrides(gdImagePtr im,
  * cache memoizes (rgb -> gd handle) so repeated colors collapse to
  * a single allocation per render. 64 slots is enough for any real
  * chart (overflow falls through to gdImageColorAllocate, preserving
- * correctness at the cost of one allocation). */
+ * correctness at the cost of one allocation).
+ *
+ * Note: this cache speaks raw gd-ints (not target handles) because
+ * its callers (Bar/Scatter/Bubble per-point overrides) still drive
+ * gdImage* primitives directly. Phase 3 will route them through the
+ * target when SVG dispatch lights up. */
 typedef struct {
     int rgb[64];     /* -1 = empty slot */
     int handle[64];

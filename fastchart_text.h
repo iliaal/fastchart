@@ -14,6 +14,7 @@
 #define FASTCHART_TEXT_H
 
 #include <gd.h>
+#include "fastchart_target.h"
 
 typedef enum {
     FASTCHART_ALIGN_LEFT   = 0,
@@ -22,10 +23,11 @@ typedef enum {
 } fastchart_align;
 
 /* Draw `text` at (x, y) with the given alignment. y is the baseline.
- * `text` must be NUL-terminated UTF-8.
+ * `text` must be NUL-terminated UTF-8. `color` is a target color
+ * handle (allocate via fastchart_target_color* on the same target).
  * Returns 0 on success, -1 if libgd refused the font (sets *err).
  * `err_buf` (buf_n bytes) receives a libgd error string when present. */
-int fastchart_text_draw(gdImagePtr im,
+int fastchart_text_draw(fastchart_target_t *t,
                         const char *font_path, double font_size,
                         int color, int x, int y,
                         fastchart_align align,
@@ -36,7 +38,7 @@ int fastchart_text_draw(gdImagePtr im,
  * by `angle_deg` (typical: 0, 45, 90). The anchor (x, y) is the
  * alignment point of the unrotated bounding box; libgd rotates
  * around that anchor. */
-int fastchart_text_draw_rotated(gdImagePtr im,
+int fastchart_text_draw_rotated(fastchart_target_t *t,
                                 const char *font_path, double font_size,
                                 int color, int x, int y,
                                 fastchart_align align, double angle_deg,
@@ -44,11 +46,11 @@ int fastchart_text_draw_rotated(gdImagePtr im,
                                 char *err_buf, size_t err_buf_n);
 
 /* Measure rendered bounds. *out_w and *out_h are populated on success.
- * `im` is the eventual destination canvas (may be NULL); when non-NULL
- * the measurement uses the canvas's DPI via gdFTEX_RESOLUTION so the
- * bounds match what the corresponding draw call will produce.
- * Returns 0 on success, -1 on failure. */
-int fastchart_text_measure(gdImagePtr im,
+ * `t` carries the DPI used during the measurement so the bounds match
+ * what the corresponding draw call will produce. `t` may be NULL for a
+ * pure-measure context with no canvas. Returns 0 on success, -1 on
+ * failure. */
+int fastchart_text_measure(fastchart_target_t *t,
                            const char *font_path, double font_size,
                            const char *text,
                            int *out_w, int *out_h,

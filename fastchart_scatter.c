@@ -21,6 +21,7 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 
@@ -29,6 +30,8 @@
 
 int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im)
 {
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
     if (self->point_count == 0) {
         zend_throw_error(NULL,
             "FastChart\\ScatterChart::draw() requires setPoints() with one or more [x, y] pairs");
@@ -64,26 +67,23 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
     fastchart_value_range_compute(x_min, x_max, 6, &xrange);
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, NULL, 0, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, &t, 1, 1, NULL, 0, &plot);
 
     fastchart_palette pal;
-    fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(&t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
 
-    fastchart_color_cache color_cache;
-    fastchart_color_cache_init(&color_cache);
-
-    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_y_axis(im, (fastchart_obj *)self, &plot, &pal, &yrange);
-    fastchart_draw_plot_bands(im, (fastchart_obj *)self, &plot, &yrange, &pal);
-    fastchart_draw_v_plot_bands_xrange(im, (fastchart_obj *)self, &plot,
+    fastchart_draw_frame(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_y_axis(&t, (fastchart_obj *)self, &plot, &pal, &yrange);
+    fastchart_draw_plot_bands(&t, (fastchart_obj *)self, &plot, &yrange, &pal);
+    fastchart_draw_v_plot_bands_xrange(&t, (fastchart_obj *)self, &plot,
                                        &xrange, &pal);
 
     /* Custom X axis: continuous numeric ticks from xrange. Reuse the
      * categorical axis line + tick infrastructure by drawing the line
      * and emitting ticks at xrange values. */
-    gdImageLine(im, plot.x0, plot.y1, plot.x1, plot.y1, pal.axis);
+    gdImageLine(im, plot.x0, plot.y1, plot.x1, plot.y1, fastchart_target_color_to_gd(&t, pal.axis));
     const char *font = xrange.n_ticks > 0
         ? fastchart_resolve_font((fastchart_obj *)self, FC_FONT_AXIS) : NULL;
     if (font) {
@@ -96,15 +96,15 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
             ? (double)((fastchart_obj *)self)->dpi / 96.0 : 1.0;
         int tick_len = (int)(4 * dpi_scale + 0.5);
         int probe_h = 0;
-        if (fastchart_text_measure(im, font, size, "Mg9", NULL, &probe_h, NULL, 0) != 0) {
+        if (fastchart_text_measure(&t, font, size, "Mg9", NULL, &probe_h, NULL, 0) != 0) {
             probe_h = (int)(size * 1.2 * dpi_scale);
         }
         int label_y = plot.y1 + tick_len + probe_h + (int)(4 * dpi_scale);
-        for (int t = 0; t < xrange.n_ticks; t++) {
-            double v = xrange.ticks[t];
+        for (int ti = 0; ti < xrange.n_ticks; ti++) {
+            double v = xrange.ticks[ti];
             double frac = (v - xrange.min) / (xrange.max - xrange.min);
             int x = plot.x0 + (int)(frac * (plot.x1 - plot.x0) + 0.5);
-            gdImageLine(im, x, plot.y1 + 1, x, plot.y1 + tick_len, pal.axis);
+            gdImageLine(im, x, plot.y1 + 1, x, plot.y1 + tick_len, fastchart_target_color_to_gd(&t, pal.axis));
 
             char buf[32];
             if (self->x_axis_label_format) {
@@ -118,13 +118,13 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
                 snprintf(buf, sizeof(buf), "%.*f", decimals, v);
             }
 
-            fastchart_text_draw(im, font, size, pal.text,
+            fastchart_text_draw(&t, font, size, pal.text,
                                 x, label_y, FASTCHART_ALIGN_CENTER,
                                 buf, NULL, 0);
         }
     }
 
-    fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_axis_titles(&t, (fastchart_obj *)self, &plot, &pal);
 
     /* Marker resolution: ScatterChart's default is a 7px circle. */
     int marker_style = self->marker_style >= 0
@@ -146,9 +146,12 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
         int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
         int py = fastchart_y_to_pixel(points[i].y, &yrange, &plot);
 
+        /* color is a target handle so it flows through fastchart_draw_marker
+         * and fastchart_draw_value_label unchanged. Per-point RGB overrides
+         * route through the target's own dedupe table (color_rgba[]). */
         int color;
         if (points[i].color_rgb >= 0) {
-            color = fastchart_color_cache_get(&color_cache, im, points[i].color_rgb);
+            color = fastchart_target_color_rgb(&t, points[i].color_rgb);
         } else {
             color = pal.series[points[i].series_idx % FASTCHART_PALETTE_SERIES_N];
         }
@@ -165,15 +168,15 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
                 if (lo > 0 || hi > 0) {
                     int py_lo = fastchart_y_to_pixel(points[i].y - lo, &yrange, &plot);
                     int py_hi = fastchart_y_to_pixel(points[i].y + hi, &yrange, &plot);
-                    gdImageLine(im, px, py_hi, px, py_lo, pal.axis);
-                    gdImageLine(im, px - 4, py_hi, px + 4, py_hi, pal.axis);
-                    gdImageLine(im, px - 4, py_lo, px + 4, py_lo, pal.axis);
+                    gdImageLine(im, px, py_hi, px, py_lo, fastchart_target_color_to_gd(&t, pal.axis));
+                    gdImageLine(im, px - 4, py_hi, px + 4, py_hi, fastchart_target_color_to_gd(&t, pal.axis));
+                    gdImageLine(im, px - 4, py_lo, px + 4, py_lo, fastchart_target_color_to_gd(&t, pal.axis));
                 }
             }
         }
 
-        fastchart_draw_marker(im, px, py, marker_style, marker_size, color);
-        fastchart_draw_value_label(im, (fastchart_obj *)self, &pal, px, py, points[i].y);
+        fastchart_draw_marker(&t, px, py, marker_style, marker_size, color);
+        fastchart_draw_value_label(&t, (fastchart_obj *)self, &pal, px, py, points[i].y);
     }
 
     /* Trend line: least-squares fit. Linear (degree=1) uses the
@@ -294,8 +297,8 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
         no_fit: ;
     }
 
-    fastchart_draw_h_annotations(im, (fastchart_obj *)self, &plot, &pal, &yrange);
-    fastchart_draw_v_annotations_continuous(im, (fastchart_obj *)self, &plot, &pal, &xrange);
+    fastchart_draw_h_annotations(&t, (fastchart_obj *)self, &plot, &pal, &yrange);
+    fastchart_draw_v_annotations_continuous(&t, (fastchart_obj *)self, &plot, &pal, &xrange);
 
     if (n_series >= 2) {
         int legend_colors[FASTCHART_MAX_SCATTER_SERIES];
@@ -308,12 +311,12 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
             legend_count++;
         }
         if (legend_count > 0) {
-            fastchart_draw_legend(im, (fastchart_obj *)self, &plot, &pal,
+            fastchart_draw_legend(&t, (fastchart_obj *)self, &plot, &pal,
                                   legend_count, legend_colors, legend_labels);
         }
     }
 
-    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
 
     /* IconPlot overlays at data coordinates. x is data-x in xrange,
      * y is data-y in yrange. Drawn on top of markers + annotations. */
@@ -326,7 +329,7 @@ int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im
                 : 0.5;
             int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
             int py = fastchart_y_to_pixel(ic->y, &yrange, &plot);
-            fastchart_blit_icon(im, ic, px, py);
+            fastchart_blit_icon(&t, ic, px, py);
         }
     }
 

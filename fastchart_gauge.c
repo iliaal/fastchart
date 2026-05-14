@@ -19,6 +19,7 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 #include "fastchart_effects.h"
@@ -38,18 +39,20 @@ static double gauge_value_to_deg(double v, double mn, double mx)
 
 int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
 {
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
     /* Per-render entry: invalidate the font cache (so a runtime
      * open_basedir narrowing between draws is honored) and stamp DPI
      * on the canvas. Must come BEFORE any palette / text work. */
-    fastchart_begin_render((fastchart_obj *)self, im);
+    fastchart_begin_render((fastchart_obj *)self, &t);
 
     fastchart_palette pal;
-    fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(&t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
 
     int W = gdImageSX(im);
     int H = gdImageSY(im);
-    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, pal.bg);
+    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, fastchart_target_color_to_gd(&t, pal.bg));
 
     /* Reserve title height proportional to font size, not a hardcoded
      * 32px constant. At larger canvas + larger font (1200x800 with
@@ -65,7 +68,7 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
         int th = (int)(title_size * 1.0);  /* fallback */
         if (tfont) {
             int measured_h = 0;
-            if (fastchart_text_measure(im, tfont, title_size, ZSTR_VAL(self->title),
+            if (fastchart_text_measure(&t, tfont, title_size, ZSTR_VAL(self->title),
                                        NULL, &measured_h, NULL, 0) == 0) {
                 th = measured_h;
             }
@@ -145,10 +148,10 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
 
     /* Inner cutout to make a thick ring. */
     int hole = (int)(diameter * 0.55);
-    gdImageFilledEllipse(im, cx, cy, hole, hole, pal.bg);
+    gdImageFilledEllipse(im, cx, cy, hole, hole, fastchart_target_color_to_gd(&t, pal.bg));
 
     /* Outer arc edge in border color. */
-    gdImageArc(im, cx, cy, diameter, diameter, 180, 360, pal.border);
+    gdImageArc(im, cx, cy, diameter, diameter, 180, 360, fastchart_target_color_to_gd(&t, pal.border));
 
     /* Needle. gauge_value_to_deg returns 180 (value=min) to 0 (value=max),
      * which is the standard math angle (CCW from +x axis): 180=left,
@@ -164,15 +167,15 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
     double needle_thickness = (double)diameter / 200.0 + 2.0;
     if (needle_thickness < 3.0) needle_thickness = 3.0;
     gdImageSetThickness(im, (int)needle_thickness);
-    gdImageLine(im, cx, cy, nx, ny, pal.text);
+    gdImageLine(im, cx, cy, nx, ny, fastchart_target_color_to_gd(&t, pal.text));
     gdImageSetThickness(im, 1);
-    gdImageSetAntiAliased(im, pal.text);
+    gdImageSetAntiAliased(im, fastchart_target_color_to_gd(&t, pal.text));
     gdImageLine(im, cx, cy, nx, ny, gdAntiAliased);
 
     /* Hub: scale with diameter so it doesn't look tiny on a large canvas. */
     int hub = diameter / 60;
     if (hub < 8) hub = 8;
-    gdImageFilledEllipse(im, cx, cy, hub, hub, pal.text);
+    gdImageFilledEllipse(im, cx, cy, hub, hub, fastchart_target_color_to_gd(&t, pal.text));
 
     /* Center value label. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
@@ -185,7 +188,7 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
         double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base * 1.4);
         int tx = cx;
         int ty = cy + (int)(diameter * 0.35);
-        fastchart_text_draw(im, font, size, pal.text, tx, ty,
+        fastchart_text_draw(&t, font, size, pal.text, tx, ty,
                             FASTCHART_ALIGN_CENTER, buf, NULL, 0);
     }
 
@@ -198,19 +201,19 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
         snprintf(maxbuf, sizeof(maxbuf), fmt, mx);
         double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
         double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base * 0.85);
-        fastchart_text_draw(im, font, size, pal.text,
+        fastchart_text_draw(&t, font, size, pal.text,
                             cx - radius, cy + (int)(size * 1.5),
                             FASTCHART_ALIGN_CENTER, minbuf, NULL, 0);
-        fastchart_text_draw(im, font, size, pal.text,
+        fastchart_text_draw(&t, font, size, pal.text,
                             cx + radius, cy + (int)(size * 1.5),
                             FASTCHART_ALIGN_CENTER, maxbuf, NULL, 0);
     }
 
     /* Title. Baseline scales with the title font size so the ascender
      * stays inside the canvas at any canvas/font scale. */
-    fastchart_draw_floating_title(im, (fastchart_obj *)self, &pal, W / 2, title_baseline);
+    fastchart_draw_floating_title(&t, (fastchart_obj *)self, &pal, W / 2, title_baseline);
 
-    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
     return 0;
 }
 

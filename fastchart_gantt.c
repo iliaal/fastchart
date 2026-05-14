@@ -19,6 +19,7 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 #include "fastchart_effects.h"
@@ -28,6 +29,8 @@
 
 int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
 {
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
     if (self->task_count == 0) {
         zend_throw_error(NULL,
             "FastChart\\GanttChart::draw() requires setTasks() with non-empty data");
@@ -48,14 +51,14 @@ int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
     if (t_max <= t_min) t_max = t_min + 86400;
 
     fastchart_palette pal;
-    fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(&t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
 
     fastchart_gradient_cache grad_cache;
     fastchart_gradient_cache_reset(&grad_cache);
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, NULL, 0, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, &t, 1, 1, NULL, 0, &plot);
 
     /* Reserve a left margin for task name labels. */
     int label_pad = 0;
@@ -68,7 +71,7 @@ int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
             for (int i = 0; i < n_tasks; i++) {
                 if (!tasks[i].name) continue;
                 int w = 0, h = 0;
-                if (fastchart_text_measure(im, font, size, tasks[i].name, &w, &h, NULL, 0) == 0) {
+                if (fastchart_text_measure(&t, font, size, tasks[i].name, &w, &h, NULL, 0) == 0) {
                     if (w > max_w) max_w = w;
                 }
             }
@@ -78,9 +81,9 @@ int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
     fastchart_rect bars = plot;
     bars.x0 += label_pad;
 
-    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_x_axis_time(im, (fastchart_obj *)self, &bars, &pal, t_min, t_max);
+    fastchart_draw_frame(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_x_axis_time(&t, (fastchart_obj *)self, &bars, &pal, t_min, t_max);
 
     int rows = n_tasks;
     int row_h = (bars.y1 - bars.y0) / (rows > 0 ? rows : 1);
@@ -96,7 +99,7 @@ int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
     for (int i = 0; i < n_tasks; i++) {
         int row_y0 = bars.y0 + i * row_h;
         int row_yc = row_y0 + row_h / 2;
-        gdImageLine(im, bars.x0, row_y0, bars.x1, row_y0, pal.grid);
+        gdImageLine(im, bars.x0, row_y0, bars.x1, row_y0, fastchart_target_color_to_gd(&t, pal.grid));
 
         int x_start = fastchart_x_time_to_pixel(&bars, tasks[i].start, t_min, t_max);
         int x_end   = fastchart_x_time_to_pixel(&bars, tasks[i].end,   t_min, t_max);
@@ -133,7 +136,7 @@ int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
         if (self->gantt_show_labels && font && tasks[i].name) {
             int label_x = bars.x0 - 6;
             int label_y = row_yc + (int)(size * 0.35);
-            fastchart_text_draw(im, font, size, pal.text,
+            fastchart_text_draw(&t, font, size, pal.text,
                                 label_x, label_y, FASTCHART_ALIGN_RIGHT,
                                 tasks[i].name, NULL, 0);
         }
@@ -148,17 +151,17 @@ int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
             int ay = bars.y0 + di * row_h + row_h / 2;
             int bx = fastchart_x_time_to_pixel(&bars, tasks[i].start, t_min, t_max);
             int by = bars.y0 + i  * row_h + row_h / 2;
-            gdImageLine(im, ax, ay, ax + 6, ay, pal.axis);
-            gdImageLine(im, ax + 6, ay, ax + 6, by, pal.axis);
-            gdImageLine(im, ax + 6, by, bx, by, pal.axis);
+            gdImageLine(im, ax, ay, ax + 6, ay, fastchart_target_color_to_gd(&t, pal.axis));
+            gdImageLine(im, ax + 6, ay, ax + 6, by, fastchart_target_color_to_gd(&t, pal.axis));
+            gdImageLine(im, ax + 6, by, bx, by, fastchart_target_color_to_gd(&t, pal.axis));
             /* Tiny arrowhead. */
-            gdImageLine(im, bx, by, bx - 4, by - 3, pal.axis);
-            gdImageLine(im, bx, by, bx - 4, by + 3, pal.axis);
+            gdImageLine(im, bx, by, bx - 4, by - 3, fastchart_target_color_to_gd(&t, pal.axis));
+            gdImageLine(im, bx, by, bx - 4, by + 3, fastchart_target_color_to_gd(&t, pal.axis));
         }
     }
 
     
-    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
     return 0;
 }
 

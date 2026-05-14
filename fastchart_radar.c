@@ -19,6 +19,7 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 #include "fastchart_effects.h"
@@ -41,6 +42,8 @@ static inline double radar_read_d(const fastchart_radar_series *s, int i)
 
 int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
 {
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
     if (self->n_series == 0) {
         zend_throw_error(NULL,
             "FastChart\\RadarChart::draw() requires setSeries() with at least 3 axes per series");
@@ -74,15 +77,15 @@ int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
     /* Per-render entry: invalidate the font cache (so a runtime
      * open_basedir narrowing between draws is honored) and stamp DPI
      * on the canvas. Must come BEFORE any palette / text work. */
-    fastchart_begin_render((fastchart_obj *)self, im);
+    fastchart_begin_render((fastchart_obj *)self, &t);
 
     fastchart_palette pal;
-    fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(&t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
 
     int W = gdImageSX(im);
     int H = gdImageSY(im);
-    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, pal.bg);
+    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, fastchart_target_color_to_gd(&t, pal.bg));
 
     /* Reserve top space for title. */
     int title_h = (self->title && ZSTR_LEN(self->title) > 0) ? 32 : 8;
@@ -112,13 +115,13 @@ int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
             poly[i].x = cx + (int)(rr * cos_a[i]);
             poly[i].y = cy + (int)(rr * sin_a[i]);
         }
-        gdImagePolygon(im, poly, n_axes, pal.grid);
+        gdImagePolygon(im, poly, n_axes, fastchart_target_color_to_gd(&t, pal.grid));
     }
     /* Spokes from center to each axis tip. */
     for (int i = 0; i < n_axes; i++) {
         int tx = cx + (int)(radius * cos_a[i]);
         int ty = cy + (int)(radius * sin_a[i]);
-        gdImageLine(im, cx, cy, tx, ty, pal.axis);
+        gdImageLine(im, cx, cy, tx, ty, fastchart_target_color_to_gd(&t, pal.axis));
     }
 
     /* Axis labels via setCategoryLabels. */
@@ -137,7 +140,7 @@ int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
             if (cos_a[i] > 0.3) align = FASTCHART_ALIGN_LEFT;
             else if (cos_a[i] < -0.3) align = FASTCHART_ALIGN_RIGHT;
             else align = FASTCHART_ALIGN_CENTER;
-            fastchart_text_draw(im, font, size, pal.text,
+            fastchart_text_draw(&t, font, size, pal.text,
                                 lx, ly + (int)(size * 0.35),
                                 align, label, NULL, 0);
         }
@@ -179,7 +182,7 @@ int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
         gdImageSetThickness(im, 1);
         /* Markers at vertices. */
         for (int i = 0; i < n_axes; i++) {
-            fastchart_draw_marker(im, poly[i].x, poly[i].y,
+            fastchart_draw_marker(&t, poly[i].x, poly[i].y,
                                   FASTCHART_MARKER_CIRCLE, 5, color);
         }
         if (series[s].label && legend_count < FASTCHART_MAX_RADAR_SERIES) {
@@ -190,17 +193,17 @@ int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
     }
 
     /* Title at top center. */
-    fastchart_draw_floating_title(im, (fastchart_obj *)self, &pal, W / 2, 24);
+    fastchart_draw_floating_title(&t, (fastchart_obj *)self, &pal, W / 2, 24);
 
     /* Legend: reuse the standard helper with a synthetic "plot rect"
      * spanning the entire canvas so positioning works. */
     if (legend_count > 0) {
         fastchart_rect plot = { 10, title_h, W - 10, H - 10 };
-        fastchart_draw_legend(im, (fastchart_obj *)self, &plot, &pal,
+        fastchart_draw_legend(&t, (fastchart_obj *)self, &plot, &pal,
                               legend_count, legend_colors, legend_labels);
     }
 
-    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
     return 0;
 }
 

@@ -19,6 +19,7 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 #include "fastchart_effects.h"
@@ -32,6 +33,8 @@
 
 int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
 {
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
     if (self->n_series == 0) {
         zend_throw_error(NULL,
             "FastChart\\PolarChart::draw() requires setSeries() with non-empty data");
@@ -53,15 +56,15 @@ int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
     /* Per-render entry: invalidate the font cache (so a runtime
      * open_basedir narrowing between draws is honored) and stamp DPI
      * on the canvas. Must come BEFORE any palette / text work. */
-    fastchart_begin_render((fastchart_obj *)self, im);
+    fastchart_begin_render((fastchart_obj *)self, &t);
 
     fastchart_palette pal;
-    fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(&t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
 
     int W = gdImageSX(im);
     int H = gdImageSY(im);
-    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, pal.bg);
+    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, fastchart_target_color_to_gd(&t, pal.bg));
 
     int top = (self->title && ZSTR_LEN(self->title) > 0) ? 32 : 8;
     int cx = W / 2;
@@ -73,13 +76,13 @@ int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
     const int rings = 4;
     for (int r = 1; r <= rings; r++) {
         int rr = (int)((double)radius * (double)r / (double)rings);
-        gdImageEllipse(im, cx, cy, rr * 2, rr * 2, pal.grid);
+        gdImageEllipse(im, cx, cy, rr * 2, rr * 2, fastchart_target_color_to_gd(&t, pal.grid));
     }
     for (int a = 0; a < 360; a += 30) {
         double rad = a * M_PI / 180.0;
         int tx = cx + (int)(radius * cos(rad));
         int ty = cy - (int)(radius * sin(rad));
-        gdImageLine(im, cx, cy, tx, ty, pal.grid);
+        gdImageLine(im, cx, cy, tx, ty, fastchart_target_color_to_gd(&t, pal.grid));
     }
 
     int legend_colors[FASTCHART_MAX_POLAR_SERIES];
@@ -169,7 +172,7 @@ int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
         }
         gdImageSetThickness(im, 1);
         for (int i = 0; i < n_pts; i++) {
-            fastchart_draw_marker(im, poly[i].x, poly[i].y,
+            fastchart_draw_marker(&t, poly[i].x, poly[i].y,
                                   FASTCHART_MARKER_CIRCLE, 5, color);
         }
         if (series[s].label && legend_count < FASTCHART_MAX_POLAR_SERIES) {
@@ -180,15 +183,15 @@ int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
     }
 
     /* Title. */
-    fastchart_draw_floating_title(im, (fastchart_obj *)self, &pal, W / 2, 24);
+    fastchart_draw_floating_title(&t, (fastchart_obj *)self, &pal, W / 2, 24);
 
     if (legend_count > 0) {
         fastchart_rect plot = { 10, top, W - 10, H - 10 };
-        fastchart_draw_legend(im, (fastchart_obj *)self, &plot, &pal,
+        fastchart_draw_legend(&t, (fastchart_obj *)self, &plot, &pal,
                               legend_count, legend_colors, legend_labels);
     }
 
-    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
     return 0;
 }
 

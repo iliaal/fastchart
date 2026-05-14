@@ -19,6 +19,7 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 #include "fastchart_effects.h"
@@ -28,6 +29,8 @@
 
 int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im)
 {
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
     if (self->entry_count == 0) {
         zend_throw_error(NULL,
             "FastChart\\BoxPlot::draw() requires setBoxes() with non-empty data");
@@ -51,17 +54,17 @@ int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im
     fastchart_value_range_apply_override((fastchart_obj *)self, &range);
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, NULL, 0, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, &t, 1, 1, NULL, 0, &plot);
 
     fastchart_palette pal;
-    fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(&t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
 
-    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_y_axis(im, (fastchart_obj *)self, &plot, &pal, &range);
-    fastchart_draw_plot_bands(im, (fastchart_obj *)self, &plot, &range, &pal);
-    fastchart_draw_v_plot_bands_categorical(im, (fastchart_obj *)self, &plot,
+    fastchart_draw_frame(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_y_axis(&t, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_plot_bands(&t, (fastchart_obj *)self, &plot, &range, &pal);
+    fastchart_draw_v_plot_bands_categorical(&t, (fastchart_obj *)self, &plot,
                                             n, &pal);
 
     /* Use category labels if supplied, else fall back to per-box label
@@ -74,8 +77,8 @@ int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im
         }
         if (!labels[i] && boxes[i].label) labels[i] = boxes[i].label;
     }
-    fastchart_draw_x_axis_categorical(im, (fastchart_obj *)self, &plot, &pal, n, labels);
-    fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_x_axis_categorical(&t, (fastchart_obj *)self, &plot, &pal, n, labels);
+    fastchart_draw_axis_titles(&t, (fastchart_obj *)self, &plot, &pal);
     efree(labels);
 
     int slot_w = (plot.x1 - plot.x0) / n;
@@ -102,10 +105,10 @@ int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im
         int alpha = gdImageColorAllocateAlpha(im, r, g, b, 64);
 
         /* Whiskers (vertical lines from min->q1, q3->max) with caps. */
-        gdImageLine(im, cx, y_min, cx, y_q1, pal.axis);
-        gdImageLine(im, cx, y_q3,  cx, y_max, pal.axis);
-        gdImageLine(im, cx - box_w / 4, y_min, cx + box_w / 4, y_min, pal.axis);
-        gdImageLine(im, cx - box_w / 4, y_max, cx + box_w / 4, y_max, pal.axis);
+        gdImageLine(im, cx, y_min, cx, y_q1, fastchart_target_color_to_gd(&t, pal.axis));
+        gdImageLine(im, cx, y_q3,  cx, y_max, fastchart_target_color_to_gd(&t, pal.axis));
+        gdImageLine(im, cx - box_w / 4, y_min, cx + box_w / 4, y_min, fastchart_target_color_to_gd(&t, pal.axis));
+        gdImageLine(im, cx - box_w / 4, y_max, cx + box_w / 4, y_max, fastchart_target_color_to_gd(&t, pal.axis));
 
         /* Q1..Q3 box. */
         fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y_q3, x1, y_q1);
@@ -128,11 +131,11 @@ int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im
         }
     }
 
-    fastchart_draw_h_annotations(im, (fastchart_obj *)self, &plot, &pal, &range);
-    fastchart_draw_v_annotations_categorical(im, (fastchart_obj *)self, &plot, &pal, n);
-    fastchart_draw_overlays_categorical(im, (fastchart_obj *)self, &plot, &pal,
+    fastchart_draw_h_annotations(&t, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_v_annotations_categorical(&t, (fastchart_obj *)self, &plot, &pal, n);
+    fastchart_draw_overlays_categorical(&t, (fastchart_obj *)self, &plot, &pal,
                                          &range, NULL, n);
-    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
 
     if (self->icons && self->n_icons > 0 && n > 0) {
         for (int i = 0; i < self->n_icons; i++) {
@@ -140,7 +143,7 @@ int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im
             double frac_x = n > 1 ? (ic->x + 0.5) / (double)n : 0.5;
             int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
             int py = fastchart_y_to_pixel(ic->y, &range, &plot);
-            fastchart_blit_icon(im, ic, px, py);
+            fastchart_blit_icon(&t, ic, px, py);
         }
     }
     return 0;

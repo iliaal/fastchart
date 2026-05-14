@@ -28,6 +28,8 @@
 
 #include "php_fastchart.h"
 #include "fastchart_render_helpers.h"
+#include "fastchart_target.h"
+#include "fastchart_svg.h"
 #include "fastchart_axis.h"
 
 /* gen_stub.php on PHP 8.4+ emits the 6-arg ZEND_RAW_FENTRY form (the
@@ -3979,6 +3981,31 @@ ZEND_METHOD(FastChart_AreaChart, setFillOpacity)
  * struct; we cast to the specific type for each renderer. The cast
  * is safe because Z_FASTCHART_OBJ_P landed on the start of whatever
  * subclass the user actually instantiated. */
+/* SVG-side dispatch. The pilot rotation covers Line/Bar/Pie/Stock;
+ * other chart families throw a clear runtime error pointing callers
+ * at renderPng/renderJpeg/etc. SVG support for the remaining 15
+ * Cartesian families and the Symbol family fans out in follow-up
+ * PRs. The non-pilot families keep working through the gd path
+ * unchanged. */
+static int dispatch_svg_render(fastchart_obj *self, zend_class_entry *ce, fastchart_target_t *t)
+{
+    if (ce == fastchart_line_chart_ce)
+        return fastchart_line_render_to_target((fastchart_line_obj *)self, t);
+    if (ce == fastchart_bar_chart_ce)
+        return fastchart_bar_render_to_target((fastchart_bar_obj *)self, t);
+    if (ce == fastchart_pie_chart_ce)
+        return fastchart_pie_render_to_target((fastchart_pie_obj *)self, t);
+    if (ce == fastchart_stock_chart_ce)
+        return fastchart_stock_render_to_target((fastchart_stock_obj *)self, t);
+    zend_throw_error(NULL,
+        "FastChart: SVG output is not yet supported for this chart family. "
+        "Pilot families (LineChart, BarChart, PieChart, StockChart) "
+        "support renderSvg(); other families "
+        "must use renderPng() / renderJpeg() / renderWebp() / renderGif() / "
+        "renderAvif() / renderToFile() with a raster extension.");
+    return -1;
+}
+
 static int dispatch_render(fastchart_obj *self, zend_class_entry *ce, gdImagePtr im)
 {
     if (ce == fastchart_line_chart_ce)    return fastchart_line_render_to_image((fastchart_line_obj *)self, im);
@@ -4211,6 +4238,66 @@ ZEND_METHOD(FastChart_Chart, renderAvif)
     fastchart_render_to_string(INTERNAL_FUNCTION_PARAM_PASSTHRU, 4, quality);
 }
 
+/* SVG render shared between Chart::renderSvg (fragment_only=0, emits a
+ * full document) and Chart::drawSvgFragment (fragment_only=1, emits
+ * just a <g> group for callers stitching multiple charts into one
+ * outer <svg>). Output dimensions are the LOGICAL setSize() values —
+ * SVG is vector-scalable, so the DPI knob doesn't multiply the
+ * viewport. DPI still flows into layout (margins / label padding) and
+ * into FreeType measurement so an SVG and PNG of the same chart pick
+ * the same label widths. */
+static void fastchart_render_to_svg(INTERNAL_FUNCTION_PARAMETERS, int fragment_only)
+{
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (self->width <= 0 || self->height <= 0) {
+        zend_throw_error(NULL, "FastChart: invalid canvas size; setSize() first");
+        RETURN_THROWS();
+    }
+
+    smart_str buf = {0};
+    if (!fragment_only) {
+        fc_svg_emit_doc_open(&buf, (int)self->width, (int)self->height);
+    }
+    fc_svg_emit_g_open(&buf, "fastchart");
+
+    fastchart_target_t t;
+    fastchart_target_from_svg(&t, &buf,
+                               (int)self->width, (int)self->height,
+                               (int)self->dpi);
+
+    if (dispatch_svg_render(self, Z_OBJCE_P(ZEND_THIS), &t) != 0 || EG(exception)) {
+        smart_str_free(&buf);
+        RETURN_THROWS();
+    }
+
+    fc_svg_emit_g_close(&buf);
+    if (!fragment_only) {
+        fc_svg_emit_doc_close(&buf);
+    }
+    smart_str_0(&buf);
+
+    if (!buf.s) {
+        zend_throw_error(NULL, "FastChart: SVG renderer produced no output");
+        RETURN_THROWS();
+    }
+    /* Hand the smart_str's underlying zend_string to the return slot
+     * directly — smart_str_0 has already NUL-terminated and finalised
+     * the buffer. Transfers refcount=1 ownership. */
+    RETURN_STR(buf.s);
+}
+
+ZEND_METHOD(FastChart_Chart, renderSvg)
+{
+    ZEND_PARSE_PARAMETERS_NONE();
+    fastchart_render_to_svg(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, drawSvgFragment)
+{
+    ZEND_PARSE_PARAMETERS_NONE();
+    fastchart_render_to_svg(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
+
 /* --------------------- renderToFile -------------------------------
  *
  * Path extension picks the format. Honors open_basedir. Writes via
@@ -4242,6 +4329,87 @@ int fastchart_format_from_path(const char *path, size_t len)
     return -1;
 }
 
+/* Case-insensitive ASCII check for a `.svg` tail. Same parsing
+ * shape as fastchart_format_from_path so a path like
+ * "weird.SVG/here.png" reports .png and "report.SVG" reports .svg. */
+static int fc_path_ends_with_svg(const char *path, size_t len)
+{
+    if (len == 0 || len > 4096) return 0;
+    const char *dot = NULL;
+    for (size_t i = len; i > 0; i--) {
+        if (path[i - 1] == '.') { dot = &path[i - 1]; break; }
+        if (path[i - 1] == '/' || path[i - 1] == '\\') break;
+    }
+    if (!dot) return 0;
+    const char *ext = dot + 1;
+    size_t ext_len = strlen(ext);
+    return zend_binary_strcasecmp(ext, ext_len, "svg", 3) == 0;
+}
+
+/* SVG file-write branch invoked by renderToFile when the path
+ * extension is .svg. Bypasses fastchart_encode_image (libgd's raster
+ * encoder dispatch); SVG is a text format produced directly via
+ * smart_str. Honors open_basedir same as the raster path. */
+static void fastchart_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS, zend_string *path)
+{
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (self->width <= 0 || self->height <= 0) {
+        zend_throw_error(NULL, "FastChart: invalid canvas size; setSize() first");
+        RETURN_THROWS();
+    }
+
+    smart_str buf = {0};
+    fc_svg_emit_doc_open(&buf, (int)self->width, (int)self->height);
+    fc_svg_emit_g_open(&buf, "fastchart");
+
+    fastchart_target_t t;
+    fastchart_target_from_svg(&t, &buf,
+                               (int)self->width, (int)self->height,
+                               (int)self->dpi);
+
+    if (dispatch_svg_render(self, Z_OBJCE_P(ZEND_THIS), &t) != 0 || EG(exception)) {
+        smart_str_free(&buf);
+        RETURN_THROWS();
+    }
+    fc_svg_emit_g_close(&buf);
+    fc_svg_emit_doc_close(&buf);
+    smart_str_0(&buf);
+
+    if (!buf.s) {
+        zend_throw_error(NULL, "FastChart: SVG renderer produced no output");
+        RETURN_THROWS();
+    }
+
+    php_stream *stream = php_stream_open_wrapper(ZSTR_VAL(path), "wb",
+        REPORT_ERRORS, NULL);
+    if (!stream) {
+        smart_str_free(&buf);
+        if (!EG(exception)) {
+            zend_throw_error(NULL,
+                "FastChart\\Chart::renderToFile() could not open %s for writing",
+                ZSTR_VAL(path));
+        }
+        RETURN_THROWS();
+    }
+
+    size_t sz = ZSTR_LEN(buf.s);
+    ssize_t written = php_stream_write(stream, ZSTR_VAL(buf.s), sz);
+    php_stream_close(stream);
+    smart_str_free(&buf);
+
+    if (written < 0) {
+        zend_throw_error(NULL, "FastChart: write to %s failed", ZSTR_VAL(path));
+        RETURN_THROWS();
+    }
+    if ((size_t)written != sz) {
+        zend_throw_error(NULL,
+            "FastChart: short write to %s (%zd of %zu bytes)",
+            ZSTR_VAL(path), written, sz);
+        RETURN_THROWS();
+    }
+    RETURN_LONG((zend_long)written);
+}
+
 ZEND_METHOD(FastChart_Chart, renderToFile)
 {
     zend_string *path;
@@ -4252,9 +4420,25 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         Z_PARAM_LONG(quality)
     ZEND_PARSE_PARAMETERS_END();
 
+    /* Vector branch. .svg ignores $quality (no lossy encoder) and
+     * goes through a separate write path that emits text bytes. */
+    if (fc_path_ends_with_svg(ZSTR_VAL(path), ZSTR_LEN(path))) {
+        (void)quality;
+        if (php_check_open_basedir(ZSTR_VAL(path))) {
+            if (!EG(exception)) {
+                zend_throw_error(NULL,
+                    "FastChart\\Chart::renderToFile() open_basedir restriction "
+                    "prevents access to %s", ZSTR_VAL(path));
+            }
+            RETURN_THROWS();
+        }
+        fastchart_render_to_svg_file(INTERNAL_FUNCTION_PARAM_PASSTHRU, path);
+        return;
+    }
+
     int format = fastchart_format_from_path(ZSTR_VAL(path), ZSTR_LEN(path));
     if (format < 0) {
-        zend_value_error("FastChart\\Chart::renderToFile() could not infer format from extension; expected .png/.jpg/.jpeg/.webp/.gif/.avif");
+        zend_value_error("FastChart\\Chart::renderToFile() could not infer format from extension; expected .png/.jpg/.jpeg/.webp/.gif/.avif/.svg");
         RETURN_THROWS();
     }
     /* Format-conditional quality validation. JPEG quality 0 is

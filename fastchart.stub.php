@@ -508,11 +508,44 @@ abstract class Chart
     /**
      * Render and write directly to a file. Format is inferred from
      * the path extension: `.png` / `.jpg` / `.jpeg` / `.webp` /
-     * `.gif` / `.avif`. `$quality` only applies to JPEG / WebP /
-     * AVIF outputs. Returns the byte count written. Honors
-     * `open_basedir`.
+     * `.gif` / `.avif` / `.svg`. `$quality` only applies to JPEG /
+     * WebP / AVIF outputs; SVG ignores it (vector, no lossy encoder).
+     * Returns the byte count written. Honors `open_basedir`.
      */
     public function renderToFile(string $path, int $quality = 90): int {}
+
+    /**
+     * Render to an SVG document. Returns the full markup including
+     * `<?xml ...>` prolog and `<svg>` root.
+     *
+     * The output viewport matches the logical `setSize()` dimensions
+     * — DPI does not multiply the viewport (SVG is vector, scales
+     * infinitely). DPI still influences layout margins, label
+     * padding, and FreeType text measurement so SVG and raster
+     * outputs of the same chart pick the same label widths.
+     *
+     * Text rendering uses native `<text>` elements with the font's
+     * family name resolved via FreeType. Viewers that don't have
+     * the requested font fall back to `sans-serif`. (Path-embedded
+     * glyphs for archival-perfect output are planned for a future
+     * release.)
+     *
+     * SVG output is currently supported on `FastChart\LineChart` only.
+     * Other chart families raise an error; use `renderPng()` etc.
+     * The pilot expands to BarChart, PieChart, StockChart, then the
+     * remaining families in follow-up releases.
+     */
+    public function renderSvg(): string {}
+
+    /**
+     * Render to an SVG fragment: a single `<g class="fastchart">…</g>`
+     * group with no outer `<svg>` or XML prolog. Intended for
+     * stitching multiple charts into one caller-managed SVG document.
+     * The caller owns the outer viewport / coordinate space.
+     *
+     * Same constraints as `renderSvg()` (LineChart only for now).
+     */
+    public function drawSvgFragment(): string {}
 }
 
 final class LineChart extends Chart

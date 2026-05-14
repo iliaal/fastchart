@@ -866,11 +866,23 @@ static inline const char *fastchart_label_or_null(const zval *zv)
  * success, -1 on a draw-time error (a PHP exception is already
  * pending). */
 int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im);
+/* Render a LineChart into any fastchart_target_t — GD-backed or
+ * SVG-backed. Pilot family on the SVG dispatch path; the
+ * _to_image() wrapper above is the GD-only convenience. */
+struct fastchart_target;
+int fastchart_line_render_to_target(fastchart_line_obj *self,
+                                     struct fastchart_target *t);
 int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im);
 int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im);
+int fastchart_bar_render_to_target(fastchart_bar_obj *self,
+                                    struct fastchart_target *t);
 int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im);
+int fastchart_pie_render_to_target(fastchart_pie_obj *self,
+                                    struct fastchart_target *t);
 int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im);
 int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im);
+int fastchart_stock_render_to_target(fastchart_stock_obj *self,
+                                      struct fastchart_target *t);
 int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im);
 int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im);
 int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im);
