@@ -237,6 +237,24 @@ static void fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAMETERS,
         RETURN_THROWS();
     }
 
+    /* Codec-availability guard — reject before SVG build + rasterize
+     * when the requested format's lib isn't compiled in. */
+    {
+        const char *missing = NULL;
+        switch (format) {
+        case 0: if (!fastchart_have_libpng())  missing = "libpng";        break;
+        case 1: if (!fastchart_have_libjpeg()) missing = "libjpeg-turbo"; break;
+        case 2: if (!fastchart_have_libwebp()) missing = "libwebp";       break;
+        }
+        if (missing) {
+            zend_throw_error(NULL,
+                "FastChart\\Symbol: %s support not compiled in "
+                "(configure could not find the library at build time)",
+                missing);
+            RETURN_THROWS();
+        }
+    }
+
     zend_long lw, lh;
     fastchart_symbol_logical_dims(self, ce, &lw, &lh);
 
@@ -741,6 +759,25 @@ ZEND_METHOD(FastChart_Symbol, renderToFile)
         zend_throw_error(NULL,
             "FastChart\\Symbol: setData() is required before render");
         RETURN_THROWS();
+    }
+
+    /* Same codec-availability guard as the in-memory renderers. GIF
+     * and AVIF were already rejected above; SVG is on a separate
+     * branch. */
+    {
+        const char *missing = NULL;
+        switch (format) {
+        case 0: if (!fastchart_have_libpng())  missing = "libpng";        break;
+        case 1: if (!fastchart_have_libjpeg()) missing = "libjpeg-turbo"; break;
+        case 2: if (!fastchart_have_libwebp()) missing = "libwebp";       break;
+        }
+        if (missing) {
+            zend_throw_error(NULL,
+                "FastChart\\Symbol::renderToFile(): %s support not "
+                "compiled in (configure could not find the library "
+                "at build time)", missing);
+            RETURN_THROWS();
+        }
     }
 
     zend_long lw, lh;

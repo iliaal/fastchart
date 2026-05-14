@@ -22,13 +22,23 @@
                  alpha preserved.
 */
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include "fastchart_encoder.h"
 #include "zend_smart_str.h"
 
+#ifdef HAVE_LIBPNG
 #include <png.h>
+#endif
+#ifdef HAVE_LIBJPEG
 #include <jpeglib.h>
 #include <jerror.h>
+#endif
+#ifdef HAVE_LIBWEBP
 #include <webp/encode.h>
+#endif
 
 #include <setjmp.h>
 #include <string.h>
@@ -54,6 +64,7 @@ void fastchart_pixels_release(fastchart_pixels_t *pix)
 
 /* --------------------------- PNG ----------------------------------- */
 
+#ifdef HAVE_LIBPNG
 static void png_smart_write(png_structp png, png_bytep data, png_size_t len)
 {
 	smart_str *out = (smart_str *)png_get_io_ptr(png);
@@ -120,8 +131,21 @@ int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix)
 	return 0;
 }
 
+int fastchart_have_libpng(void)         { return 1; }
+const char *fastchart_libpng_version(void) { return PNG_LIBPNG_VER_STRING; }
+#else  /* !HAVE_LIBPNG */
+int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix)
+{
+	(void)out; (void)pix;
+	return -2;
+}
+int fastchart_have_libpng(void)         { return 0; }
+const char *fastchart_libpng_version(void) { return NULL; }
+#endif
+
 /* --------------------------- JPEG ---------------------------------- */
 
+#ifdef HAVE_LIBJPEG
 struct fc_jpeg_err {
 	struct jpeg_error_mgr base;
 	jmp_buf jmp;
@@ -224,8 +248,35 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 	return 0;
 }
 
+int fastchart_have_libjpeg(void) { return 1; }
+/* libjpeg-turbo's LIBJPEG_TURBO_VERSION expands to bare 2.1.2 in
+ * jconfig.h, not a string literal. Stringify it. JPEG_LIB_VERSION
+ * (e.g. 80) is the API revision and a useful fallback when building
+ * against a non-turbo libjpeg. */
+#define FC_STR(x) #x
+#define FC_XSTR(x) FC_STR(x)
+const char *fastchart_libjpeg_version(void)
+{
+#ifdef LIBJPEG_TURBO_VERSION
+	return "libjpeg-turbo " FC_XSTR(LIBJPEG_TURBO_VERSION);
+#else
+	return "libjpeg API " FC_XSTR(JPEG_LIB_VERSION);
+#endif
+}
+#else  /* !HAVE_LIBJPEG */
+int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
+                          int quality)
+{
+	(void)out; (void)pix; (void)quality;
+	return -2;
+}
+int fastchart_have_libjpeg(void)         { return 0; }
+const char *fastchart_libjpeg_version(void) { return NULL; }
+#endif
+
 /* --------------------------- WebP ---------------------------------- */
 
+#ifdef HAVE_LIBWEBP
 int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
                           int quality)
 {
@@ -258,3 +309,23 @@ int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
 	WebPFree(buf);
 	return 0;
 }
+
+int fastchart_have_libwebp(void) { return 1; }
+const char *fastchart_libwebp_version(void)
+{
+	static char ver[16];
+	int v = WebPGetEncoderVersion();
+	snprintf(ver, sizeof(ver), "%d.%d.%d",
+	         (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF);
+	return ver;
+}
+#else  /* !HAVE_LIBWEBP */
+int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
+                          int quality)
+{
+	(void)out; (void)pix; (void)quality;
+	return -2;
+}
+int fastchart_have_libwebp(void)         { return 0; }
+const char *fastchart_libwebp_version(void) { return NULL; }
+#endif

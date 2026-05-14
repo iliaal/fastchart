@@ -14,9 +14,11 @@
   PHP smart_str of encoded bytes. Replaces the libgd-based
   fastchart_encode_image() helper.
 
-  libpng / libjpeg-turbo / libwebp are linked directly via pkg-config
-  in config.m4. fastchart_pixels_t owns the RGBA buffer and frees it
-  in fastchart_pixels_release().
+  Each of libpng / libjpeg-turbo / libwebp is independently probed
+  by config.m4. Missing libs drop their corresponding output format;
+  the encode entry point compiles into a stub that returns -2 and
+  the caller throws a clear error at the PHP boundary. FreeType is
+  unconditionally required (text rendering depends on it).
 */
 
 #ifndef FASTCHART_ENCODER_H
@@ -41,21 +43,26 @@ void fastchart_pixels_init(fastchart_pixels_t *pix, int w, int h);
 /* Free the pixel buffer; safe to call on uninitialised / zeroed pix. */
 void fastchart_pixels_release(fastchart_pixels_t *pix);
 
-/* Encode pix into PNG bytes. Returns 0 on success, -1 on failure.
- * On success, the bytes are appended to out (smart_str must be
- * initialised by caller). */
+/* Encode pix into PNG bytes. Returns 0 on success, -1 on encode
+ * failure, -2 if libpng is not compiled in. */
 int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix);
 
 /* Encode pix into JPEG bytes. quality is 1..100; clamped if out of
- * range. Uses libjpeg-turbo with optimize_coding=TRUE, 4:2:0
- * subsampling, non-progressive — matches the q88 reference
- * established during the plutovg eval. */
+ * range. -2 if libjpeg-turbo is not compiled in. */
 int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
                           int quality);
 
-/* Encode pix into WebP bytes (lossy). quality is 1..100; clamped if
- * out of range. Uses libwebp's WebPEncodeRGBA. */
+/* Encode pix into WebP bytes (lossy). -2 if libwebp is not compiled in. */
 int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
                           int quality);
+
+/* Build-time availability + version strings. The "_version" helpers
+ * return NULL when the lib isn't compiled in. */
+int         fastchart_have_libpng(void);
+int         fastchart_have_libjpeg(void);
+int         fastchart_have_libwebp(void);
+const char *fastchart_libpng_version(void);
+const char *fastchart_libjpeg_version(void);
+const char *fastchart_libwebp_version(void);
 
 #endif /* FASTCHART_ENCODER_H */
