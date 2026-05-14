@@ -953,15 +953,14 @@ int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self,
 
 typedef struct _fastchart_symbol_obj { FASTCHART_SYMBOL_BASE_FIELDS } fastchart_symbol_obj;
 
-/* Code 128: auto-switching A/B/C subset encoder. show_text toggles the
- * human-readable payload below the bars; text_font_path is owned (NULL
- * falls back to the auto-detected sans-serif resolved at MINIT);
- * text_font_size 0 means "scale from canvas height". */
+/* Code 128: auto-switching A/B/C subset encoder. show_text toggles
+ * the human-readable payload below the bars; the font is whatever
+ * fastchart_default_font_path resolved to at MINIT (re-checked
+ * against open_basedir on every render). No per-instance font setter
+ * yet — add the field plus a setter when one is needed. */
 typedef struct {
     FASTCHART_SYMBOL_BASE_FIELDS
     bool show_text;
-    zend_string *text_font_path;
-    double text_font_size;
     zend_object std;
 } fastchart_code128_obj;
 
