@@ -12,26 +12,23 @@ funnel, waterfall, heatmap, linear meter, plus a deep `StockChart`
 (seven candle styles, SMA / EMA / WMA overlays, volume + indicator
 panes).
 
-Two render paths. `renderToFile()` / `renderPng()` / `renderJpeg()` /
-`renderWebp()` / `renderAvif()` / `renderSvg()` cover the common case:
-declare a chart, get a file or bytes back. Raster encoders go through
-libgd; SVG is emitted directly as vector markup, so the same chart
-can be served as a sharp `<svg>` for dashboards or a PNG for emails
-without rebuilding the chart object. `draw($canvas)` is the other
-path. Hand fastchart a `\GdImage` you own and it returns the same
-canvas, so you can composite several charts onto one image, stamp
-arbitrary [ext/gd](https://www.php.net/manual/en/book.image.php)
-draw calls over the result, or drop the rendered chart into a larger
-image pipeline (PDF page, sprite sheet, dashboard tile).
+SVG is the canonical render format. PNG / JPG / WebP outputs flatten
+text to glyph paths, run plutovg over the resulting SVG, and encode
+the RGBA buffer with libpng / libjpeg-turbo / libwebp. The same chart
+object serves a sharp `<svg>` for dashboards or a PNG for emails
+without rebuilding state. `renderToFile()` picks the encoder from the
+extension; `renderPng()` / `renderJpeg()` / `renderWebp()` /
+`renderSvg()` return bytes in-process.
 
 ![fastchart: 19 chart types in one PHP extension](images/fastchart-hero.jpg)
 
 ## Status
 
-Working. 19 chart types plus the 2-class Symbol family, 128 phpt
-tests, raster and SVG output for every type. The OO surface is stable
-for the v0.x line. See [`CHANGELOG.md`](CHANGELOG.md) for what's
-shipped.
+v1.0: rebuilt around plutovg, libgd dropped as a runtime dependency,
+`draw($canvas)` replaced by SVG + raster shortcuts. 19 chart types,
+2-class Symbol family, 84 phpt tests passing, raster and SVG output
+for every type. See [`CHANGELOG.md`](CHANGELOG.md) for the full
+breaking-change list.
 
 ## Install
 
@@ -60,16 +57,13 @@ php -d extension=./modules/fastchart.so \
 ## Requirements
 
 - PHP 8.3 or later (NTS or ZTS).
-- `ext/gd` enabled. fastchart pulls the underlying `gdImagePtr` out
-  of caller-supplied `\GdImage` zvals via the one PHPAPI symbol ext/gd
-  exports.
-- libgd development headers at build time (`libgd-dev` on Debian /
-  Ubuntu, `gd-devel` on RHEL / Fedora).
-- FreeType development headers at build time (`libfreetype-dev` on
-  Debian / Ubuntu, `freetype-devel` on RHEL / Fedora). FreeType has
-  always been a runtime dependency via libgd's TrueType text path;
-  the headers are now needed at build time so fastchart can resolve
-  TTF family names for SVG `<text>` emission.
+- libpng, libjpeg-turbo, libwebp, FreeType development headers
+  (`libpng-dev libjpeg-turbo-dev libwebp-dev libfreetype-dev` on
+  Debian / Ubuntu; `libpng-devel libjpeg-turbo-devel libwebp-devel
+  freetype-devel` on RHEL / Fedora). config.m4 probes all four via
+  pkg-config.
+- plutovg + plutosvg are vendored under `vendor/`; no separate install
+  required.
 
 ## Quick start
 
@@ -84,8 +78,9 @@ encoder from the file extension:
     ->renderToFile('/tmp/dau.png');
 ```
 
-`renderPng()`, `renderJpeg()`, `renderWebp()`, and `renderAvif()` return
-the encoded bytes if you need them in memory.
+`renderPng()`, `renderJpeg()`, and `renderWebp()` return the encoded
+bytes if you need them in memory. `setJpegQuality(int)` tunes the
+JPEG encoder (1..100, default 88).
 
 For vector output — dashboards, print, anywhere infinite-zoom matters
 — call `renderSvg()` on the same chart object:
@@ -104,30 +99,20 @@ $fragment = $chart->drawSvgFragment();   // <g class="fastchart">...</g>
 ```
 
 Construction is identical for every output format; only the final
-render call differs. SVG uses native `<text>` with the font family
-resolved through FreeType, so labels stay selectable and accessible.
-The viewport matches `setSize()` and is DPI-invariant — `setDpi()`
-still scales the raster canvas but does not multiply the SVG output.
-
-For pixel-level control or compositing several charts on one image,
-hand fastchart a `\GdImage` you own. `draw()` returns the same canvas
-back so call chains keep working:
+render call differs. By default, SVG text is flattened to glyph
+outline paths (`SVG_TEXT_PATHS` mode) — the resulting SVG is fully
+self-contained and renders identically in any viewer or rasterizer.
+For smaller files with selectable text, switch to native `<text>`
+mode:
 
 ```php
-$canvas = imagecreatetruecolor(1200, 600);
-
-(new FastChart\StockChart())
-    ->setSize(1200, 600)
-    ->setTitle('AAPL last 90 days')
-    ->setTheme(FastChart\Chart::THEME_DARK)
-    ->setOhlcv($ohlcvRows)              // [[ts, o, h, l, c, v], …]
-    ->setMovingAverages([20, 50, 200])
-    ->setVolumePane(true)
-    ->setCandleStyle(FastChart\Chart::STYLE_HOLLOW)
-    ->draw($canvas);
-
-imagepng($canvas, '/tmp/aapl.png');
+$chart->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
+$svg = $chart->renderSvg();  // ~30% smaller; needs consumer text support
 ```
+
+Raster outputs (PNG/JPG/WebP) always use the PATHS mode internally —
+plutovg has no text support of its own, so glyph flattening is what
+makes labels appear in the rasterized output.
 
 ## 📊 Performance
 
@@ -254,21 +239,18 @@ All under the `FastChart\` namespace:
 - `Heatmap`: 2D grid with linear color-ramp interpolation.
 
 Every setter returns `static`, so a single fluent expression configures
-and emits a chart. `draw($canvas)` returns the same `\GdImage` for the
-same reason.
+and emits a chart.
 
 The Symbol family lives parallel to `Chart` (no shared base — axes /
 palettes / plot rect have no meaning for a barcode):
 
 - `Symbol`: abstract base for all 1D + 2D codes. Carries shared
   setters: `setSize()`, `setData()`, `setQuietZone()`, `setForeground()`,
-  `setBackground()`, `setTransparentBackground()`, `setDpi()`, plus
-  the same `renderPng()` / `renderJpeg()` / `renderWebp()` /
-  `renderGif()` / `renderAvif()` / `renderSvg()` / `drawSvgFragment()` /
-  `renderToFile()` helpers as `Chart`.
-  No `draw(\GdImage)` entry — symbol renders are produced fresh each
-  call; reload via `imagecreatefromstring()` to composite onto an
-  existing canvas.
+  `setBackground()`, `setTransparentBackground()`, `setDpi()`,
+  `setSvgTextMode()`, `setJpegQuality()`, plus the same `renderPng()`
+  / `renderJpeg()` / `renderWebp()` / `renderSvg()` /
+  `drawSvgFragment()` / `renderToFile()` helpers as `Chart`. Reload
+  via `imagecreatefromstring()` to composite onto an existing canvas.
 - `Barcode`: abstract 1D linear-barcode base.
 - `Code128` (extends `Barcode`): ISO/IEC 15417, alphanumeric, three
   subsets (A: control + uppercase, B: full ASCII printable, C: digit

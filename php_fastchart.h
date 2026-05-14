@@ -17,7 +17,7 @@
 #include "zend_exceptions.h"
 #include <gd.h>
 
-#define PHP_FASTCHART_VERSION "0.2.0"
+#define PHP_FASTCHART_VERSION "1.0.0"
 
 extern zend_module_entry fastchart_module_entry;
 #define phpext_fastchart_ptr &fastchart_module_entry

@@ -5,17 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-05-14
+
+This release rebuilds the rendering pipeline around an SVG-canonical
+architecture. SVG is now the source of truth; every raster output
+(PNG / JPG / WebP) is produced by flattening text to glyph paths,
+rasterizing through plutovg, and encoding with libpng / libjpeg-turbo
+/ libwebp. libgd is no longer required at runtime.
+
+### Breaking
+
+- **`draw(\GdImage $canvas)` removed** from every chart class. v1.0
+  owns its pixel buffer end-to-end. Callers that previously composited
+  multiple charts onto a shared canvas should now stitch via
+  `drawSvgFragment()` into one SVG document, or call `renderPng()` and
+  composite the decoded bytes in userland.
+- **`renderGif()` and `renderAvif()` removed** from `Chart` and
+  `Symbol`. Both raise `\Error` if called. Use `renderPng()`,
+  `renderJpeg()`, `renderWebp()`, or `renderSvg()` instead. The
+  `renderToFile('out.gif' | 'out.avif')` paths reject with the same
+  error.
+- **`ext/gd` is no longer a runtime requirement.** Loading fastchart
+  no longer triggers `\GdImage` class lookup at MINIT. ext/gd can be
+  absent and fastchart still functions — but if you still call
+  `imagecreatefromstring()` to consume `renderPng()` output, you
+  obviously still want it loaded.
+- **Default JPEG quality is now 88** (was 90). Matches the
+  evaluation-validated sweet spot for the new plutovg + libjpeg-turbo
+  encoder. Tunable via `setJpegQuality()` or per-call `renderJpeg(int)`.
+- **Pixel output is no longer byte-identical to 0.x.** plutovg's
+  rasterizer produces smoother anti-aliasing than libgd; byte-compare
+  baselines against 0.x output will fail. Visual quality is improved,
+  especially on diagonal lines and glyph edges.
 
 ### Added
-- **SVG output.** Every chart family and symbology now renders to
-  SVG alongside the existing raster formats. New `Chart::renderSvg()`
-  returns the full document (`<?xml ?><svg>...</svg>`);
-  `Chart::drawSvgFragment()` returns a `<g class="fastchart">...</g>`
+
+- **plutovg + plutosvg rasterizer**, vendored under `vendor/plutovg/`
+  and `vendor/plutosvg/`. Builds with `PLUTOVG_BUILD_STATIC` +
+  `PLUTOSVG_BUILD_STATIC` + `-fvisibility=hidden` so the library
+  symbols stay internal to fastchart.so. The rasterizer has no text
+  support of its own; fastchart flattens text at SVG-build time.
+- **`Chart::setSvgTextMode(int)`** with class constants
+  `SVG_TEXT_PATHS` (default; every `<text>` becomes a
+  `<g><path d="…"/></g>` via FreeType outline decomposition — self-
+  contained SVG, renders in any rasterizer) and `SVG_TEXT_NATIVE`
+  (raw `<text>` elements, smaller files, requires consumer text
+  support). Symbol gains the same setter.
+- **`Chart::setJpegQuality(int)`** (1..100, default 88). Affects
+  `renderJpeg()` and `renderToFile('*.jpg')`. Symbol mirrors.
+- **Raster encoders** wired directly: PNG via libpng with pHYs DPI
+  metadata; JPEG via libjpeg-turbo with `optimize_coding=TRUE`, 4:2:0
+  subsampling, and density_unit metadata; WebP via libwebp's
+  `WebPEncodeRGBA`. No libgd encoder path remains on the raster
+  output path.
+- **SVG output.** `Chart::renderSvg()` returns the full document;
+  `Chart::drawSvgFragment()` returns a `<g class="fastchart">…</g>`
   group with no outer envelope for stitching multiple charts into one
-  caller-managed SVG. `renderToFile()` routes `.svg` through the same
-  vector path. The Symbol family (`Code128`, `QrCode`) gains the
-  matching methods on its abstract base.
+  caller-managed SVG. `renderToFile()` routes `.svg` through the
+  vector path. Same surface on Symbol.
 - Internal render-target abstraction (`fastchart_target_t`) with two
   backends: GD-wrapping for the unchanged raster path and SVG-emitting
   via `smart_str`. The axis, text, and palette helpers operate on the
@@ -51,12 +98,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   data span before nice-tick rounding.
 
 ### Changed
-- Build now requires the FreeType development headers
-  (`libfreetype-dev` on Debian/Ubuntu, `freetype-devel` on RHEL).
-  FreeType has always been a runtime requirement via libgd's
-  TrueType text rendering; fastchart now calls `FT_New_Face`
-  directly to resolve a font file's family name for SVG `<text>`
-  emission. `config.m4` adds a `pkg-config freetype2` probe.
+
+- **Build dependencies.** Drop `libgd-dev`. Add `libpng-dev`,
+  `libjpeg-turbo-dev` (or `libjpeg-dev`), `libwebp-dev`, and
+  `libfreetype-dev`. config.m4 probes all four via pkg-config.
+
+### Deferred to v1.1
+
+- Strip dead `gdImage*` branches from chart family bodies. v1.0 still
+  links libgd because those branches reference gd symbols, but no
+  caller initializes a GD-backed target — the branches are
+  unreachable code.
+- Rewrite `fastchart_effects.c` to emit SVG `<linearGradient>` for
+  gradient fills and `<filter><feGaussianBlur/>` for drop shadows.
+  Currently both effects no-op on the SVG/raster path (the
+  `setGradientFill` and `setDropShadow` settings are accepted but
+  invisible). v1.1 ports them across.
+- Background-image and icon composite path (`setBackgroundImage`,
+  `addIconAt`) needs SVG `<image href="data:image/...;base64,...">`
+  emission. Currently the SVG path skips both.
+- Pixel-tolerance test sweep. Several tests scan for exact RGB
+  values; plutovg's smoother AA produces near-exact colors that miss
+  these checks. The features render correctly; the test assertions
+  need widening.
 
 ## [0.2.0] - 2026-05-09
 
