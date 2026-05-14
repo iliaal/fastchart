@@ -76,19 +76,38 @@ void fc_svg_fmt_color(smart_str *buf, uint32_t rgba)
     if (n > 0) smart_str_appendl(buf, tmp, (size_t)n);
 }
 
+/* XML 1.0 allows TAB (0x09), LF (0x0A), CR (0x0D), and 0x20+. Any
+ * other C0 control byte is invalid PCDATA and would make xmllint /
+ * any conforming parser reject the document. fc_svg_escape walks the
+ * byte string and:
+ *   - HTML-escapes the five XML metacharacters
+ *   - replaces XML-invalid control bytes with U+FFFD (UTF-8 EF BF BD)
+ *   - passes everything else through verbatim (caller is expected to
+ *     hand in valid UTF-8 — we don't try to validate multi-byte
+ *     sequences here, only single-byte control characters)
+ *
+ * Note that string setters reject embedded NUL (0x00) at parse time,
+ * so the loop won't normally see one. Defensive replacement is still
+ * cheap and matches the contract documented on the API surface. */
 void fc_svg_escape(smart_str *buf, const char *s, size_t len)
 {
     if (!s || len == 0) return;
     size_t run_start = 0;
     for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)s[i];
         const char *esc = NULL;
-        switch (s[i]) {
-            case '&':  esc = "&amp;";  break;
-            case '<':  esc = "&lt;";   break;
-            case '>':  esc = "&gt;";   break;
-            case '"':  esc = "&quot;"; break;
-            case '\'': esc = "&apos;"; break;
-            default: continue;
+        switch (c) {
+            case '&':  esc = "&amp;";   break;
+            case '<':  esc = "&lt;";    break;
+            case '>':  esc = "&gt;";    break;
+            case '"':  esc = "&quot;";  break;
+            case '\'': esc = "&apos;";  break;
+            case 0x09: case 0x0A: case 0x0D:
+                continue;
+            default:
+                if (c >= 0x20) continue;
+                esc = "\xEF\xBF\xBD";   /* U+FFFD REPLACEMENT CHARACTER */
+                break;
         }
         if (i > run_start) {
             smart_str_appendl(buf, s + run_start, i - run_start);
