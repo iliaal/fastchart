@@ -781,6 +781,18 @@ static void fc_svg_emit_gradient_def(smart_str *buf, int id,
     } else {
         x1 = "0%"; y1 = "0%"; x2 = "0%"; y2 = "100%";
     }
+    /* Treat the high byte as alpha if the caller composed a full
+     * 0xAARRGGBB; default to opaque when the caller passed a bare
+     * 24-bit RGB (the common case from Bar/Pie). Translucent
+     * gradients (AreaChart honoring setAreaAlpha) compose alpha
+     * explicitly into the high byte. */
+    uint32_t from_a = (from_rgb >> 24) & 0xFFu;
+    if (from_a == 0) from_a = 0xFF;
+    uint32_t to_a   = (to_rgb   >> 24) & 0xFFu;
+    if (to_a   == 0) to_a   = 0xFF;
+    uint32_t from = (from_a << 24) | (from_rgb & 0xFFFFFFu);
+    uint32_t to   = (to_a   << 24) | (to_rgb   & 0xFFFFFFu);
+
     FC_APPENDS(buf, "<defs><linearGradient id=\"fcg");
     smart_str_append_long(buf, id);
     FC_APPENDS(buf, "\" x1=\"");
@@ -792,9 +804,9 @@ static void fc_svg_emit_gradient_def(smart_str *buf, int id,
     FC_APPENDS(buf, "\" y2=\"");
     smart_str_appends(buf, y2);
     FC_APPENDS(buf, "\"><stop offset=\"0%\" stop-color=\"");
-    fc_svg_fmt_color(buf, (uint32_t)0xFF000000u | (from_rgb & 0xFFFFFFu));
+    fc_svg_fmt_color(buf, from);
     FC_APPENDS(buf, "\"/><stop offset=\"100%\" stop-color=\"");
-    fc_svg_fmt_color(buf, (uint32_t)0xFF000000u | (to_rgb & 0xFFFFFFu));
+    fc_svg_fmt_color(buf, to);
     FC_APPENDS(buf, "\"/></linearGradient></defs>");
 }
 

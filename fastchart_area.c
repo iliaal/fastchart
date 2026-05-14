@@ -209,10 +209,17 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             if (n_pts >= 3) {
                 fastchart_obj *base = (fastchart_obj *)self;
                 if (base->gradient_from >= 0 && base->gradient_to >= 0) {
+                    /* Compose setAreaAlpha (0..127 gd convention,
+                     * 127 = transparent) into the gradient stops so
+                     * non-stacked overlay layers stay translucent
+                     * the way solid-fill overlays do. */
+                    uint32_t a = (uint32_t)alpha_byte & 0xFFu;
+                    uint32_t grad_from =
+                        (a << 24) | ((uint32_t)base->gradient_from & 0xFFFFFFu);
+                    uint32_t grad_to =
+                        (a << 24) | ((uint32_t)base->gradient_to   & 0xFFFFFFu);
                     fastchart_target_gradient_polygon(t, poly, n_pts,
-                        (uint32_t)base->gradient_from,
-                        (uint32_t)base->gradient_to,
-                        (int)base->gradient_dir);
+                        grad_from, grad_to, (int)base->gradient_dir);
                 } else {
                     fastchart_target_polygon(t, poly, n_pts, alpha_handle, 1, 0);
                 }

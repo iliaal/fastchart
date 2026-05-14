@@ -37,12 +37,6 @@
 #include "plutovg.h"
 #include "plutosvg.h"
 
-/* Compose a "MAJ.MIN.MIC" string literal from three integer macros for
- * MINFO output. Two-step #/## dance so the inner macros expand before
- * stringification. */
-#define FC_VER_STR2(a, b, c) #a "." #b "." #c
-#define FC_XSTR_VER(a, b, c) FC_VER_STR2(a, b, c)
-
 /* gen_stub.php on PHP 8.4+ emits the 6-arg ZEND_RAW_FENTRY form (the
  * abstract draw() method on Chart). PHP 8.3's macro takes 4 args, and
  * ZEND_ME there expands into the 4-arg form. Redefine variadically so
@@ -6550,14 +6544,10 @@ PHP_MINFO_FUNCTION(fastchart)
         fastchart_have_libwebp()
             ? fastchart_libwebp_version() : "(not compiled in)");
 
-    /* plutovg + plutosvg are vendored; the version macros are
-     * compile-time. */
-    php_info_print_table_row(2, "plutovg",
-        FC_XSTR_VER(PLUTOVG_VERSION_MAJOR, PLUTOVG_VERSION_MINOR,
-                    PLUTOVG_VERSION_MICRO));
-    php_info_print_table_row(2, "plutosvg",
-        FC_XSTR_VER(PLUTOSVG_VERSION_MAJOR, PLUTOSVG_VERSION_MINOR,
-                    PLUTOSVG_VERSION_MICRO));
+    /* plutovg + plutosvg are vendored; their headers export
+     * VERSION_STRING macros directly. */
+    php_info_print_table_row(2, "plutovg",  PLUTOVG_VERSION_STRING);
+    php_info_print_table_row(2, "plutosvg", PLUTOSVG_VERSION_STRING);
 
     php_info_print_table_row(2, "Default font",
         fastchart_default_font_path
