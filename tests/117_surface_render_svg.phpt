@@ -19,6 +19,7 @@ $c->setGrid($grid)
   ->setColorRamp(0x0000FF, 0xFF0000)
   ->setTitle('Surface SVG');
 
+$c->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $svg = $c->renderSvg();
 
 var_dump(is_string($svg));

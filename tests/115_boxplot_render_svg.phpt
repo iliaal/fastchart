@@ -17,6 +17,7 @@ $c->setBoxes([
   ->setCategoryLabels(['A', 'B', 'C'])
   ->setTitle("BoxPlot SVG");
 
+$c->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $svg = $c->renderSvg();
 
 var_dump(is_string($svg));

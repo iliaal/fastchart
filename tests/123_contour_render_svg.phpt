@@ -25,6 +25,7 @@ $c->setGrid($grid)
   ->setColorRamp(0x2E5CB8, 0xE34A6F)
   ->setTitle('Contour SVG');
 
+$c->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $svg = $c->renderSvg();
 
 var_dump(is_string($svg));

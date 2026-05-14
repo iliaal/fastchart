@@ -200,6 +200,11 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
      * hinting via gdImageStringFTEx. setDpi() overrides. */
     b->dpi = 96;
 
+    /* SVG defaults: glyph-to-path on (self-contained, the safer
+     * default), JPEG quality 88 (the eval-validated sweet spot). */
+    b->svg_text_mode = FASTCHART_SVG_TEXT_PATHS;
+    b->jpeg_quality = 88;
+
     b->font_path = fastchart_default_font_path
         ? zend_string_copy(fastchart_default_font_path) : NULL;
 
@@ -3109,6 +3114,37 @@ ZEND_METHOD(FastChart_Chart, setDpi)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+ZEND_METHOD(FastChart_Chart, setSvgTextMode)
+{
+    zend_long mode;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(mode)
+    ZEND_PARSE_PARAMETERS_END();
+    if (mode != FASTCHART_SVG_TEXT_NATIVE && mode != FASTCHART_SVG_TEXT_PATHS) {
+        zend_value_error("FastChart\\Chart::setSvgTextMode() expects "
+                         "Chart::SVG_TEXT_PATHS or Chart::SVG_TEXT_NATIVE");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->svg_text_mode = mode;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Chart, setJpegQuality)
+{
+    zend_long q;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(q)
+    ZEND_PARSE_PARAMETERS_END();
+    if (q < 1 || q > 100) {
+        zend_value_error("FastChart\\Chart::setJpegQuality() must be in [1, 100]");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->jpeg_quality = q;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 /* Emit a HTML <map> for the scatter chart's clickable points. Reads
  * the typed image_map_areas array populated by the renderer; chart
  * must have been draw()'d at least once for any output. */
@@ -4290,7 +4326,8 @@ static void fastchart_render_to_svg(INTERNAL_FUNCTION_PARAMETERS, int fragment_o
     fastchart_target_t t;
     fastchart_target_from_svg(&t, &buf,
                                (int)self->width, (int)self->height,
-                               (int)self->dpi);
+                               (int)self->dpi,
+                               (int)self->svg_text_mode);
 
     if (dispatch_svg_render(self, Z_OBJCE_P(ZEND_THIS), &t) != 0 || EG(exception)) {
         smart_str_free(&buf);
@@ -4392,7 +4429,8 @@ static void fastchart_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS, zend_stri
     fastchart_target_t t;
     fastchart_target_from_svg(&t, &buf,
                                (int)self->width, (int)self->height,
-                               (int)self->dpi);
+                               (int)self->dpi,
+                               (int)self->svg_text_mode);
 
     if (dispatch_svg_render(self, Z_OBJCE_P(ZEND_THIS), &t) != 0 || EG(exception)) {
         smart_str_free(&buf);

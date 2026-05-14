@@ -61,6 +61,15 @@
 #define FASTCHART_TARGET_ALIGN_CENTER  1
 #define FASTCHART_TARGET_ALIGN_RIGHT   2
 
+/* SVG text emission mode. NATIVE writes raw <text> elements (compact;
+ * requires consumer's SVG renderer to support text). PATHS flattens
+ * each glyph to a <g><path/></g> via FT_Outline_Decompose
+ * (self-contained, renders in any SVG rasterizer including plutovg).
+ * The Chart and Symbol PHP classes expose these as SVG_TEXT_NATIVE /
+ * SVG_TEXT_PATHS class constants. */
+#define FASTCHART_SVG_TEXT_NATIVE  0
+#define FASTCHART_SVG_TEXT_PATHS   1
+
 typedef struct {
     /* Cache hit on font_path equality (pointer-equality first, then
      * strcmp for safety since callers may pass owned copies). Holds
@@ -89,6 +98,7 @@ typedef struct fastchart_target {
             int height;           /* logical viewport height */
             int dpi;
             int next_clip_id;     /* monotonic for unique <clipPath id> */
+            int text_mode;        /* FASTCHART_SVG_TEXT_NATIVE | _PATHS */
         } svg;
     } u;
 
@@ -119,9 +129,12 @@ void fastchart_target_from_gd(fastchart_target_t *t, gdImagePtr im, int dpi);
 /* Initialise as an SVG-backed target writing into `buf`. width/height
  * are the logical viewport dimensions used for both the SVG width/
  * height attributes and the viewBox. dpi influences text layout but
- * does not scale the SVG viewport. */
+ * does not scale the SVG viewport. text_mode is one of
+ * FASTCHART_SVG_TEXT_NATIVE / FASTCHART_SVG_TEXT_PATHS — see the
+ * macro doc above. */
 void fastchart_target_from_svg(fastchart_target_t *t, smart_str *buf,
-                                int width, int height, int dpi);
+                                int width, int height, int dpi,
+                                int text_mode);
 
 /* Allocate a color handle for (r,g,b,a). 0..255 each; a=255 is opaque.
  * Returns handle index, or -1 if the per-target color table is full

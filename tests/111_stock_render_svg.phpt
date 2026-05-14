@@ -25,6 +25,7 @@ $c->setOhlcv($rows)
   ->addMovingAverage(5, FastChart\StockChart::MA_SMA)
   ->setVolumePane(true);
 
+$c->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $svg = $c->renderSvg();
 
 // Basic shape.

@@ -179,6 +179,17 @@ extern zend_class_entry *fastchart_gd_image_ce;
     bool font_cache_valid; \
     int shadow_color_handle; \
     bool shadow_color_valid; \
+    /* SVG text-rendering mode: 0 = NATIVE (raw <text> elements, smaller \
+     * files, requires consumer SVG renderer with text support); 1 = \
+     * PATHS (every <text> flattened to <g><path/></g> via FreeType \
+     * outline decomposition, self-contained but ~30%+ larger). Default \
+     * is PATHS because the internal raster path (plutovg) cannot render \
+     * <text> at all — Phase 4's renderPng/Jpeg/Webp force PATHS \
+     * regardless of this setting. */ \
+    zend_long svg_text_mode; \
+    /* JPEG encode quality 1..100, default 88. Affects renderJpeg() and \
+     * renderToFile('*.jpg'). */ \
+    zend_long jpeg_quality; \
     zval config;
 
 /* Base view type. fastchart_obj* is what base setters and shared
@@ -949,7 +960,13 @@ int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self,
     zend_long fg_rgb;           /* 0..0xFFFFFF; default 0x000000 */ \
     zend_long bg_rgb;           /* 0..0xFFFFFF; default 0xFFFFFF */ \
     bool transparent_bg;        /* honoured by PNG/WebP/AVIF encoders */ \
-    zend_long quiet_zone;       /* per-class units; -1 = class default */
+    zend_long quiet_zone;       /* per-class units; -1 = class default */ \
+    /* SVG text-rendering mode: 0 = NATIVE, 1 = PATHS (default). Same \
+     * semantics as the Chart side. Code128's human-readable text and \
+     * any future Symbol-with-text variants honor this. */ \
+    zend_long svg_text_mode; \
+    /* JPEG encode quality 1..100, default 88. */ \
+    zend_long jpeg_quality;
 
 typedef struct _fastchart_symbol_obj { FASTCHART_SYMBOL_BASE_FIELDS } fastchart_symbol_obj;
 

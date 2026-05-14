@@ -15,6 +15,7 @@ $c->setSeries([
   ->setTitle("Quarterly sales")
   ->setCategoryLabels(["Q1", "Q2", "Q3"]);
 
+$c->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $svg = $c->renderSvg();
 
 // Basic shape.

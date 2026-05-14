@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 9ab4f37f599411e752355330c3c281192ff5cf5a */
+ * Stub hash: 75b82415d9b34cd025565bbf3f834674db202e4f */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -226,6 +226,12 @@ ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setDpi, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, dpi, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_Chart_setSvgTextMode arginfo_class_FastChart_Chart_setLineInterpolation
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setJpegQuality, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, quality, IS_LONG, 0)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_FastChart_Chart_draw, 0, 1, GdImage, 0)
@@ -547,6 +553,10 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_Symbol_setDpi arginfo_class_FastChart_Chart_setDpi
 
+#define arginfo_class_FastChart_Symbol_setSvgTextMode arginfo_class_FastChart_Chart_setLineInterpolation
+
+#define arginfo_class_FastChart_Symbol_setJpegQuality arginfo_class_FastChart_Chart_setJpegQuality
+
 #define arginfo_class_FastChart_Symbol_renderPng arginfo_class_FastChart_Chart_version
 
 #define arginfo_class_FastChart_Symbol_renderJpeg arginfo_class_FastChart_Chart_renderJpeg
@@ -635,6 +645,8 @@ ZEND_METHOD(FastChart_Chart, setDropShadow);
 ZEND_METHOD(FastChart_Chart, setShadowAlpha);
 ZEND_METHOD(FastChart_Chart, setDateAxisStride);
 ZEND_METHOD(FastChart_Chart, setDpi);
+ZEND_METHOD(FastChart_Chart, setSvgTextMode);
+ZEND_METHOD(FastChart_Chart, setJpegQuality);
 ZEND_METHOD(FastChart_Chart, renderPng);
 ZEND_METHOD(FastChart_Chart, renderJpeg);
 ZEND_METHOD(FastChart_Chart, renderWebp);
@@ -744,6 +756,8 @@ ZEND_METHOD(FastChart_Symbol, setForeground);
 ZEND_METHOD(FastChart_Symbol, setBackground);
 ZEND_METHOD(FastChart_Symbol, setTransparentBackground);
 ZEND_METHOD(FastChart_Symbol, setDpi);
+ZEND_METHOD(FastChart_Symbol, setSvgTextMode);
+ZEND_METHOD(FastChart_Symbol, setJpegQuality);
 ZEND_METHOD(FastChart_Symbol, renderPng);
 ZEND_METHOD(FastChart_Symbol, renderJpeg);
 ZEND_METHOD(FastChart_Symbol, renderWebp);
@@ -818,6 +832,8 @@ static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, setShadowAlpha, arginfo_class_FastChart_Chart_setShadowAlpha, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setDateAxisStride, arginfo_class_FastChart_Chart_setDateAxisStride, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setDpi, arginfo_class_FastChart_Chart_setDpi, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setSvgTextMode, arginfo_class_FastChart_Chart_setSvgTextMode, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setJpegQuality, arginfo_class_FastChart_Chart_setJpegQuality, ZEND_ACC_PUBLIC)
 	ZEND_RAW_FENTRY("draw", NULL, arginfo_class_FastChart_Chart_draw, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
 	ZEND_ME(FastChart_Chart, renderPng, arginfo_class_FastChart_Chart_renderPng, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, renderJpeg, arginfo_class_FastChart_Chart_renderJpeg, ZEND_ACC_PUBLIC)
@@ -1008,6 +1024,8 @@ static const zend_function_entry class_FastChart_Symbol_methods[] = {
 	ZEND_ME(FastChart_Symbol, setBackground, arginfo_class_FastChart_Symbol_setBackground, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, setTransparentBackground, arginfo_class_FastChart_Symbol_setTransparentBackground, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, setDpi, arginfo_class_FastChart_Symbol_setDpi, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Symbol, setSvgTextMode, arginfo_class_FastChart_Symbol_setSvgTextMode, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Symbol, setJpegQuality, arginfo_class_FastChart_Symbol_setJpegQuality, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, renderPng, arginfo_class_FastChart_Symbol_renderPng, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, renderJpeg, arginfo_class_FastChart_Symbol_renderJpeg, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, renderWebp, arginfo_class_FastChart_Symbol_renderWebp, ZEND_ACC_PUBLIC)
@@ -1362,6 +1380,18 @@ static zend_class_entry *register_class_FastChart_Chart(void)
 	zend_declare_typed_class_constant(class_entry, const_DATE_YEAR_name, &const_DATE_YEAR_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
 	zend_string_release(const_DATE_YEAR_name);
 
+	zval const_SVG_TEXT_NATIVE_value;
+	ZVAL_LONG(&const_SVG_TEXT_NATIVE_value, 0);
+	zend_string *const_SVG_TEXT_NATIVE_name = zend_string_init_interned("SVG_TEXT_NATIVE", sizeof("SVG_TEXT_NATIVE") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_SVG_TEXT_NATIVE_name, &const_SVG_TEXT_NATIVE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_SVG_TEXT_NATIVE_name);
+
+	zval const_SVG_TEXT_PATHS_value;
+	ZVAL_LONG(&const_SVG_TEXT_PATHS_value, 1);
+	zend_string *const_SVG_TEXT_PATHS_name = zend_string_init_interned("SVG_TEXT_PATHS", sizeof("SVG_TEXT_PATHS") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_SVG_TEXT_PATHS_name, &const_SVG_TEXT_PATHS_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_SVG_TEXT_PATHS_name);
+
 	return class_entry;
 }
 
@@ -1615,6 +1645,18 @@ static zend_class_entry *register_class_FastChart_Symbol(void)
 
 	INIT_NS_CLASS_ENTRY(ce, "FastChart", "Symbol", class_FastChart_Symbol_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, NULL, ZEND_ACC_ABSTRACT);
+
+	zval const_SVG_TEXT_NATIVE_value;
+	ZVAL_LONG(&const_SVG_TEXT_NATIVE_value, 0);
+	zend_string *const_SVG_TEXT_NATIVE_name = zend_string_init_interned("SVG_TEXT_NATIVE", sizeof("SVG_TEXT_NATIVE") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_SVG_TEXT_NATIVE_name, &const_SVG_TEXT_NATIVE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_SVG_TEXT_NATIVE_name);
+
+	zval const_SVG_TEXT_PATHS_value;
+	ZVAL_LONG(&const_SVG_TEXT_PATHS_value, 1);
+	zend_string *const_SVG_TEXT_PATHS_name = zend_string_init_interned("SVG_TEXT_PATHS", sizeof("SVG_TEXT_PATHS") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_SVG_TEXT_PATHS_name, &const_SVG_TEXT_PATHS_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_SVG_TEXT_PATHS_name);
 
 	return class_entry;
 }

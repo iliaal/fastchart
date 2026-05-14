@@ -12,6 +12,7 @@ $q = (new FastChart\QrCode())
     ->setSize(290, 290)
     ->setEcc(FastChart\QrCode::ECC_M);
 
+$q->setSvgTextMode(FastChart\Symbol::SVG_TEXT_NATIVE);
 $svg = $q->renderSvg();
 
 // Basic shape: non-empty, XML prolog + <svg> root.
@@ -66,6 +67,7 @@ try {
 $big = (new FastChart\QrCode())
     ->setData(str_repeat('ABC123 ', 14))
     ->setSize(400, 400);
+$big->setSvgTextMode(FastChart\Symbol::SVG_TEXT_NATIVE);
 $svgb = $big->renderSvg();
 var_dump(simplexml_load_string($svgb) instanceof SimpleXMLElement);
 // Larger QR symbols should have many more module rects.

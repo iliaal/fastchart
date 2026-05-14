@@ -83,6 +83,27 @@ abstract class Chart
     public const int DATE_YEAR    = 4;
 
     /**
+     * SVG text emission mode for setSvgTextMode().
+     *
+     * `SVG_TEXT_PATHS` (default) flattens every `<text>` element to a
+     * `<g><path d="..."/></g>` group via FreeType outline
+     * decomposition. The resulting SVG is self-contained — it renders
+     * correctly in any SVG rasterizer, including ones that don't
+     * support text (such as plutovg, which fastchart uses internally
+     * for PNG/JPG/WebP output). File size grows ~30%+ vs native text.
+     *
+     * `SVG_TEXT_NATIVE` emits raw `<text>` elements. Smaller files;
+     * requires the consumer's renderer to support SVG text and have
+     * the named font (or a sans-serif fallback) available.
+     *
+     * `renderPng()`, `renderJpeg()`, `renderWebp()`, and
+     * `renderToFile()` for raster formats always use PATHS internally
+     * regardless of this setting — they go through plutovg.
+     */
+    public const int SVG_TEXT_NATIVE = 0;
+    public const int SVG_TEXT_PATHS  = 1;
+
+    /**
      * Optionally pass canvas dimensions at construction so callers
      * can skip the `imagecreatetruecolor()` step entirely when they
      * use the renderXxx() shortcuts. Both `null` keeps the default
@@ -484,6 +505,24 @@ abstract class Chart
      * 300 (print). Range is `[24, 1200]`.
      */
     public function setDpi(int $dpi): static {}
+
+    /**
+     * Select the SVG text emission mode used by `renderSvg()`,
+     * `drawSvgFragment()`, and `renderToFile('*.svg')`. One of
+     * `self::SVG_TEXT_PATHS` (default — self-contained) or
+     * `self::SVG_TEXT_NATIVE` (compact, requires consumer text
+     * support). Raster outputs are unaffected (they always use
+     * PATHS internally).
+     */
+    public function setSvgTextMode(int $mode): static {}
+
+    /**
+     * Set the JPEG encode quality used by `renderJpeg()` and
+     * `renderToFile('*.jpg' | '*.jpeg')`. Range 1..100; default 88.
+     * Quality maps onto libjpeg-turbo's `jpeg_set_quality()` with
+     * `optimize_coding=TRUE` and 4:2:0 chroma subsampling.
+     */
+    public function setJpegQuality(int $quality): static {}
 
     abstract public function draw(\GdImage $canvas): \GdImage;
 
@@ -1214,6 +1253,14 @@ final class LinearMeter extends Chart
 abstract class Symbol
 {
     /**
+     * SVG text emission mode for setSvgTextMode(). Mirrors
+     * Chart::SVG_TEXT_NATIVE / Chart::SVG_TEXT_PATHS. PATHS is the
+     * default and matches the Chart-side semantics.
+     */
+    public const int SVG_TEXT_NATIVE = 0;
+    public const int SVG_TEXT_PATHS  = 1;
+
+    /**
      * Logical canvas size in pixels. Both arguments must be positive
      * and ≤ 65535. Setting size 0 is rejected; if you want the
      * class default, simply do not call `setSize()`. Physical
@@ -1258,6 +1305,17 @@ abstract class Symbol
      * same, physical canvas grows for crisper rendering.
      */
     public function setDpi(int $dpi): static {}
+
+    /**
+     * SVG text-emission mode. See Chart::setSvgTextMode().
+     */
+    public function setSvgTextMode(int $mode): static {}
+
+    /**
+     * JPEG encode quality 1..100; default 88. See
+     * Chart::setJpegQuality().
+     */
+    public function setJpegQuality(int $quality): static {}
 
     public function renderPng(): string {}
     public function renderJpeg(int $quality = 90): string {}
