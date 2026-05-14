@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SVG output.** Every chart family and symbology now renders to
+  SVG alongside the existing raster formats. New `Chart::renderSvg()`
+  returns the full document (`<?xml ?><svg>...</svg>`);
+  `Chart::drawSvgFragment()` returns a `<g class="fastchart">...</g>`
+  group with no outer envelope for stitching multiple charts into one
+  caller-managed SVG. `renderToFile()` routes `.svg` through the same
+  vector path. The Symbol family (`Code128`, `QrCode`) gains the
+  matching methods on its abstract base.
+- Internal render-target abstraction (`fastchart_target_t`) with two
+  backends: GD-wrapping for the unchanged raster path and SVG-emitting
+  via `smart_str`. The axis, text, and palette helpers operate on the
+  abstraction; chart families thread the target down to the primitive
+  layer. SVG primitives use native `<text>` (no path-embedded glyphs)
+  with the font family resolved via FreeType. SVG output is DPI-
+  invariant — vector strokes scale infinitely, so `setDpi()` no longer
+  inflates the SVG viewport while the raster path retains DPI scaling.
+
+### Fixed
+- Layout reservation for 45° rotated X-axis labels accounted for only
+  the right-end anchor's projection (`width * 0.707`), not the up-left
+  extent of the rest of the rotated text. Long labels like "Jan 2025"
+  ran off the bottom of the canvas in raster output too. Reservation
+  now uses the full `width * 1.414` projection.
+- Layout reservation for the rightmost X-axis tick label measured a
+  fixed `"999999"` numeric probe, even when the caller set
+  `setCategoryLabels()` with longer strings. The X-label measurement
+  path now walks the supplied category labels and uses the widest,
+  mirroring the existing Y-axis logic.
+- Right margin without a secondary Y axis was bare `MARGIN_RIGHT_PAD`
+  next to a full Y-axis label reservation on the left, which read as
+  visibly off-center. Right margin now anchors at `left / 2` when both
+  Y and X axes are present.
+- `StockChart`: first and last candles straddled the Y-axis line and
+  right edge because the time domain mapped `t_min` to exactly
+  `plot.x0`. The time domain is now padded by half a bar-step on each
+  end, matching the half-cell offset categorical X axes already use.
+- `BubbleChart`: range computation didn't reserve headroom for the
+  bubble radius, so the largest bubble could clip past `plot.y0` /
+  `plot.x1` on data sets where the data extremum sat near a niced
+  tick boundary. `xmin`/`xmax`/`ymin`/`ymax` now pad by 10% of the
+  data span before nice-tick rounding.
+
+### Changed
+- Build now requires the FreeType development headers
+  (`libfreetype-dev` on Debian/Ubuntu, `freetype-devel` on RHEL).
+  FreeType has always been a runtime requirement via libgd's
+  TrueType text rendering; fastchart now calls `FT_New_Face`
+  directly to resolve a font file's family name for SVG `<text>`
+  emission. `config.m4` adds a `pkg-config freetype2` probe.
+
 ## [0.2.0] - 2026-05-09
 
 ### Added

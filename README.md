@@ -13,21 +13,25 @@ funnel, waterfall, heatmap, linear meter, plus a deep `StockChart`
 panes).
 
 Two render paths. `renderToFile()` / `renderPng()` / `renderJpeg()` /
-`renderWebp()` / `renderAvif()` cover the common case: declare a
-chart, get a file or bytes back. `draw($canvas)` is the other path.
-Hand fastchart a `\GdImage` you own and it returns the same canvas,
-so you can composite several charts onto one image, stamp arbitrary
-[ext/gd](https://www.php.net/manual/en/book.image.php) draw calls
-over the result, or drop the rendered chart into a larger image
-pipeline (PDF page, sprite sheet, dashboard tile).
+`renderWebp()` / `renderAvif()` / `renderSvg()` cover the common case:
+declare a chart, get a file or bytes back. Raster encoders go through
+libgd; SVG is emitted directly as vector markup, so the same chart
+can be served as a sharp `<svg>` for dashboards or a PNG for emails
+without rebuilding the chart object. `draw($canvas)` is the other
+path. Hand fastchart a `\GdImage` you own and it returns the same
+canvas, so you can composite several charts onto one image, stamp
+arbitrary [ext/gd](https://www.php.net/manual/en/book.image.php)
+draw calls over the result, or drop the rendered chart into a larger
+image pipeline (PDF page, sprite sheet, dashboard tile).
 
 ![fastchart: 19 chart types in one PHP extension](images/fastchart-hero.jpg)
 
 ## Status
 
-Working. 19 chart types, 105 public methods, 97 phpt tests. The OO
-surface is stable for the v0.1 line. See
-[`CHANGELOG.md`](CHANGELOG.md) for what's shipped.
+Working. 19 chart types plus the 2-class Symbol family, 128 phpt
+tests, raster and SVG output for every type. The OO surface is stable
+for the v0.x line. See [`CHANGELOG.md`](CHANGELOG.md) for what's
+shipped.
 
 ## Install
 
@@ -61,8 +65,11 @@ php -d extension=./modules/fastchart.so \
   exports.
 - libgd development headers at build time (`libgd-dev` on Debian /
   Ubuntu, `gd-devel` on RHEL / Fedora).
-- FreeType (already a libgd dependency on every Linux distribution),
-  used for TrueType / OpenType label rendering.
+- FreeType development headers at build time (`libfreetype-dev` on
+  Debian / Ubuntu, `freetype-devel` on RHEL / Fedora). FreeType has
+  always been a runtime dependency via libgd's TrueType text path;
+  the headers are now needed at build time so fastchart can resolve
+  TTF family names for SVG `<text>` emission.
 
 ## Quick start
 
@@ -79,6 +86,28 @@ encoder from the file extension:
 
 `renderPng()`, `renderJpeg()`, `renderWebp()`, and `renderAvif()` return
 the encoded bytes if you need them in memory.
+
+For vector output — dashboards, print, anywhere infinite-zoom matters
+— call `renderSvg()` on the same chart object:
+
+```php
+$chart = (new FastChart\LineChart(640, 320))
+    ->setTitle('Daily active users')
+    ->setSeries([['data' => [820, 940, 870, 1020, 1180, 1250, 1340]]])
+    ->setCategoryLabels(['Mon','Tue','Wed','Thu','Fri','Sat','Sun']);
+
+$svg = $chart->renderSvg();              // full <?xml ?><svg>...</svg>
+$chart->renderToFile('/tmp/dau.svg');    // same, written to disk
+
+// Stitch several charts into one outer SVG document:
+$fragment = $chart->drawSvgFragment();   // <g class="fastchart">...</g>
+```
+
+Construction is identical for every output format; only the final
+render call differs. SVG uses native `<text>` with the font family
+resolved through FreeType, so labels stay selectable and accessible.
+The viewport matches `setSize()` and is DPI-invariant — `setDpi()`
+still scales the raster canvas but does not multiply the SVG output.
 
 For pixel-level control or compositing several charts on one image,
 hand fastchart a `\GdImage` you own. `draw()` returns the same canvas
@@ -235,7 +264,8 @@ palettes / plot rect have no meaning for a barcode):
   setters: `setSize()`, `setData()`, `setQuietZone()`, `setForeground()`,
   `setBackground()`, `setTransparentBackground()`, `setDpi()`, plus
   the same `renderPng()` / `renderJpeg()` / `renderWebp()` /
-  `renderGif()` / `renderAvif()` / `renderToFile()` helpers as `Chart`.
+  `renderGif()` / `renderAvif()` / `renderSvg()` / `drawSvgFragment()` /
+  `renderToFile()` helpers as `Chart`.
   No `draw(\GdImage)` entry — symbol renders are produced fresh each
   call; reload via `imagecreatefromstring()` to composite onto an
   existing canvas.
