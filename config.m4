@@ -102,7 +102,16 @@ if test "$PHP_FASTCHART" != "no"; then
   dnl -Wall -Wextra are on by default so wrapper regressions get caught
   dnl in every local build; --enable-fastchart-dev upgrades warnings to
   dnl -Werror plus extra strictness.
-  FASTCHART_CFLAGS="-Wall -Wextra -Wno-unused-parameter"
+  dnl
+  dnl -fvisibility=hidden keeps the vendored qrcodegen_* symbols (and
+  dnl every internal fastchart_* helper) out of the dynamic symbol
+  dnl table. Only get_module stays exported, marked default by
+  dnl ZEND_DLEXPORT. Without this, another extension loading a
+  dnl different qrcodegen build could collide with ours via the
+  dnl process-wide symbol table. Verify with:
+  dnl   nm -D --defined-only modules/fastchart.so | grep -v get_module
+  dnl Expected: only standard-library symbols (memcpy, etc.) remain.
+  FASTCHART_CFLAGS="-Wall -Wextra -Wno-unused-parameter -fvisibility=hidden"
 
   if test "$PHP_FASTCHART_DEV" = "yes"; then
     FASTCHART_CFLAGS="$FASTCHART_CFLAGS -Werror -Wstrict-prototypes"

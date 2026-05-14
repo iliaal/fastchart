@@ -966,18 +966,24 @@ static gdImagePtr fastchart_load_source_image(const char *path)
     if (sb.st_size <= 0) return NULL;
     if (sb.st_size > FASTCHART_SOURCE_IMAGE_MAX_BYTES) return NULL;
 
-    /* Header preflight: when the format is recognisable from the
-     * first ~1 KB, reject before libgd allocates the full bitmap.
-     * Unrecognised formats fall through to the defense-in-depth
-     * post-decode check below. */
+    /* Header preflight: enforce the dim/pixel caps BEFORE handing
+     * the file to libgd, so a small compressed input with huge
+     * decoded dimensions can't force libgd to allocate the full
+     * bitmap before fastchart rejects it. We only decode formats
+     * we can sniff. Supported sniffers: PNG, JPEG, GIF, WebP —
+     * the four formats fastchart itself emits. Unrecognised
+     * formats (AVIF, BMP, TIFF, TGA, …) are refused at the gate
+     * even when the byte-size cap allows them through; add a
+     * sniffer in fastchart_sniff_image_dims() to re-enable. */
     int w = 0, h = 0;
-    if (fastchart_sniff_image_dims(path, &w, &h) == 0) {
-        if (w <= 0 || h <= 0 ||
-            w > FASTCHART_SOURCE_IMAGE_MAX_DIM ||
-            h > FASTCHART_SOURCE_IMAGE_MAX_DIM ||
-            (long long)w * (long long)h > FASTCHART_SOURCE_IMAGE_MAX_PIXELS) {
-            return NULL;
-        }
+    if (fastchart_sniff_image_dims(path, &w, &h) != 0) {
+        return NULL;
+    }
+    if (w <= 0 || h <= 0 ||
+        w > FASTCHART_SOURCE_IMAGE_MAX_DIM ||
+        h > FASTCHART_SOURCE_IMAGE_MAX_DIM ||
+        (long long)w * (long long)h > FASTCHART_SOURCE_IMAGE_MAX_PIXELS) {
+        return NULL;
     }
 
     /* gdImageCreateFromFile picks the right loader by signature
@@ -985,9 +991,10 @@ static gdImagePtr fastchart_load_source_image(const char *path)
     gdImagePtr im = gdImageCreateFromFile(path);
     if (!im) return NULL;
 
-    /* Post-decode check catches AVIF / TIFF / TGA paths that the
-     * preflight didn't recognise. The decoder did pay the cost,
-     * but at least we don't go on to render with a giant source. */
+    /* Defense-in-depth post-decode check: if libgd's decoder
+     * disagreed with our sniffer about the dimensions (corrupt
+     * header, encoder bug, format quirk we didn't anticipate),
+     * still refuse to render with an oversized source. */
     int dw = gdImageSX(im), dh = gdImageSY(im);
     if (dw <= 0 || dh <= 0 ||
         dw > FASTCHART_SOURCE_IMAGE_MAX_DIM ||
