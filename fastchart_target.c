@@ -23,6 +23,7 @@
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -494,6 +495,23 @@ int fastchart_target_load_source_image(const char *path,
         if (EG(exception)) zend_clear_exception();
         return -1;
     }
+
+    /* Reject non-regular files (directories, FIFOs, sockets, char
+     * devices, /proc entries). The stream wrapper happily opens any
+     * readable inode; without this check a render fed
+     * /proc/self/maps would either trip the byte cap or return
+     * unbounded data before the MIME sniff rejects it. The stat
+     * call uses the stream's own backend (so wrappers without a real
+     * stat — http, php://memory — silently fall through and the
+     * MIME sniff is the only gate; that's intentional). */
+    php_stream_statbuf ssb;
+    if (php_stream_stat(stream, &ssb) == 0) {
+        if (!S_ISREG(ssb.sb.st_mode)) {
+            php_stream_close(stream);
+            return -1;
+        }
+    }
+
     zend_string *raw =
         php_stream_copy_to_mem(stream, FC_IMAGE_MAX_BYTES + 1, 0);
     php_stream_close(stream);
