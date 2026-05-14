@@ -26,7 +26,6 @@
 #include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
-#include "fastchart_effects.h"
 
 int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *t)
 {
@@ -103,9 +102,7 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
     int explode_count = self->explode_count;
 
     /* Resolve every slice's color once into a target color HANDLE.
-     * The GD path consults the gd-int via fastchart_target_color_to_gd
-     * inside fastchart_filled_wedge_aa; the SVG path emits the rgba
-     * directly from the handle. */
+     * The SVG path emits the rgba directly from the handle. */
     int *slice_colors = ecalloc((size_t)n_slices, sizeof(int));
     for (int i = 0; i < n_slices; i++) {
         if (slices[i].color_rgb >= 0) {
@@ -114,9 +111,6 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
             slice_colors[i] = pal.series[i % FASTCHART_PALETTE_SERIES_N];
         }
     }
-
-    bool gd = (t->kind == FASTCHART_TARGET_GD);
-    gdImagePtr im = gd ? t->u.gd.im : NULL;
 
     int edge_handle = self->edge_color >= 0
         ? fastchart_target_color_rgb(t, (int)self->edge_color)
@@ -142,50 +136,22 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
             }
         }
 
-        if (gd) {
-            /* GD path: keep libgd's drop-shadow + AA-edge wedge
-             * helpers for visual fidelity. The wedge fill + AA outline
-             * needs a gd-int color, so resolve the target handle. */
-            int gd_color = fastchart_target_color_to_gd(t, color);
-            fastchart_shadow_filled_arc(im, (fastchart_obj *)self,
-                                        slice_cx, slice_cy, diameter,
-                                        (int)s_deg, (int)e_deg);
-            fastchart_filled_wedge_aa(im, slice_cx, slice_cy, diameter,
-                                      (int)s_deg, (int)e_deg, gd_color);
-            int gd_edge = fastchart_target_color_to_gd(t, edge_handle);
-            gdImageSetAntiAliased(im, gd_edge);
-            gdImageArc(im, slice_cx, slice_cy, diameter, diameter,
-                       (int)s_deg, (int)e_deg, gdAntiAliased);
-            double rs = s_deg * M_PI / 180.0;
-            double re = e_deg * M_PI / 180.0;
-            gdImageLine(im, slice_cx, slice_cy,
-                        slice_cx + (int)((double)radius * cos(rs)),
-                        slice_cy + (int)((double)radius * sin(rs)),
-                        gdAntiAliased);
-            gdImageLine(im, slice_cx, slice_cy,
-                        slice_cx + (int)((double)radius * cos(re)),
-                        slice_cy + (int)((double)radius * sin(re)),
-                        gdAntiAliased);
-        } else {
-            /* SVG path: emit a filled wedge via the target arc
-             * primitive; outline with a thin stroke along the same
-             * sweep. Drop-shadow and AA-blend effects are GD-only
-             * for now. */
-            fastchart_target_arc(t, slice_cx, slice_cy, radius, radius,
-                                 s_deg, e_deg, color, 1, 0);
-            fastchart_target_arc(t, slice_cx, slice_cy, radius, radius,
-                                 s_deg, e_deg, edge_handle, 0, 1);
-            double rs = s_deg * M_PI / 180.0;
-            double re = e_deg * M_PI / 180.0;
-            fastchart_target_line(t, slice_cx, slice_cy,
-                slice_cx + (int)((double)radius * cos(rs)),
-                slice_cy + (int)((double)radius * sin(rs)),
-                edge_handle, 1, FASTCHART_DASH_SOLID);
-            fastchart_target_line(t, slice_cx, slice_cy,
-                slice_cx + (int)((double)radius * cos(re)),
-                slice_cy + (int)((double)radius * sin(re)),
-                edge_handle, 1, FASTCHART_DASH_SOLID);
-        }
+        /* Emit a filled wedge via the target arc primitive; outline
+         * with a thin stroke along the same sweep. */
+        fastchart_target_arc(t, slice_cx, slice_cy, radius, radius,
+                             s_deg, e_deg, color, 1, 0);
+        fastchart_target_arc(t, slice_cx, slice_cy, radius, radius,
+                             s_deg, e_deg, edge_handle, 0, 1);
+        double rs = s_deg * M_PI / 180.0;
+        double re = e_deg * M_PI / 180.0;
+        fastchart_target_line(t, slice_cx, slice_cy,
+            slice_cx + (int)((double)radius * cos(rs)),
+            slice_cy + (int)((double)radius * sin(rs)),
+            edge_handle, 1, FASTCHART_DASH_SOLID);
+        fastchart_target_line(t, slice_cx, slice_cy,
+            slice_cx + (int)((double)radius * cos(re)),
+            slice_cy + (int)((double)radius * sin(re)),
+            edge_handle, 1, FASTCHART_DASH_SOLID);
         start_deg += sweep;
     }
 
@@ -240,17 +206,8 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
                 int ly = cy + (int)(outside_r * sin_mid);
                 int rim_x = cx + (int)((diameter / 2.0) * cos_mid);
                 int rim_y = cy + (int)((diameter / 2.0) * sin_mid);
-                /* libgd has native AA for short diagonal leader lines;
-                 * keep it on the GD path. SVG strokes are AA'd by the
-                 * renderer so no special case is needed. */
-                if (gd) {
-                    gdImageSetAntiAliased(im,
-                        fastchart_target_color_to_gd(t, pal.axis));
-                    gdImageLine(im, rim_x, rim_y, lx, ly, gdAntiAliased);
-                } else {
-                    fastchart_target_line(t, rim_x, rim_y, lx, ly,
-                                          pal.axis, 1, FASTCHART_DASH_SOLID);
-                }
+                fastchart_target_line(t, rim_x, rim_y, lx, ly,
+                                      pal.axis, 1, FASTCHART_DASH_SOLID);
                 fastchart_align align = right_side
                     ? FASTCHART_ALIGN_LEFT : FASTCHART_ALIGN_RIGHT;
                 int anchor_x = lx + (right_side ? 4 : -4);
@@ -263,14 +220,8 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
                 /* Tiny leader line from rim to label anchor. */
                 int rim_x = cx + (int)((diameter / 2.0) * cos_mid);
                 int rim_y = cy + (int)((diameter / 2.0) * sin_mid);
-                if (gd) {
-                    gdImageSetAntiAliased(im,
-                        fastchart_target_color_to_gd(t, pal.axis));
-                    gdImageLine(im, rim_x, rim_y, lx, ly, gdAntiAliased);
-                } else {
-                    fastchart_target_line(t, rim_x, rim_y, lx, ly,
-                                          pal.axis, 1, FASTCHART_DASH_SOLID);
-                }
+                fastchart_target_line(t, rim_x, rim_y, lx, ly,
+                                      pal.axis, 1, FASTCHART_DASH_SOLID);
                 bool right_side = (cos_mid >= 0);
                 fastchart_align align = right_side
                     ? FASTCHART_ALIGN_LEFT : FASTCHART_ALIGN_RIGHT;
@@ -299,32 +250,3 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
     return 0;
 }
 
-/* GD-only shim. */
-int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im)
-{
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
-    return fastchart_pie_render_to_target(self, &t);
-}
-
-ZEND_METHOD(FastChart_PieChart, draw)
-{
-    zval *canvas_zv;
-
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
-    ZEND_PARSE_PARAMETERS_END();
-
-    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\PieChart::draw() received a closed or invalid GdImage");
-        RETURN_THROWS();
-    }
-    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
-
-    fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
-    if (fastchart_pie_render_to_image(self, im) != 0) {
-        RETURN_THROWS();
-    }
-    RETURN_ZVAL(canvas_zv, 1, 0);
-}

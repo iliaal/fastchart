@@ -12,7 +12,7 @@
   QR Code (ISO/IEC 18004) implementation. Thin wrapper around the
   vendored nayuki qrcodegen encoder (vendor/qrcodegen/), which
   produces a boolean module grid; this file maps that grid to a
-  filled-rectangle render on the supplied gdImagePtr.
+  filled-rectangle render via the SVG target.
 
   ECC levels (FastChart\QrCode::ECC_L / M / Q / H) map 1:1 onto
   qrcodegen_Ecc_LOW / MEDIUM / QUARTILE / HIGH so the cast is direct.
@@ -177,11 +177,3 @@ int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,
     return 0;
 }
 
-/* Backwards-compat shim. Mirrors the Code128 shim — wraps a gdImagePtr
- * into a GD-backed target and routes through the canonical render. */
-int fastchart_qrcode_render_to_image(fastchart_qrcode_obj *self, gdImagePtr im)
-{
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, (int)self->dpi);
-    return fastchart_qrcode_render_to_target(self, &t);
-}

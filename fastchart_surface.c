@@ -82,8 +82,8 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
     /* Draw grid cells. A 256-entry color LUT keyed on the
      * normalized cell value is allocated once instead of per-cell.
      * Two contrasting label-text colors (dark / light) are also
-     * pre-allocated here so the value-label path stops calling
-     * gdImageColorAllocate per cell. */
+     * pre-allocated here so the value-label path stops allocating
+     * a target color per cell. */
     int low = (int)self->color_ramp_low;
     int high = (int)self->color_ramp_high;
     double span = vmax - vmin;
@@ -101,9 +101,6 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
     int edge_handle = self->edge_color >= 0
         ? fastchart_target_color_rgb(t, (int)self->edge_color) : -1;
 
-    bool gd = (t->kind == FASTCHART_TARGET_GD);
-    gdImagePtr im = gd ? t->u.gd.im : NULL;
-
     for (int y_idx = 0; y_idx < rows; y_idx++) {
         for (int x_idx = 0; x_idx < cols; x_idx++) {
             double v = grid[y_idx * cols + x_idx];
@@ -117,9 +114,6 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
             int y0 = top + y_idx * cell_h;
             int x1 = x0 + cell_w - 1;
             int y1 = y0 + cell_h - 1;
-            if (gd) {
-                fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
-            }
             fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
             if (edge_handle >= 0) {
                 fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1,
@@ -164,32 +158,4 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
-}
-
-/* GD-only shim. */
-int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im)
-{
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
-    return fastchart_surface_render_to_target(self, &t);
-}
-
-ZEND_METHOD(FastChart_SurfaceChart, draw)
-{
-    zval *canvas_zv;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
-    ZEND_PARSE_PARAMETERS_END();
-
-    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\SurfaceChart::draw() received a closed or invalid GdImage");
-        RETURN_THROWS();
-    }
-    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
-    fastchart_surface_obj *self = Z_FASTCHART_SURFACE_OBJ_P(ZEND_THIS);
-    if (fastchart_surface_render_to_image(self, im) != 0) {
-        RETURN_THROWS();
-    }
-    RETURN_ZVAL(canvas_zv, 1, 0);
 }

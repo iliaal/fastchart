@@ -330,9 +330,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
         v_neutral   = fastchart_target_color_rgb(t, 0x9D9D9D);
     }
 
-    bool gd = (t->kind == FASTCHART_TARGET_GD);
-    gdImagePtr im = gd ? t->u.gd.im : NULL;
-
     for (int i = 0; i < n; i++) {
         int x = fastchart_x_time_to_pixel(&price_pane,
                                           candles[i].ts, t_min, t_max);
@@ -466,19 +463,12 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
     if (vol_scale) efree(vol_scale);
 
     /* MA overlays. Each period gets a series color and a 2px line.
-     * GD path keeps native AA via gdImageSetAntiAliased + gdAntiAliased
-     * draws for the smooth-diagonal look. SVG path emits 2px target
-     * lines; the SVG renderer handles AA at the layer level. */
+     * The target backend handles AA at the layer level. */
     if (sma_count > 0) {
         for (int s = 0; s < sma_count; s++) {
             int period = sma_periods[s];
             int type = sma_types[s];
             int color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-            int gd_color = gd ? fastchart_target_color_to_gd(t, color) : -1;
-            if (gd) {
-                gdImageSetThickness(im, 2);
-                gdImageSetAntiAliased(im, gd_color);
-            }
             int prev_x = 0, prev_y = 0;
             int has_prev = 0;
 
@@ -499,12 +489,8 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                                                       candles[i].ts, t_min, t_max);
                     int y = fastchart_y_to_pixel(ema, &yrange, &price_pane);
                     if (has_prev) {
-                        if (gd) {
-                            gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
-                        } else {
-                            fastchart_target_line(t, prev_x, prev_y, x, y,
-                                                  color, 2, FASTCHART_DASH_SOLID);
-                        }
+                        fastchart_target_line(t, prev_x, prev_y, x, y,
+                                              color, 2, FASTCHART_DASH_SOLID);
                     }
                     prev_x = x; prev_y = y; has_prev = 1;
                 }
@@ -536,12 +522,8 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                                                       candles[i].ts, t_min, t_max);
                     int y = fastchart_y_to_pixel(wma, &yrange, &price_pane);
                     if (has_prev) {
-                        if (gd) {
-                            gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
-                        } else {
-                            fastchart_target_line(t, prev_x, prev_y, x, y,
-                                                  color, 2, FASTCHART_DASH_SOLID);
-                        }
+                        fastchart_target_line(t, prev_x, prev_y, x, y,
+                                              color, 2, FASTCHART_DASH_SOLID);
                     }
                     prev_x = x; prev_y = y; has_prev = 1;
                 }
@@ -558,18 +540,13 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                                                       candles[i].ts, t_min, t_max);
                     int y = fastchart_y_to_pixel(avg, &yrange, &price_pane);
                     if (has_prev) {
-                        if (gd) {
-                            gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
-                        } else {
-                            fastchart_target_line(t, prev_x, prev_y, x, y,
-                                                  color, 2, FASTCHART_DASH_SOLID);
-                        }
+                        fastchart_target_line(t, prev_x, prev_y, x, y,
+                                              color, 2, FASTCHART_DASH_SOLID);
                     }
                     prev_x = x; prev_y = y; has_prev = 1;
                 }
             }
         }
-        if (gd) gdImageSetThickness(im, 1);
     }
 
     /* Phase-2 price overlays: Bollinger Bands (3 lines) and
@@ -580,20 +557,14 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
         int color = ov->color_rgb >= 0
             ? fastchart_target_color_rgb(t, ov->color_rgb)
             : pal.series[(self->sma_count + o + 1) % FASTCHART_PALETTE_SERIES_N];
-        int gd_color = gd ? fastchart_target_color_to_gd(t, color) : -1;
         if (ov->kind == FASTCHART_OVERLAY_BOLL) {
             /* Three lines: middle, upper, lower. The middle is the
              * SMA used to centre the bands and is drawn at full
-             * weight; upper/lower share the same colour but lighter
-             * via the AA mode (libgd has no built-in dimming for a
-             * single colour). NaN warm-up region is broken correctly. */
+             * weight; upper/lower share the same colour at thinner
+             * stroke. NaN warm-up region is broken correctly. */
             const double *lines[3] = { ov->a, ov->b, ov->c };
             for (int s_idx = 0; s_idx < 3 && lines[s_idx]; s_idx++) {
                 int thickness = s_idx == 0 ? 2 : 1;
-                if (gd) {
-                    gdImageSetThickness(im, thickness);
-                    gdImageSetAntiAliased(im, gd_color);
-                }
                 int prev_x = 0, prev_y = 0, has_prev = 0;
                 for (int i = 0; i < ov->n; i++) {
                     if (isnan(lines[s_idx][i])) { has_prev = 0; continue; }
@@ -601,17 +572,12 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                                                       candles[i].ts, t_min, t_max);
                     int y = fastchart_y_to_pixel(lines[s_idx][i], &yrange, &price_pane);
                     if (has_prev) {
-                        if (gd) {
-                            gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
-                        } else {
-                            fastchart_target_line(t, prev_x, prev_y, x, y,
-                                                  color, thickness, FASTCHART_DASH_SOLID);
-                        }
+                        fastchart_target_line(t, prev_x, prev_y, x, y,
+                                              color, thickness, FASTCHART_DASH_SOLID);
                     }
                     prev_x = x; prev_y = y; has_prev = 1;
                 }
             }
-            if (gd) gdImageSetThickness(im, 1);
         } else if (ov->kind == FASTCHART_OVERLAY_PSAR) {
             /* SAR is a dot per bar. Draw a small filled circle at
              * (bar_x, sar_y) for each non-NaN SAR value. */
@@ -759,11 +725,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                         ? fastchart_target_color_rgb(t, pane->color3_rgb)
                         : pal.series[(slot + 6) % FASTCHART_PALETTE_SERIES_N];
                 }
-                int gd_line_color = gd ? fastchart_target_color_to_gd(t, line_color) : -1;
-                if (gd) {
-                    gdImageSetThickness(im, 2);
-                    gdImageSetAntiAliased(im, gd_line_color);
-                }
                 int prev_x = 0, prev_y = 0;
                 int has_prev = 0;
                 for (int i = 0; i < upto; i++) {
@@ -772,18 +733,13 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                                                       candles[i].ts, t_min, t_max);
                     int y = fastchart_y_to_pixel(vals[i], &pr, &indicator_panes[slot]);
                     if (has_prev) {
-                        if (gd) {
-                            gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
-                        } else {
-                            fastchart_target_line(t, prev_x, prev_y, x, y,
-                                                  line_color, 2, FASTCHART_DASH_SOLID);
-                        }
+                        fastchart_target_line(t, prev_x, prev_y, x, y,
+                                              line_color, 2, FASTCHART_DASH_SOLID);
                     }
                     prev_x = x;
                     prev_y = y;
                     has_prev = 1;
                 }
-                if (gd) gdImageSetThickness(im, 1);
             }
 
             if (font && pane->name) {
@@ -845,34 +801,4 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
         }
     }
     return 0;
-}
-
-/* GD-only shim. */
-int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im)
-{
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
-    return fastchart_stock_render_to_target(self, &t);
-}
-
-ZEND_METHOD(FastChart_StockChart, draw)
-{
-    zval *canvas_zv;
-
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
-    ZEND_PARSE_PARAMETERS_END();
-
-    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\StockChart::draw() received a closed or invalid GdImage");
-        RETURN_THROWS();
-    }
-    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
-
-    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
-    if (fastchart_stock_render_to_image(self, im) != 0) {
-        RETURN_THROWS();
-    }
-    RETURN_ZVAL(canvas_zv, 1, 0);
 }
