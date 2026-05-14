@@ -873,6 +873,8 @@ struct fastchart_target;
 int fastchart_line_render_to_target(fastchart_line_obj *self,
                                      struct fastchart_target *t);
 int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im);
+int fastchart_area_render_to_target(fastchart_area_obj *self,
+                                     struct fastchart_target *t);
 int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im);
 int fastchart_bar_render_to_target(fastchart_bar_obj *self,
                                     struct fastchart_target *t);
@@ -880,22 +882,50 @@ int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im);
 int fastchart_pie_render_to_target(fastchart_pie_obj *self,
                                     struct fastchart_target *t);
 int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im);
+int fastchart_scatter_render_to_target(fastchart_scatter_obj *self,
+                                        struct fastchart_target *t);
 int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im);
 int fastchart_stock_render_to_target(fastchart_stock_obj *self,
                                       struct fastchart_target *t);
 int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im);
+int fastchart_radar_render_to_target(fastchart_radar_obj *self,
+                                      struct fastchart_target *t);
 int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im);
+int fastchart_bubble_render_to_target(fastchart_bubble_obj *self,
+                                       struct fastchart_target *t);
 int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im);
+int fastchart_surface_render_to_target(fastchart_surface_obj *self,
+                                        struct fastchart_target *t);
 int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im);
+int fastchart_gauge_render_to_target(fastchart_gauge_obj *self,
+                                      struct fastchart_target *t);
 int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im);
+int fastchart_gantt_render_to_target(fastchart_gantt_obj *self,
+                                      struct fastchart_target *t);
 int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im);
+int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self,
+                                        struct fastchart_target *t);
 int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im);
+int fastchart_polar_render_to_target(fastchart_polar_obj *self,
+                                      struct fastchart_target *t);
 int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im);
+int fastchart_contour_render_to_target(fastchart_contour_obj *self,
+                                        struct fastchart_target *t);
 int fastchart_treemap_render_to_image(fastchart_treemap_obj *self, gdImagePtr im);
+int fastchart_treemap_render_to_target(fastchart_treemap_obj *self,
+                                        struct fastchart_target *t);
 int fastchart_funnel_render_to_image(fastchart_funnel_obj *self, gdImagePtr im);
+int fastchart_funnel_render_to_target(fastchart_funnel_obj *self,
+                                       struct fastchart_target *t);
 int fastchart_waterfall_render_to_image(fastchart_waterfall_obj *self, gdImagePtr im);
+int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self,
+                                          struct fastchart_target *t);
 int fastchart_heatmap_render_to_image(fastchart_heatmap_obj *self, gdImagePtr im);
+int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self,
+                                        struct fastchart_target *t);
 int fastchart_linear_meter_render_to_image(fastchart_linear_meter_obj *self, gdImagePtr im);
+int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self,
+                                             struct fastchart_target *t);
 
 /* --- Symbol family (1D/2D codes) ----------------------------------
  *
@@ -973,13 +1003,21 @@ static inline fastchart_symbol_obj *fastchart_symbol_obj_from_zend(zend_object *
 
 int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im);
 int fastchart_qrcode_render_to_image(fastchart_qrcode_obj *self, gdImagePtr im);
+/* Target-based render entries. GD-backed targets produce identical
+ * output to the gdImagePtr shims above; SVG-backed targets emit
+ * vector elements. */
+int fastchart_code128_render_to_target(fastchart_code128_obj *self,
+                                        struct fastchart_target *t);
+int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,
+                                       struct fastchart_target *t);
 
-/* Fill `im` with the configured background, honouring `transparent_bg`.
- * libgd quirk: gdImageColorTransparent() does NOT rewrite truecolor
- * pixel alpha — pixels themselves must carry alpha=127 for the
- * encoded PNG/WebP/AVIF output to be transparent. Sets alphaBlending
- * back to 1 on exit so subsequent fg draws composite normally. */
-void fastchart_symbol_fill_background(fastchart_symbol_obj *self, gdImagePtr im);
+/* Fill the canvas with the configured background, honouring
+ * `transparent_bg`. Backend-aware: GD performs the alpha-blending
+ * dance so PNG/WebP/AVIF outputs preserve alpha (libgd quirk:
+ * gdImageColorTransparent does NOT rewrite truecolor pixel alpha);
+ * SVG emits a single bg rect (or nothing on transparent_bg). */
+void fastchart_symbol_fill_background(fastchart_symbol_obj *self,
+                                       struct fastchart_target *t);
 
 /* Symbol-family lifecycle handlers and storage. The lifecycle macro in
  * fastchart_symbol.c emits external symbols so fastchart.c MINIT can

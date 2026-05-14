@@ -168,19 +168,17 @@ static void squarify(const double *areas, const int *order, int n,
     }
 }
 
-int fastchart_treemap_render_to_image(fastchart_treemap_obj *self, gdImagePtr im)
+int fastchart_treemap_render_to_target(fastchart_treemap_obj *self, fastchart_target_t *t)
 {
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
-    fastchart_begin_render((fastchart_obj *)self, &t);
+    fastchart_begin_render((fastchart_obj *)self, t);
 
     fastchart_palette pal;
-    fastchart_palette_init(&t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    int W = gdImageSX(im);
-    int H = gdImageSY(im);
-    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, fastchart_target_color_to_gd(&t, pal.bg));
+    int W, H;
+    fastchart_target_get_dims(t, &W, &H);
+    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
 
     /* Reserve space for the optional title above the plot rect. */
     int top = 12;
@@ -189,7 +187,7 @@ int fastchart_treemap_render_to_image(fastchart_treemap_obj *self, gdImagePtr im
     double base_size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
     double title_size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_TITLE, base_size * 1.4);
     if (self->title && ZSTR_LEN(self->title) > 0 && title_font) {
-        if (fastchart_text_measure(&t, title_font, title_size, ZSTR_VAL(self->title),
+        if (fastchart_text_measure(t, title_font, title_size, ZSTR_VAL(self->title),
                                    NULL, &title_h, NULL, 0) == 0) {
             top += title_h + 10;
         }
@@ -256,36 +254,30 @@ int fastchart_treemap_render_to_image(fastchart_treemap_obj *self, gdImagePtr im
     treemap_rect rects[FASTCHART_MAX_TREEMAP_ITEMS];
     squarify(areas, order, n, rect, rects);
 
-    /* Paint each cell + a 1px border. The base-class
-     * setBorderColor override is already folded into pal.border by
-     * fastchart_palette_apply_overrides — resolve the handle to a
-     * gd-int once for the per-cell gdImageRectangle below. */
-    int border_color = fastchart_target_color_to_gd(&t, pal.border);
+    /* Paint each cell + a 1px border. */
+    int label_black = fastchart_target_color(t, 0, 0, 0, 0xFF);
+    int label_white = fastchart_target_color(t, 255, 255, 255, 0xFF);
 
     const char *label_font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double label_size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base_size);
 
     for (int i = 0; i < n; i++) {
         const fastchart_treemap_item *it = &self->items[i];
-        /* cell_color drives raw gdImage* fills below; produce a gd-int
-         * in both branches so the gdImageRed/Green/Blue luma path
-         * gets a valid input. */
         int cell_color;
+        int cell_rgb;
         if (it->color_rgb >= 0) {
-            cell_color = gdImageColorAllocate(im,
-                (it->color_rgb >> 16) & 0xFF,
-                (it->color_rgb >>  8) & 0xFF,
-                 it->color_rgb        & 0xFF);
+            cell_color = fastchart_target_color_rgb(t, it->color_rgb);
+            cell_rgb = it->color_rgb;
         } else {
-            cell_color = fastchart_target_color_to_gd(&t,
-                pal.series[i % FASTCHART_PALETTE_SERIES_N]);
+            cell_color = pal.series[i % FASTCHART_PALETTE_SERIES_N];
+            cell_rgb = (int)(fastchart_target_color_to_rgba(t, cell_color) & 0xFFFFFF);
         }
-        gdImageFilledRectangle(im,
-            rects[i].x0, rects[i].y0,
-            rects[i].x1, rects[i].y1, cell_color);
-        gdImageRectangle(im,
-            rects[i].x0, rects[i].y0,
-            rects[i].x1, rects[i].y1, border_color);
+        int rx0 = rects[i].x0;
+        int ry0 = rects[i].y0;
+        int rw = rects[i].x1 - rects[i].x0 + 1;
+        int rh = rects[i].y1 - rects[i].y0 + 1;
+        fastchart_target_rect(t, rx0, ry0, rw, rh, cell_color, 1, 0);
+        fastchart_target_rect(t, rx0, ry0, rw, rh, pal.border, 0, 1);
 
         /* Skip labels that won't fit. Cells smaller than ~3x the
          * font size in either dimension would have label glyphs
@@ -297,29 +289,22 @@ int fastchart_treemap_render_to_image(fastchart_treemap_obj *self, gdImagePtr im
         if (cell_w < min_dim || cell_h < min_dim) continue;
 
         int tw = 0, th = 0;
-        if (fastchart_text_measure(&t, label_font, label_size, it->label,
+        if (fastchart_text_measure(t, label_font, label_size, it->label,
                                    &tw, &th, NULL, 0) != 0) continue;
         if (tw > cell_w - 6) continue;  /* would clip horizontally */
 
         /* Choose a foreground that contrasts with the cell color.
-         * Luma threshold via the ITU-R BT.601 weights. Read the
-         * source RGB back through gdImageRed/Green/Blue on the
-         * already-allocated cell color so we don't need to track a
-         * parallel RGB array — works on truecolor canvases (the
-         * only kind fastchart_require_truecolor lets through). */
-        int r = gdImageRed(im, cell_color);
-        int g = gdImageGreen(im, cell_color);
-        int b = gdImageBlue(im, cell_color);
+         * Luma threshold via the ITU-R BT.601 weights, computed off
+         * the cell's source RGB. */
+        int r = (cell_rgb >> 16) & 0xFF;
+        int g = (cell_rgb >>  8) & 0xFF;
+        int b =  cell_rgb        & 0xFF;
         int luma = (299 * r + 587 * g + 114 * b) / 1000;
-        /* label_color feeds fastchart_text_draw which now takes a
-         * target handle; allocate via the target instead of raw gd. */
-        int label_color = luma > 145
-            ? fastchart_target_color(&t, 0, 0, 0, 0xFF)
-            : fastchart_target_color(&t, 255, 255, 255, 0xFF);
+        int label_color = luma > 145 ? label_black : label_white;
 
         int cx = (rects[i].x0 + rects[i].x1) / 2;
         int cy = (rects[i].y0 + rects[i].y1) / 2 + th / 2;
-        fastchart_text_draw(&t, label_font, label_size, label_color,
+        fastchart_text_draw(t, label_font, label_size, label_color,
                             cx, cy, FASTCHART_ALIGN_CENTER,
                             it->label, NULL, 0);
     }
@@ -327,13 +312,21 @@ int fastchart_treemap_render_to_image(fastchart_treemap_obj *self, gdImagePtr im
     /* Title last so it sits on top of any cell that might have
      * leaked into the top reservation under setPlotRect overrides. */
     if (self->title && ZSTR_LEN(self->title) > 0 && title_font && title_h > 0) {
-        fastchart_text_draw(&t, title_font, title_size, pal.text,
+        fastchart_text_draw(t, title_font, title_size, pal.text,
                             W / 2, 12 + title_h, FASTCHART_ALIGN_CENTER,
                             ZSTR_VAL(self->title), NULL, 0);
     }
 
-    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
+}
+
+/* GD-only shim. */
+int fastchart_treemap_render_to_image(fastchart_treemap_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
+    return fastchart_treemap_render_to_target(self, &t);
 }
 
 ZEND_METHOD(FastChart_Treemap, draw)

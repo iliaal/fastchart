@@ -3981,12 +3981,10 @@ ZEND_METHOD(FastChart_AreaChart, setFillOpacity)
  * struct; we cast to the specific type for each renderer. The cast
  * is safe because Z_FASTCHART_OBJ_P landed on the start of whatever
  * subclass the user actually instantiated. */
-/* SVG-side dispatch. The pilot rotation covers Line/Bar/Pie/Stock;
- * other chart families throw a clear runtime error pointing callers
- * at renderPng/renderJpeg/etc. SVG support for the remaining 15
- * Cartesian families and the Symbol family fans out in follow-up
- * PRs. The non-pilot families keep working through the gd path
- * unchanged. */
+/* SVG-side dispatch. All 19 chart families are wired to a
+ * fastchart_<family>_render_to_target() entry. The Symbol family
+ * (Code128, QrCode) has its own dispatcher (dispatch_symbol_render);
+ * SVG support for Symbol is a separate wave. */
 static int dispatch_svg_render(fastchart_obj *self, zend_class_entry *ce, fastchart_target_t *t)
 {
     if (ce == fastchart_line_chart_ce)
@@ -3997,12 +3995,41 @@ static int dispatch_svg_render(fastchart_obj *self, zend_class_entry *ce, fastch
         return fastchart_pie_render_to_target((fastchart_pie_obj *)self, t);
     if (ce == fastchart_stock_chart_ce)
         return fastchart_stock_render_to_target((fastchart_stock_obj *)self, t);
+    if (ce == fastchart_funnel_ce)
+        return fastchart_funnel_render_to_target((fastchart_funnel_obj *)self, t);
+    if (ce == fastchart_waterfall_ce)
+        return fastchart_waterfall_render_to_target((fastchart_waterfall_obj *)self, t);
+    if (ce == fastchart_bubble_chart_ce)
+        return fastchart_bubble_render_to_target((fastchart_bubble_obj *)self, t);
+    if (ce == fastchart_box_plot_ce)
+        return fastchart_boxplot_render_to_target((fastchart_boxplot_obj *)self, t);
+    if (ce == fastchart_gantt_chart_ce)
+        return fastchart_gantt_render_to_target((fastchart_gantt_obj *)self, t);
+    if (ce == fastchart_surface_chart_ce)
+        return fastchart_surface_render_to_target((fastchart_surface_obj *)self, t);
+    if (ce == fastchart_heatmap_ce)
+        return fastchart_heatmap_render_to_target((fastchart_heatmap_obj *)self, t);
+    if (ce == fastchart_linear_meter_ce)
+        return fastchart_linear_meter_render_to_target((fastchart_linear_meter_obj *)self, t);
+    if (ce == fastchart_polar_chart_ce)
+        return fastchart_polar_render_to_target((fastchart_polar_obj *)self, t);
+    if (ce == fastchart_radar_chart_ce)
+        return fastchart_radar_render_to_target((fastchart_radar_obj *)self, t);
+    if (ce == fastchart_gauge_chart_ce)
+        return fastchart_gauge_render_to_target((fastchart_gauge_obj *)self, t);
+    if (ce == fastchart_contour_chart_ce)
+        return fastchart_contour_render_to_target((fastchart_contour_obj *)self, t);
+    if (ce == fastchart_area_chart_ce)
+        return fastchart_area_render_to_target((fastchart_area_obj *)self, t);
+    if (ce == fastchart_treemap_ce)
+        return fastchart_treemap_render_to_target((fastchart_treemap_obj *)self, t);
+    if (ce == fastchart_scatter_chart_ce)
+        return fastchart_scatter_render_to_target((fastchart_scatter_obj *)self, t);
+    /* All 19 chart families are wired above. Reaching this branch
+     * means dispatch was invoked on a class entry the Chart base
+     * doesn't acknowledge — defensive, should never happen. */
     zend_throw_error(NULL,
-        "FastChart: SVG output is not yet supported for this chart family. "
-        "Pilot families (LineChart, BarChart, PieChart, StockChart) "
-        "support renderSvg(); other families "
-        "must use renderPng() / renderJpeg() / renderWebp() / renderGif() / "
-        "renderAvif() / renderToFile() with a raster extension.");
+        "FastChart: SVG dispatch found unknown class entry");
     return -1;
 }
 

@@ -31,10 +31,8 @@
  * 512 silently dropped half of an at-cap series. */
 #define MAX_POLAR_POINTS FASTCHART_MAX_POLAR_POINTS
 
-int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
+int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target_t *t)
 {
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
     if (self->n_series == 0) {
         zend_throw_error(NULL,
             "FastChart\\PolarChart::draw() requires setSeries() with non-empty data");
@@ -56,15 +54,15 @@ int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
     /* Per-render entry: invalidate the font cache (so a runtime
      * open_basedir narrowing between draws is honored) and stamp DPI
      * on the canvas. Must come BEFORE any palette / text work. */
-    fastchart_begin_render((fastchart_obj *)self, &t);
+    fastchart_begin_render((fastchart_obj *)self, t);
 
     fastchart_palette pal;
-    fastchart_palette_init(&t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    int W = gdImageSX(im);
-    int H = gdImageSY(im);
-    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, fastchart_target_color_to_gd(&t, pal.bg));
+    int W, H;
+    fastchart_target_get_dims(t, &W, &H);
+    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
 
     int top = (self->title && ZSTR_LEN(self->title) > 0) ? 32 : 8;
     int cx = W / 2;
@@ -76,14 +74,17 @@ int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
     const int rings = 4;
     for (int r = 1; r <= rings; r++) {
         int rr = (int)((double)radius * (double)r / (double)rings);
-        gdImageEllipse(im, cx, cy, rr * 2, rr * 2, fastchart_target_color_to_gd(&t, pal.grid));
+        fastchart_target_ellipse(t, cx, cy, rr, rr, pal.grid, 0, 1);
     }
     for (int a = 0; a < 360; a += 30) {
         double rad = a * M_PI / 180.0;
         int tx = cx + (int)(radius * cos(rad));
         int ty = cy - (int)(radius * sin(rad));
-        gdImageLine(im, cx, cy, tx, ty, fastchart_target_color_to_gd(&t, pal.grid));
+        fastchart_target_line(t, cx, cy, tx, ty, pal.grid, 1, FASTCHART_DASH_SOLID);
     }
+
+    bool gd = (t->kind == FASTCHART_TARGET_GD);
+    gdImagePtr im = gd ? t->u.gd.im : NULL;
 
     int legend_colors[FASTCHART_MAX_POLAR_SERIES];
     const char *legend_labels[FASTCHART_MAX_POLAR_SERIES];
@@ -92,9 +93,7 @@ int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
     for (int s = 0; s < n_series; s++) {
         int color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
         if (series[s].color_rgb >= 0) {
-            int rgb = series[s].color_rgb;
-            color = gdImageColorAllocate(im,
-                (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+            color = fastchart_target_color_rgb(t, series[s].color_rgb);
         }
 
         int upto = series[s].len < MAX_POLAR_POINTS ? series[s].len : MAX_POLAR_POINTS;
@@ -115,20 +114,20 @@ int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
                     : a0 + 360.0 / (double)upto;
                 double r = series[s].radii[i];
                 if (r <= 0) continue;
-                double rr_px = (double)radius * r / rmax;
+                int rr_px = (int)((double)radius * r / rmax);
                 /* libgd arc angles are clockwise with 0° at 3-o'clock;
                  * our angles are CCW math angles. Convert by negating
-                 * and adding 360 so libgd renders the wedge oriented
+                 * and adding 360 so the renderer draws the wedge oriented
                  * the same way as the line/area branch. */
                 int gd_a = (int)((360.0 - a1)) % 360;
                 int gd_b = (int)((360.0 - a0)) % 360;
                 if (gd_a < 0) gd_a += 360;
                 if (gd_b < 0) gd_b += 360;
                 if (gd_b <= gd_a) gd_b += 360;
-                gdImageFilledArc(im, cx, cy, (int)(rr_px * 2), (int)(rr_px * 2),
-                                 gd_a, gd_b, color, gdPie);
-                gdImageArc(im, cx, cy, (int)(rr_px * 2), (int)(rr_px * 2),
-                           gd_a, gd_b, pal.border);
+                fastchart_target_arc(t, cx, cy, rr_px, rr_px,
+                                     (double)gd_a, (double)gd_b, color, 1, 0);
+                fastchart_target_arc(t, cx, cy, rr_px, rr_px,
+                                     (double)gd_a, (double)gd_b, pal.border, 0, 1);
             }
             if (series[s].label && legend_count < FASTCHART_MAX_POLAR_SERIES) {
                 legend_colors[legend_count] = color;
@@ -152,27 +151,32 @@ int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
         if (n_pts < 2) continue;
 
         if (self->polar_filled && n_pts >= 3) {
-            int rr = gdImageRed(im, color);
-            int gg = gdImageGreen(im, color);
-            int bb = gdImageBlue(im, color);
-            int alpha = gdImageColorAllocateAlpha(im, rr, gg, bb, 90);
-            gdImageAlphaBlending(im, 1);
-            fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
-            fastchart_filled_polygon_aa(im, poly, n_pts, alpha);
-            gdImageAlphaBlending(im, 0);
-        }
-        gdImageSetThickness(im, 2);
-        if (self->polar_filled && n_pts >= 3) {
-            gdImagePolygon(im, poly, n_pts, color);
-        } else {
-            for (int i = 0; i < n_pts - 1; i++) {
-                gdImageLine(im, poly[i].x, poly[i].y,
-                            poly[i+1].x, poly[i+1].y, color);
+            uint32_t rgba = fastchart_target_color_to_rgba(t, color);
+            int rr = (rgba >> 16) & 0xFF;
+            int gg = (rgba >>  8) & 0xFF;
+            int bb =  rgba        & 0xFF;
+            /* gd_alpha 90 → byte 255 - 90*2 = 75. */
+            int alpha = fastchart_target_color(t, rr, gg, bb, 75);
+            if (gd) {
+                gdImageAlphaBlending(im, 1);
+                fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
+                fastchart_filled_polygon_aa(im, poly, n_pts, alpha);
+                gdImageAlphaBlending(im, 0);
+            } else {
+                fastchart_target_polygon(t, poly, n_pts, alpha, 1, 0);
             }
         }
-        gdImageSetThickness(im, 1);
+        if (self->polar_filled && n_pts >= 3) {
+            fastchart_target_polygon(t, poly, n_pts, color, 0, 2);
+        } else {
+            for (int i = 0; i < n_pts - 1; i++) {
+                fastchart_target_line(t, poly[i].x, poly[i].y,
+                                      poly[i+1].x, poly[i+1].y,
+                                      color, 2, FASTCHART_DASH_SOLID);
+            }
+        }
         for (int i = 0; i < n_pts; i++) {
-            fastchart_draw_marker(&t, poly[i].x, poly[i].y,
+            fastchart_draw_marker(t, poly[i].x, poly[i].y,
                                   FASTCHART_MARKER_CIRCLE, 5, color);
         }
         if (series[s].label && legend_count < FASTCHART_MAX_POLAR_SERIES) {
@@ -183,16 +187,24 @@ int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
     }
 
     /* Title. */
-    fastchart_draw_floating_title(&t, (fastchart_obj *)self, &pal, W / 2, 24);
+    fastchart_draw_floating_title(t, (fastchart_obj *)self, &pal, W / 2, 24);
 
     if (legend_count > 0) {
         fastchart_rect plot = { 10, top, W - 10, H - 10 };
-        fastchart_draw_legend(&t, (fastchart_obj *)self, &plot, &pal,
+        fastchart_draw_legend(t, (fastchart_obj *)self, &plot, &pal,
                               legend_count, legend_colors, legend_labels);
     }
 
-    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
+}
+
+/* GD-only shim. */
+int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
+    return fastchart_polar_render_to_target(self, &t);
 }
 
 ZEND_METHOD(FastChart_PolarChart, draw)

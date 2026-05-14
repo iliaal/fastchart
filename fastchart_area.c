@@ -33,10 +33,8 @@ static inline double area_read_value(const fastchart_series_t *s, int i)
     return s->values[i];
 }
 
-int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
+int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t *t)
 {
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
     if (self->n_series == 0) {
         zend_throw_error(NULL,
             "FastChart\\AreaChart::draw() requires setSeries() to have been called with non-empty data");
@@ -95,31 +93,37 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
     }
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, &t, 1, 1, NULL, 0, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, t, 1, 1, NULL, 0, &plot);
 
     fastchart_palette pal;
-    fastchart_palette_init(&t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
     fastchart_gradient_cache grad_cache;
     fastchart_gradient_cache_reset(&grad_cache);
 
-    fastchart_draw_frame(&t, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(&t, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_y_axis(&t, (fastchart_obj *)self, &plot, &pal, &range);
-    fastchart_draw_plot_bands(&t, (fastchart_obj *)self, &plot, &range, &pal);
-    fastchart_draw_v_plot_bands_categorical(&t, (fastchart_obj *)self, &plot,
+    fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_y_axis(t, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_plot_bands(t, (fastchart_obj *)self, &plot, &range, &pal);
+    fastchart_draw_v_plot_bands_categorical(t, (fastchart_obj *)self, &plot,
                                             max_len, &pal);
 
     const char **label_ptrs = fastchart_borrow_category_labels((fastchart_obj *)self, max_len);
-    fastchart_draw_x_axis_categorical(&t, (fastchart_obj *)self, &plot, &pal, max_len, label_ptrs);
+    fastchart_draw_x_axis_categorical(t, (fastchart_obj *)self, &plot, &pal, max_len, label_ptrs);
     if (label_ptrs) efree((void *)label_ptrs);
 
-    fastchart_draw_axis_titles(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_axis_titles(t, (fastchart_obj *)self, &plot, &pal);
 
     int alpha = (int)self->area_alpha;
     if (alpha < 0) alpha = 0;
     if (alpha > 127) alpha = 127;
+
+    bool gd = (t->kind == FASTCHART_TARGET_GD);
+    gdImagePtr im = gd ? t->u.gd.im : NULL;
+
+    int edge_handle = self->edge_color >= 0
+        ? fastchart_target_color_rgb(t, (int)self->edge_color) : -1;
 
     /* Build filled polygons. For stacked, accumulate per-category
      * sums; each series's polygon spans [prev_cum, prev_cum + v].
@@ -130,10 +134,7 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
     if (stacked) {
         double *cum = ecalloc((size_t)max_len, sizeof(double));
         for (int s = 0; s < n_series; s++) {
-            /* pal.series[] holds target handles; resolve to a gd-int
-             * for the direct effects.h primitives below. */
-            int rgb_color = fastchart_target_color_to_gd(&t,
-                pal.series[s % FASTCHART_PALETTE_SERIES_N]);
+            int series_handle = pal.series[s % FASTCHART_PALETTE_SERIES_N];
             int n_pts = 0;
 
             /* Top edge: left to right at cum + v. */
@@ -153,12 +154,21 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
                 n_pts++;
             }
             if (n_pts >= 3) {
-                fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
-                if (!fastchart_gradient_filled_polygon(im, (fastchart_obj *)self, &grad_cache, poly, n_pts)) {
-                    fastchart_filled_polygon_aa(im, poly, n_pts, rgb_color);
+                int painted = 0;
+                if (gd) {
+                    int rgb_color = fastchart_target_color_to_gd(t, series_handle);
+                    fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
+                    painted = fastchart_gradient_filled_polygon(im, (fastchart_obj *)self, &grad_cache, poly, n_pts);
+                    if (!painted) {
+                        fastchart_filled_polygon_aa(im, poly, n_pts, rgb_color);
+                        painted = 1;
+                    }
                 }
-                if (self->edge_color >= 0) {
-                    gdImagePolygon(im, poly, n_pts, (int)self->edge_color);
+                if (!painted) {
+                    fastchart_target_polygon(t, poly, n_pts, series_handle, 1, 0);
+                }
+                if (edge_handle >= 0) {
+                    fastchart_target_polygon(t, poly, n_pts, edge_handle, 0, 1);
                 }
             }
 
@@ -171,7 +181,8 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
                 int y = fastchart_y_to_pixel(cum[i] + v, &range, &plot);
                 if (prev_valid) {
-                    gdImageLine(im, prev_x, prev_y, x, y, fastchart_target_color_to_gd(&t, pal.border));
+                    fastchart_target_line(t, prev_x, prev_y, x, y,
+                                          pal.border, 1, FASTCHART_DASH_SOLID);
                 }
                 prev_x = x; prev_y = y; prev_valid = true;
                 cum[i] += v;
@@ -182,18 +193,15 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
         int zero_y = fastchart_y_to_pixel(dmin > 0 ? dmin : 0.0, &range, &plot);
 
         for (int s = 0; s < n_series; s++) {
-            /* pal.series[] is a target handle; translate to gd-int so
-             * the alpha-blended fill and AA outline below can address
-             * libgd directly. */
-            int base_color = fastchart_target_color_to_gd(&t,
-                pal.series[s % FASTCHART_PALETTE_SERIES_N]);
-            /* gdImageRed/Green/Blue work on both palette and truecolor
-             * canvases; bit-shifting `base_color` would only work on
-             * truecolor (where the handle is the packed RGB). */
-            int r = gdImageRed(im, base_color);
-            int g = gdImageGreen(im, base_color);
-            int b = gdImageBlue(im, base_color);
-            int alpha_color = gdImageColorAllocateAlpha(im, r, g, b, alpha);
+            int base_handle = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+            uint32_t rgba = fastchart_target_color_to_rgba(t, base_handle);
+            int r = (rgba >> 16) & 0xFF;
+            int g = (rgba >>  8) & 0xFF;
+            int b =  rgba        & 0xFF;
+            /* gd alpha 0..127 -> byte 255..1 via 255 - gd_alpha * 2. */
+            int alpha_byte = 255 - alpha * 2;
+            if (alpha_byte < 0) alpha_byte = 0;
+            int alpha_handle = fastchart_target_color(t, r, g, b, alpha_byte);
 
             int n_pts = 0;
             for (int i = 0; i < max_len && n_pts < 2048; i++) {
@@ -210,20 +218,30 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
                 n_pts++;
             }
             if (n_pts >= 3) {
-                fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
-                gdImageAlphaBlending(im, 1);
-                if (!fastchart_gradient_filled_polygon(im, (fastchart_obj *)self, &grad_cache, poly, n_pts)) {
-                    fastchart_filled_polygon_aa(im, poly, n_pts, alpha_color);
+                int painted = 0;
+                if (gd) {
+                    int alpha_color = fastchart_target_color_to_gd(t, alpha_handle);
+                    fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
+                    gdImageAlphaBlending(im, 1);
+                    painted = fastchart_gradient_filled_polygon(im, (fastchart_obj *)self, &grad_cache, poly, n_pts);
+                    if (!painted) {
+                        fastchart_filled_polygon_aa(im, poly, n_pts, alpha_color);
+                        painted = 1;
+                    }
+                    gdImageAlphaBlending(im, 0);
                 }
-                if (self->edge_color >= 0) {
-                    gdImagePolygon(im, poly, n_pts, (int)self->edge_color);
+                if (!painted) {
+                    fastchart_target_polygon(t, poly, n_pts, alpha_handle, 1, 0);
                 }
-                gdImageAlphaBlending(im, 0);
+                if (edge_handle >= 0) {
+                    fastchart_target_polygon(t, poly, n_pts, edge_handle, 0, 1);
+                }
             }
 
             /* Opaque top stroke. */
-            gdImageSetThickness(im, 2);
-            gdImageSetAntiAliased(im, base_color);
+            if (gd) {
+                gdImageSetAntiAliased(im, fastchart_target_color_to_gd(t, base_handle));
+            }
             int prev_x = 0, prev_y = 0;
             bool prev_valid = false;
             for (int i = 0; i < max_len; i++) {
@@ -231,19 +249,27 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
                 if (isnan(v)) { prev_valid = false; continue; }
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
                 int y = fastchart_y_to_pixel(v, &range, &plot);
-                if (prev_valid) gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
+                if (prev_valid) {
+                    if (gd) {
+                        gdImageSetThickness(im, 2);
+                        gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
+                        gdImageSetThickness(im, 1);
+                    } else {
+                        fastchart_target_line(t, prev_x, prev_y, x, y,
+                                              base_handle, 2, FASTCHART_DASH_SOLID);
+                    }
+                }
                 prev_x = x; prev_y = y; prev_valid = true;
             }
-            gdImageSetThickness(im, 1);
         }
     }
 
     /* Combo overlays + annotations on top of the area fills. */
-    fastchart_draw_overlays_categorical(&t, (fastchart_obj *)self, &plot, &pal,
+    fastchart_draw_overlays_categorical(t, (fastchart_obj *)self, &plot, &pal,
                                          &range, NULL, max_len);
 
-    fastchart_draw_h_annotations(&t, (fastchart_obj *)self, &plot, &pal, &range);
-    fastchart_draw_v_annotations_categorical(&t, (fastchart_obj *)self, &plot, &pal, max_len);
+    fastchart_draw_h_annotations(t, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_v_annotations_categorical(t, (fastchart_obj *)self, &plot, &pal, max_len);
 
     /* Legend. */
     if (n_series >= 2) {
@@ -257,12 +283,12 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
             legend_count++;
         }
         if (legend_count > 0) {
-            fastchart_draw_legend(&t, (fastchart_obj *)self, &plot, &pal,
+            fastchart_draw_legend(t, (fastchart_obj *)self, &plot, &pal,
                                   legend_count, legend_colors, legend_labels);
         }
     }
 
-    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
 
     if (self->icons && self->n_icons > 0 && max_len > 0) {
         for (int i = 0; i < self->n_icons; i++) {
@@ -272,10 +298,18 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
                 : 0.5;
             int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
             int py = fastchart_y_to_pixel(ic->y, &range, &plot);
-            fastchart_blit_icon(&t, ic, px, py);
+            fastchart_blit_icon(t, ic, px, py);
         }
     }
     return 0;
+}
+
+/* GD-only shim. */
+int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
+    return fastchart_area_render_to_target(self, &t);
 }
 
 ZEND_METHOD(FastChart_AreaChart, draw)

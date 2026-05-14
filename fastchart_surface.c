@@ -26,10 +26,8 @@
 
 #include <math.h>
 
-int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im)
+int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_target_t *t)
 {
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
     if (!self->grid.cells || self->grid.rows == 0 || self->grid.cols == 0) {
         zend_throw_error(NULL,
             "FastChart\\SurfaceChart::draw() requires setGrid() with non-empty data");
@@ -58,15 +56,15 @@ int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im
     /* Per-render entry: invalidate the font cache (so a runtime
      * open_basedir narrowing between draws is honored) and stamp DPI
      * on the canvas. Must come BEFORE any palette / text work. */
-    fastchart_begin_render((fastchart_obj *)self, &t);
+    fastchart_begin_render((fastchart_obj *)self, t);
 
     fastchart_palette pal;
-    fastchart_palette_init(&t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    int W = gdImageSX(im);
-    int H = gdImageSY(im);
-    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, fastchart_target_color_to_gd(&t, pal.bg));
+    int W, H;
+    fastchart_target_get_dims(t, &W, &H);
+    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
 
     int top = (self->title && ZSTR_LEN(self->title) > 0) ? 32 : 12;
     int margin_x = 50;
@@ -96,14 +94,15 @@ int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im
     for (int k = 0; k < 256; k++) {
         int rgb = fastchart_lerp_rgb(low, high, (double)k / 255.0);
         rgb_lut[k] = rgb;
-        color_lut[k] = gdImageColorAllocate(im,
-            (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+        color_lut[k] = fastchart_target_color_rgb(t, rgb);
     }
-    /* Label colors go through the target so the text helper receives a
-     * handle; the gd-int dichotomy on label_dark/light would otherwise
-     * collide with the handle-typed `color` arg on fastchart_text_draw. */
-    int label_dark  = fastchart_target_color(&t, 0x22, 0x22, 0x22, 0xFF);
-    int label_light = fastchart_target_color(&t, 0xEE, 0xEE, 0xEE, 0xFF);
+    int label_dark  = fastchart_target_color(t, 0x22, 0x22, 0x22, 0xFF);
+    int label_light = fastchart_target_color(t, 0xEE, 0xEE, 0xEE, 0xFF);
+    int edge_handle = self->edge_color >= 0
+        ? fastchart_target_color_rgb(t, (int)self->edge_color) : -1;
+
+    bool gd = (t->kind == FASTCHART_TARGET_GD);
+    gdImagePtr im = gd ? t->u.gd.im : NULL;
 
     for (int y_idx = 0; y_idx < rows; y_idx++) {
         for (int x_idx = 0; x_idx < cols; x_idx++) {
@@ -118,10 +117,13 @@ int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im
             int y0 = top + y_idx * cell_h;
             int x1 = x0 + cell_w - 1;
             int y1 = y0 + cell_h - 1;
-            fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
-            gdImageFilledRectangle(im, x0, y0, x1, y1, color);
-            if (self->edge_color >= 0) {
-                gdImageRectangle(im, x0, y0, x1, y1, (int)self->edge_color);
+            if (gd) {
+                fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
+            }
+            fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+            if (edge_handle >= 0) {
+                fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1,
+                                      edge_handle, 0, 1);
             }
             if (self->surface_show_values) {
                 const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
@@ -138,7 +140,7 @@ int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im
                              + ((rgb >>  8) & 0xFF) * 587
                              + ( rgb        & 0xFF) * 114;
                     int tc = luma > 128000 ? label_dark : label_light;
-                    fastchart_text_draw(&t, font, size, tc, tx, ty,
+                    fastchart_text_draw(t, font, size, tc, tx, ty,
                                         FASTCHART_ALIGN_CENTER, buf, NULL, 0);
                 }
             }
@@ -149,19 +151,27 @@ int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im
     int frame_x1 = margin_x + cols * cell_w - 1;
     int frame_y1 = top + rows * cell_h - 1;
     if (self->border_sides & FASTCHART_BORDER_TOP)
-        gdImageLine(im, margin_x, top, frame_x1, top, fastchart_target_color_to_gd(&t, pal.border));
+        fastchart_target_line(t, margin_x, top, frame_x1, top, pal.border, 1, FASTCHART_DASH_SOLID);
     if (self->border_sides & FASTCHART_BORDER_BOTTOM)
-        gdImageLine(im, margin_x, frame_y1, frame_x1, frame_y1, fastchart_target_color_to_gd(&t, pal.border));
+        fastchart_target_line(t, margin_x, frame_y1, frame_x1, frame_y1, pal.border, 1, FASTCHART_DASH_SOLID);
     if (self->border_sides & FASTCHART_BORDER_LEFT)
-        gdImageLine(im, margin_x, top, margin_x, frame_y1, fastchart_target_color_to_gd(&t, pal.border));
+        fastchart_target_line(t, margin_x, top, margin_x, frame_y1, pal.border, 1, FASTCHART_DASH_SOLID);
     if (self->border_sides & FASTCHART_BORDER_RIGHT)
-        gdImageLine(im, frame_x1, top, frame_x1, frame_y1, fastchart_target_color_to_gd(&t, pal.border));
+        fastchart_target_line(t, frame_x1, top, frame_x1, frame_y1, pal.border, 1, FASTCHART_DASH_SOLID);
 
     /* Title. */
-    fastchart_draw_floating_title(&t, (fastchart_obj *)self, &pal, W / 2, 24);
+    fastchart_draw_floating_title(t, (fastchart_obj *)self, &pal, W / 2, 24);
 
-    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
+}
+
+/* GD-only shim. */
+int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
+    return fastchart_surface_render_to_target(self, &t);
 }
 
 ZEND_METHOD(FastChart_SurfaceChart, draw)

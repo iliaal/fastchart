@@ -26,10 +26,8 @@
 #include <math.h>
 
 /* Bubble: each entry is [x, y, size] or [x, y, size, rgb_color]. */
-int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
+int fastchart_bubble_render_to_target(fastchart_bubble_obj *self, fastchart_target_t *t)
 {
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
     if (self->point_count == 0) {
         zend_throw_error(NULL,
             "FastChart\\BubbleChart::draw() requires setPoints() with non-empty data");
@@ -56,20 +54,17 @@ int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
     fastchart_value_range_compute(xmin, xmax, 6, &xrange);
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, &t, 1, 1, NULL, 0, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, t, 1, 1, NULL, 0, &plot);
 
     fastchart_palette pal;
-    fastchart_palette_init(&t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    fastchart_color_cache color_cache;
-    fastchart_color_cache_init(&color_cache);
-
-    fastchart_draw_frame(&t, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(&t, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_y_axis(&t, (fastchart_obj *)self, &plot, &pal, &yrange);
-    fastchart_draw_plot_bands(&t, (fastchart_obj *)self, &plot, &yrange, &pal);
-    fastchart_draw_v_plot_bands_xrange(&t, (fastchart_obj *)self, &plot,
+    fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_y_axis(t, (fastchart_obj *)self, &plot, &pal, &yrange);
+    fastchart_draw_plot_bands(t, (fastchart_obj *)self, &plot, &yrange, &pal);
+    fastchart_draw_v_plot_bands_xrange(t, (fastchart_obj *)self, &plot,
                                        &xrange, &pal);
 
     /* Categorical x labels would mismatch the continuous data; draw a
@@ -77,27 +72,32 @@ int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
      * synthetic timestamps... actually for a bubble chart, just draw
      * the X axis line and let the user supplement with axis title. */
     if (self->x_axis_visible) {
-        gdImageLine(im, plot.x0, plot.y1, plot.x1, plot.y1, fastchart_target_color_to_gd(&t, pal.axis));
+        fastchart_target_line(t, plot.x0, plot.y1, plot.x1, plot.y1,
+                              pal.axis, 1, FASTCHART_DASH_SOLID);
     }
-    fastchart_draw_axis_titles(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_axis_titles(t, (fastchart_obj *)self, &plot, &pal);
 
     /* Map size to radius: max bubble = ~5% of plot width. */
     double plot_w = plot.x1 - plot.x0;
     double r_max = plot_w * 0.05;
     if (r_max < 4) r_max = 4;
 
-    /* Pre-resolve translucent fills for the palette so the per-bubble
-     * loop avoids gdImageColorAllocateAlpha on every iteration. The
-     * override-color path still allocates inline but typically hits
-     * for a small number of distinct values. */
+    bool gd = (t->kind == FASTCHART_TARGET_GD);
+    gdImagePtr im = gd ? t->u.gd.im : NULL;
+
+    /* Pre-resolve translucent palette-series fills as target color
+     * handles. gd_alpha 70 (~45% transparent) maps to alpha byte
+     * 255 - 70*2 = 115 in the target API. */
     int palette_alpha[FASTCHART_PALETTE_SERIES_N];
     for (int i = 0; i < FASTCHART_PALETTE_SERIES_N; i++) {
-        int c = pal.series[i];
-        palette_alpha[i] = gdImageColorAllocateAlpha(im,
-            gdImageRed(im, c), gdImageGreen(im, c), gdImageBlue(im, c), 70);
+        uint32_t rgba = fastchart_target_color_to_rgba(t, pal.series[i]);
+        int r = (rgba >> 16) & 0xFF;
+        int g = (rgba >>  8) & 0xFF;
+        int b =  rgba        & 0xFF;
+        palette_alpha[i] = fastchart_target_color(t, r, g, b, 115);
     }
 
-    gdImageAlphaBlending(im, 1);
+    if (gd) gdImageAlphaBlending(im, 1);
     for (int i = 0; i < collected; i++) {
         double xfrac = (xrange.max - xrange.min) > 0
             ? (pts[i].x - xrange.min) / (xrange.max - xrange.min) : 0.5;
@@ -110,38 +110,47 @@ int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
         int color, alpha;
         if (pts[i].color_rgb >= 0) {
             int c = pts[i].color_rgb;
-            color = fastchart_color_cache_get(&color_cache, im, c);
-            /* Translucent variant of the same RGB. gdImage's truecolor
-             * hash dedupes RGBA tuples, so the per-call cost is a hash
-             * hit after the first unique color. */
-            alpha = gdImageColorAllocateAlpha(im,
-                (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, 70);
+            color = fastchart_target_color_rgb(t, c);
+            alpha = fastchart_target_color(t,
+                (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, 115);
         } else {
             int idx = i % FASTCHART_PALETTE_SERIES_N;
             color = pal.series[idx];
             alpha = palette_alpha[idx];
         }
 
-        fastchart_shadow_filled_arc(im, (fastchart_obj *)self, px, py, rad * 2, 0, 360);
-        gdImageFilledEllipse(im, px, py, rad * 2, rad * 2, alpha);
-        int edge = self->edge_color >= 0 ? (int)self->edge_color : color;
-        gdImageEllipse(im, px, py, rad * 2, rad * 2, edge);
+        if (gd) {
+            fastchart_shadow_filled_arc(im, (fastchart_obj *)self, px, py, rad * 2, 0, 360);
+        }
+        fastchart_target_ellipse(t, px, py, rad, rad, alpha, 1, 0);
+        int edge = self->edge_color >= 0
+            ? fastchart_target_color_rgb(t, (int)self->edge_color)
+            : color;
+        fastchart_target_ellipse(t, px, py, rad, rad, edge, 0, 1);
     }
-    gdImageAlphaBlending(im, 0);
+    if (gd) gdImageAlphaBlending(im, 0);
 
-    fastchart_draw_h_annotations(&t, (fastchart_obj *)self, &plot, &pal, &yrange);
-    fastchart_draw_v_annotations_continuous(&t, (fastchart_obj *)self, &plot, &pal, &xrange);
-    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
+    fastchart_draw_h_annotations(t, (fastchart_obj *)self, &plot, &pal, &yrange);
+    fastchart_draw_v_annotations_continuous(t, (fastchart_obj *)self, &plot, &pal, &xrange);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
 
     if (self->icons && self->n_icons > 0) {
         for (int i = 0; i < self->n_icons; i++) {
             const fastchart_icon *ic = &self->icons[i];
             int px = fastchart_x_to_pixel(ic->x, &xrange, &plot);
             int py = fastchart_y_to_pixel(ic->y, &yrange, &plot);
-            fastchart_blit_icon(&t, ic, px, py);
+            fastchart_blit_icon(t, ic, px, py);
         }
     }
     return 0;
+}
+
+/* GD-only shim. */
+int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
+    return fastchart_bubble_render_to_target(self, &t);
 }
 
 ZEND_METHOD(FastChart_BubbleChart, draw)

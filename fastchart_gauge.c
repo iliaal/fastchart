@@ -37,22 +37,20 @@ static double gauge_value_to_deg(double v, double mn, double mx)
     return 180.0 - frac * 180.0;
 }
 
-int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
+int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target_t *t)
 {
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
     /* Per-render entry: invalidate the font cache (so a runtime
      * open_basedir narrowing between draws is honored) and stamp DPI
      * on the canvas. Must come BEFORE any palette / text work. */
-    fastchart_begin_render((fastchart_obj *)self, &t);
+    fastchart_begin_render((fastchart_obj *)self, t);
 
     fastchart_palette pal;
-    fastchart_palette_init(&t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    int W = gdImageSX(im);
-    int H = gdImageSY(im);
-    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, fastchart_target_color_to_gd(&t, pal.bg));
+    int W, H;
+    fastchart_target_get_dims(t, &W, &H);
+    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
 
     /* Reserve title height proportional to font size, not a hardcoded
      * 32px constant. At larger canvas + larger font (1200x800 with
@@ -68,7 +66,7 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
         int th = (int)(title_size * 1.0);  /* fallback */
         if (tfont) {
             int measured_h = 0;
-            if (fastchart_text_measure(&t, tfont, title_size, ZSTR_VAL(self->title),
+            if (fastchart_text_measure(t, tfont, title_size, ZSTR_VAL(self->title),
                                        NULL, &measured_h, NULL, 0) == 0) {
                 th = measured_h;
             }
@@ -105,16 +103,21 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
      * (right). Zones are pre-parsed into typed C state by setZones. */
     int default_color = pal.series[0];
 
+    bool gd = (t->kind == FASTCHART_TARGET_GD);
+    gdImagePtr im = gd ? t->u.gd.im : NULL;
+
     if (self->zones && self->n_zones > 0) {
         /* Background fill (a thin ring, drawn as a fat arc). */
-        fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
+        if (gd) {
+            fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
+        } else {
+            fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.grid, 1, 0);
+        }
         for (int i = 0; i < self->n_zones; i++) {
             const fastchart_gauge_zone *zn = &self->zones[i];
             int color = default_color;
             if (zn->color_rgb >= 0) {
-                int c = zn->color_rgb;
-                color = gdImageColorAllocate(im,
-                    (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+                color = fastchart_target_color_rgb(t, zn->color_rgb);
             }
             /* Map gauge values directly into libgd's arc-angle frame:
              *   value=min  -> 180° (left edge of upper half)
@@ -131,27 +134,43 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
             if (frac_b > 1) frac_b = 1;
             int start = (int)(180 + frac_a * 180);
             int end   = (int)(180 + frac_b * 180);
-            if (start > end) { int t = start; start = end; end = t; }
+            if (start > end) { int tmp = start; start = end; end = tmp; }
             if (end <= start) continue;  /* empty zone, skip */
-            fastchart_filled_wedge_aa(im, cx, cy, diameter, start, end, color);
+            if (gd) {
+                int gd_color = fastchart_target_color_to_gd(t, color);
+                fastchart_filled_wedge_aa(im, cx, cy, diameter, start, end, gd_color);
+            } else {
+                fastchart_target_arc(t, cx, cy, radius, radius,
+                                     (double)start, (double)end, color, 1, 0);
+            }
         }
     } else {
         /* Single-color sweep from min to value, with the rest in grid color. */
-        fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
+        if (gd) {
+            fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
+        } else {
+            fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.grid, 1, 0);
+        }
         double aV = gauge_value_to_deg(v, mn, mx);
         int start = 180;
         int end = 180 + (int)(180 - aV);
         if (end > start) {
-            fastchart_filled_wedge_aa(im, cx, cy, diameter, start, end, default_color);
+            if (gd) {
+                int gd_color = fastchart_target_color_to_gd(t, default_color);
+                fastchart_filled_wedge_aa(im, cx, cy, diameter, start, end, gd_color);
+            } else {
+                fastchart_target_arc(t, cx, cy, radius, radius,
+                                     (double)start, (double)end, default_color, 1, 0);
+            }
         }
     }
 
     /* Inner cutout to make a thick ring. */
     int hole = (int)(diameter * 0.55);
-    gdImageFilledEllipse(im, cx, cy, hole, hole, fastchart_target_color_to_gd(&t, pal.bg));
+    fastchart_target_ellipse(t, cx, cy, hole / 2, hole / 2, pal.bg, 1, 0);
 
     /* Outer arc edge in border color. */
-    gdImageArc(im, cx, cy, diameter, diameter, 180, 360, fastchart_target_color_to_gd(&t, pal.border));
+    fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.border, 0, 1);
 
     /* Needle. gauge_value_to_deg returns 180 (value=min) to 0 (value=max),
      * which is the standard math angle (CCW from +x axis): 180=left,
@@ -163,19 +182,21 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
     /* Needle thickness scales with gauge size — visible on a 1200x800
      * canvas, not dominant on a 480x320 one. libgd has no proper
      * thick-AA primitive, so paint the body thick (no AA) then
-     * overdraw a 1px AA spine to soften diagonals. */
+     * overdraw a 1px AA spine to soften diagonals. The SVG renderer
+     * AAs at the layer level so the thick stroke suffices. */
     double needle_thickness = (double)diameter / 200.0 + 2.0;
     if (needle_thickness < 3.0) needle_thickness = 3.0;
-    gdImageSetThickness(im, (int)needle_thickness);
-    gdImageLine(im, cx, cy, nx, ny, fastchart_target_color_to_gd(&t, pal.text));
-    gdImageSetThickness(im, 1);
-    gdImageSetAntiAliased(im, fastchart_target_color_to_gd(&t, pal.text));
-    gdImageLine(im, cx, cy, nx, ny, gdAntiAliased);
+    fastchart_target_line(t, cx, cy, nx, ny,
+                          pal.text, (int)needle_thickness, FASTCHART_DASH_SOLID);
+    if (gd) {
+        gdImageSetAntiAliased(im, fastchart_target_color_to_gd(t, pal.text));
+        gdImageLine(im, cx, cy, nx, ny, gdAntiAliased);
+    }
 
     /* Hub: scale with diameter so it doesn't look tiny on a large canvas. */
     int hub = diameter / 60;
     if (hub < 8) hub = 8;
-    gdImageFilledEllipse(im, cx, cy, hub, hub, fastchart_target_color_to_gd(&t, pal.text));
+    fastchart_target_ellipse(t, cx, cy, hub / 2, hub / 2, pal.text, 1, 0);
 
     /* Center value label. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
@@ -188,7 +209,7 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
         double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base * 1.4);
         int tx = cx;
         int ty = cy + (int)(diameter * 0.35);
-        fastchart_text_draw(&t, font, size, pal.text, tx, ty,
+        fastchart_text_draw(t, font, size, pal.text, tx, ty,
                             FASTCHART_ALIGN_CENTER, buf, NULL, 0);
     }
 
@@ -201,20 +222,28 @@ int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
         snprintf(maxbuf, sizeof(maxbuf), fmt, mx);
         double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
         double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base * 0.85);
-        fastchart_text_draw(&t, font, size, pal.text,
+        fastchart_text_draw(t, font, size, pal.text,
                             cx - radius, cy + (int)(size * 1.5),
                             FASTCHART_ALIGN_CENTER, minbuf, NULL, 0);
-        fastchart_text_draw(&t, font, size, pal.text,
+        fastchart_text_draw(t, font, size, pal.text,
                             cx + radius, cy + (int)(size * 1.5),
                             FASTCHART_ALIGN_CENTER, maxbuf, NULL, 0);
     }
 
     /* Title. Baseline scales with the title font size so the ascender
      * stays inside the canvas at any canvas/font scale. */
-    fastchart_draw_floating_title(&t, (fastchart_obj *)self, &pal, W / 2, title_baseline);
+    fastchart_draw_floating_title(t, (fastchart_obj *)self, &pal, W / 2, title_baseline);
 
-    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
+}
+
+/* GD-only shim. */
+int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
+    return fastchart_gauge_render_to_target(self, &t);
 }
 
 ZEND_METHOD(FastChart_GaugeChart, draw)

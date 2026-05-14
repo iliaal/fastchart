@@ -64,10 +64,8 @@ static double t_cross(double a, double b, double level)
     return t;
 }
 
-int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im)
+int fastchart_contour_render_to_target(fastchart_contour_obj *self, fastchart_target_t *t)
 {
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
     if (!self->grid.cells || self->grid.rows < 2 || self->grid.cols < 2) {
         zend_throw_error(NULL,
             "FastChart\\ContourChart::draw() requires setGrid() with at least a 2x2 grid");
@@ -116,15 +114,15 @@ int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im
     /* Per-render entry: invalidate the font cache (so a runtime
      * open_basedir narrowing between draws is honored) and stamp DPI
      * on the canvas. Must come BEFORE any palette / text work. */
-    fastchart_begin_render((fastchart_obj *)self, &t);
+    fastchart_begin_render((fastchart_obj *)self, t);
 
     fastchart_palette pal;
-    fastchart_palette_init(&t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    int W = gdImageSX(im);
-    int H = gdImageSY(im);
-    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, fastchart_target_color_to_gd(&t, pal.bg));
+    int W, H;
+    fastchart_target_get_dims(t, &W, &H);
+    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
 
     int top = (self->title && ZSTR_LEN(self->title) > 0) ? 32 : 12;
     int margin = 30;
@@ -152,8 +150,7 @@ int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im
         int lut[256];
         for (int k = 0; k < 256; k++) {
             int rgb = fastchart_lerp_rgb(low, high, (double)k / 255.0);
-            lut[k] = gdImageColorAllocate(im,
-                (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+            lut[k] = fastchart_target_color_rgb(t, rgb);
         }
 
         for (int i = 0; i < rows - 1; i++) {
@@ -164,18 +161,24 @@ int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im
                 double v11 = G(i + 1, j + 1);
                 if (isnan(v00) || isnan(v01) || isnan(v10) || isnan(v11)) continue;
                 double avg = (v00 + v01 + v10 + v11) * 0.25;
-                double t = (avg - vmin) / span;
-                int idx = (int)(t * 255.0 + 0.5);
+                double tv = (avg - vmin) / span;
+                int idx = (int)(tv * 255.0 + 0.5);
                 if (idx < 0) idx = 0; else if (idx > 255) idx = 255;
                 int color = lut[idx];
                 int px0 = x0 + (int)(j * cell_w);
                 int py0 = y0 + (int)(i * cell_h);
                 int px1 = x0 + (int)((j + 1) * cell_w);
                 int py1 = y0 + (int)((i + 1) * cell_h);
-                gdImageFilledRectangle(im, px0, py0, px1, py1, color);
+                fastchart_target_rect(t, px0, py0,
+                                      px1 - px0 + 1, py1 - py0 + 1,
+                                      color, 1, 0);
             }
         }
     }
+
+    int isoline_color = self->edge_color >= 0
+        ? fastchart_target_color_rgb(t, (int)self->edge_color)
+        : pal.axis;
 
     /* Marching squares per level. */
     for (int k = 0; k < n_levels; k++) {
@@ -221,27 +224,27 @@ int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im
                 /* 16 cases. Cases 0 and 15 -> no crossing. Saddle
                  * cases (5, 10) draw two segments; resolve by averaging
                  * to the canonical pairing. */
-                int color = self->edge_color >= 0 ? (int)self->edge_color : pal.axis;
+                int color = isoline_color;
                 switch (idx) {
                     case 1: case 14:
-                        gdImageLine(im, p_left_x, p_left_y, p_top_x, p_top_y, color); break;
+                        fastchart_target_line(t, p_left_x, p_left_y, p_top_x, p_top_y, color, 1, FASTCHART_DASH_SOLID); break;
                     case 2: case 13:
-                        gdImageLine(im, p_top_x, p_top_y, p_right_x, p_right_y, color); break;
+                        fastchart_target_line(t, p_top_x, p_top_y, p_right_x, p_right_y, color, 1, FASTCHART_DASH_SOLID); break;
                     case 3: case 12:
-                        gdImageLine(im, p_left_x, p_left_y, p_right_x, p_right_y, color); break;
+                        fastchart_target_line(t, p_left_x, p_left_y, p_right_x, p_right_y, color, 1, FASTCHART_DASH_SOLID); break;
                     case 4: case 11:
-                        gdImageLine(im, p_right_x, p_right_y, p_bot_x, p_bot_y, color); break;
+                        fastchart_target_line(t, p_right_x, p_right_y, p_bot_x, p_bot_y, color, 1, FASTCHART_DASH_SOLID); break;
                     case 6: case 9:
-                        gdImageLine(im, p_top_x, p_top_y, p_bot_x, p_bot_y, color); break;
+                        fastchart_target_line(t, p_top_x, p_top_y, p_bot_x, p_bot_y, color, 1, FASTCHART_DASH_SOLID); break;
                     case 7: case 8:
-                        gdImageLine(im, p_left_x, p_left_y, p_bot_x, p_bot_y, color); break;
+                        fastchart_target_line(t, p_left_x, p_left_y, p_bot_x, p_bot_y, color, 1, FASTCHART_DASH_SOLID); break;
                     case 5:
-                        gdImageLine(im, p_left_x, p_left_y, p_top_x, p_top_y, color);
-                        gdImageLine(im, p_right_x, p_right_y, p_bot_x, p_bot_y, color);
+                        fastchart_target_line(t, p_left_x, p_left_y, p_top_x, p_top_y, color, 1, FASTCHART_DASH_SOLID);
+                        fastchart_target_line(t, p_right_x, p_right_y, p_bot_x, p_bot_y, color, 1, FASTCHART_DASH_SOLID);
                         break;
                     case 10:
-                        gdImageLine(im, p_top_x, p_top_y, p_right_x, p_right_y, color);
-                        gdImageLine(im, p_left_x, p_left_y, p_bot_x, p_bot_y, color);
+                        fastchart_target_line(t, p_top_x, p_top_y, p_right_x, p_right_y, color, 1, FASTCHART_DASH_SOLID);
+                        fastchart_target_line(t, p_left_x, p_left_y, p_bot_x, p_bot_y, color, 1, FASTCHART_DASH_SOLID);
                         break;
                     default: break;
                 }
@@ -251,20 +254,28 @@ int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im
 
     /* Frame. */
     if (self->border_sides & FASTCHART_BORDER_TOP)
-        gdImageLine(im, x0, y0, x1, y0, fastchart_target_color_to_gd(&t, pal.border));
+        fastchart_target_line(t, x0, y0, x1, y0, pal.border, 1, FASTCHART_DASH_SOLID);
     if (self->border_sides & FASTCHART_BORDER_BOTTOM)
-        gdImageLine(im, x0, y1, x1, y1, fastchart_target_color_to_gd(&t, pal.border));
+        fastchart_target_line(t, x0, y1, x1, y1, pal.border, 1, FASTCHART_DASH_SOLID);
     if (self->border_sides & FASTCHART_BORDER_LEFT)
-        gdImageLine(im, x0, y0, x0, y1, fastchart_target_color_to_gd(&t, pal.border));
+        fastchart_target_line(t, x0, y0, x0, y1, pal.border, 1, FASTCHART_DASH_SOLID);
     if (self->border_sides & FASTCHART_BORDER_RIGHT)
-        gdImageLine(im, x1, y0, x1, y1, fastchart_target_color_to_gd(&t, pal.border));
+        fastchart_target_line(t, x1, y0, x1, y1, pal.border, 1, FASTCHART_DASH_SOLID);
 
     /* Title. */
-    fastchart_draw_floating_title(&t, (fastchart_obj *)self, &pal, W / 2, 24);
+    fastchart_draw_floating_title(t, (fastchart_obj *)self, &pal, W / 2, 24);
 
-    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
 #undef G
+}
+
+/* GD-only shim. */
+int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
+    return fastchart_contour_render_to_target(self, &t);
 }
 
 ZEND_METHOD(FastChart_ContourChart, draw)
