@@ -147,7 +147,15 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 n_pts++;
             }
             if (n_pts >= 3) {
-                fastchart_target_polygon(t, poly, n_pts, series_handle, 1, 0);
+                fastchart_obj *base = (fastchart_obj *)self;
+                if (base->gradient_from >= 0 && base->gradient_to >= 0) {
+                    fastchart_target_gradient_polygon(t, poly, n_pts,
+                        (uint32_t)base->gradient_from,
+                        (uint32_t)base->gradient_to,
+                        (int)base->gradient_dir);
+                } else {
+                    fastchart_target_polygon(t, poly, n_pts, series_handle, 1, 0);
+                }
                 if (edge_handle >= 0) {
                     fastchart_target_polygon(t, poly, n_pts, edge_handle, 0, 1);
                 }
@@ -199,7 +207,15 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 n_pts++;
             }
             if (n_pts >= 3) {
-                fastchart_target_polygon(t, poly, n_pts, alpha_handle, 1, 0);
+                fastchart_obj *base = (fastchart_obj *)self;
+                if (base->gradient_from >= 0 && base->gradient_to >= 0) {
+                    fastchart_target_gradient_polygon(t, poly, n_pts,
+                        (uint32_t)base->gradient_from,
+                        (uint32_t)base->gradient_to,
+                        (int)base->gradient_dir);
+                } else {
+                    fastchart_target_polygon(t, poly, n_pts, alpha_handle, 1, 0);
+                }
                 if (edge_handle >= 0) {
                     fastchart_target_polygon(t, poly, n_pts, edge_handle, 0, 1);
                 }
