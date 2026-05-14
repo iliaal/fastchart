@@ -44,6 +44,18 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
     zend_long t_min = candles[0].ts;
     zend_long t_max = candles[n - 1].ts;
     if (t_min == t_max) t_max = t_min + 1;
+    /* Pad the time domain by half a bar-step on each end so the
+     * first and last candles sit inside the plot rect instead of
+     * straddling the Y-axis line (left) or running past the right
+     * edge. Matches the half-step behaviour of categorical X axes
+     * (fastchart_x_categorical_center adds 0.5 inside cells). */
+    if (n > 1) {
+        zend_long step = (t_max - t_min) / (n - 1);
+        if (step > 0) {
+            t_min -= step / 2;
+            t_max += step / 2;
+        }
+    }
 
     double y_min = candles[0].low, y_max = candles[0].high;
     double v_max = 0;

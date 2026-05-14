@@ -158,9 +158,13 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
             /* gd_alpha 90 → byte 255 - 90*2 = 75. */
             int alpha = fastchart_target_color(t, rr, gg, bb, 75);
             if (gd) {
+                /* fastchart_filled_polygon_aa takes a gd-int color
+                 * (it calls gdImageFilledPolygon directly); resolve
+                 * the target handle back to the gd-allocated int. */
+                int alpha_gd = fastchart_target_color_to_gd(t, alpha);
                 gdImageAlphaBlending(im, 1);
                 fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
-                fastchart_filled_polygon_aa(im, poly, n_pts, alpha);
+                fastchart_filled_polygon_aa(im, poly, n_pts, alpha_gd);
                 gdImageAlphaBlending(im, 0);
             } else {
                 fastchart_target_polygon(t, poly, n_pts, alpha, 1, 0);

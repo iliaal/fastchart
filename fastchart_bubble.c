@@ -46,6 +46,24 @@ int fastchart_bubble_render_to_target(fastchart_bubble_obj *self, fastchart_targ
         if (pts[i].size > smax) smax = pts[i].size;
     }
 
+    /* Pad the data range so the largest bubble doesn't clip outside
+     * the plot rect. Bubble radii are mapped to ~5% of plot width
+     * (see r_max below), but the axis range is computed from raw
+     * data y/x and the niced-tick rounding may leave only a few
+     * pixels of headroom. A 10% relative pad on each end covers the
+     * typical max-radius case and stays invisible when data span is
+     * tiny (a flat-line set still rounds to a sensible niced range). */
+    if (xmax > xmin) {
+        double xpad = (xmax - xmin) * 0.10;
+        xmin -= xpad;
+        xmax += xpad;
+    }
+    if (ymax > ymin) {
+        double ypad = (ymax - ymin) * 0.10;
+        ymin -= ypad;
+        ymax += ypad;
+    }
+
     fastchart_value_range yrange;
     fastchart_value_range_compute(ymin, ymax, 6, &yrange);
     fastchart_value_range_apply_override((fastchart_obj *)self, &yrange);

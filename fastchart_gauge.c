@@ -109,7 +109,11 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
     if (self->zones && self->n_zones > 0) {
         /* Background fill (a thin ring, drawn as a fat arc). */
         if (gd) {
-            fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
+            /* fastchart_filled_wedge_aa takes a gd-int (calls
+             * gdImageFilledArc directly). pal.grid is a target
+             * handle post-Phase-2 — resolve it back to a gd-int. */
+            fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360,
+                                       fastchart_target_color_to_gd(t, pal.grid));
         } else {
             fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.grid, 1, 0);
         }
@@ -147,7 +151,8 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
     } else {
         /* Single-color sweep from min to value, with the rest in grid color. */
         if (gd) {
-            fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360, pal.grid);
+            fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360,
+                                       fastchart_target_color_to_gd(t, pal.grid));
         } else {
             fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.grid, 1, 0);
         }
