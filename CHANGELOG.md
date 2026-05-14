@@ -218,6 +218,60 @@ Tests added in this followup wave: 132 (open_basedir TOCTOU), 133
 (XML control-byte sanitizer), 134 (MINFO + optional-libs surface),
 135 (AreaChart gradient).
 
+### Followups landed (review-pass mediums + ZTS hardening)
+
+- **UTF-8 sanitizer for SVG_TEXT_NATIVE.** The first sanitizer pass
+  handled only single-byte C0 controls; bytes 0x80+ passed through
+  verbatim. A lone continuation byte, a truncated 2/3/4-byte
+  sequence, a UTF-8-encoded surrogate (`ED A0 80`), an overlong
+  encoding (`C0 AF`), or any 5+-byte start (0xF8+) survived into
+  `<text>` content and made xmllint reject the document. The
+  hardened escaper decodes each multi-byte sequence and replaces
+  ill-formed runs with U+FFFD; lone start bytes resync byte-by-byte
+  rather than skipping the declared length of garbage. Valid
+  multi-byte UTF-8 (2/3/4-byte, BMP + SMP) round-trips untouched.
+- **FT_Face LRU cache.** FT_Library was already shared (round 2);
+  FT_Face creation was still per-call. Each `FT_New_Face` parses
+  the whole font file (tables, charmaps, glyph index) and
+  dominated per-label cost on dense labels. New 4-slot LRU cache
+  keyed by `font_path` skips `FT_New_Face` on a hit; `FT_Set_Char_-
+  Size` still runs every call (cheap).
+- **ZTS-safe FT state via TSRM module globals.** FT_Library + face
+  cache are now per-thread under ZTS (`ZEND_DECLARE_MODULE_GLOBALS`,
+  `PHP_GSHUTDOWN` for per-thread teardown). NTS unchanged. Closes
+  the last cross-thread shared-state race surface.
+- **Interned default_font_path.** `fastchart_default_font_path` was
+  a refcounted persistent zend_string; per-chart `zend_string_copy`
+  on it called the non-atomic `GC_ADDREF`. Under ZTS two threads
+  constructing charts concurrently raced on the refcount. Now
+  interned via `zend_string_init_interned(..., permanent=1)` —
+  copy returns the same pointer without touching the refcount.
+- **AreaChart gradient honors `setFillOpacity()`.** The gradient
+  emitter forced opaque stops; non-stacked overlay layers with
+  gradient on lost the translucency that solid-fill overlays got
+  from `setAreaAlpha`. Alpha now composes into the high byte of
+  the gradient stops; legacy callers (Bar / Pie passing bare
+  24-bit RGB) still get opaque stops via a default-to-0xFF
+  fallback in `fc_svg_emit_gradient_def`.
+- **Source-image S_ISREG defense-in-depth.** The single-open
+  source-image loader added in the open_basedir fix relied on the
+  MIME sniff to reject non-regular inodes. `php_stream_stat()` +
+  `S_ISREG` after open now rejects directories, FIFOs, /proc
+  entries up-front; stream wrappers without a real stat backend
+  (http, php://memory) fall through to the MIME gate.
+- **MINFO row labels.** `libjpeg-turbo => libjpeg-turbo 2.1.2`
+  reduced to `libjpeg => 2.1.2 (turbo)` — value carries just the
+  version with a flavour suffix, matching ext/gd's "libJPEG
+  Version" idiom.
+- **PLUTOVG_VERSION_STRING / PLUTOSVG_VERSION_STRING.** Dropped
+  local `FC_VER_STR2` / `FC_XSTR_VER` stringification macros that
+  reinvented what the vendored headers already export.
+
+Tests added: 136 (S_ISREG rejection of non-regular inputs), 137
+(AreaChart gradient alpha). Test 133 extended with malformed-UTF-8
+probes (lone continuation, truncated 2/3-byte, surrogate, overlong,
+above-U+10FFFF, valid round-trip). 103 / 103 phpts pass.
+
 ## [0.2.0] - 2026-05-09
 
 ### Added
