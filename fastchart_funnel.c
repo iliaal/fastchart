@@ -26,19 +26,17 @@
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 
-int fastchart_funnel_render_to_image(fastchart_funnel_obj *self, gdImagePtr im)
+int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_target_t *t)
 {
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
-    fastchart_begin_render((fastchart_obj *)self, &t);
+    fastchart_begin_render((fastchart_obj *)self, t);
 
     fastchart_palette pal;
-    fastchart_palette_init(&t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    int W = gdImageSX(im);
-    int H = gdImageSY(im);
-    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, fastchart_target_color_to_gd(&t, pal.bg));
+    int W, H;
+    fastchart_target_get_dims(t, &W, &H);
+    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
 
     /* Title reservation. */
     int top_pad = 12;
@@ -47,7 +45,7 @@ int fastchart_funnel_render_to_image(fastchart_funnel_obj *self, gdImagePtr im)
     double base_size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
     double title_size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_TITLE, base_size * 1.4);
     if (self->title && ZSTR_LEN(self->title) > 0 && title_font) {
-        if (fastchart_text_measure(&t, title_font, title_size, ZSTR_VAL(self->title),
+        if (fastchart_text_measure(t, title_font, title_size, ZSTR_VAL(self->title),
                                    NULL, &title_h, NULL, 0) == 0) {
             top_pad += title_h + 10;
         }
@@ -108,9 +106,7 @@ int fastchart_funnel_render_to_image(fastchart_funnel_obj *self, gdImagePtr im)
 
         int color;
         if (self->stages[i].color_rgb >= 0) {
-            int rgb = self->stages[i].color_rgb;
-            color = gdImageColorAllocate(im,
-                (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+            color = fastchart_target_color_rgb(t, self->stages[i].color_rgb);
         } else {
             color = pal.series[i % FASTCHART_PALETTE_SERIES_N];
         }
@@ -121,14 +117,14 @@ int fastchart_funnel_render_to_image(fastchart_funnel_obj *self, gdImagePtr im)
             { cx + half_bot, yb },
             { cx - half_bot, yb },
         };
-        gdImageFilledPolygon(im, trap, 4, color);
-        gdImagePolygon(im, trap, 4, fastchart_target_color_to_gd(&t, pal.border));
+        fastchart_target_polygon(t, trap, 4, color, 1, 0);
+        fastchart_target_polygon(t, trap, 4, pal.border, 0, 1);
 
         /* Label: stage name on the left, optional value on the right.
          * Anchor at the trapezoid centroid Y. */
         int yc = (yt + yb) / 2 + (int)(label_size * 0.4);
         if (label_font && self->stages[i].label) {
-            fastchart_text_draw(&t, label_font, label_size, pal.text,
+            fastchart_text_draw(t, label_font, label_size, pal.text,
                                 x_left - 8, yc, FASTCHART_ALIGN_RIGHT,
                                 self->stages[i].label, NULL, 0);
         }
@@ -143,7 +139,7 @@ int fastchart_funnel_render_to_image(fastchart_funnel_obj *self, gdImagePtr im)
             }
             char buf[64];
             snprintf(buf, sizeof(buf), fmt, v_top);
-            fastchart_text_draw(&t, label_font, label_size, pal.text,
+            fastchart_text_draw(t, label_font, label_size, pal.text,
                                 x_right + 8, yc, FASTCHART_ALIGN_LEFT,
                                 buf, NULL, 0);
         }
@@ -151,13 +147,21 @@ int fastchart_funnel_render_to_image(fastchart_funnel_obj *self, gdImagePtr im)
 
     /* Title. */
     if (self->title && ZSTR_LEN(self->title) > 0 && title_font && title_h > 0) {
-        fastchart_text_draw(&t, title_font, title_size, pal.text,
+        fastchart_text_draw(t, title_font, title_size, pal.text,
                             W / 2, 12 + title_h, FASTCHART_ALIGN_CENTER,
                             ZSTR_VAL(self->title), NULL, 0);
     }
 
-    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
+}
+
+/* GD-only shim. */
+int fastchart_funnel_render_to_image(fastchart_funnel_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
+    return fastchart_funnel_render_to_target(self, &t);
 }
 
 ZEND_METHOD(FastChart_Funnel, draw)

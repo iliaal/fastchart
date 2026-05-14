@@ -33,9 +33,11 @@
 #include "Zend/zend_exceptions.h"
 
 #include "php_fastchart.h"
+#include "fastchart_target.h"
 #include "qrcodegen.h"
 
-int fastchart_qrcode_render_to_image(fastchart_qrcode_obj *self, gdImagePtr im)
+int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,
+                                       fastchart_target_t *t)
 {
     fastchart_symbol_obj *base = (fastchart_symbol_obj *)self;
 
@@ -91,8 +93,8 @@ int fastchart_qrcode_render_to_image(fastchart_qrcode_obj *self, gdImagePtr im)
 
     int N = qrcodegen_getSize(qrcode);  /* 21..177 modules per side */
 
-    int W = gdImageSX(im);
-    int H = gdImageSY(im);
+    int W, H;
+    fastchart_target_get_dims(t, &W, &H);
 
     /* Quiet zone: spec says 4 modules around every QR symbol. The
      * setQuietZone() unit for QrCode is modules (per the stub). -1
@@ -144,18 +146,16 @@ int fastchart_qrcode_render_to_image(fastchart_qrcode_obj *self, gdImagePtr im)
 
     /* Background fill via the shared helper — single source of truth
      * for the transparent_bg invariant. */
-    fastchart_symbol_fill_background(base, im);
+    fastchart_symbol_fill_background(base, t);
 
-    int fg = gdImageColorAllocate(im,
-        (int)((base->fg_rgb >> 16) & 0xFF),
-        (int)((base->fg_rgb >> 8)  & 0xFF),
-        (int)(base->fg_rgb & 0xFF));
+    int fg = fastchart_target_color_rgb(t, (int)base->fg_rgb);
 
     /* Walk the module grid. Adjacent dark modules form runs along the
-     * x-axis; coalesce them into single gdImageFilledRectangle calls
-     * to reduce the libgd call count by ~3-5x on typical QR symbols
-     * (versions 1-10), which speeds the render and shrinks PNG
-     * encode work as a side effect. The visible output is identical. */
+     * x-axis; coalesce them into single rect emissions to reduce the
+     * call count by ~3-5x on typical QR symbols (versions 1-10),
+     * which speeds the GD render and shrinks the SVG output as a side
+     * effect (one <rect> per run instead of one per module). The
+     * visible output is identical. */
     for (int y = 0; y < N; y++) {
         int x = 0;
         while (x < N) {
@@ -165,14 +165,23 @@ int fastchart_qrcode_render_to_image(fastchart_qrcode_obj *self, gdImagePtr im)
             }
             int run_start = x;
             while (x < N && qrcodegen_getModule(qrcode, x, y)) x++;
-            int run_end = x - 1;  /* inclusive */
-            int x0 = origin_x + run_start * module_px;
-            int x1 = origin_x + (run_end + 1) * module_px - 1;
-            int y0 = origin_y + y * module_px;
-            int y1 = origin_y + (y + 1) * module_px - 1;
-            gdImageFilledRectangle(im, x0, y0, x1, y1, fg);
+            int run_len = x - run_start;
+            int rx = origin_x + run_start * module_px;
+            int ry = origin_y + y * module_px;
+            fastchart_target_rect(t, rx, ry,
+                                  run_len * module_px, module_px,
+                                  fg, /*fill=*/1, /*thickness=*/0);
         }
     }
 
     return 0;
+}
+
+/* Backwards-compat shim. Mirrors the Code128 shim — wraps a gdImagePtr
+ * into a GD-backed target and routes through the canonical render. */
+int fastchart_qrcode_render_to_image(fastchart_qrcode_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, (int)self->dpi);
+    return fastchart_qrcode_render_to_target(self, &t);
 }

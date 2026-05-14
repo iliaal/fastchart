@@ -1262,9 +1262,28 @@ abstract class Symbol
     public function renderAvif(int $quality = 60): string {}
 
     /**
+     * Render to an SVG document. Returns the full markup including
+     * the `<?xml ...>` prolog and `<svg>` root. The viewport matches
+     * the logical canvas size (per-class default applies when
+     * `setSize()` was not called). DPI does not scale the viewport;
+     * SVG is vector and scales infinitely.
+     */
+    public function renderSvg(): string {}
+
+    /**
+     * Render to an SVG fragment: a single
+     * `<g class="fastchart-symbol">…</g>` group with no outer `<svg>`
+     * or XML prolog. Intended for stitching multiple charts /
+     * symbols into one caller-managed SVG document.
+     */
+    public function drawSvgFragment(): string {}
+
+    /**
      * Render and write to `$path`. Format inferred from extension;
-     * supports .png / .jpg / .jpeg / .webp / .gif / .avif. Honours
-     * `open_basedir`. Returns bytes written.
+     * supports .png / .jpg / .jpeg / .webp / .gif / .avif / .svg.
+     * `$quality` applies to JPEG / WebP / AVIF and is ignored for
+     * SVG (vector, no lossy encoder). Honours `open_basedir`.
+     * Returns bytes written.
      */
     public function renderToFile(string $path, int $quality = 90): int {}
 }

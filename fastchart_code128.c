@@ -42,6 +42,8 @@
 #include "Zend/zend_exceptions.h"
 
 #include "php_fastchart.h"
+#include "fastchart_target.h"
+#include "fastchart_text.h"
 
 /* Code 128 special code values. Same numeric values across subsets;
  * their meaning depends on the active subset as listed below. */
@@ -388,10 +390,13 @@ static uint8_t code128_checksum(const uint8_t *codes, size_t n)
     return (uint8_t)(sum % 103);
 }
 
-/* Render the encoded codes onto `im`, applying foreground / background
- * colours and an optional human-readable text strip. Returns 0 on
- * success, -1 with a thrown PHP exception on failure. */
-int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im)
+/* Render the encoded codes onto the target, applying foreground /
+ * background colours and an optional human-readable text strip.
+ * Returns 0 on success, -1 with a thrown PHP exception on failure.
+ * Backend-agnostic: bars become gdImageFilledRectangle calls on a
+ * GD target and <rect> elements on an SVG target. */
+int fastchart_code128_render_to_target(fastchart_code128_obj *self,
+                                        fastchart_target_t *t)
 {
     fastchart_symbol_obj *base = (fastchart_symbol_obj *)self;
 
@@ -431,8 +436,8 @@ int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im
      * the stop contributes 13. */
     int total_modules = (n_codes - 1) * 11 + 13;
 
-    int W = gdImageSX(im);
-    int H = gdImageSY(im);
+    int W, H;
+    fastchart_target_get_dims(t, &W, &H);
 
     /* Quiet zone & module pixel size.
      *
@@ -501,12 +506,9 @@ int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im
 
     /* Background fill via the shared helper — single source of truth
      * for the transparent_bg invariant. */
-    fastchart_symbol_fill_background(base, im);
+    fastchart_symbol_fill_background(base, t);
 
-    int fg = gdImageColorAllocate(im,
-        (int)((base->fg_rgb >> 16) & 0xFF),
-        (int)((base->fg_rgb >> 8)  & 0xFF),
-        (int)(base->fg_rgb & 0xFF));
+    int fg = fastchart_target_color_rgb(t, (int)base->fg_rgb);
 
     /* Walk codes, emitting bars. The first width is always a bar;
      * widths alternate space / bar / space / ... thereafter.
@@ -520,6 +522,7 @@ int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im
      * centring convention in fastchart_qrcode.c. */
     int bars_px = total_modules * module_px;
     int x = (W - bars_px) / 2;
+    int bar_h = bar_bottom - bar_top + 1;
     for (int k = 0; k < n_codes; k++) {
         const uint8_t *pattern;
         int n_widths;
@@ -534,8 +537,8 @@ int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im
         for (int w = 0; w < n_widths; w++) {
             int width_px = pattern[w] * module_px;
             if (is_bar && width_px > 0) {
-                gdImageFilledRectangle(im, x, bar_top,
-                                       x + width_px - 1, bar_bottom, fg);
+                fastchart_target_rect(t, x, bar_top, width_px, bar_h,
+                                      fg, /*fill=*/1, /*thickness=*/0);
             }
             x += width_px;
             is_bar = !is_bar;
@@ -544,8 +547,13 @@ int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im
 
     /* Human-readable text below the bars. Centred horizontally; the
      * raw input data is rendered as-is, control chars stripped to
-     * spaces (otherwise gdImageStringFT may produce odd glyphs or
-     * truncate at NUL — though setData already rejects NUL). */
+     * spaces (otherwise FreeType may produce odd glyphs or truncate
+     * at NUL — though setData already rejects NUL).
+     *
+     * Uses fastchart_text_draw with CENTER alignment so the SVG path
+     * can rely on native text-anchor handling and the GD path can use
+     * the same pre-measure-then-offset logic the rest of the chart
+     * family uses. */
     if (text_font && text_strip_h > 0) {
         char buf[C128_MAX_INPUT + 1];
         size_t in_len = ZSTR_LEN(base->data);
@@ -561,30 +569,32 @@ int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im
         double pt = (double)text_strip_h * 0.55;
         if (pt < 8.0) pt = 8.0;
 
-        int brect[8] = {0};
-        /* Pre-measure with x=0,y=0 to get the bounding box. */
-        char *errstr = gdImageStringFT(NULL, brect, fg,
-            (char *)text_font, pt, 0.0, 0, 0, buf);
-        if (!errstr) {
-            int text_w = brect[2] - brect[0];
-            int text_h = brect[1] - brect[7];
-            int tx = (W - text_w) / 2;
-            /* Clamp tx to a non-negative left margin. On tall-narrow
-             * canvases with long payloads, text_w can exceed W and tx
-             * goes negative — gdImageStringFT then renders the leading
-             * glyphs off the left edge instead of clipping the trailing
-             * tail. Left-aligning with a small padding reads better
-             * (the right tail clips into the canvas edge, which is the
-             * normal "your text is too long" failure mode). */
-            if (tx < 2) tx = 2;
-            int ty = bar_bottom + 2 + text_h;
-            if (ty + 2 > H) ty = H - 2;
-            gdImageStringFT(im, brect, fg, (char *)text_font, pt, 0.0,
-                tx, ty, buf);
+        /* Measure to position the baseline below the bars. Falls back
+         * to a height proportional to pt when measurement fails. */
+        int text_w = 0, text_h = 0;
+        if (fastchart_text_measure(t, text_font, pt, buf,
+                                   &text_w, &text_h, NULL, 0) != 0) {
+            text_h = (int)(pt * 1.2 + 0.5);
         }
-        /* If the pre-measure failed (font load issue), silently skip
-         * the text. The bars are still valid output. */
+        int tx = W / 2;  /* centre anchor; CENTER align handles offset */
+        int ty = bar_bottom + 2 + text_h;
+        if (ty + 2 > H) ty = H - 2;
+        (void)fastchart_text_draw(t, text_font, pt, fg, tx, ty,
+                                  FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+        /* If the draw fails (font load issue), silently skip — bars
+         * are still valid output. */
     }
 
     return 0;
+}
+
+/* Backwards-compat shim. Wraps the supplied gdImagePtr in a GD-backed
+ * target and routes through the canonical render. Keeps the chart-
+ * style dispatcher symmetry (dispatch_symbol_render still takes
+ * gdImagePtr) until that path is fully migrated. */
+int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, (int)self->dpi);
+    return fastchart_code128_render_to_target(self, &t);
 }

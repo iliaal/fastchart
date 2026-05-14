@@ -33,10 +33,8 @@
 #define WF_DEFAULT_FALL   0xE34A6F
 #define WF_DEFAULT_TOTAL  0x2E86DE
 
-int fastchart_waterfall_render_to_image(fastchart_waterfall_obj *self, gdImagePtr im)
+int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchart_target_t *t)
 {
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
     if (self->bar_count <= 0) {
         zend_throw_error(NULL,
             "FastChart\\Waterfall::draw() requires setBars() with at least one bar");
@@ -78,24 +76,24 @@ int fastchart_waterfall_render_to_image(fastchart_waterfall_obj *self, gdImagePt
      * long stage names don't clip on the bottom. */
     const char **labels = ecalloc((size_t)n, sizeof(const char *));
     for (int i = 0; i < n; i++) labels[i] = self->bars[i].label;
-    fastchart_compute_layout((fastchart_obj *)self, &t, 1, 1, NULL, 0, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, t, 1, 1, NULL, 0, &plot);
 
     fastchart_palette pal;
-    fastchart_palette_init(&t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    fastchart_draw_frame(&t, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(&t, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_y_axis(&t, (fastchart_obj *)self, &plot, &pal, &range);
-    fastchart_draw_x_axis_categorical(&t, (fastchart_obj *)self, &plot, &pal, n, labels);
-    fastchart_draw_axis_titles(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_y_axis(t, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_x_axis_categorical(t, (fastchart_obj *)self, &plot, &pal, n, labels);
+    fastchart_draw_axis_titles(t, (fastchart_obj *)self, &plot, &pal);
 
     int rise_rgb  = self->rise_color  >= 0 ? self->rise_color  : WF_DEFAULT_RISE;
     int fall_rgb  = self->fall_color  >= 0 ? self->fall_color  : WF_DEFAULT_FALL;
     int total_rgb = self->total_color >= 0 ? self->total_color : WF_DEFAULT_TOTAL;
-    int rise_c  = gdImageColorAllocate(im, (rise_rgb  >> 16)&0xFF, (rise_rgb  >>8)&0xFF, rise_rgb &0xFF);
-    int fall_c  = gdImageColorAllocate(im, (fall_rgb  >> 16)&0xFF, (fall_rgb  >>8)&0xFF, fall_rgb &0xFF);
-    int total_c = gdImageColorAllocate(im, (total_rgb >> 16)&0xFF, (total_rgb >>8)&0xFF, total_rgb&0xFF);
+    int rise_c  = fastchart_target_color_rgb(t, rise_rgb);
+    int fall_c  = fastchart_target_color_rgb(t, fall_rgb);
+    int total_c = fastchart_target_color_rgb(t, total_rgb);
 
     int slot_w = (plot.x1 - plot.x0) / n;
     int bar_pad = slot_w / 6;
@@ -118,8 +116,8 @@ int fastchart_waterfall_render_to_image(fastchart_waterfall_obj *self, gdImagePt
         } else {
             color = fall_c;
         }
-        gdImageFilledRectangle(im, x0, y_top, x1, y_bot, color);
-        gdImageRectangle(im, x0, y_top, x1, y_bot, fastchart_target_color_to_gd(&t, pal.border));
+        fastchart_target_rect(t, x0, y_top, x1 - x0 + 1, y_bot - y_top + 1, color, 1, 0);
+        fastchart_target_rect(t, x0, y_top, x1 - x0 + 1, y_bot - y_top + 1, pal.border, 0, 1);
 
         /* Connector line from this bar's right edge to the next
          * bar's left at the running cumulative; gives the chart its
@@ -132,15 +130,24 @@ int fastchart_waterfall_render_to_image(fastchart_waterfall_obj *self, gdImagePt
                 &range, &plot);
             int next_slot_cx = fastchart_x_categorical_center(&plot, i + 1, n);
             int x_next0 = next_slot_cx - bar_w / 2;
-            gdImageLine(im, x1 + 1, y_conn, x_next0 - 1, y_conn, fastchart_target_color_to_gd(&t, pal.grid));
+            fastchart_target_line(t, x1 + 1, y_conn, x_next0 - 1, y_conn,
+                                  pal.grid, 1, FASTCHART_DASH_SOLID);
         }
     }
 
-    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     efree(bar_lo);
     efree(bar_hi);
     efree(labels);
     return 0;
+}
+
+/* GD-only shim. */
+int fastchart_waterfall_render_to_image(fastchart_waterfall_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
+    return fastchart_waterfall_render_to_target(self, &t);
 }
 
 ZEND_METHOD(FastChart_Waterfall, draw)

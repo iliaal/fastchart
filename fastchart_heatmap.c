@@ -45,25 +45,23 @@ static int interp_color(int rgb_lo, int rgb_hi, double t)
     return (r << 16) | (g << 8) | b;
 }
 
-int fastchart_heatmap_render_to_image(fastchart_heatmap_obj *self, gdImagePtr im)
+int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self, fastchart_target_t *t)
 {
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
     if (!self->grid.cells || self->grid.rows <= 0 || self->grid.cols <= 0) {
         zend_throw_error(NULL,
             "FastChart\\Heatmap::draw() requires setGrid() with a non-empty 2D array");
         return -1;
     }
 
-    fastchart_begin_render((fastchart_obj *)self, &t);
+    fastchart_begin_render((fastchart_obj *)self, t);
 
     fastchart_palette pal;
-    fastchart_palette_init(&t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    int W = gdImageSX(im);
-    int H = gdImageSY(im);
-    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, fastchart_target_color_to_gd(&t, pal.bg));
+    int W, H;
+    fastchart_target_get_dims(t, &W, &H);
+    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
 
     /* Title reservation (optional). */
     int top_pad = 12;
@@ -72,7 +70,7 @@ int fastchart_heatmap_render_to_image(fastchart_heatmap_obj *self, gdImagePtr im
     double base_size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
     double title_size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_TITLE, base_size * 1.4);
     if (self->title && ZSTR_LEN(self->title) > 0 && title_font) {
-        if (fastchart_text_measure(&t, title_font, title_size, ZSTR_VAL(self->title),
+        if (fastchart_text_measure(t, title_font, title_size, ZSTR_VAL(self->title),
                                    NULL, &title_h, NULL, 0) == 0) {
             top_pad += title_h + 10;
         }
@@ -114,8 +112,8 @@ int fastchart_heatmap_render_to_image(fastchart_heatmap_obj *self, gdImagePtr im
     int rgb_lo = self->color_low_rgb  >= 0 ? self->color_low_rgb  : HM_DEFAULT_LOW;
     int rgb_hi = self->color_high_rgb >= 0 ? self->color_high_rgb : HM_DEFAULT_HIGH;
 
-    fastchart_color_cache cache;
-    fastchart_color_cache_init(&cache);
+    int label_black = fastchart_target_color(t, 0, 0, 0, 0xFF);
+    int label_white = fastchart_target_color(t, 0xFF, 0xFF, 0xFF, 0xFF);
 
     /* Cells: integer pixel coords distributed across the plot area
      * with no rounding gap between cells. The "previous edge" trick
@@ -136,15 +134,21 @@ int fastchart_heatmap_render_to_image(fastchart_heatmap_obj *self, gdImagePtr im
 
             double v = self->grid.cells[r * cols + c];
             int color;
+            int cell_rgb = 0;
             if (!isfinite(v)) {
                 color = pal.bg;  /* missing data leaves the canvas bg showing */
+                cell_rgb = (int)(fastchart_target_color_to_rgba(t, pal.bg) & 0xFFFFFF);
             } else {
-                double t = (v - v_min) / (v_max - v_min);
-                int rgb = interp_color(rgb_lo, rgb_hi, t);
-                color = fastchart_color_cache_get(&cache, im, rgb);
+                double tv = (v - v_min) / (v_max - v_min);
+                cell_rgb = interp_color(rgb_lo, rgb_hi, tv);
+                color = fastchart_target_color_rgb(t, cell_rgb);
             }
-            gdImageFilledRectangle(im, cell_x0, cell_y0, cell_x1, cell_y1, color);
-            gdImageRectangle(im, cell_x0, cell_y0, cell_x1, cell_y1, fastchart_target_color_to_gd(&t, pal.border));
+            fastchart_target_rect(t, cell_x0, cell_y0,
+                                  cell_x1 - cell_x0 + 1, cell_y1 - cell_y0 + 1,
+                                  color, 1, 0);
+            fastchart_target_rect(t, cell_x0, cell_y0,
+                                  cell_x1 - cell_x0 + 1, cell_y1 - cell_y0 + 1,
+                                  pal.border, 0, 1);
 
             fastchart_obj *base = (fastchart_obj *)self;
             if (base->show_values && label_font && isfinite(v)) {
@@ -160,34 +164,41 @@ int fastchart_heatmap_render_to_image(fastchart_heatmap_obj *self, gdImagePtr im
                     snprintf(buf, sizeof(buf), "%g", v);
                 }
                 int tw = 0, th = 0;
-                if (fastchart_text_measure(&t, label_font, label_size, buf,
+                if (fastchart_text_measure(t, label_font, label_size, buf,
                                            &tw, &th, NULL, 0) != 0) continue;
                 if (tw > cell_w - 4) continue;
 
                 /* Pick contrast against the cell colour. */
-                int rr = gdImageRed(im, color);
-                int gg = gdImageGreen(im, color);
-                int bb = gdImageBlue(im, color);
+                int rr = (cell_rgb >> 16) & 0xFF;
+                int gg = (cell_rgb >>  8) & 0xFF;
+                int bb =  cell_rgb        & 0xFF;
                 int luma = (299 * rr + 587 * gg + 114 * bb) / 1000;
-                int label_color = luma > 145 ? gdImageColorAllocate(im, 0, 0, 0)
-                                             : gdImageColorAllocate(im, 255, 255, 255);
+                int label_color = luma > 145 ? label_black : label_white;
 
                 int cx = (cell_x0 + cell_x1) / 2;
                 int cy = (cell_y0 + cell_y1) / 2 + th / 2;
-                fastchart_text_draw(&t, label_font, label_size, label_color,
+                fastchart_text_draw(t, label_font, label_size, label_color,
                                     cx, cy, FASTCHART_ALIGN_CENTER, buf, NULL, 0);
             }
         }
     }
 
     if (self->title && ZSTR_LEN(self->title) > 0 && title_font && title_h > 0) {
-        fastchart_text_draw(&t, title_font, title_size, pal.text,
+        fastchart_text_draw(t, title_font, title_size, pal.text,
                             W / 2, 12 + title_h, FASTCHART_ALIGN_CENTER,
                             ZSTR_VAL(self->title), NULL, 0);
     }
 
-    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
+}
+
+/* GD-only shim. */
+int fastchart_heatmap_render_to_image(fastchart_heatmap_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
+    return fastchart_heatmap_render_to_target(self, &t);
 }
 
 ZEND_METHOD(FastChart_Heatmap, draw)

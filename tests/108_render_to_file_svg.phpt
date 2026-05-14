@@ -32,22 +32,20 @@ try {
     var_dump(file_get_contents($tmp_upper) === $svg);
     unlink($tmp_upper);
 
-    // SVG output for non-pilot chart family must raise a clear error.
-    // ScatterChart is not in the pilot rotation.
+    // All chart families now support SVG output. ScatterChart is one
+    // of the post-pilot families that landed in the second wave.
     $sc = new FastChart\ScatterChart(200, 200);
     $sc->setPoints([[1.0, 2.0], [3.0, 4.0]]);
-    try {
-        $sc->renderSvg();
-        echo "MISSING_EXCEPTION\n";
-    } catch (Error $e) {
-        var_dump(strpos($e->getMessage(), "SVG output is not yet supported") !== false);
-    }
+    $sc_svg = $sc->renderSvg();
+    var_dump(str_starts_with($sc_svg, "<?xml "));
+    var_dump(strpos($sc_svg, "</svg>") !== false);
 
     echo "OK\n";
 } finally {
     @unlink($tmp);
 }
 --EXPECT--
+bool(true)
 bool(true)
 bool(true)
 bool(true)

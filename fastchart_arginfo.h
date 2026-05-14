@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 47e00d7ea83aa70ea75369431182529ee78743f2 */
+ * Stub hash: d2ce65cfd5ebe27d69f0c8662c361a77b1c79127 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -557,6 +557,10 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_Symbol_renderAvif arginfo_class_FastChart_Chart_renderAvif
 
+#define arginfo_class_FastChart_Symbol_renderSvg arginfo_class_FastChart_Chart_version
+
+#define arginfo_class_FastChart_Symbol_drawSvgFragment arginfo_class_FastChart_Chart_version
+
 #define arginfo_class_FastChart_Symbol_renderToFile arginfo_class_FastChart_Chart_renderToFile
 
 #define arginfo_class_FastChart_Code128_setShowText arginfo_class_FastChart_Chart_setSecondaryYAxis
@@ -745,6 +749,8 @@ ZEND_METHOD(FastChart_Symbol, renderJpeg);
 ZEND_METHOD(FastChart_Symbol, renderWebp);
 ZEND_METHOD(FastChart_Symbol, renderGif);
 ZEND_METHOD(FastChart_Symbol, renderAvif);
+ZEND_METHOD(FastChart_Symbol, renderSvg);
+ZEND_METHOD(FastChart_Symbol, drawSvgFragment);
 ZEND_METHOD(FastChart_Symbol, renderToFile);
 ZEND_METHOD(FastChart_Code128, setShowText);
 ZEND_METHOD(FastChart_QrCode, setEcc);
@@ -1007,6 +1013,8 @@ static const zend_function_entry class_FastChart_Symbol_methods[] = {
 	ZEND_ME(FastChart_Symbol, renderWebp, arginfo_class_FastChart_Symbol_renderWebp, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, renderGif, arginfo_class_FastChart_Symbol_renderGif, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, renderAvif, arginfo_class_FastChart_Symbol_renderAvif, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Symbol, renderSvg, arginfo_class_FastChart_Symbol_renderSvg, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Symbol, drawSvgFragment, arginfo_class_FastChart_Symbol_drawSvgFragment, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, renderToFile, arginfo_class_FastChart_Symbol_renderToFile, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };

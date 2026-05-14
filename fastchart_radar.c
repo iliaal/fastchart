@@ -40,10 +40,8 @@ static inline double radar_read_d(const fastchart_radar_series *s, int i)
     return (d < 0 || isnan(d)) ? 0.0 : d;
 }
 
-int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
+int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target_t *t)
 {
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
     if (self->n_series == 0) {
         zend_throw_error(NULL,
             "FastChart\\RadarChart::draw() requires setSeries() with at least 3 axes per series");
@@ -77,15 +75,15 @@ int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
     /* Per-render entry: invalidate the font cache (so a runtime
      * open_basedir narrowing between draws is honored) and stamp DPI
      * on the canvas. Must come BEFORE any palette / text work. */
-    fastchart_begin_render((fastchart_obj *)self, &t);
+    fastchart_begin_render((fastchart_obj *)self, t);
 
     fastchart_palette pal;
-    fastchart_palette_init(&t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    int W = gdImageSX(im);
-    int H = gdImageSY(im);
-    gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, fastchart_target_color_to_gd(&t, pal.bg));
+    int W, H;
+    fastchart_target_get_dims(t, &W, &H);
+    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
 
     /* Reserve top space for title. */
     int title_h = (self->title && ZSTR_LEN(self->title) > 0) ? 32 : 8;
@@ -115,13 +113,13 @@ int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
             poly[i].x = cx + (int)(rr * cos_a[i]);
             poly[i].y = cy + (int)(rr * sin_a[i]);
         }
-        gdImagePolygon(im, poly, n_axes, fastchart_target_color_to_gd(&t, pal.grid));
+        fastchart_target_polygon(t, poly, n_axes, pal.grid, 0, 1);
     }
     /* Spokes from center to each axis tip. */
     for (int i = 0; i < n_axes; i++) {
         int tx = cx + (int)(radius * cos_a[i]);
         int ty = cy + (int)(radius * sin_a[i]);
-        gdImageLine(im, cx, cy, tx, ty, fastchart_target_color_to_gd(&t, pal.axis));
+        fastchart_target_line(t, cx, cy, tx, ty, pal.axis, 1, FASTCHART_DASH_SOLID);
     }
 
     /* Axis labels via setCategoryLabels. */
@@ -140,11 +138,14 @@ int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
             if (cos_a[i] > 0.3) align = FASTCHART_ALIGN_LEFT;
             else if (cos_a[i] < -0.3) align = FASTCHART_ALIGN_RIGHT;
             else align = FASTCHART_ALIGN_CENTER;
-            fastchart_text_draw(&t, font, size, pal.text,
+            fastchart_text_draw(t, font, size, pal.text,
                                 lx, ly + (int)(size * 0.35),
                                 align, label, NULL, 0);
         }
     }
+
+    bool gd = (t->kind == FASTCHART_TARGET_GD);
+    gdImagePtr im = gd ? t->u.gd.im : NULL;
 
     /* One polygon per series. */
     int legend_colors[FASTCHART_MAX_RADAR_SERIES];
@@ -154,9 +155,7 @@ int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
     for (int s = 0; s < n_series; s++) {
         int color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
         if (series[s].color_rgb >= 0) {
-            int rgb = (int)series[s].color_rgb;
-            color = gdImageColorAllocate(im,
-                (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+            color = fastchart_target_color_rgb(t, (int)series[s].color_rgb);
         }
         gdPoint poly[MAX_RADAR_AXES];
         for (int i = 0; i < n_axes; i++) {
@@ -166,23 +165,25 @@ int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
             poly[i].y = cy + (int)(rr * sin_a[i]);
         }
         if (self->radar_filled) {
-            int r = (color >> 0); /* gd palette index, not raw RGB */
-            (void)r;
-            int rr = gdImageRed(im, color);
-            int gg = gdImageGreen(im, color);
-            int bb = gdImageBlue(im, color);
-            int alpha = gdImageColorAllocateAlpha(im, rr, gg, bb, 90);
-            gdImageAlphaBlending(im, 1);
-            fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_axes);
-            fastchart_filled_polygon_aa(im, poly, n_axes, alpha);
-            gdImageAlphaBlending(im, 0);
+            uint32_t rgba = fastchart_target_color_to_rgba(t, color);
+            int rr = (rgba >> 16) & 0xFF;
+            int gg = (rgba >>  8) & 0xFF;
+            int bb =  rgba        & 0xFF;
+            /* gd_alpha 90 → byte 255 - 90*2 = 75. */
+            int alpha = fastchart_target_color(t, rr, gg, bb, 75);
+            if (gd) {
+                gdImageAlphaBlending(im, 1);
+                fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_axes);
+                fastchart_filled_polygon_aa(im, poly, n_axes, alpha);
+                gdImageAlphaBlending(im, 0);
+            } else {
+                fastchart_target_polygon(t, poly, n_axes, alpha, 1, 0);
+            }
         }
-        gdImageSetThickness(im, 2);
-        gdImagePolygon(im, poly, n_axes, color);
-        gdImageSetThickness(im, 1);
+        fastchart_target_polygon(t, poly, n_axes, color, 0, 2);
         /* Markers at vertices. */
         for (int i = 0; i < n_axes; i++) {
-            fastchart_draw_marker(&t, poly[i].x, poly[i].y,
+            fastchart_draw_marker(t, poly[i].x, poly[i].y,
                                   FASTCHART_MARKER_CIRCLE, 5, color);
         }
         if (series[s].label && legend_count < FASTCHART_MAX_RADAR_SERIES) {
@@ -193,18 +194,26 @@ int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
     }
 
     /* Title at top center. */
-    fastchart_draw_floating_title(&t, (fastchart_obj *)self, &pal, W / 2, 24);
+    fastchart_draw_floating_title(t, (fastchart_obj *)self, &pal, W / 2, 24);
 
     /* Legend: reuse the standard helper with a synthetic "plot rect"
      * spanning the entire canvas so positioning works. */
     if (legend_count > 0) {
         fastchart_rect plot = { 10, title_h, W - 10, H - 10 };
-        fastchart_draw_legend(&t, (fastchart_obj *)self, &plot, &pal,
+        fastchart_draw_legend(t, (fastchart_obj *)self, &plot, &pal,
                               legend_count, legend_colors, legend_labels);
     }
 
-    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
+}
+
+/* GD-only shim. */
+int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
+    return fastchart_radar_render_to_target(self, &t);
 }
 
 ZEND_METHOD(FastChart_RadarChart, draw)

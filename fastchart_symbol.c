@@ -24,6 +24,8 @@
 
 #include "php_fastchart.h"
 #include "fastchart_render_helpers.h"
+#include "fastchart_target.h"
+#include "fastchart_svg.h"
 #include "qrcodegen.h"
 
 /* fastchart_arginfo.h is intentionally NOT included here. It expands
@@ -169,14 +171,18 @@ zend_object *fastchart_symbol_abstract_create_object(zend_class_entry *ce)
 }
 
 /* Fill the canvas with the configured background, honouring
- * `transparent_bg`. libgd quirk: `gdImageColorTransparent()` does NOT
- * rewrite existing pixel alpha — it only flags an index for legacy
+ * `transparent_bg`. Backend-aware: GD uses the alpha-blending dance
+ * below; SVG emits a single bg rect (or nothing on transparent_bg —
+ * SVG transparency is implicit, no element means see-through).
+ *
+ * GD path libgd quirk: `gdImageColorTransparent()` does NOT rewrite
+ * existing pixel alpha — it only flags an index for legacy
  * palette-image transparency. On a truecolor canvas the encoder
  * writes per-pixel alpha when `gdImageSaveAlpha(im, 1)` is set, so
  * the bg pixels themselves must carry alpha=127 for the encoded
  * PNG/WebP/AVIF output to be transparent.
  *
- * Sequence:
+ * Sequence (GD only):
  *   - alphaBlending(0) so the fill REPLACES the canvas instead of
  *     compositing over the engine-default opaque-black initial state
  *     (which would blend a partially-transparent fill into something
@@ -189,25 +195,39 @@ zend_object *fastchart_symbol_abstract_create_object(zend_class_entry *ce)
  *     opaque allocate otherwise.
  *   - alphaBlending(1) restored so subsequent foreground draws
  *     composite normally (fg with alpha=0 = opaque overwrites bg). */
-void fastchart_symbol_fill_background(fastchart_symbol_obj *self, gdImagePtr im)
+void fastchart_symbol_fill_background(fastchart_symbol_obj *self,
+                                      fastchart_target_t *t)
 {
-    int W = gdImageSX(im);
-    int H = gdImageSY(im);
     int r = (int)((self->bg_rgb >> 16) & 0xFF);
     int g = (int)((self->bg_rgb >> 8) & 0xFF);
     int b = (int)(self->bg_rgb & 0xFF);
 
-    gdImageAlphaBlending(im, 0);
-    if (self->transparent_bg) {
-        gdImageSaveAlpha(im, 1);
-        int bg = gdImageColorAllocateAlpha(im, r, g, b, 127);
-        gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, bg);
-    } else {
-        gdImageSaveAlpha(im, 0);
-        int bg = gdImageColorAllocate(im, r, g, b);
-        gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, bg);
+    if (t->kind == FASTCHART_TARGET_GD) {
+        gdImagePtr im = t->u.gd.im;
+        int W = gdImageSX(im);
+        int H = gdImageSY(im);
+
+        gdImageAlphaBlending(im, 0);
+        if (self->transparent_bg) {
+            gdImageSaveAlpha(im, 1);
+            int bg = gdImageColorAllocateAlpha(im, r, g, b, 127);
+            gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, bg);
+        } else {
+            gdImageSaveAlpha(im, 0);
+            int bg = gdImageColorAllocate(im, r, g, b);
+            gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, bg);
+        }
+        gdImageAlphaBlending(im, 1);
+        return;
     }
-    gdImageAlphaBlending(im, 1);
+
+    /* SVG. transparent_bg = no bg element (SVG default is transparent
+     * outside drawn elements). Opaque bg = single full-canvas rect. */
+    if (self->transparent_bg) return;
+    int W, H;
+    fastchart_target_get_dims(t, &W, &H);
+    int bg = fastchart_target_color(t, r, g, b, 0xFF);
+    fastchart_target_rect(t, 0, 0, W, H, bg, /*fill=*/1, /*thickness=*/0);
 }
 
 /* Code128 renderer lives in fastchart_code128.c; QrCode renderer
@@ -248,6 +268,22 @@ static int dispatch_symbol_render(fastchart_symbol_obj *self,
     if (ce == fastchart_qrcode_ce)
         return fastchart_qrcode_render_to_image((fastchart_qrcode_obj *)self, im);
     zend_throw_error(NULL, "FastChart\\Symbol: render dispatch found unknown class entry");
+    return -1;
+}
+
+/* SVG-side dispatcher. Parallel to dispatch_symbol_render but routes
+ * to the target-based renderer so the SVG backend receives vector
+ * emissions instead of gdImage* primitive calls. */
+static int dispatch_symbol_svg_render(fastchart_symbol_obj *self,
+                                       zend_class_entry *ce,
+                                       fastchart_target_t *t)
+{
+    if (ce == fastchart_code128_ce)
+        return fastchart_code128_render_to_target((fastchart_code128_obj *)self, t);
+    if (ce == fastchart_qrcode_ce)
+        return fastchart_qrcode_render_to_target((fastchart_qrcode_obj *)self, t);
+    zend_throw_error(NULL,
+        "FastChart\\Symbol: SVG dispatch found unknown class entry");
     return -1;
 }
 
@@ -311,6 +347,152 @@ static void fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAMETERS,
     gdFree(bytes);
     gdImageDestroy(im);
     RETURN_STR(out);
+}
+
+/* ---------------- Symbol SVG render ------------------------------- */
+
+/* Case-insensitive ASCII check for a `.svg` tail. Same parsing shape
+ * as fastchart_format_from_path so a path like "weird.SVG/here.png"
+ * reports .png and "report.SVG" reports .svg. Duplicated from
+ * fastchart.c (file-static there) — tiny helper, not worth exposing. */
+static int fc_symbol_path_ends_with_svg(const char *path, size_t len)
+{
+    if (len == 0 || len > 4096) return 0;
+    const char *dot = NULL;
+    for (size_t i = len; i > 0; i--) {
+        if (path[i - 1] == '.') { dot = &path[i - 1]; break; }
+        if (path[i - 1] == '/' || path[i - 1] == '\\') break;
+    }
+    if (!dot) return 0;
+    const char *ext = dot + 1;
+    size_t ext_len = strlen(ext);
+    return zend_binary_strcasecmp(ext, ext_len, "svg", 3) == 0;
+}
+
+/* Shared SVG entry. fragment_only=0 emits a full document; =1 emits
+ * just the <g class="fastchart-symbol"> group. Output viewport = the
+ * Symbol's logical canvas size (default-substituted per class) at 1:1
+ * — DPI does not multiply the viewport (SVG is vector). Mirrors
+ * fastchart.c:fastchart_render_to_svg for the Chart family. */
+static void fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAMETERS,
+                                            int fragment_only)
+{
+    fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
+    zend_class_entry *ce = Z_OBJCE_P(ZEND_THIS);
+
+    if (!self->data || ZSTR_LEN(self->data) == 0) {
+        zend_throw_error(NULL,
+            "FastChart\\Symbol: setData() is required before render");
+        RETURN_THROWS();
+    }
+
+    zend_long lw, lh;
+    fastchart_symbol_logical_dims(self, ce, &lw, &lh);
+    if (lw <= 0 || lh <= 0 || lw > 65535 || lh > 65535) {
+        zend_throw_error(NULL,
+            "FastChart\\Symbol: invalid canvas size for SVG render");
+        RETURN_THROWS();
+    }
+
+    smart_str buf = {0};
+    if (!fragment_only) {
+        fc_svg_emit_doc_open(&buf, (int)lw, (int)lh);
+    }
+    fc_svg_emit_g_open(&buf, "fastchart-symbol");
+
+    fastchart_target_t t;
+    fastchart_target_from_svg(&t, &buf, (int)lw, (int)lh, (int)self->dpi);
+
+    if (dispatch_symbol_svg_render(self, ce, &t) != 0 || EG(exception)) {
+        smart_str_free(&buf);
+        RETURN_THROWS();
+    }
+
+    fc_svg_emit_g_close(&buf);
+    if (!fragment_only) {
+        fc_svg_emit_doc_close(&buf);
+    }
+    smart_str_0(&buf);
+
+    if (!buf.s) {
+        zend_throw_error(NULL, "FastChart: SVG renderer produced no output");
+        RETURN_THROWS();
+    }
+    RETURN_STR(buf.s);
+}
+
+/* SVG file-write branch invoked by Symbol::renderToFile when the path
+ * extension is .svg. Mirrors fastchart_render_to_svg_file in
+ * fastchart.c. Honors open_basedir, writes via php_stream_open_wrapper,
+ * surfaces short writes as a thrown error. */
+static void fastchart_symbol_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS,
+                                                 zend_string *path)
+{
+    fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
+    zend_class_entry *ce = Z_OBJCE_P(ZEND_THIS);
+
+    if (!self->data || ZSTR_LEN(self->data) == 0) {
+        zend_throw_error(NULL,
+            "FastChart\\Symbol: setData() is required before render");
+        RETURN_THROWS();
+    }
+
+    zend_long lw, lh;
+    fastchart_symbol_logical_dims(self, ce, &lw, &lh);
+    if (lw <= 0 || lh <= 0 || lw > 65535 || lh > 65535) {
+        zend_throw_error(NULL,
+            "FastChart\\Symbol: invalid canvas size for SVG render");
+        RETURN_THROWS();
+    }
+
+    smart_str buf = {0};
+    fc_svg_emit_doc_open(&buf, (int)lw, (int)lh);
+    fc_svg_emit_g_open(&buf, "fastchart-symbol");
+
+    fastchart_target_t t;
+    fastchart_target_from_svg(&t, &buf, (int)lw, (int)lh, (int)self->dpi);
+
+    if (dispatch_symbol_svg_render(self, ce, &t) != 0 || EG(exception)) {
+        smart_str_free(&buf);
+        RETURN_THROWS();
+    }
+    fc_svg_emit_g_close(&buf);
+    fc_svg_emit_doc_close(&buf);
+    smart_str_0(&buf);
+
+    if (!buf.s) {
+        zend_throw_error(NULL, "FastChart: SVG renderer produced no output");
+        RETURN_THROWS();
+    }
+
+    php_stream *stream = php_stream_open_wrapper(ZSTR_VAL(path), "wb",
+        REPORT_ERRORS, NULL);
+    if (!stream) {
+        smart_str_free(&buf);
+        if (!EG(exception)) {
+            zend_throw_error(NULL,
+                "FastChart\\Symbol::renderToFile() could not open %s for writing",
+                ZSTR_VAL(path));
+        }
+        RETURN_THROWS();
+    }
+
+    size_t sz = ZSTR_LEN(buf.s);
+    ssize_t written = php_stream_write(stream, ZSTR_VAL(buf.s), sz);
+    php_stream_close(stream);
+    smart_str_free(&buf);
+
+    if (written < 0) {
+        zend_throw_error(NULL, "FastChart: write to %s failed", ZSTR_VAL(path));
+        RETURN_THROWS();
+    }
+    if ((size_t)written != sz) {
+        zend_throw_error(NULL,
+            "FastChart: short write to %s (%zd of %zu bytes)",
+            ZSTR_VAL(path), written, sz);
+        RETURN_THROWS();
+    }
+    RETURN_LONG((zend_long)written);
 }
 
 /* ---------------- Symbol setters ---------------------------------- */
@@ -491,6 +673,18 @@ ZEND_METHOD(FastChart_Symbol, renderAvif)
     fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAM_PASSTHRU, 4, quality);
 }
 
+ZEND_METHOD(FastChart_Symbol, renderSvg)
+{
+    ZEND_PARSE_PARAMETERS_NONE();
+    fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+}
+
+ZEND_METHOD(FastChart_Symbol, drawSvgFragment)
+{
+    ZEND_PARSE_PARAMETERS_NONE();
+    fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
+
 ZEND_METHOD(FastChart_Symbol, renderToFile)
 {
     zend_string *path;
@@ -501,11 +695,28 @@ ZEND_METHOD(FastChart_Symbol, renderToFile)
         Z_PARAM_LONG(quality)
     ZEND_PARSE_PARAMETERS_END();
 
+    /* Vector branch. .svg ignores $quality (no lossy encoder) and
+     * goes through a separate write path that emits text bytes.
+     * Mirrors the Chart-side .svg routing in fastchart.c. */
+    if (fc_symbol_path_ends_with_svg(ZSTR_VAL(path), ZSTR_LEN(path))) {
+        (void)quality;
+        if (php_check_open_basedir(ZSTR_VAL(path))) {
+            if (!EG(exception)) {
+                zend_throw_error(NULL,
+                    "FastChart\\Symbol::renderToFile() open_basedir restriction "
+                    "prevents access to %s", ZSTR_VAL(path));
+            }
+            RETURN_THROWS();
+        }
+        fastchart_symbol_render_to_svg_file(INTERNAL_FUNCTION_PARAM_PASSTHRU, path);
+        return;
+    }
+
     int format = fastchart_format_from_path(ZSTR_VAL(path), ZSTR_LEN(path));
     if (format < 0) {
         zend_value_error(
             "FastChart\\Symbol::renderToFile() could not infer format from extension; "
-            "expected .png/.jpg/.jpeg/.webp/.gif/.avif");
+            "expected .png/.jpg/.jpeg/.webp/.gif/.avif/.svg");
         RETURN_THROWS();
     }
     /* Format-conditional quality validation: same policy as
