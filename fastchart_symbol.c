@@ -657,24 +657,6 @@ ZEND_METHOD(FastChart_Symbol, renderWebp)
     fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAM_PASSTHRU, 2, quality);
 }
 
-ZEND_METHOD(FastChart_Symbol, renderGif)
-{
-    ZEND_PARSE_PARAMETERS_NONE();
-    zend_throw_error(NULL,
-        "FastChart\\Symbol: GIF output was dropped in v1.0. "
-        "Use renderPng() / renderJpeg() / renderWebp() / renderSvg() instead.");
-    RETURN_THROWS();
-}
-
-ZEND_METHOD(FastChart_Symbol, renderAvif)
-{
-    ZEND_PARSE_PARAMETERS_NONE();
-    zend_throw_error(NULL,
-        "FastChart\\Symbol: AVIF output was dropped in v1.0. "
-        "Use renderPng() / renderJpeg() / renderWebp() / renderSvg() instead.");
-    RETURN_THROWS();
-}
-
 ZEND_METHOD(FastChart_Symbol, renderSvg)
 {
     ZEND_PARSE_PARAMETERS_NONE();

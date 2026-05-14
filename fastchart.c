@@ -80,7 +80,6 @@ zend_class_entry *fastchart_symbol_ce;
 zend_class_entry *fastchart_barcode_ce;
 zend_class_entry *fastchart_code128_ce;
 zend_class_entry *fastchart_qrcode_ce;
-zend_class_entry *fastchart_gd_image_ce = NULL;
 
 /* Auto-detected default font path. Probed at MINIT, used as the
  * initial font_path on every newly-allocated chart instance. NULL
@@ -4304,24 +4303,6 @@ ZEND_METHOD(FastChart_Chart, renderWebp)
     fastchart_render_to_string(INTERNAL_FUNCTION_PARAM_PASSTHRU, 2, quality);
 }
 
-ZEND_METHOD(FastChart_Chart, renderGif)
-{
-    ZEND_PARSE_PARAMETERS_NONE();
-    zend_throw_error(NULL,
-        "FastChart: GIF output was dropped in v1.0. "
-        "Use renderPng() / renderJpeg() / renderWebp() / renderSvg() instead.");
-    RETURN_THROWS();
-}
-
-ZEND_METHOD(FastChart_Chart, renderAvif)
-{
-    ZEND_PARSE_PARAMETERS_NONE();
-    zend_throw_error(NULL,
-        "FastChart: AVIF output was dropped in v1.0. "
-        "Use renderPng() / renderJpeg() / renderWebp() / renderSvg() instead.");
-    RETURN_THROWS();
-}
-
 /* SVG render shared between Chart::renderSvg (fragment_only=0, emits a
  * full document) and Chart::drawSvgFragment (fragment_only=1, emits
  * just a <g> group for callers stitching multiple charts into one
@@ -6516,12 +6497,6 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
     fastchart_qrcode_ce  = register_class_FastChart_QrCode(fastchart_symbol_ce);
     fastchart_qrcode_ce->create_object  = fastchart_qrcode_create_object;
 
-    /* v1.0 dropped the draw(\GdImage) entry. The \GdImage class
-     * lookup is gone; ext/gd is no longer a runtime requirement.
-     * fastchart_gd_image_ce stays as a NULL global because the dead
-     * draw()-related branches in chart bodies still reference it;
-     * those branches are unreachable but the symbol must resolve. */
-
     fastchart_default_font_path = fastchart_probe_default_font();
     /* A NULL probe result is not fatal -- users can still call
      * setFontPath() per-instance. The text helpers no-op on NULL. */
@@ -6591,12 +6566,6 @@ PHP_MINFO_FUNCTION(fastchart)
     php_info_print_table_end();
 }
 
-/* v1.0 dropped the runtime ext/gd dependency. The chart bodies still
- * contain dead `if (t->kind == FASTCHART_TARGET_GD)` branches that
- * reference gdImage* symbols, so libgd is still linked at the .so
- * level — but the engine no longer needs ext/gd loaded for fastchart
- * to function. v1.1 will strip the dead branches and drop libgd from
- * the link line entirely. */
 zend_module_entry fastchart_module_entry = {
     STANDARD_MODULE_HEADER,
     "fastchart",

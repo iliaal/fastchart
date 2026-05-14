@@ -69,12 +69,6 @@ extern zend_class_entry *fastchart_barcode_ce;
 extern zend_class_entry *fastchart_code128_ce;
 extern zend_class_entry *fastchart_qrcode_ce;
 
-/* Cached \GdImage class entry, resolved at MINIT via direct
- * CG(class_table) lookup. ext/gd defines gd_image_ce file-static
- * with no PHPAPI export so we cannot link against it; the autoload
- * path of zend_lookup_class is unsafe at MINIT. */
-extern zend_class_entry *fastchart_gd_image_ce;
-
 /* Per-class object layout. Every chart subclass owns its own struct
  * laid out as { FASTCHART_BASE_FIELDS, <per-type fields>, zend_object std }
  * so per-class create/free/clone handlers can size and initialize the
