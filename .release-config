@@ -12,18 +12,16 @@ build_matrix:
   - PHP-8.5
 configure_base: "--enable-fastchart --enable-fastchart-dev"
 
-# Prebuilt-binary release lanes are off because fastchart links
-# libgd directly (PHP_ADD_LIBRARY(gd) in config.m4). Neither
-# php/php-windows-builder nor php/pie-ext-binary-builder install
-# libgd-dev, so they fail at link time. Source builds via PIE work
-# fine on any host where libgd is reachable. Re-enable these lanes
-# once a libgd-bundling story (system package per runner, or a
-# vendored build) is wired up.
+# Prebuilt-binary release lanes are off pending Windows wheels. Linux
+# source builds via PIE work on any host with freetype / libpng /
+# libjpeg / libwebp dev packages reachable through pkg-config (see
+# config.m4). Re-enable linux_prebuilt once the binary-builder lane
+# has the four pkg-config deps available.
 windows_ci: false
 linux_prebuilt: false
 
 # PIE install + functional smoke test. Runs against php:8.x-cli with
-# libgd-dev and ext/gd provisioned inside the container, exercising the
-# documented "Source builds via PIE work fine on any host where libgd is
-# reachable" claim end-to-end.
+# freetype / libpng / libjpeg / libwebp dev packages and ext/gd
+# provisioned in the container (ext/gd loaded only for PHP-side
+# image validation in the tests, not by fastchart itself).
 smoke_test: scripts/pie-smoke.sh
