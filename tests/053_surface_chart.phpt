@@ -2,6 +2,7 @@
 SurfaceChart: heatmap with configurable color ramp + cell value labels
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

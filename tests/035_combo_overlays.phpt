@@ -2,6 +2,7 @@
 addOverlaySeries: combo charts (line over bar / line over area / etc.)
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

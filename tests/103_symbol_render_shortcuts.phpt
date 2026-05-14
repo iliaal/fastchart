@@ -2,8 +2,7 @@
 Symbol family: render-shortcut matrix (PNG/JPEG/WebP/toFile) for Code128 + QrCode
 --EXTENSIONS--
 fastchart
---SKIPIF--
-<?php if (!extension_loaded('gd')) die('skip ext/gd not loaded'); ?>
+gd
 --FILE--
 <?php
 

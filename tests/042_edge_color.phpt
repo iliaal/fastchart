@@ -2,6 +2,7 @@
 setEdgeColor draws an outline around bars / area fills / pie slices
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

@@ -2,6 +2,7 @@
 BarChart::setFloating draws bars between [min, max] (Gantt-style)
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

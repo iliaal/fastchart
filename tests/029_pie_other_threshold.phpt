@@ -2,6 +2,7 @@
 PieChart::setOtherThreshold aggregates small slices into Other
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

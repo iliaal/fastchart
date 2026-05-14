@@ -2,6 +2,7 @@
 Symbol family smoke: hierarchy registers, abstracts reject, renderPng round-trips
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 
