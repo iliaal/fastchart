@@ -27,6 +27,17 @@
 #include "Zend/zend_smart_str.h"
 #include <stdint.h>
 
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
+/* Process-shared FreeType library handle. Lazy-init on first call;
+ * fastchart_ft_library_shutdown() releases at MSHUTDOWN. All FT
+ * consumers (font-family resolver in target.c, glyph-path emitter in
+ * fastchart_svg.c, text-bbox measurer in fastchart_text.c) share one
+ * library instead of paying FT_Init_FreeType per call. */
+FT_Library fastchart_ft_library(void);
+void fastchart_ft_library_shutdown(void);
+
 /* Retained for source-compat with chart bodies that reference the
  * enum even though only SVG is now valid. */
 #define FASTCHART_TARGET_SVG  1

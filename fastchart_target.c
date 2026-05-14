@@ -198,10 +198,13 @@ void fastchart_target_ellipse(fastchart_target_t *t,
 static FT_Library fc_ft_lib = NULL;
 static int fc_ft_lib_init_failed = 0;
 
-/* Lazily init the per-process FT library. We never tear it down —
- * FT_Done_FreeType in MSHUTDOWN would race with any in-flight render
- * on ZTS, and the leak at process exit is negligible. */
-static FT_Library fc_get_ft_library(void)
+/* Lazily init the per-process FT library on first use. Released at
+ * MSHUTDOWN via fastchart_ft_library_shutdown — MSHUTDOWN runs after
+ * every request has ended, so there is no in-flight render to race
+ * with. Exported via fastchart_target.h for the SVG glyph-path emitter
+ * and the FT-measure helper in fastchart_text.c so they share one
+ * library instead of re-initializing per call. */
+FT_Library fastchart_ft_library(void)
 {
     if (fc_ft_lib != NULL) return fc_ft_lib;
     if (fc_ft_lib_init_failed) return NULL;
@@ -211,6 +214,15 @@ static FT_Library fc_get_ft_library(void)
         return NULL;
     }
     return fc_ft_lib;
+}
+
+void fastchart_ft_library_shutdown(void)
+{
+    if (fc_ft_lib != NULL) {
+        FT_Done_FreeType(fc_ft_lib);
+        fc_ft_lib = NULL;
+    }
+    fc_ft_lib_init_failed = 0;
 }
 
 static void copy_family_name(char *out, size_t out_n, const char *src)
@@ -264,7 +276,7 @@ void fastchart_target_resolve_font_family(fastchart_target_t *t,
 
     /* FT lookup. */
     char raw[128] = "";
-    FT_Library lib = fc_get_ft_library();
+    FT_Library lib = fastchart_ft_library();
     if (lib) {
         FT_Face face = NULL;
         if (FT_New_Face(lib, font_path, 0, &face) == 0 && face) {

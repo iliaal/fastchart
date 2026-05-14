@@ -563,19 +563,16 @@ void fc_svg_emit_text_as_path(smart_str *buf,
 {
 	if (!text || text_len == 0 || !font_path) return;
 
-	FT_Library lib = NULL;
-	FT_Face    face = NULL;
-	if (FT_Init_FreeType(&lib)) return;
-	if (FT_New_Face(lib, font_path, 0, &face)) {
-		FT_Done_FreeType(lib);
-		return;
-	}
+	/* Share the per-process FT_Library — MSHUTDOWN releases it. */
+	FT_Library lib = fastchart_ft_library();
+	if (!lib) return;
+	FT_Face face = NULL;
+	if (FT_New_Face(lib, font_path, 0, &face)) return;
 
 	FT_UInt pix = (FT_UInt)(size_px + 0.5);
 	if (pix < 1) pix = 1;
 	if (FT_Set_Pixel_Sizes(face, 0, pix)) {
 		FT_Done_Face(face);
-		FT_Done_FreeType(lib);
 		return;
 	}
 
@@ -644,7 +641,6 @@ void fc_svg_emit_text_as_path(smart_str *buf,
 
 	smart_str_free(&d);
 	FT_Done_Face(face);
-	FT_Done_FreeType(lib);
 }
 
 void fc_svg_emit_clip_open(smart_str *buf, int id,
