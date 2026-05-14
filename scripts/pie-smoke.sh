@@ -8,11 +8,12 @@ set -euo pipefail
 #   docker run --rm -v "$PWD":/fastchart -w /fastchart \
 #     php:8.4-cli ./scripts/pie-smoke.sh
 #
-# Validates the claim documented in .release-config that source builds via
-# PIE work on any host where libgd is reachable. fastchart links libgd at
-# build time (PHP_ADD_LIBRARY(gd) in config.m4) and depends on ext/gd being
-# loaded before fastchart at runtime, so this script exercises both surfaces
-# end-to-end on a clean image.
+# Validates that source builds via PIE work on any host where the
+# pkg-config dev packages (freetype / libpng / libjpeg / libwebp) are
+# reachable. fastchart 1.0 does not link libgd; ext/gd is loaded only
+# so test-side image validation (and this smoke's getimagesize calls)
+# can decode raster output. The container build below installs it
+# alongside fastchart.
 
 echo "======================================================================"
 echo " PIE install smoke test for iliaal/fastchart"
@@ -24,28 +25,24 @@ echo "phpize:"
 phpize --version 2>&1 | head -2
 echo
 
-echo "---- 1. System build tools + libgd ----"
+echo "---- 1. System build tools + pkg-config deps ----"
 apt-get update -qq >/dev/null
 # Build tools: PIE needs git (clones source via git clone), bison +
 # libtoolize (PIE's build-tools check requires both even though phpize
 # itself does not), and ca-certificates for HTTPS clones.
-# Library deps: libgd-dev pulls in libpng, libjpeg, libwebp, libfreetype
-# headers that both ext/gd and fastchart link against.
+# Library deps: pkg-config + freetype / libpng / libjpeg / libwebp
+# headers cover everything config.m4 probes. libgd-dev is here only
+# for the ext/gd build below.
 apt-get install -y -qq \
-    git ca-certificates bison libtool-bin \
-    libgd-dev libpng-dev libjpeg-dev libwebp-dev libfreetype6-dev >/dev/null
+    git ca-certificates bison libtool-bin pkg-config \
+    libfreetype6-dev libpng-dev libjpeg-dev libwebp-dev libgd-dev >/dev/null
 git --version
 bison --version | head -1
 libtoolize --version | head -1 || echo "libtoolize not found"
-dpkg -s libgd-dev 2>/dev/null | grep -E '^Version:' || echo "libgd-dev not found"
+pkg-config --modversion freetype2 libpng libjpeg libwebp || echo "pkg-config probe failed"
 echo
 
-echo "---- 2. Build and enable ext/gd against system libgd ----"
-# fastchart resolves the GdImage class entry via the engine class table at
-# MINIT and pulls gdImagePtr out of \GdImage zvals via ext/gd's single
-# PHPAPI symbol. ext/gd has to be loaded before fastchart for either to
-# work. --with-external-gd matches fastchart's link target so both share
-# one libgd in the address space.
+echo "---- 2. Build and enable ext/gd (tests need it for image decode) ----"
 docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp >/dev/null
 docker-php-ext-install -j"$(nproc)" gd >/dev/null
 docker-php-ext-enable gd
@@ -140,47 +137,47 @@ php -r 'echo "FastChart\\Chart::version(): ", FastChart\Chart::version(), PHP_EO
 echo
 
 echo "---- 8. Functional smoke test ----"
-# Render a tiny LineChart via the in-memory helper and a StockChart via
-# the caller-canvas path. The first hits renderPng()'s private-canvas
-# allocation; the second exercises draw($canvas) + the GdImage class
-# lookup. Together they cover both render paths and verify the libgd
-# link is alive.
+# Render LineChart / StockChart / PieChart across PNG / JPEG / WebP /
+# SVG. Magic bytes plus a non-trivial size threshold confirm the
+# raster encoders (plutosvg + libpng / libjpeg-turbo / libwebp) and
+# the SVG backend are all wired up.
 php -r '
-$png = (new FastChart\LineChart(160, 120))
+$line = (new FastChart\LineChart(160, 120))
     ->setTitle("smoke")
-    ->setSeries([["data" => [1, 2, 3, 4, 5]]])
-    ->renderPng();
-if (substr($png, 0, 8) !== "\x89PNG\r\n\x1a\n") {
-    echo "renderPng FAIL: not a PNG\n"; exit(1);
-}
-if (strlen($png) < 100) {
-    echo "renderPng FAIL: too small (", strlen($png), " bytes)\n"; exit(1);
-}
-echo "renderPng OK (", strlen($png), " bytes)\n";
+    ->setSeries([["data" => [1, 2, 3, 4, 5]]]);
 
-$canvas = imagecreatetruecolor(200, 100);
+$png = $line->renderPng();
+if (substr($png, 0, 8) !== "\x89PNG\r\n\x1a\n") { echo "LineChart PNG FAIL\n"; exit(1); }
+if (strlen($png) < 200) { echo "LineChart PNG too small\n"; exit(1); }
+echo "LineChart PNG OK (", strlen($png), " bytes)\n";
+
+$jpg = $line->renderJpeg();
+if (substr($jpg, 0, 3) !== "\xff\xd8\xff") { echo "LineChart JPEG FAIL\n"; exit(1); }
+echo "LineChart JPEG OK (", strlen($jpg), " bytes)\n";
+
+$webp = $line->renderWebp();
+if (substr($webp, 0, 4) !== "RIFF" || substr($webp, 8, 4) !== "WEBP") { echo "LineChart WebP FAIL\n"; exit(1); }
+echo "LineChart WebP OK (", strlen($webp), " bytes)\n";
+
+$svg = $line->renderSvg();
+if (strpos($svg, "<svg") === false) { echo "LineChart SVG FAIL\n"; exit(1); }
+echo "LineChart SVG OK (", strlen($svg), " bytes)\n";
+
 $ohlc = [];
-for ($i = 0; $i < 10; $i++) {
-    $ohlc[] = [$i, 100 + $i, 105 + $i, 95 + $i, 102 + $i, 1000];
-}
-$result = (new FastChart\StockChart())
+for ($i = 0; $i < 10; $i++) { $ohlc[] = [$i, 100 + $i, 105 + $i, 95 + $i, 102 + $i, 1000]; }
+$stockPng = (new FastChart\StockChart())
     ->setSize(200, 100)
     ->setOhlcv($ohlc)
-    ->draw($canvas);
-if ($result !== $canvas) {
-    echo "draw FAIL: did not return same canvas\n"; exit(1);
-}
-echo "draw OK (canvas returned)\n";
+    ->renderPng();
+if (substr($stockPng, 0, 8) !== "\x89PNG\r\n\x1a\n") { echo "StockChart PNG FAIL\n"; exit(1); }
+echo "StockChart PNG OK (", strlen($stockPng), " bytes)\n";
 
-$themes = [FastChart\Chart::THEME_LIGHT, FastChart\Chart::THEME_DARK];
-foreach ($themes as $t) {
+foreach ([FastChart\Chart::THEME_LIGHT, FastChart\Chart::THEME_DARK] as $t) {
     $bytes = (new FastChart\PieChart(120, 120))
         ->setTheme($t)
         ->setSlices([["label" => "a", "value" => 1], ["label" => "b", "value" => 2]])
         ->renderPng();
-    if (substr($bytes, 0, 8) !== "\x89PNG\r\n\x1a\n") {
-        echo "PieChart theme=$t FAIL\n"; exit(1);
-    }
+    if (substr($bytes, 0, 8) !== "\x89PNG\r\n\x1a\n") { echo "PieChart theme=$t FAIL\n"; exit(1); }
 }
 echo "PieChart themes OK\n";
 '
