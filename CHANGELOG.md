@@ -134,10 +134,89 @@ rasterizing through plutovg, and encoding with libpng / libjpeg-turbo
   inspection now declare `gd` in their `--EXTENSIONS--` block, so
   they SKIP cleanly when ext/gd isn't loaded rather than fatal.
 
+### Followups landed (security, leak-clean, optional codecs)
+
+- **Security: open_basedir TOCTOU eliminated in source-image loading.**
+  `setBackgroundImage` / `addIconAt` previously sniffed dimensions via
+  direct `fopen()`, then stat()-ed, then opened the path through the
+  PHP stream layer with `STREAM_DISABLE_OPEN_BASEDIR`. A basedir-
+  inside symlink whose target was swapped to outside basedir would
+  resolve at the bypass-flagged final open. Collapsed to one
+  `php_stream_open_wrapper` without `STREAM_DISABLE_OPEN_BASEDIR`; the
+  stream wrapper enforces `open_basedir` natively, no separate check
+  to race with. Single open also reads up to `FC_IMAGE_MAX_BYTES + 1`
+  so a file at the cap passes while a file over the cap is rejected.
+- **FT_Library is now process-shared.** Glyph-path emitter, font-
+  family resolver, and text-bbox measurer share one lazily-initialized
+  handle; `fastchart_ft_library_shutdown()` releases it at MSHUTDOWN.
+  Drops a 2264-byte-per-render LSan-reported leak and removes the
+  per-call `FT_Init_FreeType` / `FT_Done_FreeType` overhead on the
+  raster path.
+- **Optional codec libs.** `libpng` / `libjpeg-turbo` / `libwebp` are
+  now probed independently by `config.m4` — each missing lib turns
+  the matching `renderXxx()` into a clear "format not compiled in"
+  Error at call time. FreeType remains mandatory (text rendering
+  depends on it). SVG output stays available regardless of which
+  raster codecs are linked in.
+- **phpinfo() lib version table.** Per-library version rows for
+  FreeType, libpng, libjpeg-turbo, libwebp, plutovg, plutosvg.
+  Missing optional libs show `(not compiled in)` so packagers can
+  audit a build.
+- **AreaChart honours `setGradientFill()`.** Both stacked and non-
+  stacked fill paths now route through
+  `fastchart_target_gradient_polygon` when a gradient is configured.
+  Public docs previously claimed support but `AreaChart`'s polygon
+  emit only ever used the solid series color.
+- **SVG_TEXT_NATIVE sanitizes XML-invalid bytes.** `fc_svg_escape`
+  was escaping only the five XML metacharacters; user-supplied
+  titles or labels containing C0 control bytes survived into the
+  `<text>` content and made `xmllint` / any conforming parser reject
+  the document. Bytes outside TAB / LF / CR / 0x20+ now emit U+FFFD.
+- **CI runs with explicit LSan leak detection.** `ASAN_OPTIONS`
+  pins `detect_leaks=1`; `.github/lsan-suppressions.txt` covers
+  ext/gd's MINIT-time persistent allocations (intentional, not bugs)
+  and nothing else. A "Render-only leak smoke" CI step exercises
+  fastchart without ext/gd loaded — any `LeakSanitizer` output is a
+  fastchart regression and fails the job. The post-test grep also
+  flags `Tests leaked: [1-9]` so a leak-only failure can't slip
+  past via the existing `Tests failed: [1-9]` guard.
+- **README perf section.** Re-flowed to a single 1920×1080 resolution
+  with one column each for SVG / PNG / WebP / JPG. SVG sits in the
+  single-digit-ms range across families; PNG and JPG land in 60–85
+  ms; WebP is the slowest encoder at 90–125 ms. Bench script
+  consolidated to one `FC_BENCH_ITERS` knob.
+- **v1 gallery (`docs/v1-gallery.html`)**: 4-up SVG / PNG / JPG /
+  WebP layout, responsive at 720 / 1400 px breakpoints.
+- **Build / CI deps cleaned.** Drop `libgd-dev` from the linux + macOS
+  CI jobs (fastchart no longer links it; the ASAN job keeps it for
+  the ext/gd built into the sanitized PHP). `scripts/pie-smoke.sh`
+  rewritten for v1.0 — drops the removed `draw(\GdImage)` reference,
+  asserts PNG / JPEG / WebP / SVG output via magic-byte checks.
+
+### Removed (1.0.0 cleanup tail)
+
+- Dead `renderGif()` / `renderAvif()` `ZEND_METHOD` bodies on `Chart`
+  and `Symbol`. Never registered in the arginfo method tables, so
+  PHP-land calls hit the engine's standard "undefined method" error
+  anyway — the bodies were unreachable.
+- `fastchart_gd_image_ce` NULL global and its extern declaration in
+  `php_fastchart.h`. No code referenced it after the libgd link was
+  removed.
+- Stale `composer.json` description claiming charts are "drawn onto
+  ext/gd `\GdImage` canvases via libgd".
+- Stale `draw(\GdImage)` / `renderAvif` references in
+  `fastchart.stub.php` docblocks.
+- `tests/028_show_values.php` orphan helper. `fc_color_near()` is
+  defined inline in every consumer `.phpt` now.
+
 ### Result
 
-96/96 phpt tests pass with ext/gd loaded; 31 pass + 65 SKIP without
-ext/gd. libgd is no longer linked into `modules/fastchart.so`.
+101 / 101 phpt tests pass with ext/gd loaded. CI runs under ASan with
+`detect_leaks=1` and zero fastchart-side leaks; the ext/gd MINIT
+persistent allocations are filtered via a tight suppressions file.
+Tests added in this followup wave: 132 (open_basedir TOCTOU), 133
+(XML control-byte sanitizer), 134 (MINFO + optional-libs surface),
+135 (AreaChart gradient).
 
 ## [0.2.0] - 2026-05-09
 
