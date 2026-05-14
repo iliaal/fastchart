@@ -161,59 +161,16 @@ zend_object *fastchart_symbol_abstract_create_object(zend_class_entry *ce)
 }
 
 /* Fill the canvas with the configured background, honouring
- * `transparent_bg`. Backend-aware: GD uses the alpha-blending dance
- * below; SVG emits a single bg rect (or nothing on transparent_bg —
- * SVG transparency is implicit, no element means see-through).
- *
- * GD path libgd quirk: `gdImageColorTransparent()` does NOT rewrite
- * existing pixel alpha — it only flags an index for legacy
- * palette-image transparency. On a truecolor canvas the encoder
- * writes per-pixel alpha when `gdImageSaveAlpha(im, 1)` is set, so
- * the bg pixels themselves must carry alpha=127 for the encoded
- * PNG/WebP/AVIF output to be transparent.
- *
- * Sequence (GD only):
- *   - alphaBlending(0) so the fill REPLACES the canvas instead of
- *     compositing over the engine-default opaque-black initial state
- *     (which would blend a partially-transparent fill into something
- *     darker than the user asked for).
- *   - saveAlpha(1) so the encoder writes the alpha channel for
- *     formats that carry it. Encoders for JPEG / GIF discard alpha
- *     by design; those callers see the bg colour blended against
- *     itself, which preserves the configured RGB.
- *   - fill with gdImageColorAllocateAlpha(..., 127) on transparent_bg,
- *     opaque allocate otherwise.
- *   - alphaBlending(1) restored so subsequent foreground draws
- *     composite normally (fg with alpha=0 = opaque overwrites bg). */
+ * `transparent_bg`. SVG-only: transparent_bg = no bg element (SVG
+ * default is transparent outside drawn elements). Opaque bg = single
+ * full-canvas rect. */
 void fastchart_symbol_fill_background(fastchart_symbol_obj *self,
                                       fastchart_target_t *t)
 {
+    if (self->transparent_bg) return;
     int r = (int)((self->bg_rgb >> 16) & 0xFF);
     int g = (int)((self->bg_rgb >> 8) & 0xFF);
     int b = (int)(self->bg_rgb & 0xFF);
-
-    if (t->kind == FASTCHART_TARGET_GD) {
-        gdImagePtr im = t->u.gd.im;
-        int W = gdImageSX(im);
-        int H = gdImageSY(im);
-
-        gdImageAlphaBlending(im, 0);
-        if (self->transparent_bg) {
-            gdImageSaveAlpha(im, 1);
-            int bg = gdImageColorAllocateAlpha(im, r, g, b, 127);
-            gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, bg);
-        } else {
-            gdImageSaveAlpha(im, 0);
-            int bg = gdImageColorAllocate(im, r, g, b);
-            gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, bg);
-        }
-        gdImageAlphaBlending(im, 1);
-        return;
-    }
-
-    /* SVG. transparent_bg = no bg element (SVG default is transparent
-     * outside drawn elements). Opaque bg = single full-canvas rect. */
-    if (self->transparent_bg) return;
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
     int bg = fastchart_target_color(t, r, g, b, 0xFF);
@@ -250,20 +207,6 @@ static void fastchart_symbol_logical_dims(fastchart_symbol_obj *self,
     *out_h = h;
 }
 
-static int dispatch_symbol_render(fastchart_symbol_obj *self,
-                                  zend_class_entry *ce, gdImagePtr im)
-{
-    if (ce == fastchart_code128_ce)
-        return fastchart_code128_render_to_image((fastchart_code128_obj *)self, im);
-    if (ce == fastchart_qrcode_ce)
-        return fastchart_qrcode_render_to_image((fastchart_qrcode_obj *)self, im);
-    zend_throw_error(NULL, "FastChart\\Symbol: render dispatch found unknown class entry");
-    return -1;
-}
-
-/* SVG-side dispatcher. Parallel to dispatch_symbol_render but routes
- * to the target-based renderer so the SVG backend receives vector
- * emissions instead of gdImage* primitive calls. */
 static int dispatch_symbol_svg_render(fastchart_symbol_obj *self,
                                        zend_class_entry *ce,
                                        fastchart_target_t *t)

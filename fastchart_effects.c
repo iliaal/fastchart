@@ -18,31 +18,8 @@
 
 #include "php.h"
 #include "fastchart_effects.h"
+#include "fastchart_target.h"
 #include "fastchart_text.h"
-
-#include <gd.h>
-
-int fastchart_apply_line_style(gdImagePtr im, fastchart_obj *chart, int color)
-{
-    if (chart->line_style == FASTCHART_LINE_SOLID) return color;
-
-    /* Repeating pattern of `color` then `gdTransparent`. Dotted has a
-     * 1:1 ratio (pixel on, pixel off); dashed runs 5:3 for clearer
-     * dashes at typical line widths. */
-    int pattern[16];
-    int len;
-    if (chart->line_style == FASTCHART_LINE_DOTTED) {
-        pattern[0] = color;
-        pattern[1] = gdTransparent;
-        len = 2;
-    } else { /* DASHED */
-        for (int i = 0; i < 5; i++) pattern[i] = color;
-        for (int i = 5; i < 8; i++) pattern[i] = gdTransparent;
-        len = 8;
-    }
-    gdImageSetStyle(im, pattern, len);
-    return gdStyled;
-}
 
 int fastchart_lerp_rgb(int from, int to, double t)
 {
@@ -61,235 +38,96 @@ static int gradient_active(const fastchart_obj *chart)
     return chart->gradient_from >= 0 && chart->gradient_to >= 0;
 }
 
-/* Build a 256-entry palette of interpolated colors from `from` -> `to`
- * via fastchart_lerp_rgb. One gdImageColorAllocate call per LUT entry,
- * once per gradient draw, so a 600-pixel-wide rectangle (or a 50k-pixel
- * polygon bbox) becomes ~256 allocs instead of 600 / 50k. */
-static void build_gradient_lut(gdImagePtr im, int from, int to, int lut[256])
+/* v1.0 deferral: a true SVG <linearGradient> with stops is v1.1 work.
+ * For now we flatten the from/to pair to the midpoint and emit a
+ * solid fill via the target abstraction. Visually distinguishable
+ * from a flat fill (the midpoint isn't either endpoint) but doesn't
+ * reproduce the smooth band the libgd-era pipeline did. */
+static int gradient_solid_color_handle(fastchart_target_t *t,
+                                       const fastchart_obj *chart)
 {
-    for (int k = 0; k < 256; k++) {
-        int rgb = fastchart_lerp_rgb(from, to, (double)k / 255.0);
-        lut[k] = gdImageColorAllocate(im,
-            (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
-    }
+    int mid = fastchart_lerp_rgb((int)chart->gradient_from,
+                                  (int)chart->gradient_to, 0.5);
+    return fastchart_target_color_rgb(t, mid);
 }
 
-static inline int lut_index(int pos, int span)
-{
-    if (span <= 0) return 0;
-    int idx = (int)((double)pos / (double)span * 255.0 + 0.5);
-    if (idx < 0) return 0;
-    if (idx > 255) return 255;
-    return idx;
-}
-
-/* Resolve the LUT pointer to use for this gradient draw. When a
- * caller-supplied cache exists and is already built, reuse its 256
- * entries; otherwise (re)build into the cache or a stack scratch.
- * The chart's gradient_from / gradient_to are constant across one
- * draw, so no invalidation key is needed. */
-static const int *resolve_gradient_lut(gdImagePtr im, fastchart_obj *chart,
-                                       fastchart_gradient_cache *cache,
-                                       int scratch[256])
-{
-    if (cache && cache->built) return cache->lut;
-    int *target = cache ? cache->lut : scratch;
-    build_gradient_lut(im, (int)chart->gradient_from, (int)chart->gradient_to, target);
-    if (cache) cache->built = true;
-    return target;
-}
-
-int fastchart_gradient_filled_rectangle(gdImagePtr im, fastchart_obj *chart,
-                                        fastchart_gradient_cache *cache,
+int fastchart_gradient_filled_rectangle(fastchart_target_t *t,
+                                        fastchart_obj *chart,
                                         int x0, int y0, int x1, int y1)
 {
     if (!gradient_active(chart)) return 0;
-    if (x1 < x0) { int t = x0; x0 = x1; x1 = t; }
-    if (y1 < y0) { int t = y0; y0 = y1; y1 = t; }
+    if (x1 < x0) { int tmp = x0; x0 = x1; x1 = tmp; }
+    if (y1 < y0) { int tmp = y0; y0 = y1; y1 = tmp; }
 
-    int scratch[256];
-    const int *lut = resolve_gradient_lut(im, chart, cache, scratch);
-
-    if (chart->gradient_dir == FASTCHART_GRADIENT_HORIZONTAL) {
-        int span = x1 - x0;
-        for (int x = x0; x <= x1; x++) {
-            gdImageLine(im, x, y0, x, y1, lut[lut_index(x - x0, span)]);
-        }
-    } else { /* vertical */
-        int span = y1 - y0;
-        for (int y = y0; y <= y1; y++) {
-            gdImageLine(im, x0, y, x1, y, lut[lut_index(y - y0, span)]);
-        }
-    }
+    int handle = gradient_solid_color_handle(t, chart);
+    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1,
+                          handle, 1, 1);
     return 1;
 }
 
-int fastchart_gradient_filled_polygon(gdImagePtr im, fastchart_obj *chart,
-                                      fastchart_gradient_cache *cache,
-                                      gdPointPtr poly, int n_pts)
+int fastchart_gradient_filled_polygon(fastchart_target_t *t,
+                                      fastchart_obj *chart,
+                                      const fastchart_point_t *poly, int n_pts)
 {
     if (!gradient_active(chart) || n_pts < 3) return 0;
 
-    /* Render the polygon shape into a private mask image (paletted,
-     * 1-bit) so we can read membership without colliding with any
-     * RGB the user may already have on the destination canvas. Then
-     * stamp the gradient color from a 256-entry LUT only where the
-     * mask reads 1. This is the same idea the previous implementation
-     * had, but without the can't-pick-a-safe-RGB-sentinel hazard:
-     * the mask is its own image, completely isolated from `im`'s
-     * existing pixels. */
-    int xmin = poly[0].x, xmax = poly[0].x;
-    int ymin = poly[0].y, ymax = poly[0].y;
-    for (int i = 1; i < n_pts; i++) {
-        if (poly[i].x < xmin) xmin = poly[i].x;
-        if (poly[i].x > xmax) xmax = poly[i].x;
-        if (poly[i].y < ymin) ymin = poly[i].y;
-        if (poly[i].y > ymax) ymax = poly[i].y;
-    }
-    int mw = xmax - xmin + 1;
-    int mh = ymax - ymin + 1;
-    if (mw <= 0 || mh <= 0) return 1;
-
-    gdImagePtr mask = gdImageCreate(mw, mh);
-    if (!mask) return 0;
-    int bg = gdImageColorAllocate(mask, 0, 0, 0);   /* outside */
-    int fg = gdImageColorAllocate(mask, 255, 255, 255); /* inside */
-    gdImageFilledRectangle(mask, 0, 0, mw - 1, mh - 1, bg);
-
-    /* Translate the polygon into mask-local coords. */
-    gdPoint *shifted = emalloc((size_t)n_pts * sizeof(gdPoint));
-    for (int i = 0; i < n_pts; i++) {
-        shifted[i].x = poly[i].x - xmin;
-        shifted[i].y = poly[i].y - ymin;
-    }
-    gdImageFilledPolygon(mask, shifted, n_pts, fg);
-    efree(shifted);
-
-    int scratch[256];
-    const int *lut = resolve_gradient_lut(im, chart, cache, scratch);
-
-    if (chart->gradient_dir == FASTCHART_GRADIENT_HORIZONTAL) {
-        int span = xmax - xmin;
-        for (int x = xmin; x <= xmax; x++) {
-            int c = lut[lut_index(x - xmin, span)];
-            int mx = x - xmin;
-            for (int y = ymin; y <= ymax; y++) {
-                if (gdImageGetPixel(mask, mx, y - ymin) == fg) {
-                    gdImageSetPixel(im, x, y, c);
-                }
-            }
-        }
-    } else {
-        int span = ymax - ymin;
-        for (int y = ymin; y <= ymax; y++) {
-            int c = lut[lut_index(y - ymin, span)];
-            int my = y - ymin;
-            for (int x = xmin; x <= xmax; x++) {
-                if (gdImageGetPixel(mask, x - xmin, my) == fg) {
-                    gdImageSetPixel(im, x, y, c);
-                }
-            }
-        }
-    }
-    gdImageDestroy(mask);
+    int handle = gradient_solid_color_handle(t, chart);
+    fastchart_target_polygon(t, poly, n_pts, handle, 1, 1);
     return 1;
 }
 
-static int shadow_color_alloc(gdImagePtr im, fastchart_obj *chart)
-{
-    /* Per-draw cache: the shadow color is chart-wide and constant for
-     * the entire draw. fastchart_compute_layout invalidates the slot
-     * at the top of each render so a fresh canvas allocates fresh. */
-    if (chart->shadow_color_valid) return chart->shadow_color_handle;
-    int r = (chart->shadow_color >> 16) & 0xFF;
-    int g = (chart->shadow_color >>  8) & 0xFF;
-    int b =  chart->shadow_color        & 0xFF;
-    chart->shadow_color_handle =
-        gdImageColorAllocateAlpha(im, r, g, b, (int)chart->shadow_alpha);
-    chart->shadow_color_valid = true;
-    return chart->shadow_color_handle;
-}
-
-void fastchart_filled_polygon_aa(gdImagePtr im, gdPointPtr poly,
+void fastchart_filled_polygon_aa(fastchart_target_t *t,
+                                 const fastchart_point_t *poly,
                                  int n_pts, int color)
 {
     if (n_pts < 3) return;
-    gdImageFilledPolygon(im, poly, n_pts, color);
-    /* Walk each edge as a 1px AA line. The fill is already opaque under
-     * the centerline, so the AA pass only contributes coverage to the
-     * fringe pixels just outside the rasterized fill — softening the
-     * jaggy step pattern without thickening the shape. */
-    gdImageSetAntiAliased(im, color);
-    for (int i = 0; i < n_pts; i++) {
-        int j = (i + 1) % n_pts;
-        gdImageLine(im, poly[i].x, poly[i].y,
-                        poly[j].x, poly[j].y, gdAntiAliased);
-    }
+    /* SVG renderers anti-alias by default; the target's polygon
+     * primitive carries the fill as-is and the consumer's rasterizer
+     * smooths edges. The dedicated AA-edge pass the libgd path needed
+     * (to compensate for gdImageFilledPolygon's hard edges) is
+     * unnecessary here. */
+    fastchart_target_polygon(t, poly, n_pts, color, 1, 1);
 }
 
-void fastchart_filled_wedge_aa(gdImagePtr im, int cx, int cy,
+void fastchart_filled_wedge_aa(fastchart_target_t *t, int cx, int cy,
                                int diameter, int start_deg, int end_deg,
                                int color)
 {
-    gdImageFilledArc(im, cx, cy, diameter, diameter,
-                     start_deg, end_deg, color, gdPie);
-    /* AA outline: outer arc + the two radial edges from center to the
-     * arc endpoints. libgd's gdImageArc honors gdAntiAliased, so the
-     * arc curve itself reads smooth; the two radials are 1px AA lines
-     * mirroring the fastchart_filled_polygon_aa idea. */
-    gdImageSetAntiAliased(im, color);
-    gdImageArc(im, cx, cy, diameter, diameter,
-               start_deg, end_deg, gdAntiAliased);
+    /* Same AA-by-default reasoning as fastchart_filled_polygon_aa.
+     * The arc primitive emits an SVG <path A> arc which renders
+     * smooth in any consumer. start_deg / end_deg follow the libgd
+     * CCW convention (0 = +x, 3 o'clock). */
     int radius = diameter / 2;
-    double rs = start_deg * M_PI / 180.0;
-    double re = end_deg   * M_PI / 180.0;
-    int sx = cx + (int)((double)radius * cos(rs));
-    int sy = cy + (int)((double)radius * sin(rs));
-    int ex = cx + (int)((double)radius * cos(re));
-    int ey = cy + (int)((double)radius * sin(re));
-    gdImageLine(im, cx, cy, sx, sy, gdAntiAliased);
-    gdImageLine(im, cx, cy, ex, ey, gdAntiAliased);
+    fastchart_target_arc(t, cx, cy, radius, radius,
+                         (double)start_deg, (double)end_deg,
+                         color, 1, 1);
 }
 
-void fastchart_shadow_filled_rectangle(gdImagePtr im, fastchart_obj *chart,
+void fastchart_shadow_filled_rectangle(fastchart_target_t *t,
+                                       fastchart_obj *chart,
                                        int x0, int y0, int x1, int y1)
 {
-    if (!chart->has_drop_shadow) return;
-    int c = shadow_color_alloc(im, chart);
-    int dx = (int)chart->shadow_dx;
-    int dy = (int)chart->shadow_dy;
-    gdImageAlphaBlending(im, 1);
-    gdImageFilledRectangle(im, x0 + dx, y0 + dy, x1 + dx, y1 + dy, c);
+    /* v1.0 deferral: real SVG drop shadow needs a <filter> stanza
+     * with <feGaussianBlur> + <feOffset> + a chart-wide <defs>
+     * registration. Currently a no-op so the calling renderer
+     * proceeds to paint its primary shape unshadowed. */
+    (void)t; (void)chart; (void)x0; (void)y0; (void)x1; (void)y1;
 }
 
-void fastchart_shadow_filled_polygon(gdImagePtr im, fastchart_obj *chart,
-                                     gdPointPtr poly, int n_pts)
+void fastchart_shadow_filled_polygon(fastchart_target_t *t,
+                                     fastchart_obj *chart,
+                                     const fastchart_point_t *poly, int n_pts)
 {
-    if (!chart->has_drop_shadow || n_pts < 3) return;
-    int c = shadow_color_alloc(im, chart);
-    int dx = (int)chart->shadow_dx;
-    int dy = (int)chart->shadow_dy;
-
-    gdPoint *shifted = emalloc(n_pts * sizeof(gdPoint));
-    for (int i = 0; i < n_pts; i++) {
-        shifted[i].x = poly[i].x + dx;
-        shifted[i].y = poly[i].y + dy;
-    }
-    gdImageAlphaBlending(im, 1);
-    gdImageFilledPolygon(im, shifted, n_pts, c);
-    efree(shifted);
+    /* v1.0 deferral: see fastchart_shadow_filled_rectangle. */
+    (void)t; (void)chart; (void)poly; (void)n_pts;
 }
 
-void fastchart_shadow_filled_arc(gdImagePtr im, fastchart_obj *chart,
+void fastchart_shadow_filled_arc(fastchart_target_t *t,
+                                 fastchart_obj *chart,
                                  int cx, int cy, int diameter,
                                  int start_deg, int end_deg)
 {
-    if (!chart->has_drop_shadow) return;
-    int c = shadow_color_alloc(im, chart);
-    int dx = (int)chart->shadow_dx;
-    int dy = (int)chart->shadow_dy;
-    gdImageAlphaBlending(im, 1);
-    gdImageFilledArc(im, cx + dx, cy + dy, diameter, diameter,
-                     start_deg, end_deg, c, gdPie);
+    /* v1.0 deferral: see fastchart_shadow_filled_rectangle. */
+    (void)t; (void)chart; (void)cx; (void)cy;
+    (void)diameter; (void)start_deg; (void)end_deg;
 }
-

@@ -15,7 +15,6 @@
 
 #include "php.h"
 #include "zend_exceptions.h"
-#include <gd.h>
 
 #define PHP_FASTCHART_VERSION "1.0.0"
 
@@ -822,39 +821,6 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define FASTCHART_DATE_QUARTER 3
 #define FASTCHART_DATE_YEAR    4
 
-/* Forward-declare the only ext/gd public API we use (also declared in
- * fastchart.c at the call site). Mirrored verbatim from
- * ext/gd/php_gd.h since that header is not installed via make install. */
-extern struct gdImageStruct *php_gd_libgdimageptr_from_zval_p(zval *zp);
-
-/* Pull the underlying gdImagePtr out of the caller-supplied canvas
- * zval. NULL on failure; the caller throws. The IS_OBJECT pre-check
- * is redundant against ext/gd's own type validation but avoids a
- * call into ext/gd when the value is obviously wrong (e.g. NULL
- * after a Z_PARAM_OBJECT_OF_CLASS that the caller forgot to
- * RETURN_THROWS on). */
-static inline gdImagePtr fastchart_gd_image_from_zval(zval *canvas_zv)
-{
-    if (Z_TYPE_P(canvas_zv) != IS_OBJECT) return NULL;
-    return (gdImagePtr)php_gd_libgdimageptr_from_zval_p(canvas_zv);
-}
-
-/* Reject palette-mode canvases at draw() entry. libgd's per-call AA
- * (gdImageSetAntiAliased + gdAntiAliased) and alpha-blended fills both
- * silently degrade on a non-truecolor image — the result still renders
- * but text and lines look aliased and fills mis-blend. Fail fast with
- * a ValueError so the caller switches to imagecreatetruecolor(). */
-static inline bool fastchart_require_truecolor(gdImagePtr im)
-{
-    if (im && !im->trueColor) {
-        zend_throw_error(zend_ce_value_error,
-            "fastchart requires a truecolor GdImage; "
-            "use imagecreatetruecolor() instead of imagecreate()");
-        return false;
-    }
-    return true;
-}
-
 /* Read a string label from an array-shaped setter, dropping the
  * value if it carries an embedded NUL. Public scalar setters reject
  * embedded NUL with ValueError; per-element strings inside arrays
@@ -871,70 +837,47 @@ static inline const char *fastchart_label_or_null(const zval *zv)
     return Z_STRVAL_P(zv);
 }
 
-/* Per-chart drawing helpers extracted from each ZEND_METHOD draw()
- * so the renderPng/Jpeg/Webp shortcuts can reuse them without
- * routing through ext/gd's zval extraction. Each returns 0 on
- * success, -1 on a draw-time error (a PHP exception is already
- * pending). */
-int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im);
-/* Render a LineChart into any fastchart_target_t — GD-backed or
- * SVG-backed. Pilot family on the SVG dispatch path; the
- * _to_image() wrapper above is the GD-only convenience. */
+/* Per-chart SVG rendering helpers. Each chart family implements
+ * fastchart_<name>_render_to_target(self, t), called by
+ * dispatch_svg_render. The legacy fastchart_<name>_render_to_image
+ * GD-direct wrappers retired in v1.0. */
 struct fastchart_target;
 int fastchart_line_render_to_target(fastchart_line_obj *self,
                                      struct fastchart_target *t);
-int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im);
 int fastchart_area_render_to_target(fastchart_area_obj *self,
                                      struct fastchart_target *t);
-int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im);
 int fastchart_bar_render_to_target(fastchart_bar_obj *self,
                                     struct fastchart_target *t);
-int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im);
 int fastchart_pie_render_to_target(fastchart_pie_obj *self,
                                     struct fastchart_target *t);
-int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im);
 int fastchart_scatter_render_to_target(fastchart_scatter_obj *self,
                                         struct fastchart_target *t);
-int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im);
 int fastchart_stock_render_to_target(fastchart_stock_obj *self,
                                       struct fastchart_target *t);
-int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im);
 int fastchart_radar_render_to_target(fastchart_radar_obj *self,
                                       struct fastchart_target *t);
-int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im);
 int fastchart_bubble_render_to_target(fastchart_bubble_obj *self,
                                        struct fastchart_target *t);
-int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im);
 int fastchart_surface_render_to_target(fastchart_surface_obj *self,
                                         struct fastchart_target *t);
-int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im);
 int fastchart_gauge_render_to_target(fastchart_gauge_obj *self,
                                       struct fastchart_target *t);
-int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im);
 int fastchart_gantt_render_to_target(fastchart_gantt_obj *self,
                                       struct fastchart_target *t);
-int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im);
 int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self,
                                         struct fastchart_target *t);
-int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im);
 int fastchart_polar_render_to_target(fastchart_polar_obj *self,
                                       struct fastchart_target *t);
-int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im);
 int fastchart_contour_render_to_target(fastchart_contour_obj *self,
                                         struct fastchart_target *t);
-int fastchart_treemap_render_to_image(fastchart_treemap_obj *self, gdImagePtr im);
 int fastchart_treemap_render_to_target(fastchart_treemap_obj *self,
                                         struct fastchart_target *t);
-int fastchart_funnel_render_to_image(fastchart_funnel_obj *self, gdImagePtr im);
 int fastchart_funnel_render_to_target(fastchart_funnel_obj *self,
                                        struct fastchart_target *t);
-int fastchart_waterfall_render_to_image(fastchart_waterfall_obj *self, gdImagePtr im);
 int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self,
                                           struct fastchart_target *t);
-int fastchart_heatmap_render_to_image(fastchart_heatmap_obj *self, gdImagePtr im);
 int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self,
                                         struct fastchart_target *t);
-int fastchart_linear_meter_render_to_image(fastchart_linear_meter_obj *self, gdImagePtr im);
 int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self,
                                              struct fastchart_target *t);
 
@@ -1017,11 +960,9 @@ static inline fastchart_symbol_obj *fastchart_symbol_obj_from_zend(zend_object *
 #define Z_FASTCHART_CODE128_OBJ_P(zv) ((fastchart_code128_obj *)Z_FASTCHART_SYMBOL_OBJ_P(zv))
 #define Z_FASTCHART_QRCODE_OBJ_P(zv)  ((fastchart_qrcode_obj *)Z_FASTCHART_SYMBOL_OBJ_P(zv))
 
-int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im);
-int fastchart_qrcode_render_to_image(fastchart_qrcode_obj *self, gdImagePtr im);
-/* Target-based render entries. GD-backed targets produce identical
- * output to the gdImagePtr shims above; SVG-backed targets emit
- * vector elements. */
+/* Target-based render entries — the only entry point now that
+ * libgd has been dropped. SVG-backed targets emit vector elements;
+ * raster outputs go through dispatch_svg_render then plutovg. */
 int fastchart_code128_render_to_target(fastchart_code128_obj *self,
                                         struct fastchart_target *t);
 int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,

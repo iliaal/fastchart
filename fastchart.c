@@ -4071,63 +4071,10 @@ static int dispatch_svg_render(fastchart_obj *self, zend_class_entry *ce, fastch
     return -1;
 }
 
-static int dispatch_render(fastchart_obj *self, zend_class_entry *ce, gdImagePtr im)
-{
-    if (ce == fastchart_line_chart_ce)    return fastchart_line_render_to_image((fastchart_line_obj *)self, im);
-    if (ce == fastchart_area_chart_ce)    return fastchart_area_render_to_image((fastchart_area_obj *)self, im);
-    if (ce == fastchart_bar_chart_ce)     return fastchart_bar_render_to_image((fastchart_bar_obj *)self, im);
-    if (ce == fastchart_pie_chart_ce)     return fastchart_pie_render_to_image((fastchart_pie_obj *)self, im);
-    if (ce == fastchart_scatter_chart_ce) return fastchart_scatter_render_to_image((fastchart_scatter_obj *)self, im);
-    if (ce == fastchart_stock_chart_ce)   return fastchart_stock_render_to_image((fastchart_stock_obj *)self, im);
-    if (ce == fastchart_radar_chart_ce)   return fastchart_radar_render_to_image((fastchart_radar_obj *)self, im);
-    if (ce == fastchart_bubble_chart_ce)  return fastchart_bubble_render_to_image((fastchart_bubble_obj *)self, im);
-    if (ce == fastchart_surface_chart_ce) return fastchart_surface_render_to_image((fastchart_surface_obj *)self, im);
-    if (ce == fastchart_gauge_chart_ce)   return fastchart_gauge_render_to_image((fastchart_gauge_obj *)self, im);
-    if (ce == fastchart_gantt_chart_ce)   return fastchart_gantt_render_to_image((fastchart_gantt_obj *)self, im);
-    if (ce == fastchart_box_plot_ce)      return fastchart_boxplot_render_to_image((fastchart_boxplot_obj *)self, im);
-    if (ce == fastchart_polar_chart_ce)   return fastchart_polar_render_to_image((fastchart_polar_obj *)self, im);
-    if (ce == fastchart_contour_chart_ce) return fastchart_contour_render_to_image((fastchart_contour_obj *)self, im);
-    if (ce == fastchart_treemap_ce)       return fastchart_treemap_render_to_image((fastchart_treemap_obj *)self, im);
-    if (ce == fastchart_funnel_ce)        return fastchart_funnel_render_to_image((fastchart_funnel_obj *)self, im);
-    if (ce == fastchart_waterfall_ce)     return fastchart_waterfall_render_to_image((fastchart_waterfall_obj *)self, im);
-    if (ce == fastchart_heatmap_ce)       return fastchart_heatmap_render_to_image((fastchart_heatmap_obj *)self, im);
-    if (ce == fastchart_linear_meter_ce)  return fastchart_linear_meter_render_to_image((fastchart_linear_meter_obj *)self, im);
-    zend_throw_error(NULL, "FastChart: render dispatch found unknown class entry");
-    return -1;
-}
-
-/* Encode a rendered gdImagePtr in the requested format. Returns
- * malloc'd bytes via *out_bytes / *out_sz; caller gdFree's. NULL
- * out_bytes on failure (caller throws). `format`: 0 PNG, 1 JPEG,
- * 2 WebP, 3 GIF, 4 AVIF.
- *
- * Non-static so fastchart_symbol.c's render shortcuts share the
- * exact same encoder dispatch (single source of truth for AVIF
- * fallback + format range). Declared in fastchart_render_helpers.h. */
-int fastchart_encode_image(gdImagePtr im, int format, int quality,
-                           void **out_bytes, int *out_sz)
-{
-    *out_bytes = NULL;
-    *out_sz = 0;
-    switch (format) {
-        case 0: *out_bytes = gdImagePngPtr(im, out_sz); break;
-        case 1: *out_bytes = gdImageJpegPtr(im, out_sz, quality); break;
-        case 2: *out_bytes = gdImageWebpPtrEx(im, out_sz, quality); break;
-        case 3: *out_bytes = gdImageGifPtr(im, out_sz); break;
-        case 4:
-#ifdef HAVE_GD_AVIF
-            *out_bytes = gdImageAvifPtrEx(im, out_sz, quality, -1);
-#else
-            zend_throw_exception(zend_ce_exception,
-                "FastChart: libgd was built without AVIF support", 0);
-            return -1;
-#endif
-            break;
-        default:
-            return -1;
-    }
-    return (*out_bytes && *out_sz > 0) ? 0 : -1;
-}
+/* dispatch_render (GD-target dispatcher) + fastchart_encode_image
+ * (libgd encoder dispatch) retired in v1.0. Raster path now goes
+ * through dispatch_svg_render → plutovg rasterize → libpng/libjpeg-turbo
+ * /libwebp via fastchart_encoder.c. */
 
 /* HiDPI canvas scale derived from setDpi(). 96 DPI = 1.0×; 200 DPI =
  * 200/96 ≈ 2.08×. The logical width/height is the user-supplied size;

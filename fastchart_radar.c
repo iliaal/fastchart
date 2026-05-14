@@ -22,7 +22,6 @@
 #include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
-#include "fastchart_effects.h"
 
 #include <math.h>
 
@@ -144,9 +143,6 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
         }
     }
 
-    bool gd = (t->kind == FASTCHART_TARGET_GD);
-    gdImagePtr im = gd ? t->u.gd.im : NULL;
-
     /* One polygon per series. */
     int legend_colors[FASTCHART_MAX_RADAR_SERIES];
     const char *legend_labels[FASTCHART_MAX_RADAR_SERIES];
@@ -171,18 +167,7 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
             int bb =  rgba        & 0xFF;
             /* gd_alpha 90 → byte 255 - 90*2 = 75. */
             int alpha = fastchart_target_color(t, rr, gg, bb, 75);
-            if (gd) {
-                /* fastchart_filled_polygon_aa takes a gd-int color
-                 * (it calls gdImageFilledPolygon directly); resolve
-                 * the target handle back to the gd-allocated int. */
-                int alpha_gd = fastchart_target_color_to_gd(t, alpha);
-                gdImageAlphaBlending(im, 1);
-                fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_axes);
-                fastchart_filled_polygon_aa(im, poly, n_axes, alpha_gd);
-                gdImageAlphaBlending(im, 0);
-            } else {
-                fastchart_target_polygon(t, poly, n_axes, alpha, 1, 0);
-            }
+            fastchart_target_polygon(t, poly, n_axes, alpha, 1, 0);
         }
         fastchart_target_polygon(t, poly, n_axes, color, 0, 2);
         /* Markers at vertices. */
@@ -210,32 +195,4 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
-}
-
-/* GD-only shim. */
-int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im)
-{
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
-    return fastchart_radar_render_to_target(self, &t);
-}
-
-ZEND_METHOD(FastChart_RadarChart, draw)
-{
-    zval *canvas_zv;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
-    ZEND_PARSE_PARAMETERS_END();
-
-    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\RadarChart::draw() received a closed or invalid GdImage");
-        RETURN_THROWS();
-    }
-    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
-    fastchart_radar_obj *self = Z_FASTCHART_RADAR_OBJ_P(ZEND_THIS);
-    if (fastchart_radar_render_to_image(self, im) != 0) {
-        RETURN_THROWS();
-    }
-    RETURN_ZVAL(canvas_zv, 1, 0);
 }

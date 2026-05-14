@@ -13,39 +13,14 @@ if test "$PHP_FASTCHART" != "no"; then
     AC_MSG_ERROR([fastchart requires PHP 8.3.0 or later (found $PHP_VERSION_ID)])
   fi
 
-  dnl ----- libgd (transitional; removed at Phase 5 of the v1.0 rewrite) ---
-  dnl Still required by chart-family bodies that call gdImage* directly.
-  dnl Phase 5 strips every remaining gd-direct call.
-  PHP_CHECK_LIBRARY(gd, gdImageCreateTrueColor,
-  [
-    PHP_ADD_LIBRARY(gd, 1, FASTCHART_SHARED_LIBADD)
-    AC_DEFINE(HAVE_LIBGD, 1, [Have libgd])
-  ],[
-    AC_MSG_ERROR([libgd not found. Install libgd-dev (Debian/Ubuntu) or gd-devel (RHEL).])
-  ])
-
-  PHP_CHECK_LIBRARY(gd, gdImageStringFT,
-  [
-    AC_DEFINE(HAVE_GD_FREETYPE, 1, [libgd has FreeType / gdImageStringFT])
-  ],[
-    AC_MSG_ERROR([libgd was built without FreeType support; gdImageStringFT is unavailable. Rebuild libgd with --with-freetype.])
-  ])
-
-  PHP_CHECK_LIBRARY(gd, gdImageAvifPtrEx,
-  [
-    AC_DEFINE(HAVE_GD_AVIF, 1, [libgd has AVIF / gdImageAvifPtrEx])
-  ],[])
-
   dnl ----- pkg-config-resolved deps ---------------------------------------
   dnl FreeType: glyph metrics + family-name resolution for SVG output;
   dnl plus FT_Outline_Decompose for glyph-to-path emission in SVG_TEXT_PATHS
-  dnl mode. libgd loads libfreetype.so at runtime; we additionally need the
-  dnl headers + explicit -lfreetype to call FT_* directly.
+  dnl mode, and text bbox measurement for chart layout.
   dnl
-  dnl libpng / libjpeg / libwebp: raster encoders. The new plutovg-based
-  dnl raster pipeline produces an RGBA buffer that we hand to libpng,
-  dnl libjpeg-turbo, or libwebp. libgd has its own copies of these internally,
-  dnl but we don't reach into gd to encode — we go direct.
+  dnl libpng / libjpeg / libwebp: raster encoders. The plutovg-based raster
+  dnl pipeline produces an RGBA buffer that we hand to libpng, libjpeg-turbo,
+  dnl or libwebp directly.
   AC_PATH_PROG(FC_PKGCFG, pkg-config, no)
   if test "$FC_PKGCFG" = "no"; then
     AC_MSG_ERROR([pkg-config not found. Install pkg-config (Debian/Ubuntu) or pkgconf (RHEL).])
@@ -63,9 +38,6 @@ if test "$PHP_FASTCHART" != "no"; then
   PHP_EVAL_LIBLINE([$FC_PC_LIBS], FASTCHART_SHARED_LIBADD)
 
   PHP_SUBST(FASTCHART_SHARED_LIBADD)
-
-  dnl ----- ext/gd dependency (transitional; dropped at Phase 5) ----------
-  PHP_ADD_EXTENSION_DEP(fastchart, gd)
 
   WRAPPER_SOURCES="fastchart.c \
     fastchart_palette.c \
