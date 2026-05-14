@@ -164,9 +164,10 @@ void fastchart_target_clip_push(fastchart_target_t *t,
 void fastchart_target_clip_pop(fastchart_target_t *t);
 
 /* Image blit: emit <image href="data:image/<mime>;base64,..."/> for
- * the file at `path`. The implementation enforces the source-image
- * byte and dimension caps (FASTCHART_SOURCE_IMAGE_MAX_*) and the
- * open_basedir restriction. If anything fails (missing file, too
+ * the file at `path`. The implementation opens the file once through
+ * the PHP stream layer (which enforces open_basedir natively — no
+ * TOCTOU window) and enforces the source-image byte and dimension
+ * caps on the loaded buffer. If anything fails (missing file, too
  * large, unsupported format, open_basedir refusal), the call emits
  * nothing — background-image / icon callers fall through to their
  * solid-fill backup. PNG and JPEG only; WebP/GIF/AVIF source files
@@ -175,6 +176,26 @@ void fastchart_target_clip_pop(fastchart_target_t *t);
 void fastchart_target_image(fastchart_target_t *t,
                              int x, int y, int w, int h,
                              const char *path);
+
+/* Two-step source-image load + emit, for callers that need the
+ * declared width/height to compute layout (e.g. icon aspect-ratio
+ * scaling). Same single-open / open_basedir-honoring semantics as
+ * fastchart_target_image. After a successful _load, the caller may
+ * inspect buf.width / buf.height and call _emit at any target
+ * coordinates, then _release the bytes. */
+typedef struct {
+    zend_string *bytes;
+    const char  *mime;   /* "image/png" or "image/jpeg" */
+    int width;
+    int height;
+} fastchart_image_buf_t;
+
+int  fastchart_target_load_source_image(const char *path,
+                                        fastchart_image_buf_t *out);
+void fastchart_target_image_emit(fastchart_target_t *t,
+                                 int x, int y, int w, int h,
+                                 const fastchart_image_buf_t *buf);
+void fastchart_target_image_release(fastchart_image_buf_t *buf);
 
 /* Gradient fills. `dir` is 0 (vertical) or 1 (horizontal); from/to
  * are 0xRRGGBB with alpha implied 0xFF. The target allocates a
