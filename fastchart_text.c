@@ -36,14 +36,14 @@ static int fc_ft_measure(const char *font_path, double size_pt, int dpi,
     if (!font_path || !text) return -1;
     if (dpi <= 0) dpi = 96;
 
-    /* Share the per-process FT_Library; MSHUTDOWN releases it. */
-    FT_Library lib = fastchart_ft_library();
-    if (!lib) return -1;
-    FT_Face face = NULL;
-    if (FT_New_Face(lib, font_path, 0, &face)) return -1;
-    /* Size in 1/64 of a point at the given DPI. */
+    /* Shared FT_Face from the process-wide cache; the cache owns
+     * the lifetime, do not call FT_Done_Face on the returned ptr. */
+    FT_Face face = fastchart_ft_face(font_path);
+    if (!face) return -1;
+    /* Size in 1/64 of a point at the given DPI. Always set: the
+     * cached face's size carries over from whatever the last caller
+     * configured. */
     if (FT_Set_Char_Size(face, (FT_F26Dot6)(size_pt * 64.0), 0, dpi, dpi)) {
-        FT_Done_Face(face);
         return -1;
     }
 
@@ -78,8 +78,6 @@ static int fc_ft_measure(const char *font_path, double size_pt, int dpi,
     } else {
         h = (int)(size_px + 0.5);
     }
-
-    FT_Done_Face(face);
 
     if (out_w) *out_w = w;
     if (out_h) *out_h = h;

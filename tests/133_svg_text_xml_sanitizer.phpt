@@ -1,61 +1,91 @@
 --TEST--
-SVG_TEXT_NATIVE: XML-invalid control bytes are sanitized in output
+SVG_TEXT_NATIVE: C0 controls AND malformed UTF-8 are sanitized
 --EXTENSIONS--
 fastchart
 --FILE--
 <?php
 
-/* The XML 1.0 spec allows TAB (0x09), LF (0x0A), CR (0x0D), and
- * 0x20+ in PCDATA. Other C0 control bytes (0x01-0x08, 0x0B, 0x0C,
- * 0x0E-0x1F) make a conforming XML parser reject the document.
+/* XML 1.0 PCDATA is restrictive: it allows TAB (0x09), LF (0x0A),
+ * CR (0x0D), and well-formed UTF-8 in the 0x20..0xD7FF /
+ * 0xE000..0xFFFD / 0x10000..0x10FFFF code-point ranges. Any other
+ * input makes a conforming XML parser reject the document.
  *
- * fc_svg_escape() previously escaped only the five XML metacharacters
- * and passed every other byte through verbatim, so user-supplied
- * titles / labels containing control bytes produced invalid XML
- * under SVG_TEXT_NATIVE. The sanitizer now replaces those bytes with
- * U+FFFD (UTF-8 EF BF BD). */
+ * v1.0's first sanitizer pass only replaced single-byte C0 controls
+ * and let bytes >= 0x80 through verbatim — which let ill-formed
+ * UTF-8 (lone 0xC3, surrogate-pair-encoded U+D800, overlong forms,
+ * trailing continuation bytes) escape into <text> content and break
+ * downstream XML parsers. The hardened sanitizer validates UTF-8
+ * byte sequences and replaces any malformed run with U+FFFD. */
 
-$probes = "head\x01ing\x02 \x08 \x0b \x0c \x0e \x1f tail";
-
-$svg = (new FastChart\LineChart(200, 100))
-    ->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE)
-    ->setTitle($probes)
-    ->setSeries([1, 2, 3])
-    ->renderSvg();
-
-/* No raw C0 control bytes survive (except TAB/LF/CR, which are
- * allowed and may appear in pretty-printed structure). */
-$invalid = [0x01, 0x02, 0x08, 0x0B, 0x0C, 0x0E, 0x1F];
-foreach ($invalid as $b) {
-    $hex = sprintf('0x%02X', $b);
-    echo "byte $hex absent: ",
-        (strpos($svg, chr($b)) === false ? "yes" : "no"), "\n";
+function probe(string $title): array
+{
+    $svg = (new FastChart\LineChart(120, 80))
+        ->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE)
+        ->setTitle($title)
+        ->setSeries([1, 2, 3])
+        ->renderSvg();
+    $prior = libxml_use_internal_errors(true);
+    libxml_clear_errors();
+    $ok = @simplexml_load_string($svg) !== false;
+    $err_count = count(libxml_get_errors());
+    libxml_clear_errors();
+    libxml_use_internal_errors($prior);
+    return [$svg, $ok && $err_count === 0];
 }
 
-/* Every invalid byte we sent in became a U+FFFD. */
-echo "fffd_count: ", substr_count($svg, "\xEF\xBF\xBD"), "\n";
+/* 1. C0 controls (the first pass already covered these). */
+[$svg, $ok] = probe("hello\x01\x02\x08world");
+echo "c0_xml_ok: ", ($ok ? "yes" : "no"), "\n";
 
-/* SimpleXMLElement performs strict XML validation — invalid bytes
- * would raise a warning here. We capture warnings instead of
- * silencing them so a regression resurfaces visibly. */
-$prior = libxml_use_internal_errors(true);
-libxml_clear_errors();
-$ok = @simplexml_load_string($svg) !== false;
-$err_count = count(libxml_get_errors());
-libxml_clear_errors();
-libxml_use_internal_errors($prior);
-echo "xml_parse_ok: ", ($ok && $err_count === 0 ? "yes" : "no"), "\n";
+/* 2. Lone continuation byte (0x80..0xBF without a leader). */
+[$svg, $ok] = probe("oops\x80trail");
+echo "lone_cont_xml_ok: ", ($ok ? "yes" : "no"), "\n";
+echo "lone_cont_no_raw_80: ",
+    (strpos($svg, "\x80") === false ? "yes" : "no"), "\n";
+
+/* 3. Truncated 2-byte sequence (start byte without continuation). */
+[$svg, $ok] = probe("xx\xC3yy");
+echo "trunc2_xml_ok: ", ($ok ? "yes" : "no"), "\n";
+echo "trunc2_no_raw_c3: ",
+    (strpos($svg, "\xC3y") === false ? "yes" : "no"), "\n";
+
+/* 4. Truncated 3-byte sequence. */
+[$svg, $ok] = probe("xx\xE2\x82end");
+echo "trunc3_xml_ok: ", ($ok ? "yes" : "no"), "\n";
+
+/* 5. Surrogate encoded as UTF-8 (U+D800 -> ED A0 80). XML rejects
+ * any surrogate code point in PCDATA. */
+[$svg, $ok] = probe("xx\xED\xA0\x80end");
+echo "surrogate_xml_ok: ", ($ok ? "yes" : "no"), "\n";
+
+/* 6. Overlong-2 encoding of '/' (0x2F encoded as C0 AF). Invalid. */
+[$svg, $ok] = probe("xx\xC0\xAFend");
+echo "overlong_xml_ok: ", ($ok ? "yes" : "no"), "\n";
+
+/* 7. Code point above U+10FFFF (5-byte start 0xF8+). */
+[$svg, $ok] = probe("xx\xF8\x88\x80\x80\x80end");
+echo "above_max_xml_ok: ", ($ok ? "yes" : "no"), "\n";
+
+/* 8. Valid multi-byte UTF-8 must round-trip untouched. */
+$valid = "Ωμέγα — €100 漢字";  /* 2-byte, 3-byte, 3-byte mix */
+[$svg, $ok] = probe($valid);
+echo "valid_utf8_xml_ok: ", ($ok ? "yes" : "no"), "\n";
+echo "valid_utf8_preserved: ",
+    (str_contains($svg, "Ωμέγα") && str_contains($svg, "漢字")
+        ? "yes" : "no"), "\n";
 
 echo "ok\n";
 ?>
 --EXPECT--
-byte 0x01 absent: yes
-byte 0x02 absent: yes
-byte 0x08 absent: yes
-byte 0x0B absent: yes
-byte 0x0C absent: yes
-byte 0x0E absent: yes
-byte 0x1F absent: yes
-fffd_count: 7
-xml_parse_ok: yes
+c0_xml_ok: yes
+lone_cont_xml_ok: yes
+lone_cont_no_raw_80: yes
+trunc2_xml_ok: yes
+trunc2_no_raw_c3: yes
+trunc3_xml_ok: yes
+surrogate_xml_ok: yes
+overlong_xml_ok: yes
+above_max_xml_ok: yes
+valid_utf8_xml_ok: yes
+valid_utf8_preserved: yes
 ok

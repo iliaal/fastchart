@@ -38,6 +38,20 @@
 FT_Library fastchart_ft_library(void);
 void fastchart_ft_library_shutdown(void);
 
+/* Process-shared FT_Face cache, keyed by font_path. 4-slot LRU.
+ * The same FT consumers above now skip FT_New_Face on a hit — opening
+ * a face parses the entire font file (tables, charmaps, glyph index)
+ * and dominates the per-label cost on dense labels.
+ *
+ * Callers MUST call FT_Set_Char_Size / FT_Set_Pixel_Sizes on the
+ * returned face before glyph operations — face size is mutable
+ * shared state. Callers MUST NOT call FT_Done_Face on the returned
+ * face; the cache owns the lifetime and frees at MSHUTDOWN.
+ *
+ * Returns NULL on FT_Library init failure, FT_New_Face failure, or
+ * an OOM on the path-key strdup. */
+FT_Face fastchart_ft_face(const char *font_path);
+
 /* Retained for source-compat with chart bodies that reference the
  * enum even though only SVG is now valid. */
 #define FASTCHART_TARGET_SVG  1

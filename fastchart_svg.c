@@ -76,48 +76,115 @@ void fc_svg_fmt_color(smart_str *buf, uint32_t rgba)
     if (n > 0) smart_str_appendl(buf, tmp, (size_t)n);
 }
 
-/* XML 1.0 allows TAB (0x09), LF (0x0A), CR (0x0D), and 0x20+. Any
- * other C0 control byte is invalid PCDATA and would make xmllint /
- * any conforming parser reject the document. fc_svg_escape walks the
- * byte string and:
- *   - HTML-escapes the five XML metacharacters
- *   - replaces XML-invalid control bytes with U+FFFD (UTF-8 EF BF BD)
- *   - passes everything else through verbatim (caller is expected to
- *     hand in valid UTF-8 — we don't try to validate multi-byte
- *     sequences here, only single-byte control characters)
+/* XML 1.0 PCDATA allows TAB (0x09), LF (0x0A), CR (0x0D), and Unicode
+ * 0x20..0xD7FF / 0xE000..0xFFFD / 0x10000..0x10FFFF. Everything else
+ * (C0 controls except TAB/LF/CR, surrogates, ill-formed UTF-8) makes
+ * a conforming XML parser reject the document.
  *
- * Note that string setters reject embedded NUL (0x00) at parse time,
- * so the loop won't normally see one. Defensive replacement is still
- * cheap and matches the contract documented on the API surface. */
+ * fc_svg_escape walks the byte string and:
+ *   - HTML-escapes the five XML metacharacters
+ *   - validates UTF-8 byte sequences (length byte + continuation
+ *     bytes + non-overlong + no surrogates)
+ *   - replaces XML-invalid C0 bytes and any ill-formed UTF-8 with
+ *     U+FFFD (UTF-8 EF BF BD)
+ *
+ * Embedded NUL is rejected at setter time so the loop normally
+ * won't see one; the replacement path catches it defensively. */
+static inline void fc_emit_run(smart_str *buf, const char *s,
+                               size_t run_start, size_t i)
+{
+    if (i > run_start) {
+        smart_str_appendl(buf, s + run_start, i - run_start);
+    }
+}
+
 void fc_svg_escape(smart_str *buf, const char *s, size_t len)
 {
     if (!s || len == 0) return;
+    static const char REPL[] = "\xEF\xBF\xBD";  /* U+FFFD */
     size_t run_start = 0;
-    for (size_t i = 0; i < len; i++) {
+    size_t i = 0;
+    while (i < len) {
         unsigned char c = (unsigned char)s[i];
-        const char *esc = NULL;
-        switch (c) {
-            case '&':  esc = "&amp;";   break;
-            case '<':  esc = "&lt;";    break;
-            case '>':  esc = "&gt;";    break;
-            case '"':  esc = "&quot;";  break;
-            case '\'': esc = "&apos;";  break;
-            case 0x09: case 0x0A: case 0x0D:
-                continue;
-            default:
-                if (c >= 0x20) continue;
-                esc = "\xEF\xBF\xBD";   /* U+FFFD REPLACEMENT CHARACTER */
-                break;
+
+        /* Fast path: ASCII printable (0x20..0x7E excluding the five
+         * metacharacters) — keep walking, the trailing append flushes
+         * the run. */
+        if (c >= 0x20 && c < 0x80) {
+            const char *esc = NULL;
+            switch (c) {
+                case '&':  esc = "&amp;";   break;
+                case '<':  esc = "&lt;";    break;
+                case '>':  esc = "&gt;";    break;
+                case '"':  esc = "&quot;";  break;
+                case '\'': esc = "&apos;";  break;
+            }
+            if (esc) {
+                fc_emit_run(buf, s, run_start, i);
+                smart_str_appends(buf, esc);
+                run_start = ++i;
+            } else {
+                i++;
+            }
+            continue;
         }
-        if (i > run_start) {
-            smart_str_appendl(buf, s + run_start, i - run_start);
+
+        /* Allowed C0 controls — pass through. */
+        if (c == 0x09 || c == 0x0A || c == 0x0D) { i++; continue; }
+
+        /* C0 controls outside TAB/LF/CR -> U+FFFD. */
+        if (c < 0x20) {
+            fc_emit_run(buf, s, run_start, i);
+            smart_str_appendl(buf, REPL, sizeof(REPL) - 1);
+            run_start = ++i;
+            continue;
         }
-        smart_str_appends(buf, esc);
-        run_start = i + 1;
+
+        /* UTF-8 multi-byte. Decode + validate the next sequence.
+         *   2-byte: 110xxxxx 10xxxxxx        -> U+0080..U+07FF
+         *   3-byte: 1110xxxx 10xxxxxx 10xxxxxx -> U+0800..U+FFFF
+         *           (excluding surrogates U+D800..U+DFFF)
+         *   4-byte: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx -> U+10000..U+10FFFF
+         * Lone continuation bytes (0x80..0xBF leading) and the
+         * disallowed C1 range (0xC0, 0xC1, 0xF5..0xFF) are invalid. */
+        int n;
+        uint32_t cp;
+        uint32_t cp_min;
+        if      (c < 0xC2)                  { n = 0; cp = 0; cp_min = 0; }
+        else if (c < 0xE0) { n = 2; cp = c & 0x1F; cp_min = 0x80; }
+        else if (c < 0xF0) { n = 3; cp = c & 0x0F; cp_min = 0x800; }
+        else if (c < 0xF5) { n = 4; cp = c & 0x07; cp_min = 0x10000; }
+        else               { n = 0; cp = 0; cp_min = 0; }
+
+        if (n == 0 || i + (size_t)n > len) {
+            fc_emit_run(buf, s, run_start, i);
+            smart_str_appendl(buf, REPL, sizeof(REPL) - 1);
+            run_start = ++i;
+            continue;
+        }
+
+        int ok = 1;
+        for (int k = 1; k < n; k++) {
+            unsigned char cc = (unsigned char)s[i + k];
+            if ((cc & 0xC0) != 0x80) { ok = 0; break; }
+            cp = (cp << 6) | (cc & 0x3F);
+        }
+        if (!ok
+            || cp < cp_min
+            || (cp >= 0xD800 && cp <= 0xDFFF)
+            || cp == 0xFFFE || cp == 0xFFFF
+            || cp > 0x10FFFF) {
+            fc_emit_run(buf, s, run_start, i);
+            smart_str_appendl(buf, REPL, sizeof(REPL) - 1);
+            /* Advance by one byte only — resync on the next start
+             * byte rather than skipping `n` bytes of garbage. */
+            run_start = ++i;
+            continue;
+        }
+
+        i += (size_t)n;
     }
-    if (run_start < len) {
-        smart_str_appendl(buf, s + run_start, len - run_start);
-    }
+    fc_emit_run(buf, s, run_start, i);
 }
 
 void fc_svg_emit_doc_open(smart_str *buf, int width, int height)
@@ -570,10 +637,11 @@ static const unsigned char *fc_utf8_next(const unsigned char *p,
 	return p + 1;
 }
 
-/* FreeType library is created lazily per call. The cost is small
- * (~10us per FT_Init_FreeType call); chart families call text helpers
- * 10-200 times per render. If profiling shows this is hot, hoist into
- * the target's font_cache or a request-global slot. */
+/* FT_Library and FT_Face are both shared. The face cache (4-slot LRU
+ * in fastchart_target.c) skips the FT_New_Face cost — opening a font
+ * parses the entire file once. The size mutation (FT_Set_Pixel_Sizes)
+ * still happens every call because callers want different sizes for
+ * title vs axis labels; that's microseconds. */
 void fc_svg_emit_text_as_path(smart_str *buf,
                                double x, double y,
                                const char *font_path, double size_px,
@@ -582,16 +650,12 @@ void fc_svg_emit_text_as_path(smart_str *buf,
 {
 	if (!text || text_len == 0 || !font_path) return;
 
-	/* Share the per-process FT_Library — MSHUTDOWN releases it. */
-	FT_Library lib = fastchart_ft_library();
-	if (!lib) return;
-	FT_Face face = NULL;
-	if (FT_New_Face(lib, font_path, 0, &face)) return;
+	FT_Face face = fastchart_ft_face(font_path);
+	if (!face) return;
 
 	FT_UInt pix = (FT_UInt)(size_px + 0.5);
 	if (pix < 1) pix = 1;
 	if (FT_Set_Pixel_Sizes(face, 0, pix)) {
-		FT_Done_Face(face);
 		return;
 	}
 
@@ -659,7 +723,7 @@ void fc_svg_emit_text_as_path(smart_str *buf,
 	}
 
 	smart_str_free(&d);
-	FT_Done_Face(face);
+	/* face is cache-owned; no FT_Done_Face here. */
 }
 
 void fc_svg_emit_clip_open(smart_str *buf, int id,
