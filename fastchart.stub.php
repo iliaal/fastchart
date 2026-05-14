@@ -195,15 +195,18 @@ abstract class Chart
      * and `ScatterChart` (x, y both in data coordinates). Other
      * chart types silently ignore the call.
      *
-     * `$path` is opened with libgd's auto-detect loader at draw time
-     * and respects `open_basedir`; missing or invalid images are
-     * silently skipped so a typo doesn't abort the whole render.
-     * `$maxWidth` / `$maxHeight` cap the display size while preserving
-     * the source aspect ratio (-1 = use the source dimension as-is).
-     * Source files larger than 8 MiB OR with declared dimensions
-     * over 4096px on either axis OR a pixel product over 16M are
-     * silently skipped to bound worker memory if the path is fed
-     * from untrusted input. Up to 32 icons per chart.
+     * `$path` is opened at draw time through PHP's stream layer
+     * (which enforces `open_basedir` natively); missing or invalid
+     * images are silently skipped so a typo doesn't abort the whole
+     * render. Supported formats: PNG and JPEG only — plutosvg's
+     * data-URI loader handles those two; WebP / GIF / AVIF sources
+     * are skipped. `$maxWidth` / `$maxHeight` cap the display size
+     * while preserving the source aspect ratio (-1 = use the source
+     * dimension as-is). Source files larger than 8 MiB OR with
+     * declared dimensions over 4096px on either axis OR a pixel
+     * product over 16M are silently skipped to bound worker memory
+     * if the path is fed from untrusted input. Up to 32 icons per
+     * chart.
      */
     public function addIconAt(float $x, float $y, string $path,
                               int $maxWidth = -1,
@@ -215,10 +218,10 @@ abstract class Chart
      * / Bubble / Stock / BoxPlot). Useful for "normal range" callouts
      * (e.g. healthy heart-rate band, target SLA window). `$low` and
      * `$high` are in data Y units; the renderer reorders if needed.
-     * `$color` is a 24-bit RGB. `$alpha` follows libgd's 0..127
-     * convention (0 = opaque, 127 = fully transparent), defaulting to
-     * 64 for a visible-but-translucent overlay. Up to 16 bands per
-     * chart (shared budget with addVerticalBand).
+     * `$color` is a 24-bit RGB. `$alpha` uses the 0..127 convention
+     * (0 = opaque, 127 = fully transparent), defaulting to 64 for a
+     * visible-but-translucent overlay. Up to 16 bands per chart
+     * (shared budget with addVerticalBand).
      */
     public function addHorizontalBand(float $low, float $high, int $color,
                                       int $alpha = 64,
@@ -464,9 +467,10 @@ abstract class Chart
     public function setDropShadow(int $offsetX, int $offsetY, ?int $color = null): static {}
 
     /**
-     * Drop-shadow opacity in libgd's alpha space: 0 = fully opaque,
-     * 127 = fully transparent. Default is 64 (~50% opacity). Matches
-     * the convention used by `imagecolorallocatealpha()`.
+     * Drop-shadow opacity in the 0..127 alpha space: 0 = fully
+     * opaque, 127 = fully transparent. Default is 64 (~50% opacity).
+     * Same convention `imagecolorallocatealpha()` uses, kept for
+     * source-compat across v0.x callers.
      */
     public function setShadowAlpha(int $alpha): static {}
 
@@ -610,9 +614,9 @@ final class AreaChart extends Chart
 
     /**
      * Fill alpha for non-stacked overlapping areas (0..127, where
-     * 127 is fully transparent and 0 is fully opaque, matching
-     * libgd's alpha convention). Default 64. Stacked areas are
-     * always opaque.
+     * 127 is fully transparent and 0 is fully opaque — the same
+     * convention `imagecolorallocatealpha()` uses). Default 64.
+     * Stacked areas are always opaque.
      */
     public function setFillOpacity(int $alpha): static {}
 

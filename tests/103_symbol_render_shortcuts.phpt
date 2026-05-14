@@ -42,11 +42,21 @@ foreach ($specs as $cls => $spec) {
     var_dump(substr($webp, 0, 4) === $magic['webp']);
     var_dump(substr($webp, 8, 4) === 'WEBP');
 
-    // GIF and AVIF were dropped in v1.0 — see test 025.
-    try { $spec['instance']()->renderGif();  echo "ERR\n"; }
-    catch (\Error $e) { echo "$cls gif-dropped: ok\n"; }
-    try { $spec['instance']()->renderAvif(); echo "ERR\n"; }
-    catch (\Error $e) { echo "$cls avif-dropped: ok\n"; }
+    // GIF / AVIF: methods removed entirely in v1.0. Engine raises
+    // "Call to undefined method"; tighten so a future accidental
+    // re-add can't pass silently. See test 025 for the in-depth
+    // assertion.
+    foreach (['renderGif' => 'gif', 'renderAvif' => 'avif'] as $m => $tag) {
+        try {
+            $spec['instance']()->$m();
+            echo "$cls $tag-dropped: REGRESSION\n";
+        } catch (\Error $e) {
+            $msg = $e->getMessage();
+            $ok = stripos($msg, 'undefined method') !== false
+                && strpos($msg, $m) !== false;
+            echo "$cls $tag-dropped: ", ($ok ? "ok" : "wrong-error"), "\n";
+        }
+    }
 
     // renderToFile picks format from extension. Test the three surviving formats.
     foreach (['png', 'jpg', 'webp'] as $ext) {
