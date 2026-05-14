@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 75b82415d9b34cd025565bbf3f834674db202e4f */
+ * Stub hash: 0237b1f175c86b52fe260574b7021a364d2c73c4 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -241,10 +241,12 @@ ZEND_END_ARG_INFO()
 #define arginfo_class_FastChart_Chart_renderPng arginfo_class_FastChart_Chart_version
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_renderJpeg, 0, 0, IS_STRING, 0)
-	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, quality, IS_LONG, 0, "90")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, quality, IS_LONG, 0, "0")
 ZEND_END_ARG_INFO()
 
-#define arginfo_class_FastChart_Chart_renderWebp arginfo_class_FastChart_Chart_renderJpeg
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_renderWebp, 0, 0, IS_STRING, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, quality, IS_LONG, 0, "90")
+ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_Chart_renderGif arginfo_class_FastChart_Chart_version
 
@@ -561,7 +563,7 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_Symbol_renderJpeg arginfo_class_FastChart_Chart_renderJpeg
 
-#define arginfo_class_FastChart_Symbol_renderWebp arginfo_class_FastChart_Chart_renderJpeg
+#define arginfo_class_FastChart_Symbol_renderWebp arginfo_class_FastChart_Chart_renderWebp
 
 #define arginfo_class_FastChart_Symbol_renderGif arginfo_class_FastChart_Chart_version
 

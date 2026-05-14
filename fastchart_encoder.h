@@ -31,6 +31,7 @@ typedef struct {
 	int      w;
 	int      h;
 	int      has_alpha;   /* 0 = opaque (RGB output OK); 1 = real alpha present */
+	int      dpi;         /* 0 = don't write density metadata; else stamps pHYs/density */
 } fastchart_pixels_t;
 
 /* Allocate an empty pixel buffer. rgba is set to NULL and must be

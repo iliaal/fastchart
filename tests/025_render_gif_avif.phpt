@@ -1,45 +1,28 @@
 --TEST--
-renderGif / renderAvif return correct format magic bytes
+renderGif / renderAvif raise Error in v1.0 (formats dropped)
 --EXTENSIONS--
 fastchart
 --FILE--
 <?php
+$c = (new FastChart\LineChart(200, 100))->setSeries([1, 2, 3]);
 
-$base = (new FastChart\LineChart(400, 200))->setSeries([1, 5, 3, 8]);
-
-// GIF: starts with "GIF87a" or "GIF89a"
-$gif = $base->renderGif();
-$head = substr($gif, 0, 6);
-echo "gif_magic: ", ($head === 'GIF87a' || $head === 'GIF89a' ? "ok" : "bad ($head)"), "\n";
-echo "gif_size_sane: ", (strlen($gif) > 200 ? "yes" : "no"), "\n";
-
-// AVIF: optional, may not be available. Either succeeds with the
-// AVIF "ftypavif" / "ftypheic" box at offset 4, or fails with a
-// known runtime exception.
 try {
-    $avif = @$base->renderAvif();
-    $head = substr($avif, 4, 8);
-    $ok = $head === 'ftypavif' || $head === 'ftypheic' || $head === 'ftypmif1' || $head === 'ftypavis';
-    echo "avif: ", ($ok ? "ok" : "unknown ftyp ($head)"), "\n";
-} catch (\Throwable $e) {
-    /* libgd lacks AVIF -- acceptable on stripped builds. fastchart
-     * throws \Error (gd encoder produced no output), which is not a
-     * \Exception, so catch \Throwable. */
-    echo "avif_unavailable_or_ok: ok\n";
+    $c->renderGif();
+    echo "gif: no throw\n";
+} catch (\Error $e) {
+    echo "gif: dropped ok\n";
 }
 
-// Bad quality bounds for both new formats.
 try {
-    @$base->renderAvif(101);
-    echo "avif_q101: no throw\n";
-} catch (\ValueError $e) {
-    echo "avif_q101: ValueError ok\n";
-} catch (\Throwable $e) {
-    echo "avif_q101: ValueError ok\n";  /* AVIF not available -- accept */
+    $c->renderAvif();
+    echo "avif: no throw\n";
+} catch (\Error $e) {
+    echo "avif: dropped ok\n";
 }
+
+echo "OK\n";
 ?>
---EXPECTF--
-gif_magic: ok
-gif_size_sane: yes
-%s
-avif_q101: ValueError ok
+--EXPECT--
+gif: dropped ok
+avif: dropped ok
+OK
