@@ -1,11 +1,11 @@
 <?php
-/* v1.0 three-up gallery: SVG | PNG | JPG side-by-side for every chart
- * variant in the README. Drives the same case list as
- * scripts/build-readme-gallery.php; the only difference is the third
- * column (renderJpeg at the chart's default setJpegQuality=88).
+/* v1.0 four-up gallery: SVG | PNG | JPG | WebP side-by-side for every
+ * chart variant in the README. Drives the same case list as
+ * scripts/build-readme-gallery.php; columns cover renderSvg,
+ * renderPng, renderJpeg (default setJpegQuality=88), and renderWebp.
  *
- * Output: docs/v1-gallery.html (self-contained; PNG + JPG via base64
- * data URI, SVG inlined). */
+ * Output: docs/v1-gallery.html (self-contained; PNG + JPG + WebP via
+ * base64 data URI, SVG inlined). */
 
 if (!class_exists('FastChart\\Chart')) {
     fwrite(STDERR, "fastchart.so not loaded\n");
@@ -28,23 +28,27 @@ if (!isset($cases) || !is_array($cases)) {
 
 $rows = '';
 $toc  = '';
-$tot_svg = $tot_png = $tot_jpg = 0;
+$tot_svg = $tot_png = $tot_jpg = $tot_webp = 0;
 
 foreach ($cases as $idx => $case) {
     $c = $case['build']();
-    $svg = $c->renderSvg();
-    $png = $c->renderPng();
-    $jpg = $c->renderJpeg();
-    $tot_svg += strlen($svg);
-    $tot_png += strlen($png);
-    $tot_jpg += strlen($jpg);
+    $svg  = $c->renderSvg();
+    $png  = $c->renderPng();
+    $jpg  = $c->renderJpeg();
+    $webp = $c->renderWebp();
+    $tot_svg  += strlen($svg);
+    $tot_png  += strlen($png);
+    $tot_jpg  += strlen($jpg);
+    $tot_webp += strlen($webp);
 
-    $sz_svg = number_format(strlen($svg) / 1024, 1);
-    $sz_png = number_format(strlen($png) / 1024, 1);
-    $sz_jpg = number_format(strlen($jpg) / 1024, 1);
+    $sz_svg  = number_format(strlen($svg)  / 1024, 1);
+    $sz_png  = number_format(strlen($png)  / 1024, 1);
+    $sz_jpg  = number_format(strlen($jpg)  / 1024, 1);
+    $sz_webp = number_format(strlen($webp) / 1024, 1);
 
-    $png_uri = 'data:image/png;base64,'  . base64_encode($png);
-    $jpg_uri = 'data:image/jpeg;base64,' . base64_encode($jpg);
+    $png_uri  = 'data:image/png;base64,'  . base64_encode($png);
+    $jpg_uri  = 'data:image/jpeg;base64,' . base64_encode($jpg);
+    $webp_uri = 'data:image/webp;base64,' . base64_encode($webp);
 
     $label = htmlspecialchars($case['label'], ENT_QUOTES, 'UTF-8');
     $ref   = htmlspecialchars($case['ref'],   ENT_QUOTES, 'UTF-8');
@@ -56,7 +60,7 @@ foreach ($cases as $idx => $case) {
 <section class="row" id="row-{$n}">
   <h2>{$label}</h2>
   <p class="ref">Source: <a href="https://github.com/iliaal/fastchart/blob/master/{$ref}"><code>{$ref}</code></a></p>
-  <div class="triple">
+  <div class="quad">
     <figure>
       <figcaption>SVG (vector) <span class="size">{$sz_svg} KB</span></figcaption>
       <div class="frame">{$svg}</div>
@@ -69,17 +73,22 @@ foreach ($cases as $idx => $case) {
       <figcaption>JPG q88 (plutovg → libjpeg-turbo) <span class="size">{$sz_jpg} KB</span></figcaption>
       <div class="frame"><img src="{$jpg_uri}" alt="JPG render"></div>
     </figure>
+    <figure>
+      <figcaption>WebP (plutovg → libwebp) <span class="size">{$sz_webp} KB</span></figcaption>
+      <div class="frame"><img src="{$webp_uri}" alt="WebP render"></div>
+    </figure>
   </div>
 </section>
 HTML;
 }
 
 $ncharts = count($cases);
-$kb_svg = number_format($tot_svg / 1024, 1);
-$kb_png = number_format($tot_png / 1024, 1);
-$kb_jpg = number_format($tot_jpg / 1024, 1);
-$ver    = FastChart\Chart::version();
-$now    = date('Y-m-d H:i');
+$kb_svg  = number_format($tot_svg  / 1024, 1);
+$kb_png  = number_format($tot_png  / 1024, 1);
+$kb_jpg  = number_format($tot_jpg  / 1024, 1);
+$kb_webp = number_format($tot_webp / 1024, 1);
+$ver     = FastChart\Chart::version();
+$now     = date('Y-m-d H:i');
 
 $html = <<<HTML
 <!doctype html>
@@ -87,7 +96,7 @@ $html = <<<HTML
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>fastchart {$ver}: SVG vs PNG vs JPG</title>
+<title>fastchart {$ver}: SVG vs PNG vs JPG vs WebP</title>
 <style>
 :root {
   --bg: #fafafa; --fg: #1f2328; --muted: #656d76;
@@ -123,8 +132,9 @@ section.row .ref code { background: var(--code-bg); padding: 1px 5px;
                         font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 section.row .ref a { color: var(--accent); text-decoration: none; }
 
-.triple { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-@media (max-width: 1200px) { .triple { grid-template-columns: 1fr; } }
+.quad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+@media (max-width: 1400px) { .quad { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width:  720px) { .quad { grid-template-columns: 1fr; } }
 figure { margin: 0; }
 figcaption { font-size: 0.82rem; color: var(--muted); margin-bottom: 6px;
              display: flex; justify-content: space-between; align-items: baseline; }
@@ -137,15 +147,17 @@ figcaption { font-size: 0.82rem; color: var(--muted); margin-bottom: 6px;
 </head>
 <body>
 <header>
-  <h1>fastchart {$ver} — SVG vs PNG vs JPG</h1>
-  <p>{$ncharts} chart variants from the README, rendered three ways:
+  <h1>fastchart {$ver} — SVG vs PNG vs JPG vs WebP</h1>
+  <p>{$ncharts} chart variants from the README, rendered four ways:
      <code>renderSvg()</code> (vector source),
      <code>renderPng()</code> (plutovg + libpng),
-     <code>renderJpeg()</code> at default quality 88 (plutovg + libjpeg-turbo).
+     <code>renderJpeg()</code> at default quality 88 (plutovg + libjpeg-turbo),
+     <code>renderWebp()</code> (plutovg + libwebp).
      Generated {$now}.</p>
   <p>Total bytes: SVG <code>{$kb_svg} KB</code> ·
                    PNG <code>{$kb_png} KB</code> ·
-                   JPG <code>{$kb_jpg} KB</code>.</p>
+                   JPG <code>{$kb_jpg} KB</code> ·
+                   WebP <code>{$kb_webp} KB</code>.</p>
 </header>
 
 <nav class="toc">
