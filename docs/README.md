@@ -2,10 +2,10 @@
 
 Each example below is a self-contained PHP script that renders the
 chart shown beside it. The scripts are runnable as-is with `fastchart`
-and `ext/gd` loaded:
+loaded; ext/gd is no longer required at runtime:
 
 ```bash
-php -d extension=gd -d extension=fastchart docs/examples/01_line_basic.php
+php -d extension=fastchart docs/examples/01_line_basic.php
 ```
 
 Together the 40 scripts exercise every public method on the
@@ -462,57 +462,26 @@ $line = (new FastChart\LineChart(400, 200))
 $line->renderToFile('out.png');           // file, format from extension
 $line->renderToFile('out.svg');           // SVG goes through the same call
 $png  = $line->renderPng();               // PNG bytes
-$jpg  = $line->renderJpeg(85);            // JPEG bytes (quality 1..100)
-$webp = $line->renderWebp(80);            // WebP bytes
-$avif = $line->renderAvif(50);            // AVIF bytes (libgd 2.4+)
-$gif  = $line->renderGif();               // GIF bytes (paletted)
+$jpg  = $line->renderJpeg(85);            // JPEG bytes (quality 1..100; default 88 via setJpegQuality)
+$webp = $line->renderWebp(80);            // WebP bytes (quality 1..100)
 $svg  = $line->renderSvg();               // SVG document (vector)
 $frag = $line->drawSvgFragment();         // <g class="fastchart">…</g>
 ```
 
 The bytes-returning helpers skip the encode-to-disk roundtrip and are
-convenient for HTTP responses, base64 data URIs, or hashing. SVG uses
-native `<text>` (selectable, accessible) with font family resolved
-through FreeType. `drawSvgFragment()` is meant for stitching several
-charts into one outer `<svg>` document.
+convenient for HTTP responses, base64 data URIs, or hashing. SVG
+defaults to glyph-path output (`SVG_TEXT_PATHS`) — every text element
+is flattened to `<path>` data via FreeType so the SVG renders
+identically in any rasterizer. Switch to native `<text>` for smaller,
+selectable output via `setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE)`.
+
+GIF and AVIF were dropped in v1.0; their `render*` methods raise
+`\Error`. `draw($canvas)` is also gone — fastchart owns the pixel
+buffer end-to-end through plutovg. For compositing several charts
+onto one image, stitch SVG fragments via `drawSvgFragment()` or
+composite the bytes returned by `renderPng()` in userland.
 
 ![](examples/20a_renderToFile.png)
-
----
-
-## 21. Caller-owned canvas with overlay
-
-`draw($im)` returns the same `\GdImage` you passed in, so you can
-layer additional graphics on top using stock `ext/gd` primitives. The
-example below renders a stock chart and then overlays a `DRAFT`
-watermark, a footer credit, and a highlight ring around a specific
-data point, all on the same canvas.
-
-```php
-$im = imagecreatetruecolor(720, 420);
-
-(new FastChart\StockChart(720, 420))
-    ->setTitle('ACME internal preview')
-    ->setOhlcv($rows)
-    ->addMovingAverage(20)
-    ->draw($im);
-
-/* Overlay a translucent DRAFT watermark. */
-$watermark = imagecolorallocatealpha($im, 200, 30, 30, 90);
-imagestring($im, 5, 330, 200, 'DRAFT', $watermark);
-
-/* Footer credit. */
-$footer = imagecolorallocate($im, 100, 100, 100);
-imagestring($im, 2, 8, 404, 'Generated 2025-05-05 (confidential)', $footer);
-
-/* Highlight ring. */
-$ring = imagecolorallocate($im, 255, 220, 0);
-imageellipse($im, 660, 200, 26, 26, $ring);
-
-imagepng($im, '21_canvas_overlay.png');
-```
-
-![](examples/21_canvas_overlay.png)
 
 ---
 
@@ -797,24 +766,27 @@ foreach ($levels as [$label, $ecc, $file]) {
 |---|---|---|---|
 | ![](examples/42a_qrcode_ecc_l.png) | ![](examples/42b_qrcode_ecc_m.png) | ![](examples/42c_qrcode_ecc_q.png) | ![](examples/42d_qrcode_ecc_h.png) |
 
-Symbol classes don't accept a caller-supplied `\GdImage`; the render
-path always allocates a fresh canvas. Reload the encoded bytes via
-`imagecreatefromstring()` if you want to composite the symbol onto
-an existing image.
+Symbol classes are render-only — there's no canvas-handoff entry.
+Reload the encoded bytes via `imagecreatefromstring()` in userland if
+you want to composite the symbol onto an existing image.
 
 ---
 
 ## Common patterns
 
 - **`renderToFile($path)` is the simple path.** Format infers from the
-  file extension (.png / .jpg / .jpeg / .webp / .gif / .avif). Use
-  `renderPng()` / `renderJpeg($q)` / etc when you need the raw bytes
-  for HTTP, hashing, base64, or in-memory composition.
-- **`draw($canvas)` is the advanced path.** Pass a caller-allocated
-  `\GdImage`, get it back drawn-on. Useful for compositing multiple
-  charts (`setPlotRect` + two draws on one canvas), post-render
-  overlays (logos, watermarks, highlight rings), or running ext/gd
-  filters before encoding.
+  file extension (.png / .jpg / .jpeg / .webp / .svg). Use
+  `renderPng()` / `renderJpeg($q)` / `renderWebp($q)` / `renderSvg()`
+  when you need the raw bytes for HTTP, hashing, base64, or in-memory
+  composition.
+- **SVG text mode.** `setSvgTextMode(SVG_TEXT_PATHS)` (default) emits
+  glyphs as `<path>` outlines so the SVG is self-contained.
+  `SVG_TEXT_NATIVE` emits `<text>` elements — smaller files,
+  selectable text, but requires the consumer's renderer to support
+  SVG text.
+- **JPEG quality.** `setJpegQuality(int)` sets a per-instance default
+  (1..100, default 88) used by `renderJpeg()` with no args and
+  `renderToFile('*.jpg')`. Per-call `renderJpeg(quality)` overrides.
 - **Image maps.** Scatter points carrying `'href'` and optional
   `'tooltip'` become clickable; call `getImageMap('mapname')` after
   the render to emit the HTML `<map>`.
@@ -829,6 +801,6 @@ an existing image.
 ## See also
 
 - [`examples/`](examples/): runnable PHP scripts for each chart above
-- [`tests/`](../tests/): 104 phpt tests covering every public method
+- [`tests/`](../tests/): 96 phpt tests covering every public method
 - [`fastchart.stub.php`](../fastchart.stub.php): full public API
   surface with docstrings

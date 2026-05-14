@@ -103,24 +103,41 @@ rasterizing through plutovg, and encoding with libpng / libjpeg-turbo
   `libjpeg-turbo-dev` (or `libjpeg-dev`), `libwebp-dev`, and
   `libfreetype-dev`. config.m4 probes all four via pkg-config.
 
-### Deferred to v1.1
+### Followups landed (post-Phase 6)
 
-- Strip dead `gdImage*` branches from chart family bodies. v1.0 still
-  links libgd because those branches reference gd symbols, but no
-  caller initializes a GD-backed target — the branches are
-  unreachable code.
-- Rewrite `fastchart_effects.c` to emit SVG `<linearGradient>` for
-  gradient fills and `<filter><feGaussianBlur/>` for drop shadows.
-  Currently both effects no-op on the SVG/raster path (the
-  `setGradientFill` and `setDropShadow` settings are accepted but
-  invisible). v1.1 ports them across.
-- Background-image and icon composite path (`setBackgroundImage`,
-  `addIconAt`) needs SVG `<image href="data:image/...;base64,...">`
-  emission. Currently the SVG path skips both.
-- Pixel-tolerance test sweep. Several tests scan for exact RGB
-  values; plutovg's smoother AA produces near-exact colors that miss
-  these checks. The features render correctly; the test assertions
-  need widening.
+- **libgd link removed.** Dead `gdImage*` branches stripped from
+  every chart family body; `fastchart_text.c` swapped libgd's
+  `gdImageStringFTEx(NULL, …)` measurement path for direct
+  `FT_Set_Char_Size` + `FT_Load_Glyph` advance summation;
+  `config.m4` drops the libgd probe entirely. `ldd modules/fastchart.so`
+  shows only libfreetype, libpng, libjpeg, libwebp.
+- **Effects on the SVG path.** `fastchart_effects.c`
+  `gradient_filled_*` now emits `<linearGradient>` defs with stops
+  at the chart's `gradient_from`/`_to`; `shadow_filled_*` emits an
+  offset-duplicate shape with the shadow color before the main
+  draw. (Hard-edged shadow rather than Gaussian-blurred — plutosvg
+  doesn't parse `<filter>`.) Wired into Bar and Pie families.
+- **Background image / icon SVG emission.** `fastchart_target_image()`
+  loads the source file, base64-encodes the bytes, and emits
+  `<image href="data:image/png;base64,…" preserveAspectRatio="none">`.
+  Source-image byte and dimension caps (8 MiB / 4096 px / 16 Mpx)
+  enforced at render time; open_basedir re-checked. PNG and JPEG
+  source files only — WebP/GIF/AVIF source files are silently
+  skipped because plutosvg's data-URI loader handles only those two.
+- **Pixel-tolerance test sweep.** 7 tests that scanned for exact
+  RGB matches now use `fc_color_near()` which accepts any AA-blended
+  version of the target color against white (alpha 0.3..1.0, ±4 RGB
+  per channel). Plutovg's 1px stroke centerline lands at ~50%
+  coverage; libgd produced exact-color centerlines.
+- **Test EXTENSIONS.** 33 phpt files that round-trip raster output
+  via `imagecreatefromstring()` + `imagecolorat()` for pixel
+  inspection now declare `gd` in their `--EXTENSIONS--` block, so
+  they SKIP cleanly when ext/gd isn't loaded rather than fatal.
+
+### Result
+
+96/96 phpt tests pass with ext/gd loaded; 31 pass + 65 SKIP without
+ext/gd. libgd is no longer linked into `modules/fastchart.so`.
 
 ## [0.2.0] - 2026-05-09
 
