@@ -680,20 +680,26 @@ The remaining catch-all knobs:
 - `setStrict(true)`: TypeError on non-numeric Line/Area/Bar series
   cells instead of silent NaN coercion
 - `setBoxWidth(percent)`: boxplot box width as a percent of slot
-- `setBackgroundImage(path)`: bitmap behind the chart;
+- `setBackgroundImage(path)`: bitmap behind the chart; PNG/JPEG only;
   open_basedir-checked at draw time
 
 ```php
-$im = imagecreatetruecolor(800, 320);
-(new FastChart\LineChart(800, 320))
+/* Stitch two charts side-by-side into one SVG document via
+ * drawSvgFragment(). v1.0 owns the canvas end-to-end — there's no
+ * shared GdImage to composite onto — so multi-chart layouts are
+ * built at the SVG layer and rasterized once if needed. */
+$left = (new FastChart\LineChart(380, 320))
     ->setTitle('Left chart')->setSeries([/* … */])
-    ->setPlotRect(60, 30, 380, 280)
-    ->draw($im);
-(new FastChart\BarChart(800, 320))
+    ->drawSvgFragment();
+$right = (new FastChart\BarChart(380, 320))
     ->setTitle('Right chart')->setSeries([/* … */])
-    ->setPlotRect(440, 30, 760, 280)
-    ->draw($im);
-imagepng($im, '31b_two_charts.png');
+    ->drawSvgFragment();
+$svg  = '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"'
+      . ' width="800" height="320" viewBox="0 0 800 320">';
+$svg .= '<g transform="translate(0,0)">'    . $left  . '</g>';
+$svg .= '<g transform="translate(420,0)">'  . $right . '</g>';
+$svg .= '</svg>';
+file_put_contents('31b_two_charts.svg', $svg);
 ```
 
 | setSize after construction | Two charts on one canvas | Background image |
