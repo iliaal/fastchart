@@ -213,8 +213,77 @@ FT_Library fastchart_ft_library(void)
     return fc_ft_lib;
 }
 
+/* Process-shared FT_Face LRU. Sized for a typical "1 chart font + 1
+ * symbol font" worst case with headroom; 4 slots is enough that
+ * mixed-font dashboards (chart title in one font, axis labels in
+ * another) don't churn. Linear scan + swap-to-front on hit. */
+#define FC_FT_FACE_CACHE_N 4
+typedef struct {
+    char    *path;   /* strdup'd; NULL = empty slot */
+    FT_Face  face;
+} fc_ft_face_slot;
+static fc_ft_face_slot fc_ft_face_cache[FC_FT_FACE_CACHE_N];
+
+FT_Face fastchart_ft_face(const char *font_path)
+{
+    if (!font_path) return NULL;
+    FT_Library lib = fastchart_ft_library();
+    if (!lib) return NULL;
+
+    /* Hit? Swap-to-front to keep the hot path at slot 0. */
+    for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
+        if (fc_ft_face_cache[i].path
+            && strcmp(fc_ft_face_cache[i].path, font_path) == 0) {
+            if (i != 0) {
+                fc_ft_face_slot tmp = fc_ft_face_cache[0];
+                fc_ft_face_cache[0] = fc_ft_face_cache[i];
+                fc_ft_face_cache[i] = tmp;
+            }
+            return fc_ft_face_cache[0].face;
+        }
+    }
+
+    /* Miss. Build the new entry (strdup + FT_New_Face) BEFORE
+     * evicting anything so a failure mid-build leaves the cache
+     * untouched. */
+    size_t path_len = strlen(font_path);
+    char  *path_copy = malloc(path_len + 1);
+    if (!path_copy) return NULL;
+    memcpy(path_copy, font_path, path_len + 1);
+
+    FT_Face face = NULL;
+    if (FT_New_Face(lib, font_path, 0, &face)) {
+        free(path_copy);
+        return NULL;
+    }
+
+    /* Evict the tail slot, shift right, install at slot 0. */
+    int tail = FC_FT_FACE_CACHE_N - 1;
+    if (fc_ft_face_cache[tail].face) FT_Done_Face(fc_ft_face_cache[tail].face);
+    if (fc_ft_face_cache[tail].path) free(fc_ft_face_cache[tail].path);
+    for (int i = tail; i > 0; i--) {
+        fc_ft_face_cache[i] = fc_ft_face_cache[i - 1];
+    }
+    fc_ft_face_cache[0].path = path_copy;
+    fc_ft_face_cache[0].face = face;
+    return face;
+}
+
 void fastchart_ft_library_shutdown(void)
 {
+    /* Free cached faces explicitly. FT_Done_FreeType would walk and
+     * free them anyway, but doing it ourselves keeps the cache state
+     * machine deterministic and the path-string ownership tidy. */
+    for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
+        if (fc_ft_face_cache[i].face) {
+            FT_Done_Face(fc_ft_face_cache[i].face);
+            fc_ft_face_cache[i].face = NULL;
+        }
+        if (fc_ft_face_cache[i].path) {
+            free(fc_ft_face_cache[i].path);
+            fc_ft_face_cache[i].path = NULL;
+        }
+    }
     if (fc_ft_lib != NULL) {
         FT_Done_FreeType(fc_ft_lib);
         fc_ft_lib = NULL;
@@ -225,8 +294,7 @@ void fastchart_ft_library_shutdown(void)
 static void copy_family_name(char *out, size_t out_n, const char *src)
 {
     if (!src || !*src) {
-        strncpy(out, "sans-serif", out_n - 1);
-        out[out_n - 1] = '\0';
+        snprintf(out, out_n, "sans-serif");
         return;
     }
     /* Allow ASCII letters/digits/space/hyphen/underscore through; any
@@ -242,8 +310,7 @@ static void copy_family_name(char *out, size_t out_n, const char *src)
         }
     }
     if (j == 0) {
-        strncpy(out, "sans-serif", out_n - 1);
-        out[out_n - 1] = '\0';
+        snprintf(out, out_n, "sans-serif");
         return;
     }
     out[j] = '\0';
@@ -265,24 +332,19 @@ void fastchart_target_resolve_font_family(fastchart_target_t *t,
         fastchart_target_font_cache_entry *e = &t->font_cache[i];
         if (e->path == font_path
             || (e->path && strcmp(e->path, font_path) == 0)) {
-            strncpy(out, e->family, out_n - 1);
-            out[out_n - 1] = '\0';
+            snprintf(out, out_n, "%s", e->family);
             return;
         }
     }
 
-    /* FT lookup. */
+    /* FT lookup via the shared face cache. The face is owned by the
+     * cache; family_name is a pointer into face-owned memory so we
+     * copy the bytes out before the next caller might mutate face
+     * state. */
     char raw[128] = "";
-    FT_Library lib = fastchart_ft_library();
-    if (lib) {
-        FT_Face face = NULL;
-        if (FT_New_Face(lib, font_path, 0, &face) == 0 && face) {
-            if (face->family_name) {
-                strncpy(raw, face->family_name, sizeof(raw) - 1);
-                raw[sizeof(raw) - 1] = '\0';
-            }
-            FT_Done_Face(face);
-        }
+    FT_Face face = fastchart_ft_face(font_path);
+    if (face && face->family_name) {
+        snprintf(raw, sizeof(raw), "%s", face->family_name);
     }
     copy_family_name(out, out_n, raw[0] ? raw : NULL);
 
@@ -293,8 +355,7 @@ void fastchart_target_resolve_font_family(fastchart_target_t *t,
         fastchart_target_font_cache_entry *e =
             &t->font_cache[t->font_cache_n++];
         e->path = font_path;
-        strncpy(e->family, out, sizeof(e->family) - 1);
-        e->family[sizeof(e->family) - 1] = '\0';
+        snprintf(e->family, sizeof(e->family), "%s", out);
     }
 }
 
