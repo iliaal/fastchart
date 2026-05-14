@@ -321,30 +321,3 @@ int fastchart_treemap_render_to_target(fastchart_treemap_obj *self, fastchart_ta
     return 0;
 }
 
-/* GD-only shim. */
-int fastchart_treemap_render_to_image(fastchart_treemap_obj *self, gdImagePtr im)
-{
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
-    return fastchart_treemap_render_to_target(self, &t);
-}
-
-ZEND_METHOD(FastChart_Treemap, draw)
-{
-    zval *canvas_zv;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
-    ZEND_PARSE_PARAMETERS_END();
-
-    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\Treemap::draw() received a closed or invalid GdImage");
-        RETURN_THROWS();
-    }
-    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
-    fastchart_treemap_obj *self = Z_FASTCHART_TREEMAP_OBJ_P(ZEND_THIS);
-    if (fastchart_treemap_render_to_image(self, im) != 0) {
-        RETURN_THROWS();
-    }
-    RETURN_ZVAL(canvas_zv, 1, 0);
-}

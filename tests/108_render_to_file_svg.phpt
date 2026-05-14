@@ -36,6 +36,8 @@ try {
     // of the post-pilot families that landed in the second wave.
     $sc = new FastChart\ScatterChart(200, 200);
     $sc->setPoints([[1.0, 2.0], [3.0, 4.0]]);
+    $sc->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
+    $sc->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
     $sc_svg = $sc->renderSvg();
     var_dump(str_starts_with($sc_svg, "<?xml "));
     var_dump(strpos($sc_svg, "</svg>") !== false);

@@ -13,6 +13,7 @@ $c = (new FastChart\Code128())
     ->setForeground(0x000000)
     ->setBackground(0xFFFFFF);
 
+$c->setSvgTextMode(FastChart\Symbol::SVG_TEXT_NATIVE);
 $svg = $c->renderSvg();
 
 // Basic shape: non-empty, XML prolog + <svg> root.
@@ -76,6 +77,7 @@ $ct = (new FastChart\Code128())
     ->setData('FASTCHART-12345')
     ->setSize(400, 100)
     ->setShowText(true);
+$ct->setSvgTextMode(FastChart\Symbol::SVG_TEXT_NATIVE);
 $svgt = $ct->renderSvg();
 var_dump(substr_count($svgt, "<text") >= 1);
 

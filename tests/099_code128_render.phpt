@@ -2,6 +2,7 @@
 Code128: encoder + renderer produce structurally valid bar pattern
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

@@ -83,6 +83,27 @@ abstract class Chart
     public const int DATE_YEAR    = 4;
 
     /**
+     * SVG text emission mode for setSvgTextMode().
+     *
+     * `SVG_TEXT_PATHS` (default) flattens every `<text>` element to a
+     * `<g><path d="..."/></g>` group via FreeType outline
+     * decomposition. The resulting SVG is self-contained — it renders
+     * correctly in any SVG rasterizer, including ones that don't
+     * support text (such as plutovg, which fastchart uses internally
+     * for PNG/JPG/WebP output). File size grows ~30%+ vs native text.
+     *
+     * `SVG_TEXT_NATIVE` emits raw `<text>` elements. Smaller files;
+     * requires the consumer's renderer to support SVG text and have
+     * the named font (or a sans-serif fallback) available.
+     *
+     * `renderPng()`, `renderJpeg()`, `renderWebp()`, and
+     * `renderToFile()` for raster formats always use PATHS internally
+     * regardless of this setting — they go through plutovg.
+     */
+    public const int SVG_TEXT_NATIVE = 0;
+    public const int SVG_TEXT_PATHS  = 1;
+
+    /**
      * Optionally pass canvas dimensions at construction so callers
      * can skip the `imagecreatetruecolor()` step entirely when they
      * use the renderXxx() shortcuts. Both `null` keeps the default
@@ -174,15 +195,18 @@ abstract class Chart
      * and `ScatterChart` (x, y both in data coordinates). Other
      * chart types silently ignore the call.
      *
-     * `$path` is opened with libgd's auto-detect loader at draw time
-     * and respects `open_basedir`; missing or invalid images are
-     * silently skipped so a typo doesn't abort the whole render.
-     * `$maxWidth` / `$maxHeight` cap the display size while preserving
-     * the source aspect ratio (-1 = use the source dimension as-is).
-     * Source files larger than 8 MiB OR with declared dimensions
-     * over 4096px on either axis OR a pixel product over 16M are
-     * silently skipped to bound worker memory if the path is fed
-     * from untrusted input. Up to 32 icons per chart.
+     * `$path` is opened at draw time through PHP's stream layer
+     * (which enforces `open_basedir` natively); missing or invalid
+     * images are silently skipped so a typo doesn't abort the whole
+     * render. Supported formats: PNG and JPEG only — plutosvg's
+     * data-URI loader handles those two; WebP / GIF / AVIF sources
+     * are skipped. `$maxWidth` / `$maxHeight` cap the display size
+     * while preserving the source aspect ratio (-1 = use the source
+     * dimension as-is). Source files larger than 8 MiB OR with
+     * declared dimensions over 4096px on either axis OR a pixel
+     * product over 16M are silently skipped to bound worker memory
+     * if the path is fed from untrusted input. Up to 32 icons per
+     * chart.
      */
     public function addIconAt(float $x, float $y, string $path,
                               int $maxWidth = -1,
@@ -194,10 +218,10 @@ abstract class Chart
      * / Bubble / Stock / BoxPlot). Useful for "normal range" callouts
      * (e.g. healthy heart-rate band, target SLA window). `$low` and
      * `$high` are in data Y units; the renderer reorders if needed.
-     * `$color` is a 24-bit RGB. `$alpha` follows libgd's 0..127
-     * convention (0 = opaque, 127 = fully transparent), defaulting to
-     * 64 for a visible-but-translucent overlay. Up to 16 bands per
-     * chart (shared budget with addVerticalBand).
+     * `$color` is a 24-bit RGB. `$alpha` uses the 0..127 convention
+     * (0 = opaque, 127 = fully transparent), defaulting to 64 for a
+     * visible-but-translucent overlay. Up to 16 bands per chart
+     * (shared budget with addVerticalBand).
      */
     public function addHorizontalBand(float $low, float $high, int $color,
                                       int $alpha = 64,
@@ -249,24 +273,26 @@ abstract class Chart
     public function setShowValues(bool $show, string $format = '%g'): static {}
 
     /**
-     * Render the canvas with a transparent background. The PNG /
-     * WebP / AVIF outputs preserve the alpha channel; JPEG and GIF
-     * collapse to white. Default: false.
+     * Render the canvas with a transparent background. The PNG and
+     * WebP outputs preserve the alpha channel; JPEG collapses to
+     * white. Default: false.
      */
     public function setTransparentBackground(bool $enabled): static {}
 
     /**
      * Composite a background image onto the canvas before drawing
      * any chart elements. Path is resolved through PHP's filesystem
-     * policy (`open_basedir`). Supported source formats: PNG, JPEG,
-     * WebP, GIF. The image is scaled to fill the entire canvas.
+     * policy (`open_basedir`). Supported source formats: PNG and
+     * JPEG only — plutosvg's data-URI loader handles those two and
+     * the SVG embed silently skips other formats. The image is
+     * scaled to fill the entire canvas.
      *
      * Source-file caps: the loader silently skips files larger
-     * than 8 MiB on disk OR with declared dimensions over 4096px
-     * on either axis OR a pixel product over 16M. open_basedir is
-     * the primary access gate; these caps are defense-in-depth so
-     * an untrusted path can't make libgd allocate hundreds of MiB
-     * to decode a small JPEG with declared 100000x100000 size.
+     * than 8 MiB OR with declared dimensions over 4096px on either
+     * axis OR a pixel product over 16M. open_basedir is the
+     * primary access gate; these caps are defense-in-depth so an
+     * untrusted path can't make the decoder allocate hundreds of
+     * MiB on a small file with declared 100000x100000 dimensions.
      */
     public function setBackgroundImage(string $path): static {}
 
@@ -441,9 +467,10 @@ abstract class Chart
     public function setDropShadow(int $offsetX, int $offsetY, ?int $color = null): static {}
 
     /**
-     * Drop-shadow opacity in libgd's alpha space: 0 = fully opaque,
-     * 127 = fully transparent. Default is 64 (~50% opacity). Matches
-     * the convention used by `imagecolorallocatealpha()`.
+     * Drop-shadow opacity in the 0..127 alpha space: 0 = fully
+     * opaque, 127 = fully transparent. Default is 64 (~50% opacity).
+     * Same convention `imagecolorallocatealpha()` uses, kept for
+     * source-compat across v0.x callers.
      */
     public function setShadowAlpha(int $alpha): static {}
 
@@ -460,57 +487,60 @@ abstract class Chart
     /**
      * Output / FreeType DPI for the rendered canvas.
      *
-     * Behavior depends on the render path:
-     *
-     * **`renderToFile()` / `renderPng()` / `renderJpeg()` /
-     * `renderWebp()` / `renderAvif()`:** fastchart owns the canvas
-     * and scales its physical pixel dimensions by `dpi/96`. The
-     * `setSize()` value is the *logical* size; a chart at
-     * `setSize(640, 320)->setDpi(200)` is allocated as a 1333×667
-     * pixel canvas. Apparent layout is preserved; pixel density
-     * doubles. Layout margins, tick marks, and label paddings scale
-     * proportionally so labels don't crowd the canvas edge.
-     *
-     * **`draw(\GdImage)`:** fastchart cannot resize a caller-owned
-     * canvas. The DPI value still flows through to PNG `pHYs` / JPEG
-     * density metadata, FreeType glyph hinting, AND layout spacing
-     * (margins, tick marks, label paddings all scale with `dpi/96`).
-     * The result on a fixed-size user canvas is that labels overflow
-     * because everything scales up but the canvas stays put. If you
-     * want HiDPI through `draw()`, allocate the canvas yourself at
-     * `width * dpi/96` so layout has room to breathe.
+     * fastchart owns the canvas and scales its physical pixel
+     * dimensions by `dpi/96` on the raster render paths
+     * (`renderPng()` / `renderJpeg()` / `renderWebp()` /
+     * `renderToFile()` for those formats). The `setSize()` value is
+     * the *logical* size; a chart at `setSize(640, 320)->setDpi(200)`
+     * is allocated as a 1333×667 pixel canvas. Apparent layout is
+     * preserved; pixel density doubles. Layout margins, tick marks,
+     * and label paddings scale proportionally so labels don't crowd
+     * the canvas edge. SVG output is DPI-invariant (vectors scale
+     * infinitely) and reports the configured DPI in the PNG `pHYs`
+     * and JPEG density metadata only.
      *
      * Common values: 96 (default, web-screen), 192 (2× retina),
      * 300 (print). Range is `[24, 1200]`.
      */
     public function setDpi(int $dpi): static {}
 
-    abstract public function draw(\GdImage $canvas): \GdImage;
+    /**
+     * Select the SVG text emission mode used by `renderSvg()`,
+     * `drawSvgFragment()`, and `renderToFile('*.svg')`. One of
+     * `self::SVG_TEXT_PATHS` (default — self-contained) or
+     * `self::SVG_TEXT_NATIVE` (compact, requires consumer text
+     * support). Raster outputs are unaffected (they always use
+     * PATHS internally).
+     */
+    public function setSvgTextMode(int $mode): static {}
+
+    /**
+     * Set the JPEG encode quality used by `renderJpeg()` and
+     * `renderToFile('*.jpg' | '*.jpeg')`. Range 1..100; default 88.
+     * Quality maps onto libjpeg-turbo's `jpeg_set_quality()` with
+     * `optimize_coding=TRUE` and 4:2:0 chroma subsampling.
+     */
+    public function setJpegQuality(int $quality): static {}
 
     /** Render to PNG bytes at the configured size. */
     public function renderPng(): string {}
 
-    /** Render to JPEG bytes. `$quality` is 1..100. */
-    public function renderJpeg(int $quality = 90): string {}
-
-    /** Render to WebP bytes. `$quality` is 0..100. */
-    public function renderWebp(int $quality = 90): string {}
-
-    /** Render to GIF bytes. */
-    public function renderGif(): string {}
-
     /**
-     * Render to AVIF bytes. `$quality` is 0..100. Raises
-     * \RuntimeException if libgd was built without AVIF support.
+     * Render to JPEG bytes. `$quality` is 1..100; default 0 means
+     * "use the value set via setJpegQuality()" (default 88).
      */
-    public function renderAvif(int $quality = 60): string {}
+    public function renderJpeg(int $quality = 0): string {}
+
+    /** Render to WebP bytes. `$quality` is 1..100. */
+    public function renderWebp(int $quality = 90): string {}
 
     /**
      * Render and write directly to a file. Format is inferred from
      * the path extension: `.png` / `.jpg` / `.jpeg` / `.webp` /
-     * `.gif` / `.avif` / `.svg`. `$quality` only applies to JPEG /
-     * WebP / AVIF outputs; SVG ignores it (vector, no lossy encoder).
-     * Returns the byte count written. Honors `open_basedir`.
+     * `.svg`. `$quality` only applies to JPEG / WebP outputs; SVG
+     * and PNG ignore it. Returns the byte count written. Honors
+     * `open_basedir`. `.gif` / `.avif` extensions raise a clear
+     * "dropped in v1.0" Error.
      */
     public function renderToFile(string $path, int $quality = 90): int {}
 
@@ -567,7 +597,6 @@ final class LineChart extends Chart
      */
     public function setErrorBars(array $errors): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 final class AreaChart extends Chart
@@ -585,13 +614,12 @@ final class AreaChart extends Chart
 
     /**
      * Fill alpha for non-stacked overlapping areas (0..127, where
-     * 127 is fully transparent and 0 is fully opaque, matching
-     * libgd's alpha convention). Default 64. Stacked areas are
-     * always opaque.
+     * 127 is fully transparent and 0 is fully opaque — the same
+     * convention `imagecolorallocatealpha()` uses). Default 64.
+     * Stacked areas are always opaque.
      */
     public function setFillOpacity(int $alpha): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 final class BarChart extends Chart
@@ -630,7 +658,6 @@ final class BarChart extends Chart
      */
     public function setFloating(bool $enabled): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 final class PieChart extends Chart
@@ -667,7 +694,6 @@ final class PieChart extends Chart
      */
     public function setOtherThreshold(float $percent, string $label = 'Other'): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 final class ScatterChart extends Chart
@@ -703,7 +729,6 @@ final class ScatterChart extends Chart
      */
     public function getImageMap(string $name = 'fastchart'): string {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 final class StockChart extends Chart
@@ -857,7 +882,6 @@ final class StockChart extends Chart
      */
     public function addParabolicSAR(float $af_init = 0.02, float $af_max = 0.2): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -883,7 +907,6 @@ final class RadarChart extends Chart
      */
     public function setFilled(bool $filled): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -893,7 +916,6 @@ final class RadarChart extends Chart
 final class BubbleChart extends Chart
 {
     public function setPoints(array $points): static {}
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -914,7 +936,6 @@ final class SurfaceChart extends Chart
      */
     public function setShowCellValues(bool $show, string $format = '%g'): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -942,7 +963,6 @@ final class GaugeChart extends Chart
      */
     public function setValueFormat(string $format): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -970,7 +990,6 @@ final class GanttChart extends Chart
     /** Show task name labels on / next to the bars. Default true. */
     public function setShowTaskLabels(bool $show): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -993,7 +1012,6 @@ final class BoxPlot extends Chart
      */
     public function setBoxWidth(int $percent): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1033,7 +1051,6 @@ final class PolarChart extends Chart
      */
     public function setStyle(int $style): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1058,7 +1075,6 @@ final class ContourChart extends Chart
      */
     public function setFilled(bool $filled): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1089,7 +1105,6 @@ final class Treemap extends Chart
      */
     public function setShowLabels(bool $enabled): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1111,7 +1126,6 @@ final class Funnel extends Chart
      * Chart and toggles the value labels rendered next to each
      * stage. The funnel default is to show values. */
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1137,7 +1151,6 @@ final class Waterfall extends Chart
     public function setFallColor(int $rgb): static {}
     public function setTotalColor(int $rgb): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1162,7 +1175,6 @@ final class Heatmap extends Chart
      * Chart; it toggles the per-cell value rendering AND sets the
      * printf format used for it. */
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1198,21 +1210,26 @@ final class LinearMeter extends Chart
      */
     public function setValueFormat(string $format): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
  * Symbol family: 1D barcodes and 2D matrix codes (QR). Render-only
- * surface — no `draw(\GdImage)` entry, so Symbol classes never accept a
- * caller-supplied canvas. Use the render*() / renderToFile() helpers
- * to materialise the symbol; reload via `imagecreatefromstring()` if
- * compositing onto another image is needed.
+ * surface — Symbol classes do not accept a caller-supplied canvas.
+ * Use the render*() / renderToFile() helpers to materialise the symbol.
  *
  * Symbol does not extend `Chart`; the two hierarchies share no state
  * (axes, palettes, plot rect, font cache do not apply to symbologies).
  */
 abstract class Symbol
 {
+    /**
+     * SVG text emission mode for setSvgTextMode(). Mirrors
+     * Chart::SVG_TEXT_NATIVE / Chart::SVG_TEXT_PATHS. PATHS is the
+     * default and matches the Chart-side semantics.
+     */
+    public const int SVG_TEXT_NATIVE = 0;
+    public const int SVG_TEXT_PATHS  = 1;
+
     /**
      * Logical canvas size in pixels. Both arguments must be positive
      * and ≤ 65535. Setting size 0 is rejected; if you want the
@@ -1247,8 +1264,8 @@ abstract class Symbol
 
     /**
      * Make the background transparent in the encoded output. Honoured
-     * by PNG / WebP / AVIF; JPEG and GIF fall through to the
-     * background colour because the format can't carry alpha.
+     * by PNG and WebP; JPEG falls through to the background colour
+     * because the format can't carry alpha.
      */
     public function setTransparentBackground(bool $enabled): static {}
 
@@ -1259,11 +1276,20 @@ abstract class Symbol
      */
     public function setDpi(int $dpi): static {}
 
+    /**
+     * SVG text-emission mode. See Chart::setSvgTextMode().
+     */
+    public function setSvgTextMode(int $mode): static {}
+
+    /**
+     * JPEG encode quality 1..100; default 88. See
+     * Chart::setJpegQuality().
+     */
+    public function setJpegQuality(int $quality): static {}
+
     public function renderPng(): string {}
-    public function renderJpeg(int $quality = 90): string {}
+    public function renderJpeg(int $quality = 0): string {}
     public function renderWebp(int $quality = 90): string {}
-    public function renderGif(): string {}
-    public function renderAvif(int $quality = 60): string {}
 
     /**
      * Render to an SVG document. Returns the full markup including
@@ -1284,10 +1310,10 @@ abstract class Symbol
 
     /**
      * Render and write to `$path`. Format inferred from extension;
-     * supports .png / .jpg / .jpeg / .webp / .gif / .avif / .svg.
-     * `$quality` applies to JPEG / WebP / AVIF and is ignored for
-     * SVG (vector, no lossy encoder). Honours `open_basedir`.
-     * Returns bytes written.
+     * supports .png / .jpg / .jpeg / .webp / .svg. `$quality`
+     * applies to JPEG / WebP and is ignored for PNG and SVG. Honours
+     * `open_basedir`. Returns bytes written. `.gif` / `.avif` raise a
+     * clear "dropped in v1.0" Error.
      */
     public function renderToFile(string $path, int $quality = 90): int {}
 }

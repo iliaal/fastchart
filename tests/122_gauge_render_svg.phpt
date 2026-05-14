@@ -17,6 +17,7 @@ $c->setRange(0, 100)
   ])
   ->setTitle('Gauge SVG');
 
+$c->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $svg = $c->renderSvg();
 
 var_dump(is_string($svg));

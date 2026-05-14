@@ -2,6 +2,7 @@
 setBarWidth narrows or widens the bar fill within its slot
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

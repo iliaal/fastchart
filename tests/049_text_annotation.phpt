@@ -2,6 +2,7 @@
 addTextAnnotation paints free-floating labels at canvas coordinates
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

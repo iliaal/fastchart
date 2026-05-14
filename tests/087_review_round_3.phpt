@@ -2,6 +2,7 @@
 Review-round 3: setDpi bounds + scaling, JPEG/WebP quality 0, scatter error bars > 2048, format-width caps
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

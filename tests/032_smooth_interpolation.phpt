@@ -2,6 +2,7 @@
 setLineInterpolation(INTERP_SMOOTH) emits Catmull-Rom curves
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

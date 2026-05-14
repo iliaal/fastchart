@@ -2,6 +2,7 @@
 setTitleColor / setAxisLabelColor / setAxisTitleColor override per-element text
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

@@ -15,12 +15,39 @@
 
 #include "php.h"
 #include "zend_exceptions.h"
-#include <gd.h>
 
-#define PHP_FASTCHART_VERSION "0.2.0"
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
+#define PHP_FASTCHART_VERSION "1.0.0"
 
 extern zend_module_entry fastchart_module_entry;
 #define phpext_fastchart_ptr &fastchart_module_entry
+
+/* FT_Face cache slot. Process-shared under NTS; per-thread under ZTS
+ * via TSRM module globals. fastchart_target.c owns the cache state
+ * transitions; this typedef lives here so the globals struct below
+ * can size the cache. */
+#define FC_FT_FACE_CACHE_N 4
+typedef struct {
+    char    *path;   /* malloc'd; NULL = empty slot */
+    FT_Face  face;
+} fc_ft_face_slot;
+
+/* Per-thread FT state. Under NTS this is a single struct shared across
+ * the (only) thread; under ZTS each thread gets its own copy. The
+ * shared-library / shared-face cache that lives here means no
+ * cross-thread contention on FT operations, and each thread pays its
+ * own FT_Init_FreeType once per first text emit. */
+ZEND_BEGIN_MODULE_GLOBALS(fastchart)
+    FT_Library      ft_lib;
+    int             ft_lib_init_failed;
+    fc_ft_face_slot ft_face_cache[FC_FT_FACE_CACHE_N];
+ZEND_END_MODULE_GLOBALS(fastchart)
+
+ZEND_EXTERN_MODULE_GLOBALS(fastchart)
+
+#define FASTCHART_G(v) ZEND_MODULE_GLOBALS_ACCESSOR(fastchart, v)
 
 #ifdef PHP_WIN32
 #define PHP_FASTCHART_API __declspec(dllexport)
@@ -69,12 +96,6 @@ extern zend_class_entry *fastchart_symbol_ce;
 extern zend_class_entry *fastchart_barcode_ce;
 extern zend_class_entry *fastchart_code128_ce;
 extern zend_class_entry *fastchart_qrcode_ce;
-
-/* Cached \GdImage class entry, resolved at MINIT via direct
- * CG(class_table) lookup. ext/gd defines gd_image_ce file-static
- * with no PHPAPI export so we cannot link against it; the autoload
- * path of zend_lookup_class is unsafe at MINIT. */
-extern zend_class_entry *fastchart_gd_image_ce;
 
 /* Per-class object layout. Every chart subclass owns its own struct
  * laid out as { FASTCHART_BASE_FIELDS, <per-type fields>, zend_object std }
@@ -179,6 +200,17 @@ extern zend_class_entry *fastchart_gd_image_ce;
     bool font_cache_valid; \
     int shadow_color_handle; \
     bool shadow_color_valid; \
+    /* SVG text-rendering mode: 0 = NATIVE (raw <text> elements, smaller \
+     * files, requires consumer SVG renderer with text support); 1 = \
+     * PATHS (every <text> flattened to <g><path/></g> via FreeType \
+     * outline decomposition, self-contained but ~30%+ larger). Default \
+     * is PATHS because the internal raster path (plutovg) cannot render \
+     * <text> at all — Phase 4's renderPng/Jpeg/Webp force PATHS \
+     * regardless of this setting. */ \
+    zend_long svg_text_mode; \
+    /* JPEG encode quality 1..100, default 88. Affects renderJpeg() and \
+     * renderToFile('*.jpg'). */ \
+    zend_long jpeg_quality; \
     zval config;
 
 /* Base view type. fastchart_obj* is what base setters and shared
@@ -811,39 +843,6 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define FASTCHART_DATE_QUARTER 3
 #define FASTCHART_DATE_YEAR    4
 
-/* Forward-declare the only ext/gd public API we use (also declared in
- * fastchart.c at the call site). Mirrored verbatim from
- * ext/gd/php_gd.h since that header is not installed via make install. */
-extern struct gdImageStruct *php_gd_libgdimageptr_from_zval_p(zval *zp);
-
-/* Pull the underlying gdImagePtr out of the caller-supplied canvas
- * zval. NULL on failure; the caller throws. The IS_OBJECT pre-check
- * is redundant against ext/gd's own type validation but avoids a
- * call into ext/gd when the value is obviously wrong (e.g. NULL
- * after a Z_PARAM_OBJECT_OF_CLASS that the caller forgot to
- * RETURN_THROWS on). */
-static inline gdImagePtr fastchart_gd_image_from_zval(zval *canvas_zv)
-{
-    if (Z_TYPE_P(canvas_zv) != IS_OBJECT) return NULL;
-    return (gdImagePtr)php_gd_libgdimageptr_from_zval_p(canvas_zv);
-}
-
-/* Reject palette-mode canvases at draw() entry. libgd's per-call AA
- * (gdImageSetAntiAliased + gdAntiAliased) and alpha-blended fills both
- * silently degrade on a non-truecolor image — the result still renders
- * but text and lines look aliased and fills mis-blend. Fail fast with
- * a ValueError so the caller switches to imagecreatetruecolor(). */
-static inline bool fastchart_require_truecolor(gdImagePtr im)
-{
-    if (im && !im->trueColor) {
-        zend_throw_error(zend_ce_value_error,
-            "fastchart requires a truecolor GdImage; "
-            "use imagecreatetruecolor() instead of imagecreate()");
-        return false;
-    }
-    return true;
-}
-
 /* Read a string label from an array-shaped setter, dropping the
  * value if it carries an embedded NUL. Public scalar setters reject
  * embedded NUL with ValueError; per-element strings inside arrays
@@ -860,70 +859,47 @@ static inline const char *fastchart_label_or_null(const zval *zv)
     return Z_STRVAL_P(zv);
 }
 
-/* Per-chart drawing helpers extracted from each ZEND_METHOD draw()
- * so the renderPng/Jpeg/Webp shortcuts can reuse them without
- * routing through ext/gd's zval extraction. Each returns 0 on
- * success, -1 on a draw-time error (a PHP exception is already
- * pending). */
-int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im);
-/* Render a LineChart into any fastchart_target_t — GD-backed or
- * SVG-backed. Pilot family on the SVG dispatch path; the
- * _to_image() wrapper above is the GD-only convenience. */
+/* Per-chart SVG rendering helpers. Each chart family implements
+ * fastchart_<name>_render_to_target(self, t), called by
+ * dispatch_svg_render. The legacy fastchart_<name>_render_to_image
+ * GD-direct wrappers retired in v1.0. */
 struct fastchart_target;
 int fastchart_line_render_to_target(fastchart_line_obj *self,
                                      struct fastchart_target *t);
-int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im);
 int fastchart_area_render_to_target(fastchart_area_obj *self,
                                      struct fastchart_target *t);
-int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im);
 int fastchart_bar_render_to_target(fastchart_bar_obj *self,
                                     struct fastchart_target *t);
-int fastchart_pie_render_to_image(fastchart_pie_obj *self, gdImagePtr im);
 int fastchart_pie_render_to_target(fastchart_pie_obj *self,
                                     struct fastchart_target *t);
-int fastchart_scatter_render_to_image(fastchart_scatter_obj *self, gdImagePtr im);
 int fastchart_scatter_render_to_target(fastchart_scatter_obj *self,
                                         struct fastchart_target *t);
-int fastchart_stock_render_to_image(fastchart_stock_obj *self, gdImagePtr im);
 int fastchart_stock_render_to_target(fastchart_stock_obj *self,
                                       struct fastchart_target *t);
-int fastchart_radar_render_to_image(fastchart_radar_obj *self, gdImagePtr im);
 int fastchart_radar_render_to_target(fastchart_radar_obj *self,
                                       struct fastchart_target *t);
-int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im);
 int fastchart_bubble_render_to_target(fastchart_bubble_obj *self,
                                        struct fastchart_target *t);
-int fastchart_surface_render_to_image(fastchart_surface_obj *self, gdImagePtr im);
 int fastchart_surface_render_to_target(fastchart_surface_obj *self,
                                         struct fastchart_target *t);
-int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im);
 int fastchart_gauge_render_to_target(fastchart_gauge_obj *self,
                                       struct fastchart_target *t);
-int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im);
 int fastchart_gantt_render_to_target(fastchart_gantt_obj *self,
                                       struct fastchart_target *t);
-int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im);
 int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self,
                                         struct fastchart_target *t);
-int fastchart_polar_render_to_image(fastchart_polar_obj *self, gdImagePtr im);
 int fastchart_polar_render_to_target(fastchart_polar_obj *self,
                                       struct fastchart_target *t);
-int fastchart_contour_render_to_image(fastchart_contour_obj *self, gdImagePtr im);
 int fastchart_contour_render_to_target(fastchart_contour_obj *self,
                                         struct fastchart_target *t);
-int fastchart_treemap_render_to_image(fastchart_treemap_obj *self, gdImagePtr im);
 int fastchart_treemap_render_to_target(fastchart_treemap_obj *self,
                                         struct fastchart_target *t);
-int fastchart_funnel_render_to_image(fastchart_funnel_obj *self, gdImagePtr im);
 int fastchart_funnel_render_to_target(fastchart_funnel_obj *self,
                                        struct fastchart_target *t);
-int fastchart_waterfall_render_to_image(fastchart_waterfall_obj *self, gdImagePtr im);
 int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self,
                                           struct fastchart_target *t);
-int fastchart_heatmap_render_to_image(fastchart_heatmap_obj *self, gdImagePtr im);
 int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self,
                                         struct fastchart_target *t);
-int fastchart_linear_meter_render_to_image(fastchart_linear_meter_obj *self, gdImagePtr im);
 int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self,
                                              struct fastchart_target *t);
 
@@ -949,7 +925,13 @@ int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self,
     zend_long fg_rgb;           /* 0..0xFFFFFF; default 0x000000 */ \
     zend_long bg_rgb;           /* 0..0xFFFFFF; default 0xFFFFFF */ \
     bool transparent_bg;        /* honoured by PNG/WebP/AVIF encoders */ \
-    zend_long quiet_zone;       /* per-class units; -1 = class default */
+    zend_long quiet_zone;       /* per-class units; -1 = class default */ \
+    /* SVG text-rendering mode: 0 = NATIVE, 1 = PATHS (default). Same \
+     * semantics as the Chart side. Code128's human-readable text and \
+     * any future Symbol-with-text variants honor this. */ \
+    zend_long svg_text_mode; \
+    /* JPEG encode quality 1..100, default 88. */ \
+    zend_long jpeg_quality;
 
 typedef struct _fastchart_symbol_obj { FASTCHART_SYMBOL_BASE_FIELDS } fastchart_symbol_obj;
 
@@ -1000,11 +982,9 @@ static inline fastchart_symbol_obj *fastchart_symbol_obj_from_zend(zend_object *
 #define Z_FASTCHART_CODE128_OBJ_P(zv) ((fastchart_code128_obj *)Z_FASTCHART_SYMBOL_OBJ_P(zv))
 #define Z_FASTCHART_QRCODE_OBJ_P(zv)  ((fastchart_qrcode_obj *)Z_FASTCHART_SYMBOL_OBJ_P(zv))
 
-int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im);
-int fastchart_qrcode_render_to_image(fastchart_qrcode_obj *self, gdImagePtr im);
-/* Target-based render entries. GD-backed targets produce identical
- * output to the gdImagePtr shims above; SVG-backed targets emit
- * vector elements. */
+/* Target-based render entries — the only entry point now that
+ * libgd has been dropped. SVG-backed targets emit vector elements;
+ * raster outputs go through dispatch_svg_render then plutovg. */
 int fastchart_code128_render_to_target(fastchart_code128_obj *self,
                                         struct fastchart_target *t);
 int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,

@@ -16,6 +16,7 @@ $c->setSeries([
   ->setFilled(true)
   ->setTitle('Radar SVG');
 
+$c->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $svg = $c->renderSvg();
 
 var_dump(is_string($svg));

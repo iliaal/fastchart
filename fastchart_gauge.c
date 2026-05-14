@@ -22,7 +22,6 @@
 #include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
-#include "fastchart_effects.h"
 
 #include <math.h>
 
@@ -103,20 +102,9 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
      * (right). Zones are pre-parsed into typed C state by setZones. */
     int default_color = pal.series[0];
 
-    bool gd = (t->kind == FASTCHART_TARGET_GD);
-    gdImagePtr im = gd ? t->u.gd.im : NULL;
-
     if (self->zones && self->n_zones > 0) {
         /* Background fill (a thin ring, drawn as a fat arc). */
-        if (gd) {
-            /* fastchart_filled_wedge_aa takes a gd-int (calls
-             * gdImageFilledArc directly). pal.grid is a target
-             * handle post-Phase-2 — resolve it back to a gd-int. */
-            fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360,
-                                       fastchart_target_color_to_gd(t, pal.grid));
-        } else {
-            fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.grid, 1, 0);
-        }
+        fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.grid, 1, 0);
         for (int i = 0; i < self->n_zones; i++) {
             const fastchart_gauge_zone *zn = &self->zones[i];
             int color = default_color;
@@ -140,33 +128,18 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
             int end   = (int)(180 + frac_b * 180);
             if (start > end) { int tmp = start; start = end; end = tmp; }
             if (end <= start) continue;  /* empty zone, skip */
-            if (gd) {
-                int gd_color = fastchart_target_color_to_gd(t, color);
-                fastchart_filled_wedge_aa(im, cx, cy, diameter, start, end, gd_color);
-            } else {
-                fastchart_target_arc(t, cx, cy, radius, radius,
-                                     (double)start, (double)end, color, 1, 0);
-            }
+            fastchart_target_arc(t, cx, cy, radius, radius,
+                                 (double)start, (double)end, color, 1, 0);
         }
     } else {
         /* Single-color sweep from min to value, with the rest in grid color. */
-        if (gd) {
-            fastchart_filled_wedge_aa(im, cx, cy, diameter, 180, 360,
-                                       fastchart_target_color_to_gd(t, pal.grid));
-        } else {
-            fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.grid, 1, 0);
-        }
+        fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.grid, 1, 0);
         double aV = gauge_value_to_deg(v, mn, mx);
         int start = 180;
         int end = 180 + (int)(180 - aV);
         if (end > start) {
-            if (gd) {
-                int gd_color = fastchart_target_color_to_gd(t, default_color);
-                fastchart_filled_wedge_aa(im, cx, cy, diameter, start, end, gd_color);
-            } else {
-                fastchart_target_arc(t, cx, cy, radius, radius,
-                                     (double)start, (double)end, default_color, 1, 0);
-            }
+            fastchart_target_arc(t, cx, cy, radius, radius,
+                                 (double)start, (double)end, default_color, 1, 0);
         }
     }
 
@@ -193,10 +166,6 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
     if (needle_thickness < 3.0) needle_thickness = 3.0;
     fastchart_target_line(t, cx, cy, nx, ny,
                           pal.text, (int)needle_thickness, FASTCHART_DASH_SOLID);
-    if (gd) {
-        gdImageSetAntiAliased(im, fastchart_target_color_to_gd(t, pal.text));
-        gdImageLine(im, cx, cy, nx, ny, gdAntiAliased);
-    }
 
     /* Hub: scale with diameter so it doesn't look tiny on a large canvas. */
     int hub = diameter / 60;
@@ -241,32 +210,4 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
-}
-
-/* GD-only shim. */
-int fastchart_gauge_render_to_image(fastchart_gauge_obj *self, gdImagePtr im)
-{
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
-    return fastchart_gauge_render_to_target(self, &t);
-}
-
-ZEND_METHOD(FastChart_GaugeChart, draw)
-{
-    zval *canvas_zv;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
-    ZEND_PARSE_PARAMETERS_END();
-
-    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\GaugeChart::draw() received a closed or invalid GdImage");
-        RETURN_THROWS();
-    }
-    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
-    fastchart_gauge_obj *self = Z_FASTCHART_GAUGE_OBJ_P(ZEND_THIS);
-    if (fastchart_gauge_render_to_image(self, im) != 0) {
-        RETURN_THROWS();
-    }
-    RETURN_ZVAL(canvas_zv, 1, 0);
 }

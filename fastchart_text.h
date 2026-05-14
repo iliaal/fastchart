@@ -13,7 +13,6 @@
 #ifndef FASTCHART_TEXT_H
 #define FASTCHART_TEXT_H
 
-#include <gd.h>
 #include "fastchart_target.h"
 
 typedef enum {

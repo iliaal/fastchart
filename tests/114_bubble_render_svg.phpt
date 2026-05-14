@@ -16,6 +16,7 @@ $c = new FastChart\BubbleChart(480, 320);
 $c->setPoints($pts)
   ->setTitle("Bubble SVG");
 
+$c->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $svg = $c->renderSvg();
 
 var_dump(is_string($svg));

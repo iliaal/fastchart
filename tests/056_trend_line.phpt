@@ -2,6 +2,7 @@
 ScatterChart::setTrendLine overlays a least-squares regression line
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

@@ -2,6 +2,7 @@
 setThumbnailMode shrinks fonts and elides labels for tiny renders
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

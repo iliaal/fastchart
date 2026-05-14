@@ -21,7 +21,6 @@
 #include "fastchart_palette.h"
 #include "fastchart_target.h"
 #include "fastchart_axis.h"
-#include "fastchart_effects.h"
 
 #include <math.h>
 
@@ -100,9 +99,6 @@ int fastchart_bubble_render_to_target(fastchart_bubble_obj *self, fastchart_targ
     double r_max = plot_w * 0.05;
     if (r_max < 4) r_max = 4;
 
-    bool gd = (t->kind == FASTCHART_TARGET_GD);
-    gdImagePtr im = gd ? t->u.gd.im : NULL;
-
     /* Pre-resolve translucent palette-series fills as target color
      * handles. gd_alpha 70 (~45% transparent) maps to alpha byte
      * 255 - 70*2 = 115 in the target API. */
@@ -115,7 +111,6 @@ int fastchart_bubble_render_to_target(fastchart_bubble_obj *self, fastchart_targ
         palette_alpha[i] = fastchart_target_color(t, r, g, b, 115);
     }
 
-    if (gd) gdImageAlphaBlending(im, 1);
     for (int i = 0; i < collected; i++) {
         double xfrac = (xrange.max - xrange.min) > 0
             ? (pts[i].x - xrange.min) / (xrange.max - xrange.min) : 0.5;
@@ -137,16 +132,12 @@ int fastchart_bubble_render_to_target(fastchart_bubble_obj *self, fastchart_targ
             alpha = palette_alpha[idx];
         }
 
-        if (gd) {
-            fastchart_shadow_filled_arc(im, (fastchart_obj *)self, px, py, rad * 2, 0, 360);
-        }
         fastchart_target_ellipse(t, px, py, rad, rad, alpha, 1, 0);
         int edge = self->edge_color >= 0
             ? fastchart_target_color_rgb(t, (int)self->edge_color)
             : color;
         fastchart_target_ellipse(t, px, py, rad, rad, edge, 0, 1);
     }
-    if (gd) gdImageAlphaBlending(im, 0);
 
     fastchart_draw_h_annotations(t, (fastchart_obj *)self, &plot, &pal, &yrange);
     fastchart_draw_v_annotations_continuous(t, (fastchart_obj *)self, &plot, &pal, &xrange);
@@ -161,32 +152,4 @@ int fastchart_bubble_render_to_target(fastchart_bubble_obj *self, fastchart_targ
         }
     }
     return 0;
-}
-
-/* GD-only shim. */
-int fastchart_bubble_render_to_image(fastchart_bubble_obj *self, gdImagePtr im)
-{
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
-    return fastchart_bubble_render_to_target(self, &t);
-}
-
-ZEND_METHOD(FastChart_BubbleChart, draw)
-{
-    zval *canvas_zv;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
-    ZEND_PARSE_PARAMETERS_END();
-
-    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\BubbleChart::draw() received a closed or invalid GdImage");
-        RETURN_THROWS();
-    }
-    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
-    fastchart_bubble_obj *self = Z_FASTCHART_BUBBLE_OBJ_P(ZEND_THIS);
-    if (fastchart_bubble_render_to_image(self, im) != 0) {
-        RETURN_THROWS();
-    }
-    RETURN_ZVAL(canvas_zv, 1, 0);
 }

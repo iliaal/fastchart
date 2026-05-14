@@ -43,7 +43,6 @@ $tests = [
     'jpg'  => 'ffd8',
     'jpeg' => 'ffd8',
     'webp' => '52494646',  // RIFF
-    'gif'  => '47494638',  // GIF8
 ];
 foreach ($tests as $ext => $sig) {
     $path = "$tmp.$ext";
@@ -55,6 +54,14 @@ foreach ($tests as $ext => $sig) {
     unlink($path);
 }
 unlink($tmp);
+
+// GIF is gone in v1.0.
+try {
+    (new FastChart\LineChart(100, 100))->setSeries([1])->renderToFile('/tmp/x.gif');
+    echo "gif: no throw\n";
+} catch (\Error $e) {
+    echo "gif: dropped ok\n";
+}
 
 // Bad extension rejected.
 try {
@@ -74,5 +81,5 @@ png: ok
 jpg: ok
 jpeg: ok
 webp: ok
-gif: ok
+gif: dropped ok
 bad_ext: ValueError ok
