@@ -64,19 +64,16 @@ void fastchart_symbol_base_addref_owned(fastchart_symbol_obj *b)
 /* Per-class init/release/addref helpers below mirror the chart-family
  * pattern. Each Symbol concrete class defines its own trio so the
  * lifecycle macro can call them by `name`. */
+/* Per-class init hook. Sets class-specific defaults that aren't part
+ * of FASTCHART_SYMBOL_BASE_FIELDS. Release / addref hooks were
+ * removed when neither Code128 nor QrCode kept per-instance owned
+ * state of their own — base data + the class-specific scalars are
+ * lifecycle-safe under memcpy. Add a class-local release/addref
+ * pair back into the macro below if a future symbology stores an
+ * owned zend_string (font path, glyph cache, etc.). */
 static void fastchart_code128_init_extras(fastchart_code128_obj *o)
 {
     o->show_text = false;
-    o->text_font_path = NULL;
-    o->text_font_size = 0.0;
-}
-static void fastchart_code128_release_extras(fastchart_code128_obj *o)
-{
-    if (o->text_font_path) zend_string_release(o->text_font_path);
-}
-static void fastchart_code128_addref_extras(fastchart_code128_obj *o)
-{
-    if (o->text_font_path) zend_string_addref(o->text_font_path);
 }
 
 static void fastchart_qrcode_init_extras(fastchart_qrcode_obj *o)
@@ -84,14 +81,6 @@ static void fastchart_qrcode_init_extras(fastchart_qrcode_obj *o)
     o->ecc = FASTCHART_QR_ECC_M;
     o->min_version = qrcodegen_VERSION_MIN;
     o->max_version = qrcodegen_VERSION_MAX;
-}
-static void fastchart_qrcode_release_extras(fastchart_qrcode_obj *o)
-{
-    (void)o;
-}
-static void fastchart_qrcode_addref_extras(fastchart_qrcode_obj *o)
-{
-    (void)o;
 }
 
 /* Generates the create / free / clone trio for one Symbol class.
@@ -116,7 +105,6 @@ static void fastchart_qrcode_addref_extras(fastchart_qrcode_obj *o)
     {                                                                            \
         T *intern = (T *)((char *)object - fastchart_##name##_handlers.offset);  \
         fastchart_symbol_base_release_owned((fastchart_symbol_obj *)intern);     \
-        fastchart_##name##_release_extras(intern);                               \
         zend_object_std_dtor(&intern->std);                                      \
     }                                                                            \
     zend_object *fastchart_##name##_clone_object(zend_object *src_obj)           \
@@ -125,10 +113,8 @@ static void fastchart_qrcode_addref_extras(fastchart_qrcode_obj *o)
         zend_object *dst_obj = fastchart_##name##_create_object(src_obj->ce);    \
         T *dst = (T *)((char *)dst_obj - fastchart_##name##_handlers.offset);    \
         fastchart_symbol_base_release_owned((fastchart_symbol_obj *)dst);        \
-        fastchart_##name##_release_extras(dst);                                  \
         memcpy(dst, src, offsetof(T, std));                                      \
         fastchart_symbol_base_addref_owned((fastchart_symbol_obj *)dst);         \
-        fastchart_##name##_addref_extras(dst);                                   \
         zend_objects_clone_members(&dst->std, &src->std);                        \
         return &dst->std;                                                        \
     }

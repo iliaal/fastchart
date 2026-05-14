@@ -4139,10 +4139,10 @@ int fastchart_resolve_canvas_dims(zend_long width, zend_long height,
     if (pw > MAX_PHYS_DIM || ph > MAX_PHYS_DIM) {
         zend_value_error(
             "FastChart: physical canvas dimensions exceed the 16384px cap "
-            "(setSize=%lldx%lld, setDpi=%ld -> %dx%d). "
+            "(setSize=" ZEND_LONG_FMT "x" ZEND_LONG_FMT
+            ", setDpi=" ZEND_LONG_FMT " -> %dx%d). "
             "Reduce setSize() or setDpi().",
-            (long long)width, (long long)height,
-            (long)dpi, pw, ph);
+            width, height, dpi, pw, ph);
         return -1;
     }
     /* Product cap: 64M pixels = 256 MiB at 4 bytes/pixel for the
@@ -4155,11 +4155,11 @@ int fastchart_resolve_canvas_dims(zend_long width, zend_long height,
     if (pixels > MAX_PHYS_PIXELS) {
         zend_value_error(
             "FastChart: physical canvas pixel count exceeds the %lld "
-            "budget (setSize=%lldx%lld, setDpi=%ld -> %dx%d = %lld pixels). "
+            "budget (setSize=" ZEND_LONG_FMT "x" ZEND_LONG_FMT
+            ", setDpi=" ZEND_LONG_FMT " -> %dx%d = %lld pixels). "
             "Reduce setSize() or setDpi().",
             MAX_PHYS_PIXELS,
-            (long long)width, (long long)height,
-            (long)dpi, pw, ph, pixels);
+            width, height, dpi, pw, ph, pixels);
         return -1;
     }
     *out_w = pw;

@@ -518,22 +518,25 @@ abstract class Chart
      * Render to an SVG document. Returns the full markup including
      * `<?xml ...>` prolog and `<svg>` root.
      *
-     * The output viewport matches the logical `setSize()` dimensions
-     * — DPI does not multiply the viewport (SVG is vector, scales
-     * infinitely). DPI still influences layout margins, label
-     * padding, and FreeType text measurement so SVG and raster
-     * outputs of the same chart pick the same label widths.
+     * Supported on every concrete `Chart` subclass (LineChart,
+     * AreaChart, BarChart, PieChart, ScatterChart, BubbleChart,
+     * RadarChart, PolarChart, SurfaceChart, ContourChart, GaugeChart,
+     * GanttChart, BoxPlot, Treemap, Funnel, Waterfall, Heatmap,
+     * LinearMeter, StockChart). The `Symbol` family (Code128, QrCode)
+     * exposes the same method on its own abstract base.
+     *
+     * The output viewport matches the logical `setSize()` dimensions.
+     * SVG is DPI-invariant: `setDpi()` still scales the raster canvas
+     * for `renderPng()` / `renderJpeg()` / etc., but does not multiply
+     * the SVG viewport — vector strokes scale infinitely, so layout
+     * and text measurement stay at the 96-DPI baseline regardless of
+     * the configured DPI.
      *
      * Text rendering uses native `<text>` elements with the font's
      * family name resolved via FreeType. Viewers that don't have
      * the requested font fall back to `sans-serif`. (Path-embedded
      * glyphs for archival-perfect output are planned for a future
      * release.)
-     *
-     * SVG output is currently supported on `FastChart\LineChart` only.
-     * Other chart families raise an error; use `renderPng()` etc.
-     * The pilot expands to BarChart, PieChart, StockChart, then the
-     * remaining families in follow-up releases.
      */
     public function renderSvg(): string {}
 
@@ -543,7 +546,8 @@ abstract class Chart
      * stitching multiple charts into one caller-managed SVG document.
      * The caller owns the outer viewport / coordinate space.
      *
-     * Same constraints as `renderSvg()` (LineChart only for now).
+     * Available on every concrete `Chart` subclass — same coverage as
+     * `renderSvg()`.
      */
     public function drawSvgFragment(): string {}
 }
