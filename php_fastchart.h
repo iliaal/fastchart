@@ -16,10 +16,38 @@
 #include "php.h"
 #include "zend_exceptions.h"
 
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
 #define PHP_FASTCHART_VERSION "1.0.0"
 
 extern zend_module_entry fastchart_module_entry;
 #define phpext_fastchart_ptr &fastchart_module_entry
+
+/* FT_Face cache slot. Process-shared under NTS; per-thread under ZTS
+ * via TSRM module globals. fastchart_target.c owns the cache state
+ * transitions; this typedef lives here so the globals struct below
+ * can size the cache. */
+#define FC_FT_FACE_CACHE_N 4
+typedef struct {
+    char    *path;   /* malloc'd; NULL = empty slot */
+    FT_Face  face;
+} fc_ft_face_slot;
+
+/* Per-thread FT state. Under NTS this is a single struct shared across
+ * the (only) thread; under ZTS each thread gets its own copy. The
+ * shared-library / shared-face cache that lives here means no
+ * cross-thread contention on FT operations, and each thread pays its
+ * own FT_Init_FreeType once per first text emit. */
+ZEND_BEGIN_MODULE_GLOBALS(fastchart)
+    FT_Library      ft_lib;
+    int             ft_lib_init_failed;
+    fc_ft_face_slot ft_face_cache[FC_FT_FACE_CACHE_N];
+ZEND_END_MODULE_GLOBALS(fastchart)
+
+ZEND_EXTERN_MODULE_GLOBALS(fastchart)
+
+#define FASTCHART_G(v) ZEND_MODULE_GLOBALS_ACCESSOR(fastchart, v)
 
 #ifdef PHP_WIN32
 #define PHP_FASTCHART_API __declspec(dllexport)

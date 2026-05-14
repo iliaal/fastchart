@@ -30,6 +30,7 @@
 
 #include "fastchart_target.h"
 #include "fastchart_svg.h"
+#include "php_fastchart.h"
 
 /* Source-image caps. Mirrors the values in fastchart_axis.c; kept
  * here so the target-level emitter can enforce them without a header
@@ -193,37 +194,30 @@ void fastchart_target_ellipse(fastchart_target_t *t,
  * Font family resolution via FreeType                           *
  * ============================================================ */
 
-static FT_Library fc_ft_lib = NULL;
-static int fc_ft_lib_init_failed = 0;
+/* FT state lives in TSRM module globals (see ZEND_BEGIN_MODULE_GLOBALS
+ * in php_fastchart.h). Under NTS this is one struct shared process-
+ * wide; under ZTS each thread gets its own copy via TSRM. No mutex
+ * needed: FreeType operations on different FT_Library handles are
+ * independent, and the face cache lives inside each thread's
+ * globals so no two threads ever share an FT_Face.
+ *
+ * The "4-slot LRU" sizing matches the typical mixed-font dashboard:
+ * one chart font, one symbol font, two for axis-label/title splits.
+ * Linear scan + swap-to-front on hit keeps the hot path at slot 0. */
 
-/* Lazily init the per-process FT library on first use. Released at
- * MSHUTDOWN via fastchart_ft_library_shutdown — MSHUTDOWN runs after
- * every request has ended, so there is no in-flight render to race
- * with. Exported via fastchart_target.h for the SVG glyph-path emitter
- * and the FT-measure helper in fastchart_text.c so they share one
- * library instead of re-initializing per call. */
 FT_Library fastchart_ft_library(void)
 {
-    if (fc_ft_lib != NULL) return fc_ft_lib;
-    if (fc_ft_lib_init_failed) return NULL;
-    if (FT_Init_FreeType(&fc_ft_lib) != 0) {
-        fc_ft_lib = NULL;
-        fc_ft_lib_init_failed = 1;
+    if (FASTCHART_G(ft_lib) != NULL)     return FASTCHART_G(ft_lib);
+    if (FASTCHART_G(ft_lib_init_failed)) return NULL;
+    FT_Library lib = NULL;
+    if (FT_Init_FreeType(&lib) != 0) {
+        FASTCHART_G(ft_lib) = NULL;
+        FASTCHART_G(ft_lib_init_failed) = 1;
         return NULL;
     }
-    return fc_ft_lib;
+    FASTCHART_G(ft_lib) = lib;
+    return lib;
 }
-
-/* Process-shared FT_Face LRU. Sized for a typical "1 chart font + 1
- * symbol font" worst case with headroom; 4 slots is enough that
- * mixed-font dashboards (chart title in one font, axis labels in
- * another) don't churn. Linear scan + swap-to-front on hit. */
-#define FC_FT_FACE_CACHE_N 4
-typedef struct {
-    char    *path;   /* strdup'd; NULL = empty slot */
-    FT_Face  face;
-} fc_ft_face_slot;
-static fc_ft_face_slot fc_ft_face_cache[FC_FT_FACE_CACHE_N];
 
 FT_Face fastchart_ft_face(const char *font_path)
 {
@@ -231,20 +225,21 @@ FT_Face fastchart_ft_face(const char *font_path)
     FT_Library lib = fastchart_ft_library();
     if (!lib) return NULL;
 
+    fc_ft_face_slot *cache = FASTCHART_G(ft_face_cache);
+
     /* Hit? Swap-to-front to keep the hot path at slot 0. */
     for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
-        if (fc_ft_face_cache[i].path
-            && strcmp(fc_ft_face_cache[i].path, font_path) == 0) {
+        if (cache[i].path && strcmp(cache[i].path, font_path) == 0) {
             if (i != 0) {
-                fc_ft_face_slot tmp = fc_ft_face_cache[0];
-                fc_ft_face_cache[0] = fc_ft_face_cache[i];
-                fc_ft_face_cache[i] = tmp;
+                fc_ft_face_slot tmp = cache[0];
+                cache[0] = cache[i];
+                cache[i] = tmp;
             }
-            return fc_ft_face_cache[0].face;
+            return cache[0].face;
         }
     }
 
-    /* Miss. Build the new entry (strdup + FT_New_Face) BEFORE
+    /* Miss. Build the new entry (malloc + FT_New_Face) BEFORE
      * evicting anything so a failure mid-build leaves the cache
      * untouched. */
     size_t path_len = strlen(font_path);
@@ -260,13 +255,13 @@ FT_Face fastchart_ft_face(const char *font_path)
 
     /* Evict the tail slot, shift right, install at slot 0. */
     int tail = FC_FT_FACE_CACHE_N - 1;
-    if (fc_ft_face_cache[tail].face) FT_Done_Face(fc_ft_face_cache[tail].face);
-    if (fc_ft_face_cache[tail].path) free(fc_ft_face_cache[tail].path);
+    if (cache[tail].face) FT_Done_Face(cache[tail].face);
+    if (cache[tail].path) free(cache[tail].path);
     for (int i = tail; i > 0; i--) {
-        fc_ft_face_cache[i] = fc_ft_face_cache[i - 1];
+        cache[i] = cache[i - 1];
     }
-    fc_ft_face_cache[0].path = path_copy;
-    fc_ft_face_cache[0].face = face;
+    cache[0].path = path_copy;
+    cache[0].face = face;
     return face;
 }
 
@@ -274,22 +269,25 @@ void fastchart_ft_library_shutdown(void)
 {
     /* Free cached faces explicitly. FT_Done_FreeType would walk and
      * free them anyway, but doing it ourselves keeps the cache state
-     * machine deterministic and the path-string ownership tidy. */
+     * machine deterministic and the path-string ownership tidy.
+     * Called from PHP_GSHUTDOWN — once per thread under ZTS, once
+     * at MSHUTDOWN under NTS. */
+    fc_ft_face_slot *cache = FASTCHART_G(ft_face_cache);
     for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
-        if (fc_ft_face_cache[i].face) {
-            FT_Done_Face(fc_ft_face_cache[i].face);
-            fc_ft_face_cache[i].face = NULL;
+        if (cache[i].face) {
+            FT_Done_Face(cache[i].face);
+            cache[i].face = NULL;
         }
-        if (fc_ft_face_cache[i].path) {
-            free(fc_ft_face_cache[i].path);
-            fc_ft_face_cache[i].path = NULL;
+        if (cache[i].path) {
+            free(cache[i].path);
+            cache[i].path = NULL;
         }
     }
-    if (fc_ft_lib != NULL) {
-        FT_Done_FreeType(fc_ft_lib);
-        fc_ft_lib = NULL;
+    if (FASTCHART_G(ft_lib) != NULL) {
+        FT_Done_FreeType(FASTCHART_G(ft_lib));
+        FASTCHART_G(ft_lib) = NULL;
     }
-    fc_ft_lib_init_failed = 0;
+    FASTCHART_G(ft_lib_init_failed) = 0;
 }
 
 static void copy_family_name(char *out, size_t out_n, const char *src)
