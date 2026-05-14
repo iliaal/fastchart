@@ -566,7 +566,16 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
             }
         }
 
-        double pt = (double)text_strip_h * 0.55;
+        /* Font size targets ~55% of the strip height at 96 DPI; FT
+         * renders at canvas DPI, so the physical glyph height is
+         * pt * canvas_dpi/72. Scale pt down by 96/canvas_dpi so the
+         * rendered text fits the strip regardless of resolution.
+         * Without this, setDpi(200) inflates the rendered text past
+         * the 1/5-of-H strip allocation and the `ty + 2 > H` clamp
+         * below pulls the baseline back into the bars. Min 8pt. */
+        int canvas_dpi = fastchart_target_get_dpi(t);
+        if (canvas_dpi <= 0) canvas_dpi = 96;
+        double pt = (double)text_strip_h * 0.55 * 96.0 / (double)canvas_dpi;
         if (pt < 8.0) pt = 8.0;
 
         /* Measure to position the baseline below the bars. Falls back
@@ -577,7 +586,15 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
             text_h = (int)(pt * 1.2 + 0.5);
         }
         int tx = W / 2;  /* centre anchor; CENTER align handles offset */
-        int ty = bar_bottom + 2 + text_h;
+        /* Center the text vertically within the strip below the bars.
+         * The previous +2 padding produced a visibly tight gap above
+         * the text when text_h consumed most of text_strip_h; the
+         * remaining slack was dumped below the text by accident. */
+        int strip_top = bar_bottom + 1;
+        int slack = text_strip_h - text_h;
+        if (slack < 4) slack = 4;
+        int top_pad = slack / 2;
+        int ty = strip_top + top_pad + text_h;
         if (ty + 2 > H) ty = H - 2;
         (void)fastchart_text_draw(t, text_font, pt, fg, tx, ty,
                                   FASTCHART_ALIGN_CENTER, buf, NULL, 0);
