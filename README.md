@@ -116,45 +116,49 @@ makes labels appear in the rasterized output.
 
 ## 📊 Performance
 
-Median in-memory `renderPng()` time on a single core (Intel i9-13950HX,
-PHP 8.4 NTS, default font + DPI). Same data shape per chart type at
-both resolutions, alphabetical by class name.
+Median in-memory render time at 1920×1080 on a single core (Intel
+i9-13950HX, PHP 8.4 debug build, default font + DPI). SVG is the
+canonical output; PNG / WebP / JPG go through the same SVG build,
+then plutosvg + plutovg rasterize, then the format encoder
+(libpng / libwebp / libjpeg-turbo). The raster columns therefore
+add the rasterize cost on top of the SVG-only number.
 
-| Chart        | 640×480 ms | 1920×1080 ms | 1080p ops/sec |
-|--------------|-----------:|-------------:|--------------:|
-| AreaChart    |         24 |           76 |            13 |
-| BarChart     |         39 |           84 |            12 |
-| BoxPlot      |         16 |           60 |            17 |
-| BubbleChart  |         13 |           62 |            16 |
-| ContourChart |          9 |           52 |            19 |
-| Funnel       |         14 |           52 |            19 |
-| GanttChart   |         18 |           61 |            16 |
-| GaugeChart   |         10 |           60 |            17 |
-| Heatmap      |          9 |           56 |            18 |
-| LineChart    |         21 |           66 |            15 |
-| LinearMeter  |          9 |           50 |            20 |
-| PieChart     |         13 |           59 |            17 |
-| PolarChart   |         10 |           53 |            19 |
-| RadarChart   |         15 |           61 |            16 |
-| ScatterChart |         17 |           60 |            17 |
-| StockChart   |         21 |           68 |            15 |
-| SurfaceChart |          8 |           50 |            20 |
-| Treemap      |         18 |           60 |            17 |
-| Waterfall    |         18 |           61 |            16 |
+| Chart        | SVG ms | PNG ms | WebP ms | JPG ms |
+|--------------|-------:|-------:|--------:|-------:|
+| AreaChart    |    8.2 |   79.5 |   112.1 |   34.8 |
+| BarChart     |   13.4 |   75.6 |   109.2 |   40.3 |
+| BoxPlot      |    5.2 |   65.5 |   101.2 |   31.5 |
+| BubbleChart  |    3.0 |   85.0 |   118.3 |   39.8 |
+| ContourChart |    3.1 |   79.5 |   118.3 |   35.7 |
+| Funnel       |    5.1 |   63.2 |   102.1 |   29.5 |
+| GanttChart   |    6.8 |   66.7 |    99.2 |   31.6 |
+| GaugeChart   |    1.6 |   69.8 |   101.8 |   28.8 |
+| Heatmap      |    1.9 |   63.7 |   100.1 |   32.8 |
+| LineChart    |    6.4 |   75.6 |   119.5 |   36.5 |
+| LinearMeter  |    1.6 |   65.8 |    90.1 |   24.8 |
+| PieChart     |    3.6 |   72.6 |   105.0 |   32.9 |
+| PolarChart   |    1.4 |   72.4 |   106.5 |   31.7 |
+| RadarChart   |    4.0 |   76.2 |   110.8 |   35.9 |
+| ScatterChart |    5.8 |   70.7 |    99.7 |   33.2 |
+| StockChart   |    9.8 |   81.6 |   121.3 |   41.3 |
+| SurfaceChart |    2.5 |   62.6 |   100.3 |   28.8 |
+| Treemap      |    6.1 |   67.2 |   105.2 |   30.7 |
+| Waterfall    |    5.9 |   65.9 |   104.0 |   31.5 |
 
-Every chart type renders in under 100 ms at 1920×1080 on one thread.
-At dashboard-tile size (640×480), the lighter chart types break 100
-renders per second per core.
+SVG is in the single-digit-ms range across the board because there's
+no rasterization — the backend appends strings into a `smart_str`.
+PNG and JPG land in the 60–85 ms band; WebP is the slowest encoder
+(libwebp's encoder costs more than libpng / libjpeg-turbo for our
+typical chart-shaped images). All four formats stay under 125 ms
+at 1080p on one thread.
 
 Repro the numbers locally:
 
 ```sh
-php -d extension=gd -d extension=./modules/fastchart.so \
-    docs/bench/bench.php
+php -d extension=./modules/fastchart.so docs/bench/bench.php
 ```
 
-Iteration counts via `FC_BENCH_SMALL_ITERS` (default 200) and
-`FC_BENCH_LARGE_ITERS` (default 50). Bench source at
+Iteration count via `FC_BENCH_ITERS` (default 50). Bench source at
 [`docs/bench/bench.php`](docs/bench/bench.php).
 
 ## What you can render
