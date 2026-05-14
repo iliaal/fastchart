@@ -2,6 +2,7 @@
 setAxisColor / setGridColor / setBorderColor / setTextColor override theme palette
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 
@@ -19,10 +20,30 @@ $im = imagecreatefromstring($bytes);
 // y-axis (axis color) and the topmost/bottommost grid lines (grid
 // color) overdraw the left, top, and bottom plot borders, so the
 // right border is the surviving stretch in border color.
+//
+// Plutovg's anti-aliasing blends 1px strokes against the white
+// background, so the centerline pixel of an exact-blue stroke ends
+// up around 0x7F7FFF (50% coverage). $has_color un-blends across
+// the alpha range to accept any AA-blended version of $color.
 $has_color = function ($im, $color, $W, $H) {
+    $tr = ($color >> 16) & 0xFF;
+    $tg = ($color >>  8) & 0xFF;
+    $tb =  $color        & 0xFF;
     for ($y = 0; $y < $H; $y++) {
         for ($x = 0; $x < $W; $x++) {
-            if (imagecolorat($im, $x, $y) === $color) return true;
+            $c = imagecolorat($im, $x, $y);
+            $r = ($c >> 16) & 0xFF;
+            $g = ($c >>  8) & 0xFF;
+            $b =  $c        & 0xFF;
+            for ($a = 100; $a >= 30; $a -= 5) {
+                $alpha = $a / 100.0;
+                $er = (int)($tr * $alpha + 255 * (1 - $alpha));
+                $eg = (int)($tg * $alpha + 255 * (1 - $alpha));
+                $eb = (int)($tb * $alpha + 255 * (1 - $alpha));
+                if (abs($r - $er) <= 4 && abs($g - $eg) <= 4 && abs($b - $eb) <= 4) {
+                    return true;
+                }
+            }
         }
     }
     return false;

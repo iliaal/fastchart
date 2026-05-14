@@ -2,6 +2,7 @@
 RadarChart: spider plot with multi-series filled polygons
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

@@ -15,6 +15,7 @@ $c->setSeries([
   ->setCategoryLabels(["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"])
   ->setTitle("Area SVG");
 
+$c->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $svg = $c->renderSvg();
 
 var_dump(is_string($svg));

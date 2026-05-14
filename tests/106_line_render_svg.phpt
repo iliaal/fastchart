@@ -15,6 +15,7 @@ $c->setSeries([
   ->setTitle("Quarterly revenue")
   ->setCategoryLabels(["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug"]);
 
+$c->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $svg = $c->renderSvg();
 
 // Basic shape: non-empty, XML prolog + <svg> root.

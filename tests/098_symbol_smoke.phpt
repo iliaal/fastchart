@@ -2,6 +2,7 @@
 Symbol family smoke: hierarchy registers, abstracts reject, renderPng round-trips
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 
@@ -61,10 +62,10 @@ $png = $qr->renderPng();
 var_dump(strlen($png) > 0);
 var_dump(substr($png, 0, 8) === "\x89PNG\r\n\x1a\n");
 
-// renderJpeg / renderWebp / renderGif each produce non-empty output.
+// renderJpeg / renderWebp each produce non-empty output. GIF and AVIF
+// were dropped in v1.0 — see test 025.
 var_dump(strlen($code->renderJpeg(80)) > 0);
 var_dump(strlen($code->renderWebp(80)) > 0);
-var_dump(strlen($code->renderGif()) > 0);
 
 // renderToFile honours the extension.
 $tmp = tempnam(sys_get_temp_dir(), 'fc-symbol-') . '.png';
@@ -163,7 +164,6 @@ int(0)
 int(1)
 int(2)
 int(3)
-bool(true)
 bool(true)
 bool(true)
 bool(true)

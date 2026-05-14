@@ -2,6 +2,7 @@
 setTransparentBackground preserves alpha channel in PNG output
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

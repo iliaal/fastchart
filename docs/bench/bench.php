@@ -1,26 +1,25 @@
 <?php
 /* fastchart benchmark.
  *
- * Runs each chart type at small (640x480) and large (1920x1080)
- * resolutions, times renderPng() (in-memory encode), and reports
- * median / p95 / ops-per-second.
+ * Renders every chart family at 1920x1080 across the four output
+ * formats (SVG, PNG, JPEG, WebP) and reports median renderXxx() time.
+ * SVG is the canonical output; the raster columns measure
+ * SVG-build + plutosvg+plutovg rasterize + the format encoder.
  *
  * Run:
- *   php -d extension=gd -d extension=./modules/fastchart.so \
- *       docs/bench/bench.php
+ *   php -d extension=./modules/fastchart.so docs/bench/bench.php
  *
- * Iteration counts via env:
- *   FC_BENCH_SMALL_ITERS=500 FC_BENCH_LARGE_ITERS=100
+ * Iteration count via env:
+ *   FC_BENCH_ITERS=100
  *
- * Data shape stays constant across resolutions so the only
- * variable is canvas size.
+ * Data shape stays constant across formats so the only variable is
+ * the encode pipeline.
  */
 
 require __DIR__ . '/../examples/_bootstrap.php';
 
-$N_SMALL = (int)(getenv('FC_BENCH_SMALL_ITERS') ?: 200);
-$N_LARGE = (int)(getenv('FC_BENCH_LARGE_ITERS') ?: 50);
-$WARMUP  = 3;
+$N      = (int)(getenv('FC_BENCH_ITERS') ?: 50);
+$WARMUP = 3;
 
 /* Deterministic data so runs are comparable. */
 mt_srand(42);
@@ -302,43 +301,45 @@ $builders = [
             ->setValueFormat('%.0f%%'),
 ];
 
-$resolutions = [
-    'small (640x480)'  => [640,  480,  $N_SMALL],
-    'large (1920x1080)' => [1920, 1080, $N_LARGE],
+$W = 1920;
+$H = 1080;
+
+$formats = [
+    'SVG'  => fn($c) => $c->renderSvg(),
+    'PNG'  => fn($c) => $c->renderPng(),
+    'WebP' => fn($c) => $c->renderWebp(),
+    'JPG'  => fn($c) => $c->renderJpeg(),
 ];
 
 $php_v = PHP_VERSION;
 $ext_v = FastChart\Chart::version();
 printf("# fastchart bench  ext=%s  php=%s\n", $ext_v, $php_v);
-printf("# warmup=%d  small_iters=%d  large_iters=%d\n\n",
-    $WARMUP, $N_SMALL, $N_LARGE);
+printf("# resolution=%dx%d  warmup=%d  iters=%d\n\n",
+    $W, $H, $WARMUP, $N);
 
-printf("%-14s %-18s %10s %10s %12s %12s\n",
-    'chart', 'resolution', 'median_ms', 'p95_ms', 'ops_per_sec', 'png_bytes');
-printf("%s\n", str_repeat('-', 80));
+printf("%-14s %10s %10s %10s %10s\n",
+    'chart', 'svg_ms', 'png_ms', 'webp_ms', 'jpg_ms');
+printf("%s\n", str_repeat('-', 60));
 
 foreach ($builders as $name => $build) {
-    foreach ($resolutions as $reso_name => [$w, $h, $N]) {
+    $medians = [];
+    foreach ($formats as $fmt => $encode) {
         for ($i = 0; $i < $WARMUP; $i++) {
-            $build($w, $h)->renderPng();
+            $encode($build($W, $H));
         }
-
         $samples = [];
-        $bytes = 0;
         for ($i = 0; $i < $N; $i++) {
             $t0 = hrtime(true);
-            $png = $build($w, $h)->renderPng();
+            $encode($build($W, $H));
             $samples[] = (hrtime(true) - $t0) / 1e6;
-            if ($i === 0) $bytes = strlen($png);
         }
         sort($samples);
-        $median = $samples[(int)floor(count($samples) * 0.5)];
-        $p95    = $samples[(int)floor(count($samples) * 0.95)];
-        $ops    = 1000.0 / $median;
-
-        printf("%-14s %-18s %10.2f %10.2f %12.1f %12d\n",
-            $name, $reso_name, $median, $p95, $ops, $bytes);
+        $medians[$fmt] = $samples[(int)floor(count($samples) * 0.5)];
     }
+    printf("%-14s %10.2f %10.2f %10.2f %10.2f\n",
+        $name,
+        $medians['SVG'], $medians['PNG'],
+        $medians['WebP'], $medians['JPG']);
 }
 
 printf("\n# done\n");

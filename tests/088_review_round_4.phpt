@@ -2,6 +2,7 @@
 Review-round 4: physical-pixel product cap + rotated label perf with TICK_POINTS
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

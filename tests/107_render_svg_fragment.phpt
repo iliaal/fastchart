@@ -11,6 +11,7 @@ $c = new FastChart\LineChart(320, 200);
 $c->setSeries([10, 20, 15, 25, 18])
   ->setTitle("frag");
 
+$c->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $frag = $c->drawSvgFragment();
 var_dump(is_string($frag));
 var_dump(strlen($frag) > 200);

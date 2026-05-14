@@ -2,6 +2,7 @@
 QrCode: encoder + renderer produce a structurally valid symbol grid
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

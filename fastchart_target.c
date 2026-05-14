@@ -16,17 +16,28 @@
 
 #include "php.h"
 #include "Zend/zend_smart_str.h"
+#include "Zend/zend_exceptions.h"
+#include "ext/standard/base64.h"
+#include "main/php_streams.h"
 
-#include <gd.h>
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
 #include "fastchart_target.h"
 #include "fastchart_svg.h"
+#include "php_fastchart.h"
+
+/* Source-image caps. Mirrors the values in fastchart_axis.c; kept
+ * here so the target-level emitter can enforce them without a header
+ * cycle. */
+#define FC_IMAGE_MAX_BYTES   (8 * 1024 * 1024)
+#define FC_IMAGE_MAX_DIM     4096
+#define FC_IMAGE_MAX_PIXELS  (16 * 1024 * 1024)
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -36,20 +47,9 @@
  * Init                                                          *
  * ============================================================ */
 
-void fastchart_target_from_gd(fastchart_target_t *t, gdImagePtr im, int dpi)
-{
-    memset(t, 0, sizeof(*t));
-    t->kind = FASTCHART_TARGET_GD;
-    t->u.gd.im = im;
-    t->u.gd.last_thickness = -1;
-    t->u.gd.last_dash = -1;
-    t->u.gd.dash_color = -1;
-    t->u.gd.clip_saved = 0;
-    (void)dpi;  /* DPI lives on the gdImage via gdImageSetResolution */
-}
-
 void fastchart_target_from_svg(fastchart_target_t *t, smart_str *buf,
-                                int width, int height, int dpi)
+                                int width, int height, int dpi,
+                                int text_mode)
 {
     memset(t, 0, sizeof(*t));
     t->kind = FASTCHART_TARGET_SVG;
@@ -63,11 +63,15 @@ void fastchart_target_from_svg(fastchart_target_t *t, smart_str *buf,
      * the chart's DPI here would inflate label-reserved margins and
      * make text-measurement reserve room for 2x glyphs that the SVG
      * still emits at 1x — producing the "huge left margin" symptom.
-     * The `dpi` parameter is accepted for signature uniformity with
-     * the GD constructor but is intentionally ignored. */
+     * The `dpi` parameter is accepted for signature stability but is
+     * intentionally ignored. */
     (void)dpi;
     t->u.svg.dpi = 96;
     t->u.svg.next_clip_id = 1;
+    t->u.svg.next_grad_id = 1;
+    t->u.svg.text_mode = (text_mode == FASTCHART_SVG_TEXT_NATIVE)
+        ? FASTCHART_SVG_TEXT_NATIVE
+        : FASTCHART_SVG_TEXT_PATHS;
 }
 
 /* ============================================================ *
@@ -93,18 +97,6 @@ int fastchart_target_color(fastchart_target_t *t, int r, int g, int b, int a)
     }
     int idx = t->n_colors++;
     t->color_rgba[idx] = key;
-    if (t->kind == FASTCHART_TARGET_GD) {
-        /* libgd alpha is 0..127 where 0 is opaque and 127 is
-         * transparent — inverse of the 0..255 a-channel convention
-         * we use. Translate at the boundary. */
-        int gd_alpha = (255 - a) >> 1;          /* 0..127 */
-        if (gd_alpha < 0) gd_alpha = 0;
-        if (gd_alpha > 127) gd_alpha = 127;
-        t->color_gd_int[idx] = gdImageColorAllocateAlpha(
-            t->u.gd.im, r, g, b, gd_alpha);
-    } else {
-        t->color_gd_int[idx] = -1;
-    }
     return idx;
 }
 
@@ -114,12 +106,6 @@ int fastchart_target_color_rgb(fastchart_target_t *t, int rgb)
     int g = (rgb >>  8) & 0xFF;
     int b =  rgb        & 0xFF;
     return fastchart_target_color(t, r, g, b, 0xFF);
-}
-
-int fastchart_target_color_to_gd(fastchart_target_t *t, int handle)
-{
-    if (handle < 0 || handle >= t->n_colors) return -1;
-    return t->color_gd_int[handle];
 }
 
 uint32_t fastchart_target_color_to_rgba(fastchart_target_t *t, int handle)
@@ -134,63 +120,13 @@ uint32_t fastchart_target_color_to_rgba(fastchart_target_t *t, int handle)
 
 void fastchart_target_get_dims(fastchart_target_t *t, int *w, int *h)
 {
-    if (t->kind == FASTCHART_TARGET_GD) {
-        *w = gdImageSX(t->u.gd.im);
-        *h = gdImageSY(t->u.gd.im);
-    } else {
-        *w = t->u.svg.width;
-        *h = t->u.svg.height;
-    }
+    *w = t->u.svg.width;
+    *h = t->u.svg.height;
 }
 
 int fastchart_target_get_dpi(fastchart_target_t *t)
 {
-    if (t->kind == FASTCHART_TARGET_GD) {
-        int dpi = (int)gdImageResolutionX(t->u.gd.im);
-        return dpi > 0 ? dpi : 96;
-    }
     return t->u.svg.dpi;
-}
-
-/* ============================================================ *
- * GD-side: thickness / dash modal state                         *
- * ============================================================ */
-
-/* libgd line-style arrays. Indices match FASTCHART_DASH_*. The arrays
- * are reset on each install so the dash always starts from the same
- * phase; libgd's internal style cursor isn't externally visible. */
-static void gd_install_dash(fastchart_target_t *t, int dash, int color)
-{
-    if (dash == FASTCHART_DASH_SOLID) {
-        if (t->u.gd.last_dash != FASTCHART_DASH_SOLID) {
-            /* No off-switch in libgd for SetStyle; we just stop
-             * passing gdStyled as the color. Track for symmetry. */
-            t->u.gd.last_dash = FASTCHART_DASH_SOLID;
-            t->u.gd.dash_color = -1;
-        }
-        return;
-    }
-    if (dash == t->u.gd.last_dash && color == t->u.gd.dash_color) return;
-
-    if (dash == FASTCHART_DASH_DOTTED) {
-        int style[3] = { color, gdTransparent, gdTransparent };
-        gdImageSetStyle(t->u.gd.im, style, 3);
-    } else {
-        /* DASHED. 4 on / 3 off. */
-        int style[7] = { color, color, color, color,
-                         gdTransparent, gdTransparent, gdTransparent };
-        gdImageSetStyle(t->u.gd.im, style, 7);
-    }
-    t->u.gd.last_dash = dash;
-    t->u.gd.dash_color = color;
-}
-
-static void gd_set_thickness(fastchart_target_t *t, int thickness)
-{
-    if (thickness < 1) thickness = 1;
-    if (thickness == t->u.gd.last_thickness) return;
-    gdImageSetThickness(t->u.gd.im, thickness);
-    t->u.gd.last_thickness = thickness;
 }
 
 /* ============================================================ *
@@ -201,18 +137,6 @@ void fastchart_target_line(fastchart_target_t *t,
                             int x0, int y0, int x1, int y1,
                             int color, int thickness, int dash)
 {
-    if (t->kind == FASTCHART_TARGET_GD) {
-        int gd_color = fastchart_target_color_to_gd(t, color);
-        if (gd_color < 0) return;
-        gd_set_thickness(t, thickness);
-        if (dash != FASTCHART_DASH_SOLID) {
-            gd_install_dash(t, dash, gd_color);
-            gdImageLine(t->u.gd.im, x0, y0, x1, y1, gdStyled);
-        } else {
-            gdImageLine(t->u.gd.im, x0, y0, x1, y1, gd_color);
-        }
-        return;
-    }
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
     fc_svg_emit_line(t->u.svg.buf, x0, y0, x1, y1, rgba, thickness, dash);
 }
@@ -221,37 +145,15 @@ void fastchart_target_rect(fastchart_target_t *t,
                             int x, int y, int w, int h,
                             int color, int fill, int thickness)
 {
-    if (t->kind == FASTCHART_TARGET_GD) {
-        int gd_color = fastchart_target_color_to_gd(t, color);
-        if (gd_color < 0) return;
-        if (fill) {
-            gdImageFilledRectangle(t->u.gd.im, x, y, x + w - 1, y + h - 1, gd_color);
-        } else {
-            gd_set_thickness(t, thickness);
-            gdImageRectangle(t->u.gd.im, x, y, x + w - 1, y + h - 1, gd_color);
-        }
-        return;
-    }
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
     fc_svg_emit_rect(t->u.svg.buf, x, y, w, h, rgba, fill, thickness);
 }
 
 void fastchart_target_polygon(fastchart_target_t *t,
-                               const gdPoint *pts, int n,
+                               const fastchart_point_t *pts, int n,
                                int color, int fill, int thickness)
 {
     if (n < 2) return;
-    if (t->kind == FASTCHART_TARGET_GD) {
-        int gd_color = fastchart_target_color_to_gd(t, color);
-        if (gd_color < 0) return;
-        if (fill) {
-            gdImageFilledPolygon(t->u.gd.im, (gdPointPtr)pts, n, gd_color);
-        } else {
-            gd_set_thickness(t, thickness);
-            gdImagePolygon(t->u.gd.im, (gdPointPtr)pts, n, gd_color);
-        }
-        return;
-    }
     /* SVG path needs separate int arrays. Stack-buffer up to 256
      * points, else heap. Charts rarely exceed ~64 points in a polygon
      * (markers are 3-8; area fills can be larger but still bounded). */
@@ -275,23 +177,6 @@ void fastchart_target_arc(fastchart_target_t *t,
                            double start_deg, double end_deg,
                            int color, int fill, int thickness)
 {
-    if (t->kind == FASTCHART_TARGET_GD) {
-        int gd_color = fastchart_target_color_to_gd(t, color);
-        if (gd_color < 0) return;
-        int diam_w = rx * 2;
-        int diam_h = ry * 2;
-        int sd = (int)(start_deg + 0.5);
-        int ed = (int)(end_deg   + 0.5);
-        if (fill) {
-            gdImageFilledArc(t->u.gd.im, cx, cy, diam_w, diam_h,
-                             sd, ed, gd_color, gdPie);
-        } else {
-            gd_set_thickness(t, thickness);
-            gdImageArc(t->u.gd.im, cx, cy, diam_w, diam_h,
-                       sd, ed, gd_color);
-        }
-        return;
-    }
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
     fc_svg_emit_path_arc(t->u.svg.buf, cx, cy, rx, ry,
                           start_deg, end_deg, rgba, fill, thickness);
@@ -301,17 +186,6 @@ void fastchart_target_ellipse(fastchart_target_t *t,
                                int cx, int cy, int rx, int ry,
                                int color, int fill, int thickness)
 {
-    if (t->kind == FASTCHART_TARGET_GD) {
-        int gd_color = fastchart_target_color_to_gd(t, color);
-        if (gd_color < 0) return;
-        if (fill) {
-            gdImageFilledEllipse(t->u.gd.im, cx, cy, rx * 2, ry * 2, gd_color);
-        } else {
-            gd_set_thickness(t, thickness);
-            gdImageEllipse(t->u.gd.im, cx, cy, rx * 2, ry * 2, gd_color);
-        }
-        return;
-    }
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
     fc_svg_emit_ellipse(t->u.svg.buf, cx, cy, rx, ry, rgba, fill, thickness);
 }
@@ -320,29 +194,106 @@ void fastchart_target_ellipse(fastchart_target_t *t,
  * Font family resolution via FreeType                           *
  * ============================================================ */
 
-static FT_Library fc_ft_lib = NULL;
-static int fc_ft_lib_init_failed = 0;
+/* FT state lives in TSRM module globals (see ZEND_BEGIN_MODULE_GLOBALS
+ * in php_fastchart.h). Under NTS this is one struct shared process-
+ * wide; under ZTS each thread gets its own copy via TSRM. No mutex
+ * needed: FreeType operations on different FT_Library handles are
+ * independent, and the face cache lives inside each thread's
+ * globals so no two threads ever share an FT_Face.
+ *
+ * The "4-slot LRU" sizing matches the typical mixed-font dashboard:
+ * one chart font, one symbol font, two for axis-label/title splits.
+ * Linear scan + swap-to-front on hit keeps the hot path at slot 0. */
 
-/* Lazily init the per-process FT library. We never tear it down —
- * FT_Done_FreeType in MSHUTDOWN would race with any in-flight render
- * on ZTS, and the leak at process exit is negligible. */
-static FT_Library fc_get_ft_library(void)
+FT_Library fastchart_ft_library(void)
 {
-    if (fc_ft_lib != NULL) return fc_ft_lib;
-    if (fc_ft_lib_init_failed) return NULL;
-    if (FT_Init_FreeType(&fc_ft_lib) != 0) {
-        fc_ft_lib = NULL;
-        fc_ft_lib_init_failed = 1;
+    if (FASTCHART_G(ft_lib) != NULL)     return FASTCHART_G(ft_lib);
+    if (FASTCHART_G(ft_lib_init_failed)) return NULL;
+    FT_Library lib = NULL;
+    if (FT_Init_FreeType(&lib) != 0) {
+        FASTCHART_G(ft_lib) = NULL;
+        FASTCHART_G(ft_lib_init_failed) = 1;
         return NULL;
     }
-    return fc_ft_lib;
+    FASTCHART_G(ft_lib) = lib;
+    return lib;
+}
+
+FT_Face fastchart_ft_face(const char *font_path)
+{
+    if (!font_path) return NULL;
+    FT_Library lib = fastchart_ft_library();
+    if (!lib) return NULL;
+
+    fc_ft_face_slot *cache = FASTCHART_G(ft_face_cache);
+
+    /* Hit? Swap-to-front to keep the hot path at slot 0. */
+    for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
+        if (cache[i].path && strcmp(cache[i].path, font_path) == 0) {
+            if (i != 0) {
+                fc_ft_face_slot tmp = cache[0];
+                cache[0] = cache[i];
+                cache[i] = tmp;
+            }
+            return cache[0].face;
+        }
+    }
+
+    /* Miss. Build the new entry (malloc + FT_New_Face) BEFORE
+     * evicting anything so a failure mid-build leaves the cache
+     * untouched. */
+    size_t path_len = strlen(font_path);
+    char  *path_copy = malloc(path_len + 1);
+    if (!path_copy) return NULL;
+    memcpy(path_copy, font_path, path_len + 1);
+
+    FT_Face face = NULL;
+    if (FT_New_Face(lib, font_path, 0, &face)) {
+        free(path_copy);
+        return NULL;
+    }
+
+    /* Evict the tail slot, shift right, install at slot 0. */
+    int tail = FC_FT_FACE_CACHE_N - 1;
+    if (cache[tail].face) FT_Done_Face(cache[tail].face);
+    if (cache[tail].path) free(cache[tail].path);
+    for (int i = tail; i > 0; i--) {
+        cache[i] = cache[i - 1];
+    }
+    cache[0].path = path_copy;
+    cache[0].face = face;
+    return face;
+}
+
+void fastchart_ft_library_shutdown(void)
+{
+    /* Free cached faces explicitly. FT_Done_FreeType would walk and
+     * free them anyway, but doing it ourselves keeps the cache state
+     * machine deterministic and the path-string ownership tidy.
+     * Called from PHP_GSHUTDOWN — once per thread under ZTS, once
+     * at MSHUTDOWN under NTS. */
+    fc_ft_face_slot *cache = FASTCHART_G(ft_face_cache);
+    for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
+        if (cache[i].face) {
+            FT_Done_Face(cache[i].face);
+            cache[i].face = NULL;
+        }
+        if (cache[i].path) {
+            free(cache[i].path);
+            cache[i].path = NULL;
+        }
+    }
+    if (FASTCHART_G(ft_lib) != NULL) {
+        FT_Done_FreeType(FASTCHART_G(ft_lib));
+        FASTCHART_G(ft_lib) = NULL;
+    }
+    FASTCHART_G(ft_lib_init_failed) = 0;
 }
 
 static void copy_family_name(char *out, size_t out_n, const char *src)
 {
     if (!src || !*src) {
-        strncpy(out, "sans-serif", out_n - 1);
-        out[out_n - 1] = '\0';
+        snprintf(out, out_n, "sans-serif");
         return;
     }
     /* Allow ASCII letters/digits/space/hyphen/underscore through; any
@@ -358,8 +309,7 @@ static void copy_family_name(char *out, size_t out_n, const char *src)
         }
     }
     if (j == 0) {
-        strncpy(out, "sans-serif", out_n - 1);
-        out[out_n - 1] = '\0';
+        snprintf(out, out_n, "sans-serif");
         return;
     }
     out[j] = '\0';
@@ -381,24 +331,19 @@ void fastchart_target_resolve_font_family(fastchart_target_t *t,
         fastchart_target_font_cache_entry *e = &t->font_cache[i];
         if (e->path == font_path
             || (e->path && strcmp(e->path, font_path) == 0)) {
-            strncpy(out, e->family, out_n - 1);
-            out[out_n - 1] = '\0';
+            snprintf(out, out_n, "%s", e->family);
             return;
         }
     }
 
-    /* FT lookup. */
+    /* FT lookup via the shared face cache. The face is owned by the
+     * cache; family_name is a pointer into face-owned memory so we
+     * copy the bytes out before the next caller might mutate face
+     * state. */
     char raw[128] = "";
-    FT_Library lib = fc_get_ft_library();
-    if (lib) {
-        FT_Face face = NULL;
-        if (FT_New_Face(lib, font_path, 0, &face) == 0 && face) {
-            if (face->family_name) {
-                strncpy(raw, face->family_name, sizeof(raw) - 1);
-                raw[sizeof(raw) - 1] = '\0';
-            }
-            FT_Done_Face(face);
-        }
+    FT_Face face = fastchart_ft_face(font_path);
+    if (face && face->family_name) {
+        snprintf(raw, sizeof(raw), "%s", face->family_name);
     }
     copy_family_name(out, out_n, raw[0] ? raw : NULL);
 
@@ -409,8 +354,7 @@ void fastchart_target_resolve_font_family(fastchart_target_t *t,
         fastchart_target_font_cache_entry *e =
             &t->font_cache[t->font_cache_n++];
         e->path = font_path;
-        strncpy(e->family, out, sizeof(e->family) - 1);
-        e->family[sizeof(e->family) - 1] = '\0';
+        snprintf(e->family, sizeof(e->family), "%s", out);
     }
 }
 
@@ -426,43 +370,23 @@ void fastchart_target_text(fastchart_target_t *t,
 {
     if (!text || !*text) return;
 
-    if (t->kind == FASTCHART_TARGET_GD) {
-        /* The GD backend's text path stays inside fastchart_text.c —
-         * it already handles alignment, multi-line, FT error reporting.
-         * This entry exists so SVG callers have a uniform call shape,
-         * but in practice chart families call fastchart_text_draw*
-         * directly for GD. Forward via gdImageStringFTEx as a safety
-         * net; thin wrapper, no alignment handling here. */
-        int gd_color = fastchart_target_color_to_gd(t, color);
-        if (gd_color < 0) return;
-        int brect[8];
-        double rad = angle_deg * M_PI / 180.0;
-        /* Apply alignment by measuring then offsetting x. */
-        int dx = 0;
-        if (align != FASTCHART_TARGET_ALIGN_LEFT) {
-            gdImageStringFTEx(NULL, brect, -gd_color,
-                              (char *)font_path, size_pt, 0.0, 0, 0,
-                              (char *)text, NULL);
-            int w = brect[2] - brect[0];
-            dx = (align == FASTCHART_TARGET_ALIGN_CENTER) ? -w / 2 : -w;
-        }
-        gdImageStringFTEx(t->u.gd.im, brect, -gd_color,
-                          (char *)font_path, size_pt, rad,
-                          x + dx, y, (char *)text, NULL);
-        return;
-    }
-
     /* SVG. size_pt -> size_px at 96 DPI baseline: px = pt * 4/3. */
     double size_px = size_pt * (4.0 / 3.0);
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
     char family[64];
     fastchart_target_resolve_font_family(t, font_path, family, sizeof(family));
-    /* FUTURE: setSvgTextMode(SVG_TEXT_PATHS) for path-embedded
-     * glyphs. Today we emit a CSS `<text>` element with the family
-     * resolved above; viewers without the named font fall through
-     * to `sans-serif`. */
-    fc_svg_emit_text(t->u.svg.buf, x, y, family, size_px,
-                      rgba, angle_deg, align, text, strlen(text));
+
+    if (t->u.svg.text_mode == FASTCHART_SVG_TEXT_PATHS) {
+        /* Flatten each glyph to <path> via FreeType outline
+         * decomposition. Self-contained — renders in plutovg / any
+         * SVG rasterizer without text infrastructure. */
+        fc_svg_emit_text_as_path(t->u.svg.buf, x, y, font_path, size_px,
+                                  rgba, angle_deg, align, text, strlen(text));
+    } else {
+        /* Native <text>: smaller files; needs consumer text support. */
+        fc_svg_emit_text(t->u.svg.buf, x, y, family, size_px,
+                          rgba, angle_deg, align, text, strlen(text));
+    }
 }
 
 /* ============================================================ *
@@ -472,26 +396,6 @@ void fastchart_target_text(fastchart_target_t *t,
 void fastchart_target_clip_push(fastchart_target_t *t,
                                  int x, int y, int w, int h)
 {
-    if (t->kind == FASTCHART_TARGET_GD) {
-        /* libgd has only one clip rect at a time. We save it on the
-         * first push and restore on the matching last pop, supporting
-         * a single level of nesting (which is all chart families use
-         * today). Deeper nesting would need a real stack with
-         * gdImageGetClip on every push; defer until needed. */
-        if (t->clip_depth == 0) {
-            gdImageGetClip(t->u.gd.im,
-                           &t->u.gd.saved_clip_x0,
-                           &t->u.gd.saved_clip_y0,
-                           &t->u.gd.saved_clip_x1,
-                           &t->u.gd.saved_clip_y1);
-            t->u.gd.clip_saved = 1;
-        }
-        gdImageSetClip(t->u.gd.im, x, y, x + w - 1, y + h - 1);
-        if (t->clip_depth < FASTCHART_TARGET_CLIP_DEPTH) {
-            t->clip_stack[t->clip_depth++] = 1;
-        }
-        return;
-    }
     int id = t->u.svg.next_clip_id++;
     if (t->clip_depth < FASTCHART_TARGET_CLIP_DEPTH) {
         t->clip_stack[t->clip_depth++] = id;
@@ -502,17 +406,6 @@ void fastchart_target_clip_push(fastchart_target_t *t,
 void fastchart_target_clip_pop(fastchart_target_t *t)
 {
     if (t->clip_depth > 0) t->clip_depth--;
-    if (t->kind == FASTCHART_TARGET_GD) {
-        if (t->clip_depth == 0 && t->u.gd.clip_saved) {
-            gdImageSetClip(t->u.gd.im,
-                           t->u.gd.saved_clip_x0,
-                           t->u.gd.saved_clip_y0,
-                           t->u.gd.saved_clip_x1,
-                           t->u.gd.saved_clip_y1);
-            t->u.gd.clip_saved = 0;
-        }
-        return;
-    }
     fc_svg_emit_clip_close(t->u.svg.buf);
 }
 
@@ -520,25 +413,209 @@ void fastchart_target_clip_pop(fastchart_target_t *t)
  * Image blit                                                    *
  * ============================================================ */
 
+/* Sniff first 16 bytes of `data` (len `n`) to recover a MIME type
+ * the SVG <image> data URI loader can decode. Returns "image/png" /
+ * "image/jpeg" or NULL for unsupported formats. WebP / GIF / AVIF
+ * are unsupported by plutosvg's data-URI path, so they fall through
+ * to NULL and the caller skips emission. */
+static const char *fc_sniff_image_mime(const unsigned char *data, size_t n)
+{
+    if (n < 8) return NULL;
+    if (data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G'
+        && data[4] == '\r' && data[5] == '\n' && data[6] == 0x1A
+        && data[7] == '\n') {
+        return "image/png";
+    }
+    if (data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) {
+        return "image/jpeg";
+    }
+    return NULL;
+}
+
+/* Sniff width/height for a PNG or JPEG buffer. Returns 0 on success,
+ * -1 if the header layout doesn't yield dimensions. Mirrors the
+ * fastchart_axis.c routine but operates on an in-memory buffer. */
+static int fc_sniff_image_dims_mem(const unsigned char *b, size_t n,
+                                    int *out_w, int *out_h)
+{
+    if (n < 24) return -1;
+    if (b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G') {
+        *out_w = (b[16] << 24) | (b[17] << 16) | (b[18] << 8) | b[19];
+        *out_h = (b[20] << 24) | (b[21] << 16) | (b[22] << 8) | b[23];
+        return 0;
+    }
+    if (b[0] == 0xFF && b[1] == 0xD8) {
+        size_t i = 2;
+        while (i + 9 < n) {
+            if (b[i] != 0xFF) return -1;
+            unsigned char marker = b[i + 1];
+            if (marker == 0x00 || marker == 0xFF) { i++; continue; }
+            if (marker == 0xD8 || marker == 0xD9) { i += 2; continue; }
+            if ((marker >= 0xC0 && marker <= 0xCF)
+                && marker != 0xC4 && marker != 0xC8 && marker != 0xCC) {
+                *out_h = (b[i + 5] << 8) | b[i + 6];
+                *out_w = (b[i + 7] << 8) | b[i + 8];
+                return 0;
+            }
+            unsigned int seg_len = (b[i + 2] << 8) | b[i + 3];
+            if (seg_len < 2) return -1;
+            i += 2 + seg_len;
+        }
+    }
+    return -1;
+}
+
+/* Load `path` once through the PHP stream layer. The stream wrapper
+ * enforces open_basedir natively, so there is no TOCTOU window
+ * between an open_basedir check and the open. Reads up to
+ * FC_IMAGE_MAX_BYTES + 1 so a file at exactly the cap passes while a
+ * file one byte over gets rejected (php_stream_copy_to_mem with a
+ * smaller cap would silently truncate). On success populates *out
+ * with the bytes, sniffed MIME type, and declared width/height, then
+ * applies the dimension caps. Returns 0 / -1; on -1 nothing is
+ * allocated. */
+int fastchart_target_load_source_image(const char *path,
+                                       fastchart_image_buf_t *out)
+{
+    if (!path || !*path || !out) return -1;
+    memset(out, 0, sizeof(*out));
+
+    /* Suppress the E_WARNING the stream wrapper would emit on
+     * open_basedir refusal / missing file. Background-image and
+     * icon callers fall back to their solid-color backup; the
+     * refusal isn't an error condition from their POV. */
+    int er = EG(error_reporting);
+    EG(error_reporting) = 0;
+    php_stream *stream = php_stream_open_wrapper((char *)path, "rb",
+        IGNORE_PATH | IGNORE_URL, NULL);
+    EG(error_reporting) = er;
+    if (!stream) {
+        if (EG(exception)) zend_clear_exception();
+        return -1;
+    }
+
+    /* Reject non-regular files (directories, FIFOs, sockets, char
+     * devices, /proc entries). The stream wrapper happily opens any
+     * readable inode; without this check a render fed
+     * /proc/self/maps would either trip the byte cap or return
+     * unbounded data before the MIME sniff rejects it. The stat
+     * call uses the stream's own backend (so wrappers without a real
+     * stat — http, php://memory — silently fall through and the
+     * MIME sniff is the only gate; that's intentional). */
+    php_stream_statbuf ssb;
+    if (php_stream_stat(stream, &ssb) == 0) {
+        if (!S_ISREG(ssb.sb.st_mode)) {
+            php_stream_close(stream);
+            return -1;
+        }
+    }
+
+    zend_string *raw =
+        php_stream_copy_to_mem(stream, FC_IMAGE_MAX_BYTES + 1, 0);
+    php_stream_close(stream);
+    if (!raw) return -1;
+    size_t n = ZSTR_LEN(raw);
+    if (n == 0 || n > FC_IMAGE_MAX_BYTES) {
+        zend_string_release(raw);
+        return -1;
+    }
+
+    const unsigned char *bytes = (const unsigned char *)ZSTR_VAL(raw);
+    const char *mime = fc_sniff_image_mime(bytes, n);
+    if (!mime) {
+        zend_string_release(raw);
+        return -1;
+    }
+
+    int src_w = 0, src_h = 0;
+    if (fc_sniff_image_dims_mem(bytes, n, &src_w, &src_h) != 0) {
+        /* MIME passed but dimensions couldn't be recovered — refuse
+         * the load. The dim cap is part of the contract; we don't
+         * accept inputs the cap can't enforce. */
+        zend_string_release(raw);
+        return -1;
+    }
+    if (src_w <= 0 || src_h <= 0
+        || src_w > FC_IMAGE_MAX_DIM
+        || src_h > FC_IMAGE_MAX_DIM
+        || (long long)src_w * (long long)src_h
+            > (long long)FC_IMAGE_MAX_PIXELS) {
+        zend_string_release(raw);
+        return -1;
+    }
+
+    out->bytes  = raw;
+    out->mime   = mime;
+    out->width  = src_w;
+    out->height = src_h;
+    return 0;
+}
+
+void fastchart_target_image_release(fastchart_image_buf_t *buf)
+{
+    if (buf && buf->bytes) {
+        zend_string_release(buf->bytes);
+        buf->bytes = NULL;
+    }
+}
+
+void fastchart_target_image_emit(fastchart_target_t *t,
+                                 int x, int y, int w, int h,
+                                 const fastchart_image_buf_t *buf)
+{
+    if (!t || !buf || !buf->bytes || !buf->mime) return;
+    if (w <= 0 || h <= 0) return;
+
+    zend_string *b64 = php_base64_encode(
+        (const unsigned char *)ZSTR_VAL(buf->bytes),
+        ZSTR_LEN(buf->bytes));
+    if (!b64) return;
+    fc_svg_emit_image_uri(t->u.svg.buf, x, y, w, h, buf->mime, ZSTR_VAL(b64));
+    zend_string_release(b64);
+}
+
 void fastchart_target_image(fastchart_target_t *t,
                              int x, int y, int w, int h,
-                             gdImagePtr src)
+                             const char *path)
 {
-    if (t->kind == FASTCHART_TARGET_GD) {
-        if (!src) return;
-        gdImageCopyResampled(t->u.gd.im, src,
-                              x, y, 0, 0,
-                              w, h,
-                              gdImageSX(src), gdImageSY(src));
-        return;
+    if (w <= 0 || h <= 0) return;
+
+    fastchart_image_buf_t buf;
+    if (fastchart_target_load_source_image(path, &buf) != 0) return;
+    fastchart_target_image_emit(t, x, y, w, h, &buf);
+    fastchart_target_image_release(&buf);
+}
+
+void fastchart_target_gradient_rect(fastchart_target_t *t,
+                                     int x, int y, int w, int h,
+                                     uint32_t from_rgb, uint32_t to_rgb,
+                                     int dir)
+{
+    if (w <= 0 || h <= 0) return;
+    int id = t->u.svg.next_grad_id++;
+    fc_svg_emit_gradient_rect(t->u.svg.buf, id, x, y, w, h,
+                               from_rgb, to_rgb, dir);
+}
+
+void fastchart_target_gradient_polygon(fastchart_target_t *t,
+                                        const fastchart_point_t *pts,
+                                        int n,
+                                        uint32_t from_rgb, uint32_t to_rgb,
+                                        int dir)
+{
+    if (n < 3) return;
+    int xs_stack[256], ys_stack[256];
+    int *xs = xs_stack, *ys = ys_stack;
+    if (n > 256) {
+        xs = emalloc(sizeof(int) * (size_t)n);
+        ys = emalloc(sizeof(int) * (size_t)n);
     }
-    /* FUTURE: base64-encode src's PNG bytes via gdImagePngPtr and
-     * emit <image href="data:image/png;base64,..."/>. For PR 1 we
-     * emit a labeled placeholder so an IconPlot on an SVG render
-     * is visually obvious during development without crashing. */
-    smart_str *buf = t->u.svg.buf;
-    smart_str_appends(buf,
-        "<!-- IconPlot blit not yet supported in SVG -->\n");
-    uint32_t placeholder = 0xFFCCCCCCu;
-    fc_svg_emit_rect(buf, x, y, w, h, placeholder, 0, 1);
+    for (int i = 0; i < n; i++) {
+        xs[i] = pts[i].x;
+        ys[i] = pts[i].y;
+    }
+    int id = t->u.svg.next_grad_id++;
+    fc_svg_emit_gradient_polygon(t->u.svg.buf, id, xs, ys, n,
+                                  from_rgb, to_rgb, dir);
+    if (n > 256) { efree(xs); efree(ys); }
 }

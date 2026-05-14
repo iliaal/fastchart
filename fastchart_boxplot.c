@@ -22,7 +22,6 @@
 #include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
-#include "fastchart_effects.h"
 
 #define MAX_BOXES   64
 #define MAX_OUTLIER 32
@@ -85,9 +84,6 @@ int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_ta
     int box_w = slot_w * box_pct / 100;
     if (box_w < 4) box_w = 4;
 
-    bool gd = (t->kind == FASTCHART_TARGET_GD);
-    gdImagePtr im = gd ? t->u.gd.im : NULL;
-
     int edge_handle = self->edge_color >= 0
         ? fastchart_target_color_rgb(t, (int)self->edge_color)
         : pal.axis;
@@ -120,13 +116,8 @@ int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_ta
                               pal.axis, 1, FASTCHART_DASH_SOLID);
 
         /* Q1..Q3 box. */
-        if (gd) {
-            fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y_q3, x1, y_q1);
-            gdImageAlphaBlending(im, 1);
-        }
         fastchart_target_rect(t, x0, y_q3, x1 - x0 + 1, y_q1 - y_q3 + 1,
                               alpha, 1, 0);
-        if (gd) gdImageAlphaBlending(im, 0);
         fastchart_target_rect(t, x0, y_q3, x1 - x0 + 1, y_q1 - y_q3 + 1,
                               edge_handle, 0, 1);
 
@@ -157,31 +148,4 @@ int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_ta
         }
     }
     return 0;
-}
-
-/* GD-only shim. */
-int fastchart_boxplot_render_to_image(fastchart_boxplot_obj *self, gdImagePtr im)
-{
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
-    return fastchart_boxplot_render_to_target(self, &t);
-}
-
-ZEND_METHOD(FastChart_BoxPlot, draw)
-{
-    zval *canvas_zv;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
-    ZEND_PARSE_PARAMETERS_END();
-    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\BoxPlot::draw() received a closed or invalid GdImage");
-        RETURN_THROWS();
-    }
-    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
-    fastchart_boxplot_obj *self = Z_FASTCHART_BOXPLOT_OBJ_P(ZEND_THIS);
-    if (fastchart_boxplot_render_to_image(self, im) != 0) {
-        RETURN_THROWS();
-    }
-    RETURN_ZVAL(canvas_zv, 1, 0);
 }

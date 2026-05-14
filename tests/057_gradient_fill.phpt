@@ -2,6 +2,7 @@
 setGradientFill applies a linear color gradient to filled shapes
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

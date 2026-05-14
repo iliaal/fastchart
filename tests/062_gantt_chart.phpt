@@ -2,6 +2,7 @@
 GanttChart: timeline bars + milestones + dependency arrows
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

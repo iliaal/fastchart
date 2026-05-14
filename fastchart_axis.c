@@ -227,10 +227,7 @@ static inline void poly_seg(fastchart_target_t *t,
                             int color_handle, int thickness, int dash,
                             int aa_gd_color)
 {
-    if (aa_gd_color >= 0 && t->kind == FASTCHART_TARGET_GD) {
-        gdImageLine(t->u.gd.im, x0, y0, x1, y1, gdAntiAliased);
-        return;
-    }
+    (void)aa_gd_color;  /* GD-only AA spine retired; SVG renderers AA natively */
     fastchart_target_line(t, x0, y0, x1, y1, color_handle, thickness, dash);
 }
 
@@ -319,53 +316,17 @@ void fastchart_draw_polyline(fastchart_target_t *t, fastchart_obj *chart,
                              int color, int thickness, bool antialiased)
 {
     if (n < 2) return;
-    /* Line style and antialiasing are mutually exclusive in libgd
-     * (no gdStyled+gdAntiAliased compound). When the user picked
-     * dashed/dotted, drop AA so the dash pattern is honored. */
-    bool styled = (chart->line_style != FASTCHART_LINE_SOLID);
     int dash = (chart->line_style == FASTCHART_LINE_DOTTED)
                    ? FASTCHART_DASH_DOTTED
              : (chart->line_style == FASTCHART_LINE_DASHED)
                    ? FASTCHART_DASH_DASHED
                    : FASTCHART_DASH_SOLID;
 
-    if (styled) {
-        polyline_pass(t, chart, pts, n, color, thickness, dash, -1);
-    } else if (antialiased && thickness > 1
-               && t->kind == FASTCHART_TARGET_GD) {
-        /* Two-pass on GD: libgd's thick-line path uses a square brush
-         * stamp which leaves chunky aliased edges on diagonal segments;
-         * libgd's gdAntiAliased line is always 1px. Combine them —
-         * thick non-AA underbody for weight, then a 1px AA spine on
-         * top so the centerline reads as smooth. The eye anchors on
-         * the spine; perceived edge crispness comes up noticeably on
-         * stock MA lines and dense scatter overlays. SVG strokes are
-         * AA by default, so the spine pass would only thin the line
-         * visually — skip it for SVG. */
-        polyline_pass(t, chart, pts, n, color, thickness,
-                      FASTCHART_DASH_SOLID, -1);
-        int gd_c = fastchart_target_color_to_gd(t, color);
-        if (gd_c >= 0) {
-            gdImageSetAntiAliased(t->u.gd.im, gd_c);
-            polyline_pass(t, chart, pts, n, color, 1,
-                          FASTCHART_DASH_SOLID, gd_c);
-        }
-    } else if (antialiased && t->kind == FASTCHART_TARGET_GD) {
-        /* Single AA pass on GD at thickness 1. */
-        int gd_c = fastchart_target_color_to_gd(t, color);
-        if (gd_c >= 0) {
-            gdImageSetAntiAliased(t->u.gd.im, gd_c);
-            polyline_pass(t, chart, pts, n, color, 1,
-                          FASTCHART_DASH_SOLID, gd_c);
-        } else {
-            polyline_pass(t, chart, pts, n, color, thickness,
-                          FASTCHART_DASH_SOLID, -1);
-        }
-    } else {
-        /* Non-AA solid (or SVG, which is implicitly AA). */
-        polyline_pass(t, chart, pts, n, color, thickness,
-                      FASTCHART_DASH_SOLID, -1);
-    }
+    /* SVG renderers AA natively — single pass with the requested
+     * dash + thickness. The historical two-pass thick-underbody +
+     * thin-AA-spine combo was a libgd-only workaround. */
+    (void)antialiased;
+    polyline_pass(t, chart, pts, n, color, thickness, dash, -1);
 }
 
 void fastchart_draw_marker(fastchart_target_t *t, int x, int y,
@@ -379,17 +340,6 @@ void fastchart_draw_marker(fastchart_target_t *t, int x, int y,
         case FASTCHART_MARKER_CIRCLE:
             fastchart_target_ellipse(t, x, y, size / 2, size / 2,
                                      color, 1, 0);
-            /* AA outline on top to soften the pixel edge of the fill.
-             * GD-only: SVG strokes are already AA so an extra outline
-             * just doubles the perimeter weight. */
-            if (size >= 4 && t->kind == FASTCHART_TARGET_GD) {
-                int gd_c = fastchart_target_color_to_gd(t, color);
-                if (gd_c >= 0) {
-                    gdImageSetAntiAliased(t->u.gd.im, gd_c);
-                    gdImageEllipse(t->u.gd.im, x, y, size, size,
-                                   gdAntiAliased);
-                }
-            }
             break;
         case FASTCHART_MARKER_SQUARE:
             fastchart_target_rect(t, x - half, y - half,
@@ -405,13 +355,6 @@ void fastchart_draw_marker(fastchart_target_t *t, int x, int y,
                 { x - half, y        },
             };
             fastchart_target_polygon(t, pts, 4, color, 1, 0);
-            if (size >= 4 && t->kind == FASTCHART_TARGET_GD) {
-                int gd_c = fastchart_target_color_to_gd(t, color);
-                if (gd_c >= 0) {
-                    gdImageSetAntiAliased(t->u.gd.im, gd_c);
-                    gdImagePolygon(t->u.gd.im, pts, 4, gdAntiAliased);
-                }
-            }
             break;
         }
         case FASTCHART_MARKER_CROSS:
@@ -447,21 +390,10 @@ void fastchart_begin_render(fastchart_obj *chart, fastchart_target_t *t)
     chart->font_cache_valid = false;
     chart->shadow_color_valid = false;
 
-    /* Stamp the canvas resolution. Two consequences flow from this:
-     *   - PNG pHYs / JPEG density metadata reports the right physical
-     *     size when the image is embedded in print or HiDPI contexts.
-     *   - fastchart_text_draw reads gdImageResolutionX(im) and feeds
-     *     it to FreeType via gdImageStringFTEx + gdFTEX_RESOLUTION,
-     *     which controls glyph hinting. Higher DPI -> finer hinting.
-     * Without this call libgd defaults the resolution to 96 (image
-     * meta) and FreeType defaults to 100 (hinting), leaving us with
-     * inconsistent state. Setting both via gdImageSetResolution keeps
-     * them aligned. SVG-backed targets carry DPI on the target itself
-     * and have no canvas resolution to stamp. */
-    if (chart->dpi > 0 && t->kind == FASTCHART_TARGET_GD) {
-        gdImageSetResolution(t->u.gd.im, (unsigned int)chart->dpi,
-                              (unsigned int)chart->dpi);
-    }
+    /* DPI lives on the target abstraction now; PNG pHYs and JPEG
+     * density metadata flow from fastchart_pixels_t::dpi in the
+     * encoder. */
+    (void)chart;
 }
 
 void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
@@ -840,247 +772,58 @@ int fastchart_y_categorical_center(const fastchart_rect *plot, int idx, int n)
     return plot->y0 + (int)(step * (idx + 0.5));
 }
 
-/* Source-image budget: reject files larger than 8 MiB AND with
- * declared dimensions over 4096px on either axis, OR a pixel
- * product over 16M, before handing them to libgd. open_basedir
- * already gates which paths are reachable; these caps are
- * defense-in-depth so a caller who passes a user-supplied
- * background / icon path can't make libgd allocate hundreds of
- * MiB to decode a single image — a small JPEG with declared
- * dimensions of 100000x100000 still claims its full bitmap from
- * the decoder.
+/* Source-image emission via SVG <image href="data:...;base64,...">.
  *
- * The cap lives at the source-load helper rather than on the
- * setter — setter time is too early to know whether the file at
- * that path is still the same size (or exists at all) by the
- * time draw() runs. */
-#define FASTCHART_SOURCE_IMAGE_MAX_BYTES   (8 * 1024 * 1024)
-#define FASTCHART_SOURCE_IMAGE_MAX_DIM     4096
-#define FASTCHART_SOURCE_IMAGE_MAX_PIXELS  (16 * 1024 * 1024)
+ * setBackgroundImage() and addIconAt() store the file path; at draw
+ * time the target loads the file once through the PHP stream layer
+ * (which enforces open_basedir natively — no TOCTOU between a
+ * pre-check and the actual open) and base64-encodes it into an
+ * <image> element. The byte and dimension caps are enforced on the
+ * loaded buffer inside fastchart_target_load_source_image. PNG and
+ * JPEG only — plutosvg's data-URI loader handles those two. */
 
-/* Sniff PNG / JPEG / GIF / WebP headers to recover the declared
- * width and height before letting libgd decode the file. Returns
- * 0 on success and writes *w / *h, -1 if the format isn't
- * recognised (the caller treats that as "no preflight available"
- * — the byte-size cap still applies). */
-static int fastchart_sniff_image_dims(const char *path, int *w, int *h)
+static int composite_bg_image(fastchart_target_t *t, int W, int H,
+                              const char *path)
 {
-    FILE *fp = fopen(path, "rb");
-    if (!fp) return -1;
-    unsigned char buf[64];
-    size_t got = fread(buf, 1, sizeof(buf), fp);
-    fclose(fp);
-    if (got < 16) return -1;
-
-    /* PNG: 8-byte signature, IHDR at offset 16..23 carries
-     * width(BE)+height(BE). */
-    if (got >= 24 &&
-        buf[0] == 0x89 && buf[1] == 'P' && buf[2] == 'N' && buf[3] == 'G') {
-        *w = (buf[16] << 24) | (buf[17] << 16) | (buf[18] << 8) | buf[19];
-        *h = (buf[20] << 24) | (buf[21] << 16) | (buf[22] << 8) | buf[23];
-        return 0;
-    }
-    /* GIF: "GIF87a"/"GIF89a", then width(LE), height(LE) at 6..9. */
-    if (buf[0] == 'G' && buf[1] == 'I' && buf[2] == 'F' &&
-        (buf[3] == '8') && (buf[4] == '7' || buf[4] == '9') && buf[5] == 'a') {
-        *w = buf[6] | (buf[7] << 8);
-        *h = buf[8] | (buf[9] << 8);
-        return 0;
-    }
-    /* WebP: "RIFF"....."WEBP" + 4-byte sub-format. */
-    if (got >= 30 &&
-        buf[0] == 'R' && buf[1] == 'I' && buf[2] == 'F' && buf[3] == 'F' &&
-        buf[8] == 'W' && buf[9] == 'E' && buf[10] == 'B' && buf[11] == 'P') {
-        if (buf[12] == 'V' && buf[13] == 'P' && buf[14] == '8' && buf[15] == ' ') {
-            /* Lossy: skip 7-byte frame tag, find 9D 01 2A start code,
-             * then 2 bytes width 14-bit LE + 2 bytes height. The
-             * frame tag + start code start at byte 20; W/H at 26-29. */
-            *w = (buf[26] | (buf[27] << 8)) & 0x3FFF;
-            *h = (buf[28] | (buf[29] << 8)) & 0x3FFF;
-            return 0;
-        }
-        if (got >= 25 &&
-            buf[12] == 'V' && buf[13] == 'P' && buf[14] == '8' && buf[15] == 'L') {
-            /* Lossless: 1-byte signature 0x2F at byte 20, then a
-             * 28-bit packed (width-1, height-1) — 14 bits each, LE. */
-            unsigned long bits = (unsigned long)buf[21]
-                | ((unsigned long)buf[22] << 8)
-                | ((unsigned long)buf[23] << 16)
-                | ((unsigned long)buf[24] << 24);
-            *w = (int)((bits & 0x3FFFu) + 1);
-            *h = (int)(((bits >> 14) & 0x3FFFu) + 1);
-            return 0;
-        }
-        if (got >= 30 &&
-            buf[12] == 'V' && buf[13] == 'P' && buf[14] == '8' && buf[15] == 'X') {
-            /* Extended: canvas width/height each 3-byte LE - 1
-             * starting at byte 24. */
-            *w = (buf[24] | (buf[25] << 8) | (buf[26] << 16)) + 1;
-            *h = (buf[27] | (buf[28] << 8) | (buf[29] << 16)) + 1;
-            return 0;
-        }
-    }
-    /* JPEG: 0xFFD8 SOI, then walk markers. SOF0..SOF15 (excluding
-     * C4 / C8 / CC) carry the dimensions. The first 64 bytes don't
-     * always cover the SOF marker, but for the common JFIF/EXIF
-     * shape we usually find SOF after the APP0/APP1 segment. Read
-     * a bigger window for JPEG only. */
-    if (buf[0] == 0xFF && buf[1] == 0xD8) {
-        FILE *fp2 = fopen(path, "rb");
-        if (!fp2) return -1;
-        unsigned char jb[1024];
-        size_t jgot = fread(jb, 1, sizeof(jb), fp2);
-        fclose(fp2);
-        size_t i = 2;
-        while (i + 9 < jgot) {
-            if (jb[i] != 0xFF) return -1;
-            unsigned char marker = jb[i + 1];
-            /* Skip marker padding 0xFF00 / 0xFFFF run-on. */
-            if (marker == 0x00 || marker == 0xFF) { i++; continue; }
-            /* SOI / EOI carry no length. */
-            if (marker == 0xD8 || marker == 0xD9) { i += 2; continue; }
-            /* SOF markers carry W/H. */
-            if ((marker >= 0xC0 && marker <= 0xCF) &&
-                marker != 0xC4 && marker != 0xC8 && marker != 0xCC) {
-                /* segment length at i+2..i+3 (BE), precision at i+4,
-                 * height at i+5..i+6 (BE), width at i+7..i+8 (BE). */
-                *h = (jb[i + 5] << 8) | jb[i + 6];
-                *w = (jb[i + 7] << 8) | jb[i + 8];
-                return 0;
-            }
-            /* Other segments: skip via 2-byte BE length. */
-            unsigned int seg_len = (jb[i + 2] << 8) | jb[i + 3];
-            if (seg_len < 2) return -1;
-            i += 2 + seg_len;
-        }
-        return -1;
-    }
-    return -1;
-}
-
-static gdImagePtr fastchart_load_source_image(const char *path)
-{
-    struct stat sb;
-    if (stat(path, &sb) != 0) return NULL;
-    if (!S_ISREG(sb.st_mode)) return NULL;
-    if (sb.st_size <= 0) return NULL;
-    if (sb.st_size > FASTCHART_SOURCE_IMAGE_MAX_BYTES) return NULL;
-
-    /* Header preflight: enforce the dim/pixel caps BEFORE handing
-     * the file to libgd, so a small compressed input with huge
-     * decoded dimensions can't force libgd to allocate the full
-     * bitmap before fastchart rejects it. We only decode formats
-     * we can sniff. Supported sniffers: PNG, JPEG, GIF, WebP —
-     * the four formats fastchart itself emits. Unrecognised
-     * formats (AVIF, BMP, TIFF, TGA, …) are refused at the gate
-     * even when the byte-size cap allows them through; add a
-     * sniffer in fastchart_sniff_image_dims() to re-enable. */
-    int w = 0, h = 0;
-    if (fastchart_sniff_image_dims(path, &w, &h) != 0) {
-        return NULL;
-    }
-    if (w <= 0 || h <= 0 ||
-        w > FASTCHART_SOURCE_IMAGE_MAX_DIM ||
-        h > FASTCHART_SOURCE_IMAGE_MAX_DIM ||
-        (long long)w * (long long)h > FASTCHART_SOURCE_IMAGE_MAX_PIXELS) {
-        return NULL;
-    }
-
-    /* gdImageCreateFromFile picks the right loader by signature
-     * (libgd 2.2.0+). Failure returns NULL. */
-    gdImagePtr im = gdImageCreateFromFile(path);
-    if (!im) return NULL;
-
-    /* Defense-in-depth post-decode check: if libgd's decoder
-     * disagreed with our sniffer about the dimensions (corrupt
-     * header, encoder bug, format quirk we didn't anticipate),
-     * still refuse to render with an oversized source. */
-    int dw = gdImageSX(im), dh = gdImageSY(im);
-    if (dw <= 0 || dh <= 0 ||
-        dw > FASTCHART_SOURCE_IMAGE_MAX_DIM ||
-        dh > FASTCHART_SOURCE_IMAGE_MAX_DIM ||
-        (long long)dw * (long long)dh > FASTCHART_SOURCE_IMAGE_MAX_PIXELS) {
-        gdImageDestroy(im);
-        return NULL;
-    }
-    return im;
-}
-
-/* Load and composite a background image onto the canvas. Format
- * detected from extension. Silently no-ops on load failure -- the
- * chart still renders, just without the bg image.
- *
- * setBackgroundImage() already validated the path against
- * open_basedir, but render time is arbitrarily later — the
- * basedir set in INI may have changed, or open_basedir may have
- * been narrowed via ini_set() between the setter and draw. Re-
- * check here so a runtime narrowing isn't bypassed by a
- * pre-existing chart instance. */
-static void composite_bg_image(gdImagePtr im, const char *path)
-{
-    if (php_check_open_basedir_ex(path, /*warn=*/0) != 0) return;
-
-    int W = gdImageSX(im);
-    int H = gdImageSY(im);
-
-    gdImagePtr src = fastchart_load_source_image(path);
-    if (!src) return;
-
-    gdImageCopyResampled(im, src, 0, 0, 0, 0,
-                         W, H,
-                         gdImageSX(src), gdImageSY(src));
-    gdImageDestroy(src);
+    if (!path || !*path) return 0;
+    fastchart_target_image(t, 0, 0, W, H, path);
+    return 1;
 }
 
 void fastchart_blit_icon(fastchart_target_t *t, const fastchart_icon *icon,
                          int px, int py)
 {
-    if (!icon->path) return;
-    if (php_check_open_basedir_ex(icon->path, /*warn=*/0) != 0) return;
-    gdImagePtr src = fastchart_load_source_image(icon->path);
-    if (!src) return;
+    if (!icon || !icon->path || !*icon->path) return;
 
-    int sw = gdImageSX(src);
-    int sh = gdImageSY(src);
-    if (sw <= 0 || sh <= 0) {
-        gdImageDestroy(src);
-        return;
+    /* Single source-image load — opens through the PHP stream layer
+     * with open_basedir enforced, caps bytes / dimensions, and sniffs
+     * MIME + width/height from the loaded buffer. */
+    fastchart_image_buf_t buf;
+    if (fastchart_target_load_source_image(icon->path, &buf) != 0) return;
+    int sw = buf.width;
+    int sh = buf.height;
+
+    int max_w = icon->max_w > 0 ? icon->max_w : sw;
+    int max_h = icon->max_h > 0 ? icon->max_h : sh;
+
+    /* Preserve aspect ratio within max_w / max_h. */
+    int dw = sw, dh = sh;
+    if (dw > max_w) {
+        dh = (int)((double)dh * (double)max_w / (double)dw + 0.5);
+        dw = max_w;
     }
-
-    /* Determine the display size: respect both max_w and max_h while
-     * preserving aspect. -1 in either bound means "no cap from this
-     * side"; use a per-axis scale factor and pick the smaller (more
-     * restrictive) one. */
-    double sx = (icon->max_w > 0) ? (double)icon->max_w / (double)sw : 1.0;
-    double sy = (icon->max_h > 0) ? (double)icon->max_h / (double)sh : 1.0;
-    if (icon->max_w <= 0 && icon->max_h <= 0) {
-        sx = sy = 1.0;
-    } else if (icon->max_w <= 0) {
-        sx = sy;
-    } else if (icon->max_h <= 0) {
-        sy = sx;
-    } else {
-        double s = sx < sy ? sx : sy;
-        sx = sy = s;
+    if (dh > max_h) {
+        dw = (int)((double)dw * (double)max_h / (double)dh + 0.5);
+        dh = max_h;
     }
-
-    int dw = (int)(sw * sx + 0.5);
-    int dh = (int)(sh * sy + 0.5);
     if (dw < 1) dw = 1;
     if (dh < 1) dh = 1;
 
-    if (t->kind == FASTCHART_TARGET_GD) {
-        /* Preserve the source image's alpha channel through the copy
-         * so transparent PNGs blend cleanly onto the chart background.
-         * The target's blit primitive doesn't toggle alpha-blending
-         * mode; do it here at the GD callsite. */
-        gdImageAlphaBlending(t->u.gd.im, 1);
-        fastchart_target_image(t, px - dw / 2, py - dh / 2, dw, dh, src);
-        gdImageAlphaBlending(t->u.gd.im, 0);
-    } else {
-        fastchart_target_image(t, px - dw / 2, py - dh / 2, dw, dh, src);
-    }
-    gdImageDestroy(src);
+    /* Center on (px, py). */
+    int x = px - dw / 2;
+    int y = py - dh / 2;
+    fastchart_target_image_emit(t, x, y, dw, dh, &buf);
+    fastchart_target_image_release(&buf);
 }
 
 /* Translate libgd's 0..127 (0=opaque, 127=transparent) per-band alpha
@@ -1261,26 +1004,15 @@ void fastchart_draw_frame(fastchart_target_t *t, fastchart_obj *chart,
     if (chart->has_plot_rect) {
         /* no-op: caller manages canvas-wide background */
     } else if (chart->transparent_bg) {
-        if (t->kind == FASTCHART_TARGET_GD) {
-            /* Reserve the canvas with a fully-transparent fill so
-             * PNG / WebP / AVIF outputs preserve alpha. gdImageSaveAlpha
-             * must be enabled or the encoder collapses alpha to opaque.
-             * SVG has implicit transparency; nothing to emit. */
-            gdImagePtr im = t->u.gd.im;
-            int trans = gdImageColorAllocateAlpha(im, 0xFF, 0xFF, 0xFF, 127);
-            gdImageSaveAlpha(im, 1);
-            gdImageAlphaBlending(im, 0);
-            gdImageFilledRectangle(im, 0, 0, W - 1, H - 1, trans);
-            gdImageAlphaBlending(im, 1);
-        }
+        /* SVG: no-op — implicit transparency. plutovg rasterizes
+         * unpainted regions as alpha=0; encoders honor it on PNG/WebP. */
     } else if (chart->bg_image_path) {
+        /* Background image: paint a base bg first (so the corners
+         * still have something readable if the image load fails or
+         * the source has alpha), then composite the image on top
+         * stretched to cover the canvas. */
         fastchart_target_rect(t, 0, 0, W, H, pal->bg, 1, 0);
-        if (t->kind == FASTCHART_TARGET_GD) {
-            composite_bg_image(t->u.gd.im, ZSTR_VAL(chart->bg_image_path));
-        }
-        /* TODO(svg-refactor) bg_image_path under SVG: would need a
-         * base64 <image> emit covering the canvas. Falls back to the
-         * solid pal->bg fill above for now. */
+        composite_bg_image(t, W, H, ZSTR_VAL(chart->bg_image_path));
     } else {
         fastchart_target_rect(t, 0, 0, W, H, pal->bg, 1, 0);
     }
@@ -2035,16 +1767,7 @@ void fastchart_draw_overlays_categorical(fastchart_target_t *t, fastchart_obj *c
                 poly[np].x = pts[i].x; poly[np].y = zero_y; np++;
             }
             if (np >= 3 && alpha_color >= 0) {
-                if (t->kind == FASTCHART_TARGET_GD) {
-                    /* Enable alpha-blending mode for the translucent
-                     * fill; restore opaque mode afterward so subsequent
-                     * non-translucent draws aren't blended. */
-                    gdImageAlphaBlending(t->u.gd.im, 1);
-                    fastchart_target_polygon(t, poly, np, alpha_color, 1, 0);
-                    gdImageAlphaBlending(t->u.gd.im, 0);
-                } else {
-                    fastchart_target_polygon(t, poly, np, alpha_color, 1, 0);
-                }
+                fastchart_target_polygon(t, poly, np, alpha_color, 1, 0);
             }
         }
 
@@ -2119,13 +1842,7 @@ void fastchart_draw_overlays_horizontal_bar(fastchart_target_t *t, fastchart_obj
                 poly[np].x = zero_x; poly[np].y = pts[i].y; np++;
             }
             if (np >= 3 && alpha_color >= 0) {
-                if (t->kind == FASTCHART_TARGET_GD) {
-                    gdImageAlphaBlending(t->u.gd.im, 1);
-                    fastchart_target_polygon(t, poly, np, alpha_color, 1, 0);
-                    gdImageAlphaBlending(t->u.gd.im, 0);
-                } else {
-                    fastchart_target_polygon(t, poly, np, alpha_color, 1, 0);
-                }
+                fastchart_target_polygon(t, poly, np, alpha_color, 1, 0);
             }
         }
 

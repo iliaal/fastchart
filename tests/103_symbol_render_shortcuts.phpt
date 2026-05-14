@@ -1,9 +1,8 @@
 --TEST--
-Symbol family: render-shortcut matrix (PNG/JPEG/WebP/GIF/AVIF/toFile) for Code128 + QrCode
+Symbol family: render-shortcut matrix (PNG/JPEG/WebP/toFile) for Code128 + QrCode
 --EXTENSIONS--
 fastchart
---SKIPIF--
-<?php if (!extension_loaded('gd')) die('skip ext/gd not loaded'); ?>
+gd
 --FILE--
 <?php
 
@@ -24,7 +23,6 @@ $magic = [
     'png'  => "\x89PNG\r\n\x1a\n",
     'jpeg' => "\xFF\xD8\xFF",  // JPEG SOI + first marker byte
     'webp' => 'RIFF',          // RIFF container; "WEBP" sits 4 bytes later
-    'gif'  => 'GIF8',          // GIF87a / GIF89a both share this prefix
 ];
 
 foreach ($specs as $cls => $spec) {
@@ -44,38 +42,29 @@ foreach ($specs as $cls => $spec) {
     var_dump(substr($webp, 0, 4) === $magic['webp']);
     var_dump(substr($webp, 8, 4) === 'WEBP');
 
-    // GIF
-    $gif = $spec['instance']()->renderGif();
-    var_dump(strlen($gif) > 0);
-    var_dump(substr($gif, 0, 4) === $magic['gif']);
-
-    // AVIF: optional. libgd may have AVIF compiled out (HAVE_GD_AVIF
-    // unset → fastchart throws Exception) OR the symbol exists at
-    // build time but the runtime libgd has it disabled (gdImageAvif
-    // emits E_WARNING and returns NULL → fastchart throws Error "gd
-    // encoder produced no output"). Catch \Throwable for both; the
-    // @ suppresses the libgd-side warning so the output stays
-    // tractable. See tests/025_render_gif_avif.phpt for the
-    // canonical pattern.
-    try {
-        $avif = @$spec['instance']()->renderAvif(50);
-        $brand = substr($avif, 8, 4);
-        var_dump(strlen($avif) > 0
-            && in_array($brand, ['avif', 'avis', 'mif1'], true));
-    } catch (\Throwable $e) {
-        // AVIF unavailable; accept either branch.
-        var_dump(true);
+    // GIF / AVIF: methods removed entirely in v1.0. Engine raises
+    // "Call to undefined method"; tighten so a future accidental
+    // re-add can't pass silently. See test 025 for the in-depth
+    // assertion.
+    foreach (['renderGif' => 'gif', 'renderAvif' => 'avif'] as $m => $tag) {
+        try {
+            $spec['instance']()->$m();
+            echo "$cls $tag-dropped: REGRESSION\n";
+        } catch (\Error $e) {
+            $msg = $e->getMessage();
+            $ok = stripos($msg, 'undefined method') !== false
+                && strpos($msg, $m) !== false;
+            echo "$cls $tag-dropped: ", ($ok ? "ok" : "wrong-error"), "\n";
+        }
     }
 
-    // renderToFile picks format from extension. Test all five.
-    foreach (['png', 'jpg', 'webp', 'gif'] as $ext) {
+    // renderToFile picks format from extension. Test the three surviving formats.
+    foreach (['png', 'jpg', 'webp'] as $ext) {
         $tmp = tempnam(sys_get_temp_dir(), "fc-shortcut-$cls-") . ".$ext";
         $bytes = $spec['instance']()->renderToFile($tmp, $ext === 'jpg' ? 85 : 80);
         var_dump($bytes > 0);
         var_dump(file_exists($tmp));
         $contents = file_get_contents($tmp);
-        // Decode round-trip — every format gd writes should round-
-        // trip via imagecreatefromstring.
         $im = imagecreatefromstring($contents);
         var_dump($im instanceof \GdImage);
         var_dump(imagesx($im) === $spec['expect_w']);
@@ -94,17 +83,13 @@ foreach ($specs as $cls => $spec) {
         @unlink($tmp);
     }
 
-    // Quality range validation matches Chart's policy: JPEG rejects
-    // <1 or >100; WebP/AVIF accept 0..100; PNG/GIF ignore quality.
-    try { $spec['instance']()->renderJpeg(0);   echo "ERR: $cls JPEG q=0 not rejected\n"; }
+    // Quality range: JPEG rejects <1 or >100; WebP same since v1.0.
+    try { $spec['instance']()->renderJpeg(0);   echo "ERR: $cls JPEG q=0\n"; }
     catch (\ValueError $e) { echo "$cls jpeg-q0: ok\n"; }
-    try { $spec['instance']()->renderJpeg(101); echo "ERR: $cls JPEG q=101 not rejected\n"; }
+    try { $spec['instance']()->renderJpeg(101); echo "ERR: $cls JPEG q=101\n"; }
     catch (\ValueError $e) { echo "$cls jpeg-q101: ok\n"; }
-    try { $spec['instance']()->renderWebp(101); echo "ERR: $cls WebP q=101 not rejected\n"; }
+    try { $spec['instance']()->renderWebp(101); echo "ERR: $cls WebP q=101\n"; }
     catch (\ValueError $e) { echo "$cls webp-q101: ok\n"; }
-    try { $spec['instance']()->renderWebp(0); $reject = false; }
-    catch (\ValueError $e) { $reject = true; }
-    var_dump($reject === false);  // q=0 is valid for WebP
 }
 
 ?>
@@ -116,14 +101,8 @@ bool(true)
 bool(true)
 bool(true)
 bool(true)
-bool(true)
-bool(true)
-bool(true)
-bool(true)
-bool(true)
-bool(true)
-bool(true)
-bool(true)
+Code128 gif-dropped: ok
+Code128 avif-dropped: ok
 bool(true)
 bool(true)
 bool(true)
@@ -150,15 +129,8 @@ bool(true)
 bool(true)
 bool(true)
 bool(true)
-bool(true)
-bool(true)
-bool(true)
-bool(true)
-bool(true)
-bool(true)
-bool(true)
-bool(true)
-bool(true)
+QrCode gif-dropped: ok
+QrCode avif-dropped: ok
 bool(true)
 bool(true)
 bool(true)
@@ -178,4 +150,3 @@ QrCode bmp-reject: ok
 QrCode jpeg-q0: ok
 QrCode jpeg-q101: ok
 QrCode webp-q101: ok
-bool(true)

@@ -7,19 +7,17 @@
 - C compiler: GCC 11+, Clang 14+
 - `phpize` and `php-config` (from `php-dev` / `php8.x-dev`)
 - GNU Make
-- libgd development headers (`libgd-dev` on Debian / Ubuntu,
-  `gd-devel` on RHEL / Fedora).
-- FreeType development headers (`libfreetype-dev` on Debian / Ubuntu,
-  `freetype-devel` on RHEL / Fedora). FreeType has always been a
-  runtime dependency via libgd's TrueType text path; the headers are
-  now needed at build time so fastchart can resolve TTF family names
-  via `FT_New_Face` for SVG `<text>` emission. The `config.m4` probe
-  is `pkg-config freetype2`.
-- ext/gd loaded at runtime (build it once against your PHP install if
-  `make install` doesn't deploy it; AGENTS.md has the recipe).
+- libpng, libjpeg-turbo, libwebp, FreeType development headers:
+  - Debian / Ubuntu: `apt install libpng-dev libjpeg-turbo8-dev libwebp-dev libfreetype-dev`
+  - RHEL / Fedora: `dnf install libpng-devel libjpeg-turbo-devel libwebp-devel freetype-devel`
 
-fastchart links libgd dynamically and shares ext/gd's `libgd.so.3`
-copy at runtime; there's no vendored library to bump.
+  Probed via pkg-config in `config.m4`. plutovg + plutosvg are
+  vendored under `vendor/` — no install needed.
+- ext/gd is **not** a runtime requirement. The test suite uses ext/gd
+  in 65 of the 96 phpt files to round-trip raster output for pixel
+  inspection; those tests SKIP cleanly when ext/gd isn't available.
+  If you want to run the full suite, build ext/gd once against your
+  PHP install (recipe in AGENTS.md).
 
 ## Bug reports
 
@@ -28,7 +26,7 @@ Include:
 
 - PHP version (`php -v`)
 - fastchart version (`php -r 'echo phpversion("fastchart");'`)
-- libgd version (`php -r 'echo gd_info()["GD Version"];'`)
+- plutovg version (vendored; report the `vendor/plutovg/` git hash if known)
 - Operating system and compiler version
 - Minimal reproducing code: the chart class, the setters you called,
   the data array, and the rendered output (or crash trace) you got
@@ -54,13 +52,28 @@ Before filing, try to reproduce against the latest `master` branch.
        --enable-fastchart --enable-fastchart-dev
    make -j$(nproc)
 
-   ASAN_OPTIONS=detect_leaks=0 \
    TEST_PHP_EXECUTABLE=$HOME/php-install-PHP-8.4/bin/php \
    TEST_PHP_ARGS="-d extension=$HOME/php-src-8.4/ext/gd/modules/gd.so \
                   -d extension=$(pwd)/modules/fastchart.so" \
    NO_INTERACTION=1 \
    $HOME/php-install-PHP-8.4/bin/php run-tests.php tests/
    ```
+
+   `detect_leaks=0` is no longer needed. fastchart 1.0 has zero
+   LSan-reported leaks of its own; the ASAN CI job (`.github/
+   workflows/tests.yml`) runs with `detect_leaks=1` and a
+   suppressions file (`.github/lsan-suppressions.txt`) that covers
+   only ext/gd's MINIT-time persistent allocations. To exercise
+   the same leak-detection locally without ext/gd in the picture:
+
+   ```sh
+   ~/php-install-PHP-8.4/bin/php \
+       -d extension=$(pwd)/modules/fastchart.so \
+       scripts/asan-render-smoke.php
+   ```
+
+   Any `LeakSanitizer: detected memory leaks` output is a fastchart
+   regression and must be fixed before the PR lands.
 
 6. Verify zero compiler warnings (`--enable-fastchart-dev` adds
    `-Werror -Wextra -Wstrict-prototypes`; the release matrix treats
@@ -96,8 +109,8 @@ Before filing, try to reproduce against the latest `master` branch.
 - Tabs for indentation, K&R braces, follows the wider PHP-src
   convention.
 - Comments only when the *why* is non-obvious. Implementation detail
-  doesn't need a comment; an external-API constraint (e.g. libgd's
-  thick-line vs anti-aliased mutex) does.
+  doesn't need a comment; an external-API constraint (e.g. plutosvg's
+  data-URI loader handling only PNG/JPEG) does.
 - File headers carry the BSD 3-Clause boxed comment plus an
   `| Author: ` line. New files credit yourself there too.
 - Class registration goes through `fastchart_arginfo.h`, generated

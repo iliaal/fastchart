@@ -1,0 +1,26 @@
+# LeakSanitizer suppressions for fastchart CI.
+#
+# fastchart 1.0 has zero LSan-reported leaks of its own. These
+# suppressions cover known persistent allocations from ext/gd's MINIT,
+# which the test suite loads only for PHP-side image validation
+# (imagecreatefromstring / imagesx / imagesy in raster round-trip
+# tests). They are intentional process-lifetime allocations, not bugs.
+#
+# Format: "leak:<substring>" — substring must appear in any frame of
+# the leak's stack trace. Use function or library names. Anchors are
+# unsupported.
+#
+# To audit a new leak locally:
+#   ASAN_OPTIONS=detect_leaks=1 LSAN_OPTIONS=fast_unwind_on_malloc=0 \
+#     <php> -d extension=fastchart.so -r '<repro>'
+
+# ext/gd MINIT — class registration, constant table, persistent INI
+# entries. ~11KB total, one-time at module load.
+leak:register_gd_symbols
+leak:php_gd_object_minit_helper
+leak:php_gd_font_minit_helper
+leak:zm_startup_gd
+
+# libgd's optional FreeType-bundled font cache mutex (allocated once
+# at MINIT, freed at MSHUTDOWN, but LSan may report at exit).
+leak:gdFontCacheMutexSetup

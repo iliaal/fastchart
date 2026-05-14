@@ -16,7 +16,6 @@
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
 #include "fastchart_target.h"
-#include <gd.h>
 
 #define FASTCHART_MAX_TICKS 16
 

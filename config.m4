@@ -13,60 +13,45 @@ if test "$PHP_FASTCHART" != "no"; then
     AC_MSG_ERROR([fastchart requires PHP 8.3.0 or later (found $PHP_VERSION_ID)])
   fi
 
-  dnl libgd is required: ext/gd exposes only php_gd_libgdimageptr_from_zval_p()
-  dnl so we link libgd directly to call the drawing primitives (gdImageLine,
-  dnl gdImageFilledRectangle, gdImageFilledArc, gdImageStringFT, etc.) on the
-  dnl gdImagePtr we pull out of caller-supplied \GdImage zvals. The dynamic
-  dnl linker dedupes libgd.so.3 so ext/gd and fastchart share one copy in
-  dnl the address space.
+  dnl ----- pkg-config-resolved deps ---------------------------------------
+  dnl FreeType: mandatory. Glyph metrics + family-name resolution for
+  dnl SVG output; plus FT_Outline_Decompose for glyph-to-path emission
+  dnl in SVG_TEXT_PATHS mode, and text bbox measurement for chart layout.
   dnl
-  dnl gdImageStringFT (TTF text rendering) requires libgd to be built with
-  dnl FreeType support. The probe checks for the symbol's presence; libgd
-  dnl on Debian/Ubuntu/RHEL stable all ship --with-freetype by default.
-  PHP_CHECK_LIBRARY(gd, gdImageCreateTrueColor,
-  [
-    PHP_ADD_LIBRARY(gd, 1, FASTCHART_SHARED_LIBADD)
-    AC_DEFINE(HAVE_LIBGD, 1, [Have libgd])
-  ],[
-    AC_MSG_ERROR([libgd not found. Install libgd-dev (Debian/Ubuntu) or gd-devel (RHEL).])
-  ])
-
-  PHP_CHECK_LIBRARY(gd, gdImageStringFT,
-  [
-    AC_DEFINE(HAVE_GD_FREETYPE, 1, [libgd has FreeType / gdImageStringFT])
-  ],[
-    AC_MSG_ERROR([libgd was built without FreeType support; gdImageStringFT is unavailable. Rebuild libgd with --with-freetype.])
-  ])
-
-  dnl AVIF support is optional. Older libgd builds and stripped distros
-  dnl ship without it; the renderer raises a runtime exception when
-  dnl AVIF is requested on a build that doesn't expose the symbol.
-  PHP_CHECK_LIBRARY(gd, gdImageAvifPtrEx,
-  [
-    AC_DEFINE(HAVE_GD_AVIF, 1, [libgd has AVIF / gdImageAvifPtrEx])
-  ],[])
-
-  dnl FreeType direct access. The SVG output backend reads TTF family
-  dnl names via FT_New_Face to emit accurate CSS font-family attributes.
-  dnl libgd already loads libfreetype.so at runtime (it's how
-  dnl gdImageStringFT works); we additionally need the headers + an
-  dnl explicit -lfreetype to call FT_New_Face from fastchart_target.c.
-  dnl pkg-config is the portable resolver across Debian/RHEL/macOS.
+  dnl libpng / libjpeg-turbo / libwebp: optional, probed independently.
+  dnl Each missing lib drops its corresponding output format — the
+  dnl encoder compiles to a stub that returns -2 and the PHP method
+  dnl throws a clear "format not compiled in" error at call time.
   AC_PATH_PROG(FC_PKGCFG, pkg-config, no)
-  if test "$FC_PKGCFG" = "no" || ! $FC_PKGCFG --exists freetype2; then
-    AC_MSG_ERROR([pkg-config freetype2 not found. Install libfreetype-dev (Debian/Ubuntu) or freetype-devel (RHEL).])
+  if test "$FC_PKGCFG" = "no"; then
+    AC_MSG_ERROR([pkg-config not found. Install pkg-config (Debian/Ubuntu) or pkgconf (RHEL).])
   fi
-  FREETYPE_CFLAGS=`$FC_PKGCFG --cflags freetype2`
-  FREETYPE_LIBS=`$FC_PKGCFG --libs freetype2`
-  PHP_EVAL_INCLINE([$FREETYPE_CFLAGS])
-  PHP_EVAL_LIBLINE([$FREETYPE_LIBS], FASTCHART_SHARED_LIBADD)
+
+  if ! $FC_PKGCFG --exists freetype2; then
+    AC_MSG_ERROR([pkg-config freetype2 not found. Install libfreetype-dev / freetype-devel — FreeType is required for text rendering.])
+  fi
+
+  FC_PC_CFLAGS=`$FC_PKGCFG --cflags freetype2`
+  FC_PC_LIBS=`$FC_PKGCFG --libs   freetype2`
+  FC_OPT_DEFS=""
+
+  for fc_pair in libpng:HAVE_LIBPNG libjpeg:HAVE_LIBJPEG libwebp:HAVE_LIBWEBP; do
+    fc_lib=`echo $fc_pair | cut -d: -f1`
+    fc_def=`echo $fc_pair | cut -d: -f2`
+    if $FC_PKGCFG --exists $fc_lib; then
+      FC_PC_CFLAGS="$FC_PC_CFLAGS `$FC_PKGCFG --cflags $fc_lib`"
+      FC_PC_LIBS="$FC_PC_LIBS `$FC_PKGCFG --libs $fc_lib`"
+      FC_OPT_DEFS="$FC_OPT_DEFS -D$fc_def=1"
+      AC_MSG_NOTICE([fastchart: $fc_lib found, $fc_def enabled])
+    else
+      AC_MSG_NOTICE([fastchart: $fc_lib not found — corresponding output format will be unavailable at runtime])
+    fi
+  done
+
+  PHP_EVAL_INCLINE([$FC_PC_CFLAGS])
+  PHP_EVAL_LIBLINE([$FC_PC_LIBS], FASTCHART_SHARED_LIBADD)
 
   PHP_SUBST(FASTCHART_SHARED_LIBADD)
-
-  dnl ext/gd must load before fastchart so php_gd_libgdimageptr_from_zval_p
-  dnl is resolvable at fastchart's MINIT and \GdImage class entries are
-  dnl registered before any FastChart method dereferences a passed canvas.
-  PHP_ADD_EXTENSION_DEP(fastchart, gd)
 
   WRAPPER_SOURCES="fastchart.c \
     fastchart_palette.c \
@@ -94,43 +79,72 @@ if test "$PHP_FASTCHART" != "no"; then
     fastchart_heatmap.c \
     fastchart_linear_meter.c \
     fastchart_effects.c \
+    fastchart_encoder.c \
+    fastchart_rasterize.c \
     fastchart_symbol.c \
     fastchart_code128.c \
     fastchart_qrcode.c \
-    vendor/qrcodegen/qrcodegen.c"
+    vendor/qrcodegen/qrcodegen.c \
+    vendor/plutovg/source/plutovg-blend.c \
+    vendor/plutovg/source/plutovg-canvas.c \
+    vendor/plutovg/source/plutovg-font.c \
+    vendor/plutovg/source/plutovg-ft-math.c \
+    vendor/plutovg/source/plutovg-ft-raster.c \
+    vendor/plutovg/source/plutovg-ft-stroker.c \
+    vendor/plutovg/source/plutovg-matrix.c \
+    vendor/plutovg/source/plutovg-paint.c \
+    vendor/plutovg/source/plutovg-path.c \
+    vendor/plutovg/source/plutovg-rasterize.c \
+    vendor/plutovg/source/plutovg-surface.c \
+    vendor/plutosvg/source/plutosvg.c"
 
   dnl -Wall -Wextra are on by default so wrapper regressions get caught
   dnl in every local build; --enable-fastchart-dev upgrades warnings to
   dnl -Werror plus extra strictness.
   dnl
-  dnl -fvisibility=hidden keeps the vendored qrcodegen_* symbols (and
-  dnl every internal fastchart_* helper) out of the dynamic symbol
-  dnl table. Only get_module stays exported, marked default by
-  dnl ZEND_DLEXPORT. Without this, another extension loading a
-  dnl different qrcodegen build could collide with ours via the
-  dnl process-wide symbol table. Verify with:
+  dnl -fvisibility=hidden keeps the vendored plutovg_/plutosvg_/qrcodegen_
+  dnl symbols (and every internal fastchart_* helper) out of the dynamic
+  dnl symbol table. Only get_module stays exported, marked default by
+  dnl ZEND_DLEXPORT. PLUTOVG_BUILD_STATIC + PLUTOSVG_BUILD_STATIC make those
+  dnl libraries' headers stop applying visibility=default on their API
+  dnl decorations, so -fvisibility=hidden actually buries them.
+  dnl Verify with:
   dnl   nm -D --defined-only modules/fastchart.so | grep -v get_module
   dnl Expected: only standard-library symbols (memcpy, etc.) remain.
-  FASTCHART_CFLAGS="-Wall -Wextra -Wno-unused-parameter -fvisibility=hidden"
+  dnl Vendor-driven warning suppressions: plutovg ships stb_image* /
+  dnl stb_image_write* / stb_truetype headers + ft-stroker code that
+  dnl trip a few standard warnings (unused statics, signed/unsigned
+  dnl comparisons in tight inner loops, implicit fallthrough in case
+  dnl arms). PHP_NEW_EXTENSION applies one CFLAGS to every TU, so we
+  dnl silence globally rather than per-file. Fastchart's own code is
+  dnl warning-clean under the unsuppressed set.
+  FASTCHART_CFLAGS="-Wall -Wextra \
+    -Wno-unused-parameter -Wno-unused-function -Wno-sign-compare \
+    -Wno-implicit-fallthrough -Wno-unused-but-set-variable \
+    -Wno-misleading-indentation -Wno-missing-field-initializers \
+    -fvisibility=hidden \
+    -DPLUTOVG_BUILD_STATIC -DPLUTOSVG_BUILD_STATIC \
+    $FC_OPT_DEFS"
 
   if test "$PHP_FASTCHART_DEV" = "yes"; then
     FASTCHART_CFLAGS="$FASTCHART_CFLAGS -Werror -Wstrict-prototypes"
   fi
 
   PHP_ADD_INCLUDE([$ext_srcdir])
-  dnl Vendored nayuki QR encoder lives under vendor/qrcodegen/. Adding
-  dnl its parent dir to the include path lets fastchart_qrcode.c (and
-  dnl any future Symbol class needing the encoder) say
-  dnl `#include "qrcodegen.h"` without a relative path. Uses
-  dnl $abs_srcdir (autoconf-standard, always populated before this
-  dnl macro fires) rather than $ext_srcdir, which is unset at this
-  dnl point in m4 expansion order and would resolve to /vendor/qrcodegen.
+  dnl Vendor include paths. Uses $abs_srcdir (autoconf-standard, always
+  dnl populated before this macro fires) so VPATH / out-of-tree builds
+  dnl resolve correctly. Mirrors ext/fileinfo's libmagic wiring.
   PHP_ADD_INCLUDE([$abs_srcdir/vendor/qrcodegen])
-  dnl PHP_NEW_EXTENSION will compile vendor/qrcodegen/qrcodegen.c into
-  dnl vendor/qrcodegen/qrcodegen.lo — for VPATH / out-of-tree builds the
-  dnl matching directory must exist under $ext_builddir or libtool will
-  dnl fail to write the .lo file. Mirrors ext/fileinfo's libmagic wiring.
+  PHP_ADD_INCLUDE([$abs_srcdir/vendor/plutovg/include])
+  PHP_ADD_INCLUDE([$abs_srcdir/vendor/plutovg/source])
+  PHP_ADD_INCLUDE([$abs_srcdir/vendor/plutosvg/source])
+
+  dnl PHP_NEW_EXTENSION compiles vendor/*/qrcodegen.c, plutovg-*.c, and
+  dnl plutosvg.c into matching .lo files — for VPATH builds the directory
+  dnl must exist under $ext_builddir or libtool will fail to write.
   PHP_ADD_BUILD_DIR([$ext_builddir/vendor/qrcodegen])
+  PHP_ADD_BUILD_DIR([$ext_builddir/vendor/plutovg/source])
+  PHP_ADD_BUILD_DIR([$ext_builddir/vendor/plutosvg/source])
 
   PHP_NEW_EXTENSION(fastchart,
     $WRAPPER_SOURCES,

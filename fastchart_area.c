@@ -23,7 +23,6 @@
 #include "fastchart_palette.h"
 #include "fastchart_target.h"
 #include "fastchart_axis.h"
-#include "fastchart_effects.h"
 
 /* Read a value from a typed series at the given index. Returns NaN
  * if the index is past the series end or the cell is a gap. */
@@ -99,9 +98,6 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    fastchart_gradient_cache grad_cache;
-    fastchart_gradient_cache_reset(&grad_cache);
-
     fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_y_axis(t, (fastchart_obj *)self, &plot, &pal, &range);
@@ -118,9 +114,6 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
     int alpha = (int)self->area_alpha;
     if (alpha < 0) alpha = 0;
     if (alpha > 127) alpha = 127;
-
-    bool gd = (t->kind == FASTCHART_TARGET_GD);
-    gdImagePtr im = gd ? t->u.gd.im : NULL;
 
     int edge_handle = self->edge_color >= 0
         ? fastchart_target_color_rgb(t, (int)self->edge_color) : -1;
@@ -154,17 +147,13 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 n_pts++;
             }
             if (n_pts >= 3) {
-                int painted = 0;
-                if (gd) {
-                    int rgb_color = fastchart_target_color_to_gd(t, series_handle);
-                    fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
-                    painted = fastchart_gradient_filled_polygon(im, (fastchart_obj *)self, &grad_cache, poly, n_pts);
-                    if (!painted) {
-                        fastchart_filled_polygon_aa(im, poly, n_pts, rgb_color);
-                        painted = 1;
-                    }
-                }
-                if (!painted) {
+                fastchart_obj *base = (fastchart_obj *)self;
+                if (base->gradient_from >= 0 && base->gradient_to >= 0) {
+                    fastchart_target_gradient_polygon(t, poly, n_pts,
+                        (uint32_t)base->gradient_from,
+                        (uint32_t)base->gradient_to,
+                        (int)base->gradient_dir);
+                } else {
                     fastchart_target_polygon(t, poly, n_pts, series_handle, 1, 0);
                 }
                 if (edge_handle >= 0) {
@@ -218,19 +207,20 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 n_pts++;
             }
             if (n_pts >= 3) {
-                int painted = 0;
-                if (gd) {
-                    int alpha_color = fastchart_target_color_to_gd(t, alpha_handle);
-                    fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, poly, n_pts);
-                    gdImageAlphaBlending(im, 1);
-                    painted = fastchart_gradient_filled_polygon(im, (fastchart_obj *)self, &grad_cache, poly, n_pts);
-                    if (!painted) {
-                        fastchart_filled_polygon_aa(im, poly, n_pts, alpha_color);
-                        painted = 1;
-                    }
-                    gdImageAlphaBlending(im, 0);
-                }
-                if (!painted) {
+                fastchart_obj *base = (fastchart_obj *)self;
+                if (base->gradient_from >= 0 && base->gradient_to >= 0) {
+                    /* Compose setAreaAlpha (0..127 gd convention,
+                     * 127 = transparent) into the gradient stops so
+                     * non-stacked overlay layers stay translucent
+                     * the way solid-fill overlays do. */
+                    uint32_t a = (uint32_t)alpha_byte & 0xFFu;
+                    uint32_t grad_from =
+                        (a << 24) | ((uint32_t)base->gradient_from & 0xFFFFFFu);
+                    uint32_t grad_to =
+                        (a << 24) | ((uint32_t)base->gradient_to   & 0xFFFFFFu);
+                    fastchart_target_gradient_polygon(t, poly, n_pts,
+                        grad_from, grad_to, (int)base->gradient_dir);
+                } else {
                     fastchart_target_polygon(t, poly, n_pts, alpha_handle, 1, 0);
                 }
                 if (edge_handle >= 0) {
@@ -239,9 +229,6 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             }
 
             /* Opaque top stroke. */
-            if (gd) {
-                gdImageSetAntiAliased(im, fastchart_target_color_to_gd(t, base_handle));
-            }
             int prev_x = 0, prev_y = 0;
             bool prev_valid = false;
             for (int i = 0; i < max_len; i++) {
@@ -250,14 +237,8 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
                 int y = fastchart_y_to_pixel(v, &range, &plot);
                 if (prev_valid) {
-                    if (gd) {
-                        gdImageSetThickness(im, 2);
-                        gdImageLine(im, prev_x, prev_y, x, y, gdAntiAliased);
-                        gdImageSetThickness(im, 1);
-                    } else {
-                        fastchart_target_line(t, prev_x, prev_y, x, y,
-                                              base_handle, 2, FASTCHART_DASH_SOLID);
-                    }
+                    fastchart_target_line(t, prev_x, prev_y, x, y,
+                                          base_handle, 2, FASTCHART_DASH_SOLID);
                 }
                 prev_x = x; prev_y = y; prev_valid = true;
             }
@@ -304,32 +285,3 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
     return 0;
 }
 
-/* GD-only shim. */
-int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
-{
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
-    return fastchart_area_render_to_target(self, &t);
-}
-
-ZEND_METHOD(FastChart_AreaChart, draw)
-{
-    zval *canvas_zv;
-
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
-    ZEND_PARSE_PARAMETERS_END();
-
-    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\AreaChart::draw() received a closed or invalid GdImage");
-        RETURN_THROWS();
-    }
-    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
-
-    fastchart_area_obj *self = Z_FASTCHART_AREA_OBJ_P(ZEND_THIS);
-    if (fastchart_area_render_to_image(self, im) != 0) {
-        RETURN_THROWS();
-    }
-    RETURN_ZVAL(canvas_zv, 1, 0);
-}

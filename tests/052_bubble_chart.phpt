@@ -2,8 +2,33 @@
 BubbleChart: [x, y, size, ?color] points rendered as translucent circles
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
+
+// Helper added by plutovg pixel-tolerance sweep: accepts $pixel as an
+// AA-blended version of $target against a white background. Plutovg's
+// 1px strokes produce ~50%-coverage centerline pixels rather than the
+// pure target color libgd emitted.
+function fc_color_near($pixel, $target) {
+    $tr = ($target >> 16) & 0xFF;
+    $tg = ($target >>  8) & 0xFF;
+    $tb =  $target        & 0xFF;
+    $r = ($pixel >> 16) & 0xFF;
+    $g = ($pixel >>  8) & 0xFF;
+    $b =  $pixel        & 0xFF;
+    for ($a = 100; $a >= 30; $a -= 5) {
+        $alpha = $a / 100.0;
+        $er = (int)($tr * $alpha + 255 * (1 - $alpha));
+        $eg = (int)($tg * $alpha + 255 * (1 - $alpha));
+        $eb = (int)($tb * $alpha + 255 * (1 - $alpha));
+        if (abs($r - $er) <= 4 && abs($g - $eg) <= 4 && abs($b - $eb) <= 4) {
+            return true;
+        }
+    }
+    return false;
+}
+
 
 $bytes = (new FastChart\BubbleChart(500, 400))
     ->setPoints([
@@ -38,7 +63,7 @@ $im = imagecreatefromstring($bytes3);
 $black = 0;
 for ($y = 0; $y < 300; $y++)
     for ($x = 0; $x < 400; $x++)
-        if (imagecolorat($im, $x, $y) === 0x000000) $black++;
+        if (fc_color_near(imagecolorat($im, $x, $y), 0x000000)) $black++;
 echo "edge_color: ", ($black > 20 ? "yes" : "no"), "\n";
 ?>
 --EXPECT--

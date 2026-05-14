@@ -393,8 +393,7 @@ static uint8_t code128_checksum(const uint8_t *codes, size_t n)
 /* Render the encoded codes onto the target, applying foreground /
  * background colours and an optional human-readable text strip.
  * Returns 0 on success, -1 with a thrown PHP exception on failure.
- * Backend-agnostic: bars become gdImageFilledRectangle calls on a
- * GD target and <rect> elements on an SVG target. */
+ * Bars are emitted as <rect> elements via the SVG target. */
 int fastchart_code128_render_to_target(fastchart_code128_obj *self,
                                         fastchart_target_t *t)
 {
@@ -605,13 +604,3 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
     return 0;
 }
 
-/* Backwards-compat shim. Wraps the supplied gdImagePtr in a GD-backed
- * target and routes through the canonical render. Keeps the chart-
- * style dispatcher symmetry (dispatch_symbol_render still takes
- * gdImagePtr) until that path is fully migrated. */
-int fastchart_code128_render_to_image(fastchart_code128_obj *self, gdImagePtr im)
-{
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, (int)self->dpi);
-    return fastchart_code128_render_to_target(self, &t);
-}

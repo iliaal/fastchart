@@ -22,7 +22,6 @@
 #include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
-#include "fastchart_effects.h"
 
 #include <time.h>
 #include <math.h>
@@ -51,9 +50,6 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
-
-    fastchart_gradient_cache grad_cache;
-    fastchart_gradient_cache_reset(&grad_cache);
 
     fastchart_rect plot;
     fastchart_compute_layout((fastchart_obj *)self, t, 1, 1, NULL, 0, &plot);
@@ -94,9 +90,6 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
     double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
     double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base);
 
-    bool gd = (t->kind == FASTCHART_TARGET_GD);
-    gdImagePtr im = gd ? t->u.gd.im : NULL;
-
     int edge_handle = self->edge_color >= 0
         ? fastchart_target_color_rgb(t, (int)self->edge_color) : -1;
 
@@ -123,9 +116,6 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
                 { x_end,           row_yc + s/2 },
                 { x_end - s/2,     row_yc       },
             };
-            if (gd) {
-                fastchart_shadow_filled_polygon(im, (fastchart_obj *)self, diamond, 4);
-            }
             fastchart_target_polygon(t, diamond, 4, color, 1, 0);
             if (edge_handle >= 0) {
                 fastchart_target_polygon(t, diamond, 4, edge_handle, 0, 1);
@@ -133,16 +123,9 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
         } else {
             int y0 = row_yc - bar_h / 2;
             int y1 = row_yc + bar_h / 2;
-            int painted = 0;
-            if (gd) {
-                fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x_start, y0, x_end, y1);
-                painted = fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x_start, y0, x_end, y1);
-            }
-            if (!painted) {
-                fastchart_target_rect(t, x_start, y0,
-                                      x_end - x_start + 1, y1 - y0 + 1,
-                                      color, 1, 0);
-            }
+            fastchart_target_rect(t, x_start, y0,
+                                  x_end - x_start + 1, y1 - y0 + 1,
+                                  color, 1, 0);
             if (edge_handle >= 0) {
                 fastchart_target_rect(t, x_start, y0,
                                       x_end - x_start + 1, y1 - y0 + 1,
@@ -179,32 +162,4 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
-}
-
-/* GD-only shim. */
-int fastchart_gantt_render_to_image(fastchart_gantt_obj *self, gdImagePtr im)
-{
-    fastchart_target_t t;
-    fastchart_target_from_gd(&t, im, self->dpi);
-    return fastchart_gantt_render_to_target(self, &t);
-}
-
-ZEND_METHOD(FastChart_GanttChart, draw)
-{
-    zval *canvas_zv;
-    ZEND_PARSE_PARAMETERS_START(1, 1)
-        Z_PARAM_OBJECT_OF_CLASS(canvas_zv, fastchart_gd_image_ce)
-    ZEND_PARSE_PARAMETERS_END();
-
-    gdImagePtr im = fastchart_gd_image_from_zval(canvas_zv);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart\\GanttChart::draw() received a closed or invalid GdImage");
-        RETURN_THROWS();
-    }
-    if (!fastchart_require_truecolor(im)) RETURN_THROWS();
-    fastchart_gantt_obj *self = Z_FASTCHART_GANTT_OBJ_P(ZEND_THIS);
-    if (fastchart_gantt_render_to_image(self, im) != 0) {
-        RETURN_THROWS();
-    }
-    RETURN_ZVAL(canvas_zv, 1, 0);
 }
