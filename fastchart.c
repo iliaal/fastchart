@@ -1463,9 +1463,16 @@ static zend_string *fastchart_probe_default_font(void)
     struct stat st;
     for (int i = 0; FASTCHART_DEFAULT_FONT_CANDIDATES[i]; i++) {
         if (stat(FASTCHART_DEFAULT_FONT_CANDIDATES[i], &st) == 0 && S_ISREG(st.st_mode)) {
-            return zend_string_init(FASTCHART_DEFAULT_FONT_CANDIDATES[i],
-                                    strlen(FASTCHART_DEFAULT_FONT_CANDIDATES[i]),
-                                    1 /* persistent */);
+            /* Intern the path so per-chart `zend_string_copy()` is a
+             * no-op (no refcount touch). A plain persistent string
+             * shared across threads would race in zend_string_copy
+             * under ZTS — the refcount increment isn't atomic.
+             * Interned strings sidestep the issue entirely; the
+             * interned-string table owns the lifetime. */
+            return zend_string_init_interned(
+                FASTCHART_DEFAULT_FONT_CANDIDATES[i],
+                strlen(FASTCHART_DEFAULT_FONT_CANDIDATES[i]),
+                1 /* permanent — survives across requests */);
         }
     }
     return NULL;
@@ -6526,16 +6533,14 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
 
 PHP_MSHUTDOWN_FUNCTION(fastchart)
 {
-    if (fastchart_default_font_path) {
-        /* Allocated via zend_string_init(..., persistent=1) in
-         * fastchart_probe_default_font; the persistent variant of
-         * release is what pairs with that. */
-        zend_string_release_ex(fastchart_default_font_path, /*persistent=*/1);
-        fastchart_default_font_path = NULL;
-    }
-    /* Per-thread FT state (FT_Library + face cache) is released by
+    /* fastchart_default_font_path is owned by the interned-string
+     * table (zend_string_init_interned, permanent=1); Zend frees it
+     * during interned-table teardown. Nothing for us to release.
+     *
+     * Per-thread FT state (FT_Library + face cache) is released by
      * PHP_GSHUTDOWN(fastchart) — once per thread under ZTS, once at
-     * effective-MSHUTDOWN under NTS. Nothing else to free here. */
+     * effective-MSHUTDOWN under NTS. */
+    fastchart_default_font_path = NULL;
     return SUCCESS;
 }
 
