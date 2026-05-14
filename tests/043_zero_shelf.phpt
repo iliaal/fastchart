@@ -5,6 +5,30 @@ fastchart
 --FILE--
 <?php
 
+// Helper added by plutovg pixel-tolerance sweep: accepts $pixel as an
+// AA-blended version of $target against a white background. Plutovg's
+// 1px strokes produce ~50%-coverage centerline pixels rather than the
+// pure target color libgd emitted.
+function fc_color_near($pixel, $target) {
+    $tr = ($target >> 16) & 0xFF;
+    $tg = ($target >>  8) & 0xFF;
+    $tb =  $target        & 0xFF;
+    $r = ($pixel >> 16) & 0xFF;
+    $g = ($pixel >>  8) & 0xFF;
+    $b =  $pixel        & 0xFF;
+    for ($a = 100; $a >= 30; $a -= 5) {
+        $alpha = $a / 100.0;
+        $er = (int)($tr * $alpha + 255 * (1 - $alpha));
+        $eg = (int)($tg * $alpha + 255 * (1 - $alpha));
+        $eb = (int)($tb * $alpha + 255 * (1 - $alpha));
+        if (abs($r - $er) <= 4 && abs($g - $eg) <= 4 && abs($b - $eb) <= 4) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
 // Data crosses zero. Without zero shelf, only the regular y=0 grid
 // line in grid color appears; with shelf on, an axis-color line
 // also runs across at the zero pixel.
@@ -26,7 +50,7 @@ $has_h_axis_run = function ($im, $w, $h) {
     for ($y = 50; $y < $h - 60; $y++) {
         $n = 0;
         for ($x = 60; $x < $w - 30; $x++) {
-            if (imagecolorat($im, $x, $y) === 0x333333) $n++;
+            if (fc_color_near(imagecolorat($im, $x, $y), 0x333333)) $n++;
         }
         if ($n > 200) return true;
     }

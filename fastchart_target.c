@@ -16,16 +16,29 @@
 
 #include "php.h"
 #include "Zend/zend_smart_str.h"
+#include "Zend/zend_exceptions.h"
+#include "ext/standard/base64.h"
+#include "ext/standard/php_filestat.h"
+#include "main/php_streams.h"
+#include "main/php_open_temporary_file.h"
 
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
 #include "fastchart_target.h"
 #include "fastchart_svg.h"
+
+/* Source-image caps. Mirrors the values in fastchart_axis.c; kept
+ * here so the target-level emitter can enforce them without a header
+ * cycle. */
+#define FC_IMAGE_MAX_BYTES   (8 * 1024 * 1024)
+#define FC_IMAGE_MAX_DIM     4096
+#define FC_IMAGE_MAX_PIXELS  (16 * 1024 * 1024)
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -56,6 +69,7 @@ void fastchart_target_from_svg(fastchart_target_t *t, smart_str *buf,
     (void)dpi;
     t->u.svg.dpi = 96;
     t->u.svg.next_clip_id = 1;
+    t->u.svg.next_grad_id = 1;
     t->u.svg.text_mode = (text_mode == FASTCHART_SVG_TEXT_NATIVE)
         ? FASTCHART_SVG_TEXT_NATIVE
         : FASTCHART_SVG_TEXT_PATHS;
@@ -330,12 +344,153 @@ void fastchart_target_clip_pop(fastchart_target_t *t)
  * Image blit                                                    *
  * ============================================================ */
 
-void fastchart_target_image(fastchart_target_t *t,
-                             int x, int y, int w, int h)
+/* Sniff first 16 bytes of `data` (len `n`) to recover a MIME type
+ * the SVG <image> data URI loader can decode. Returns "image/png" /
+ * "image/jpeg" or NULL for unsupported formats. WebP / GIF / AVIF
+ * are unsupported by plutosvg's data-URI path, so they fall through
+ * to NULL and the caller skips emission. */
+static const char *fc_sniff_image_mime(const unsigned char *data, size_t n)
 {
-    /* v1.0: no-op. SVG <image href="data:..."/> emission for
-     * IconPlot / background-image / watermark compositing is v1.1
-     * work. Renderers that need it land an inline placeholder rect
-     * at the call site if they want visible feedback. */
-    (void)t; (void)x; (void)y; (void)w; (void)h;
+    if (n < 8) return NULL;
+    if (data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G'
+        && data[4] == '\r' && data[5] == '\n' && data[6] == 0x1A
+        && data[7] == '\n') {
+        return "image/png";
+    }
+    if (data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) {
+        return "image/jpeg";
+    }
+    return NULL;
+}
+
+/* Sniff width/height for a PNG or JPEG buffer. Returns 0 on success,
+ * -1 if the header layout doesn't yield dimensions. Mirrors the
+ * fastchart_axis.c routine but operates on an in-memory buffer. */
+static int fc_sniff_image_dims_mem(const unsigned char *b, size_t n,
+                                    int *out_w, int *out_h)
+{
+    if (n < 24) return -1;
+    if (b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G') {
+        *out_w = (b[16] << 24) | (b[17] << 16) | (b[18] << 8) | b[19];
+        *out_h = (b[20] << 24) | (b[21] << 16) | (b[22] << 8) | b[23];
+        return 0;
+    }
+    if (b[0] == 0xFF && b[1] == 0xD8) {
+        size_t i = 2;
+        while (i + 9 < n) {
+            if (b[i] != 0xFF) return -1;
+            unsigned char marker = b[i + 1];
+            if (marker == 0x00 || marker == 0xFF) { i++; continue; }
+            if (marker == 0xD8 || marker == 0xD9) { i += 2; continue; }
+            if ((marker >= 0xC0 && marker <= 0xCF)
+                && marker != 0xC4 && marker != 0xC8 && marker != 0xCC) {
+                *out_h = (b[i + 5] << 8) | b[i + 6];
+                *out_w = (b[i + 7] << 8) | b[i + 8];
+                return 0;
+            }
+            unsigned int seg_len = (b[i + 2] << 8) | b[i + 3];
+            if (seg_len < 2) return -1;
+            i += 2 + seg_len;
+        }
+    }
+    return -1;
+}
+
+void fastchart_target_image(fastchart_target_t *t,
+                             int x, int y, int w, int h,
+                             const char *path)
+{
+    if (!path || !*path) return;
+    if (w <= 0 || h <= 0) return;
+
+    /* Byte-size cap via stat(2). The cap is enforced before opening
+     * the file so a 100 GiB sparse file or a sketchy /proc entry
+     * doesn't get pulled into memory. */
+    struct stat st;
+    if (stat(path, &st) != 0) return;
+    if (!S_ISREG(st.st_mode)) return;
+    if ((zend_off_t)st.st_size > (zend_off_t)FC_IMAGE_MAX_BYTES) return;
+    if (st.st_size <= 0) return;
+
+    /* open_basedir + stream open. The setter validated this at
+     * configure time but the path could now point at a file outside
+     * basedir (race) or be unreadable; re-check defensively. */
+    if (php_check_open_basedir(path)) return;
+
+    php_stream *stream = php_stream_open_wrapper((char *)path, "rb",
+        REPORT_ERRORS | IGNORE_PATH | STREAM_DISABLE_OPEN_BASEDIR, NULL);
+    if (!stream) {
+        if (EG(exception)) zend_clear_exception();
+        return;
+    }
+    zend_string *raw =
+        php_stream_copy_to_mem(stream, FC_IMAGE_MAX_BYTES, 0);
+    php_stream_close(stream);
+    if (!raw) return;
+    if (ZSTR_LEN(raw) == 0
+        || ZSTR_LEN(raw) > FC_IMAGE_MAX_BYTES) {
+        zend_string_release(raw);
+        return;
+    }
+
+    const unsigned char *bytes = (const unsigned char *)ZSTR_VAL(raw);
+    size_t n = ZSTR_LEN(raw);
+
+    const char *mime = fc_sniff_image_mime(bytes, n);
+    if (!mime) { zend_string_release(raw); return; }
+
+    int src_w = 0, src_h = 0;
+    if (fc_sniff_image_dims_mem(bytes, n, &src_w, &src_h) == 0) {
+        if (src_w <= 0 || src_h <= 0
+            || src_w > FC_IMAGE_MAX_DIM
+            || src_h > FC_IMAGE_MAX_DIM
+            || (long long)src_w * (long long)src_h
+                > (long long)FC_IMAGE_MAX_PIXELS) {
+            zend_string_release(raw);
+            return;
+        }
+    }
+    /* If dims couldn't be sniffed, fall through — the byte cap and
+     * MIME check already shielded against pathological inputs. */
+
+    zend_string *b64 = php_base64_encode(bytes, n);
+    zend_string_release(raw);
+    if (!b64) return;
+
+    fc_svg_emit_image_uri(t->u.svg.buf, x, y, w, h, mime, ZSTR_VAL(b64));
+    zend_string_release(b64);
+}
+
+void fastchart_target_gradient_rect(fastchart_target_t *t,
+                                     int x, int y, int w, int h,
+                                     uint32_t from_rgb, uint32_t to_rgb,
+                                     int dir)
+{
+    if (w <= 0 || h <= 0) return;
+    int id = t->u.svg.next_grad_id++;
+    fc_svg_emit_gradient_rect(t->u.svg.buf, id, x, y, w, h,
+                               from_rgb, to_rgb, dir);
+}
+
+void fastchart_target_gradient_polygon(fastchart_target_t *t,
+                                        const fastchart_point_t *pts,
+                                        int n,
+                                        uint32_t from_rgb, uint32_t to_rgb,
+                                        int dir)
+{
+    if (n < 3) return;
+    int xs_stack[256], ys_stack[256];
+    int *xs = xs_stack, *ys = ys_stack;
+    if (n > 256) {
+        xs = emalloc(sizeof(int) * (size_t)n);
+        ys = emalloc(sizeof(int) * (size_t)n);
+    }
+    for (int i = 0; i < n; i++) {
+        xs[i] = pts[i].x;
+        ys[i] = pts[i].y;
+    }
+    int id = t->u.svg.next_grad_id++;
+    fc_svg_emit_gradient_polygon(t->u.svg.buf, id, xs, ys, n,
+                                  from_rgb, to_rgb, dir);
+    if (n > 256) { efree(xs); efree(ys); }
 }

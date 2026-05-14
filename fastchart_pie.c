@@ -26,6 +26,7 @@
 #include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
+#include "fastchart_effects.h"
 
 int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *t)
 {
@@ -135,6 +136,12 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
                 slice_cy = cy + (int)((double)off * sin(mid_rad));
             }
         }
+
+        /* Drop shadow underneath this slice (no-op when chart has
+         * no shadow configured). */
+        fastchart_shadow_filled_arc(t, (fastchart_obj *)self,
+                                    slice_cx, slice_cy, diameter,
+                                    (int)s_deg, (int)e_deg);
 
         /* Emit a filled wedge via the target arc primitive; outline
          * with a thin stroke along the same sweep. */
