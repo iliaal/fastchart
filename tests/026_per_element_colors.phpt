@@ -2,6 +2,7 @@
 setAxisColor / setGridColor / setBorderColor / setTextColor override theme palette
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

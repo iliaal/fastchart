@@ -2,6 +2,7 @@
 BubbleChart: [x, y, size, ?color] points rendered as translucent circles
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

@@ -2,6 +2,7 @@
 setBackgroundImage composites a source image as canvas background
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

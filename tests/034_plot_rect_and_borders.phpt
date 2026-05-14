@@ -2,6 +2,7 @@
 setPlotRect bypasses auto-layout; setBorderSides selects which sides draw
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

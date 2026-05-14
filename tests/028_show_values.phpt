@@ -2,6 +2,7 @@
 setShowValues renders numeric value labels above markers / bars
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

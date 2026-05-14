@@ -2,6 +2,7 @@
 StockChart::setCandleStyle: STYLE_HOLLOW / STYLE_VOLUME / STYLE_VECTOR
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

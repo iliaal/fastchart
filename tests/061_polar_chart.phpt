@@ -2,6 +2,7 @@
 PolarChart: continuous angular plot with [angle, radius] points
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

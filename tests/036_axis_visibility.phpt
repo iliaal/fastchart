@@ -2,6 +2,7 @@
 setXAxisVisible / setYAxisVisible suppress axis line, ticks, and labels
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

@@ -2,6 +2,7 @@
 GaugeChart: dial readout with zones, needle, and value label
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 

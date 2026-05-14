@@ -2,6 +2,7 @@
 StockChart::setVolumeColors per-bar override
 --EXTENSIONS--
 fastchart
+gd
 --FILE--
 <?php
 
