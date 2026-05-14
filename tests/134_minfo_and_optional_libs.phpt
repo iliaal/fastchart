@@ -35,7 +35,7 @@ echo "has_libpng_row: ",
     (preg_match('/libpng[^|]+(\d+\.\d+\.\d+|not compiled in)/', $section)
         ? "yes" : "no"), "\n";
 echo "has_libjpeg_row: ",
-    (preg_match('/libjpeg-turbo[^|]+(\d+\.\d+\.\d+|not compiled in)/', $section)
+    (preg_match('/libjpeg[^|]+(\d+\.\d+\.\d+|not compiled in)/', $section)
         ? "yes" : "no"), "\n";
 echo "has_libwebp_row: ",
     (preg_match('/libwebp[^|]+(\d+\.\d+\.\d+|not compiled in)/', $section)

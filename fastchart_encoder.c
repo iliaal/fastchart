@@ -249,18 +249,19 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 }
 
 int fastchart_have_libjpeg(void) { return 1; }
-/* libjpeg-turbo's LIBJPEG_TURBO_VERSION expands to bare 2.1.2 in
- * jconfig.h, not a string literal. Stringify it. JPEG_LIB_VERSION
- * (e.g. 80) is the API revision and a useful fallback when building
- * against a non-turbo libjpeg. */
+/* Value reported in the MINFO row labelled "libjpeg". LIBJPEG_TURBO_-
+ * VERSION expands to bare 2.1.2 in jconfig.h (not a string literal),
+ * so stringify it. The "(turbo)" suffix distinguishes from a
+ * reference-libjpeg build where only the JPEG_LIB_VERSION API number
+ * is available. */
 #define FC_STR(x) #x
 #define FC_XSTR(x) FC_STR(x)
 const char *fastchart_libjpeg_version(void)
 {
 #ifdef LIBJPEG_TURBO_VERSION
-	return "libjpeg-turbo " FC_XSTR(LIBJPEG_TURBO_VERSION);
+	return FC_XSTR(LIBJPEG_TURBO_VERSION) " (turbo)";
 #else
-	return "libjpeg API " FC_XSTR(JPEG_LIB_VERSION);
+	return "API " FC_XSTR(JPEG_LIB_VERSION);
 #endif
 }
 #else  /* !HAVE_LIBJPEG */
