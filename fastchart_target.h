@@ -78,6 +78,7 @@ typedef struct fastchart_target {
             int height;
             int dpi;
             int next_clip_id;
+            int next_grad_id;
             int text_mode;
         } svg;
     } u;
@@ -151,10 +152,32 @@ void fastchart_target_clip_push(fastchart_target_t *t,
                                  int x, int y, int w, int h);
 void fastchart_target_clip_pop(fastchart_target_t *t);
 
-/* Image blit: v1.0 stub. Background-image / icon compositing through
- * SVG <image href="data:..." /> emission is deferred to v1.1. */
+/* Image blit: emit <image href="data:image/<mime>;base64,..."/> for
+ * the file at `path`. The implementation enforces the source-image
+ * byte and dimension caps (FASTCHART_SOURCE_IMAGE_MAX_*) and the
+ * open_basedir restriction. If anything fails (missing file, too
+ * large, unsupported format, open_basedir refusal), the call emits
+ * nothing — background-image / icon callers fall through to their
+ * solid-fill backup. PNG and JPEG only; WebP/GIF/AVIF source files
+ * are silently skipped because plutosvg's data-URI loader handles
+ * just those two. */
 void fastchart_target_image(fastchart_target_t *t,
-                             int x, int y, int w, int h);
+                             int x, int y, int w, int h,
+                             const char *path);
+
+/* Gradient fills. `dir` is 0 (vertical) or 1 (horizontal); from/to
+ * are 0xRRGGBB with alpha implied 0xFF. The target allocates a
+ * unique gradient id per call. */
+void fastchart_target_gradient_rect(fastchart_target_t *t,
+                                     int x, int y, int w, int h,
+                                     uint32_t from_rgb, uint32_t to_rgb,
+                                     int dir);
+
+void fastchart_target_gradient_polygon(fastchart_target_t *t,
+                                        const fastchart_point_t *pts,
+                                        int n,
+                                        uint32_t from_rgb, uint32_t to_rgb,
+                                        int dir);
 
 /* Resolve a font file path to a CSS-safe family name via FreeType.
  * Result is written into out (null-terminated). out_n must be >= 64.

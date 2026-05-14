@@ -890,37 +890,84 @@ static int fastchart_sniff_image_dims(const char *path, int *w, int *h)
     return -1;
 }
 
-/* v1.0 source-image stubs.
+/* Source-image emission via SVG <image href="data:...;base64,...">.
  *
- * setBackgroundImage() and addIconAt() previously decoded the source
- * file via libgd and composited onto the GD canvas. The libgd
- * dependency is gone in v1.0; the SVG path needs <image href="data:..."
- * /> emission with the source bytes inline-base64'd. That work is
- * deferred to v1.1; for now the setters still accept and validate
- * paths (so callers get the same error semantics) but the render-time
- * composite is a no-op. The setters' open_basedir + file-existence
- * checks still run; nothing visible happens at draw time.
+ * setBackgroundImage() and addIconAt() store the file path; at draw
+ * time the target loads the file (subject to byte-size and dimension
+ * caps), base64-encodes it, and emits an <image> element. PNG and
+ * JPEG only — plutosvg's data-URI loader handles those two.
  *
- * Tests in this surface (031_bg_image, 090_source_image_cap) are
- * currently flagged in CHANGELOG under "Deferred to v1.1".
- *
- * fastchart_sniff_image_dims() above is retained for the
- * setter-side validation path so the size cap still rejects
- * oversize sources before the setter returns. */
+ * Cap enforcement lives in fastchart_target_image so a render-time
+ * change to the file (race) or to open_basedir still gets blocked. */
 
-static void composite_bg_image(const char *path)
+static int composite_bg_image(fastchart_target_t *t, int W, int H,
+                              const char *path)
 {
-    /* Retained signature for the dispatch path; intentional no-op
-     * until SVG <image href="data:..." /> emission lands. */
-    (void)path;
+    if (!path || !*path) return 0;
+
+    /* Preflight dimension check against the declared header w/h —
+     * the byte-size cap runs again inside fastchart_target_image,
+     * but the dimension check needs to happen here so a
+     * pathological declared-100000x100000 JPEG never gets decoded.
+     * If the sniffer can't read dims (unknown format), let the
+     * target_image emitter take its own pass and reject by MIME. */
+    int sw = 0, sh = 0;
+    if (fastchart_sniff_image_dims(path, &sw, &sh) == 0) {
+        if (sw <= 0 || sh <= 0
+            || sw > FASTCHART_SOURCE_IMAGE_MAX_DIM
+            || sh > FASTCHART_SOURCE_IMAGE_MAX_DIM
+            || (long long)sw * (long long)sh
+                > (long long)FASTCHART_SOURCE_IMAGE_MAX_PIXELS) {
+            return 0;
+        }
+    }
+    fastchart_target_image(t, 0, 0, W, H, path);
+    return 1;
 }
 
 void fastchart_blit_icon(fastchart_target_t *t, const fastchart_icon *icon,
                          int px, int py)
 {
-    /* See composite_bg_image. The icon position math used to live
-     * here; restored alongside <image> emission in v1.1. */
-    (void)t; (void)icon; (void)px; (void)py;
+    if (!icon || !icon->path || !*icon->path) return;
+
+    /* Dimension cap, same shape as background: refuse oversize
+     * declared dims. The byte cap is enforced inside
+     * fastchart_target_image. */
+    int sw = 0, sh = 0;
+    if (fastchart_sniff_image_dims(icon->path, &sw, &sh) == 0) {
+        if (sw <= 0 || sh <= 0
+            || sw > FASTCHART_SOURCE_IMAGE_MAX_DIM
+            || sh > FASTCHART_SOURCE_IMAGE_MAX_DIM
+            || (long long)sw * (long long)sh
+                > (long long)FASTCHART_SOURCE_IMAGE_MAX_PIXELS) {
+            return;
+        }
+    } else {
+        /* Unknown format: skip — icons are decorative and the
+         * setter took the optimistic path. */
+        return;
+    }
+
+    int max_w = icon->max_w > 0 ? icon->max_w : sw;
+    int max_h = icon->max_h > 0 ? icon->max_h : sh;
+
+    /* Preserve aspect ratio within max_w / max_h. */
+    int dw = sw, dh = sh;
+    if (dw > max_w) {
+        dh = (int)((double)dh * (double)max_w / (double)dw + 0.5);
+        dw = max_w;
+    }
+    if (dh > max_h) {
+        dw = (int)((double)dw * (double)max_h / (double)dh + 0.5);
+        dh = max_h;
+    }
+    if (dw < 1) dw = 1;
+    if (dh < 1) dh = 1;
+
+    /* Center on (px, py). */
+    int x = px - dw / 2;
+    int y = py - dh / 2;
+    fastchart_target_image(t, x, y, dw, dh, icon->path);
 }
 
 /* Translate libgd's 0..127 (0=opaque, 127=transparent) per-band alpha
@@ -1104,11 +1151,12 @@ void fastchart_draw_frame(fastchart_target_t *t, fastchart_obj *chart,
         /* SVG: no-op — implicit transparency. plutovg rasterizes
          * unpainted regions as alpha=0; encoders honor it on PNG/WebP. */
     } else if (chart->bg_image_path) {
-        /* Background image composite deferred to v1.1 (needs <image
-         * href="data:..." /> SVG emission). For now fall back to the
-         * solid pal->bg fill. */
-        composite_bg_image(ZSTR_VAL(chart->bg_image_path));
+        /* Background image: paint a base bg first (so the corners
+         * still have something readable if the image load fails or
+         * the source has alpha), then composite the image on top
+         * stretched to cover the canvas. */
         fastchart_target_rect(t, 0, 0, W, H, pal->bg, 1, 0);
+        composite_bg_image(t, W, H, ZSTR_VAL(chart->bg_image_path));
     } else {
         fastchart_target_rect(t, 0, 0, W, H, pal->bg, 1, 0);
     }

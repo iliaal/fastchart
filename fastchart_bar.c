@@ -21,6 +21,27 @@
 #include "fastchart_palette.h"
 #include "fastchart_target.h"
 #include "fastchart_axis.h"
+#include "fastchart_effects.h"
+
+/* Emit one filled bar rect, honoring chart-wide drop shadow and
+ * gradient settings. Shadow paints first (so the main shape overlays
+ * it); gradient replaces the solid color when active. */
+static inline void bar_emit_filled_rect(fastchart_target_t *t,
+                                         fastchart_obj *chart,
+                                         int x0, int y0, int x1, int y1,
+                                         int color)
+{
+    fastchart_shadow_filled_rectangle(t, chart, x0, y0, x1, y1);
+    if (chart->gradient_from >= 0 && chart->gradient_to >= 0) {
+        fastchart_target_gradient_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1,
+                                        (uint32_t)chart->gradient_from,
+                                        (uint32_t)chart->gradient_to,
+                                        (int)chart->gradient_dir);
+    } else {
+        fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1,
+                              color, 1, 0);
+    }
+}
 
 /* Resolve a per-point color override into a target color HANDLE. The
  * fallback is also a target handle. Per-point RGB overrides flow
@@ -222,7 +243,7 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
                 int x0 = slot_left + s * sub_w + sub_inset;
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
-                fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
                 if (edge_handle >= 0) {
                     fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
                 }
@@ -241,7 +262,7 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
                 int x0 = slot_left + sub_inset;
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
-                fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
                 if (edge_handle >= 0) {
                     fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
                 }
@@ -268,7 +289,7 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
                 int x0 = slot_left + sub_inset;
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
-                fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
                 if (edge_handle >= 0) {
                     fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
                 }
@@ -288,7 +309,7 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
 
                 int y0 = y_v < zero_y ? y_v : zero_y;
                 int y1 = y_v < zero_y ? zero_y : y_v;
-                fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
                 if (edge_handle >= 0) {
                     fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
                 }
@@ -490,7 +511,7 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
                 int y0 = slot_top + s * sub_h + sub_inset;
                 int y1 = y0 + draw_h - 1;
                 if (y1 > slot_top + slot_inner - 1) y1 = slot_top + slot_inner - 1;
-                fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
                 if (edge_handle >= 0) {
                     fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
                 }
@@ -507,7 +528,7 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
                 int y0 = slot_top + sub_inset;
                 int y1 = y0 + draw_h - 1;
                 if (y1 > slot_top + slot_inner - 1) y1 = slot_top + slot_inner - 1;
-                fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
                 if (edge_handle >= 0) {
                     fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
                 }
@@ -533,7 +554,7 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
                 int y0 = slot_top + sub_inset;
                 int y1 = y0 + draw_h - 1;
                 if (y1 > slot_top + slot_inner - 1) y1 = slot_top + slot_inner - 1;
-                fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
                 if (edge_handle >= 0) {
                     fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
                 }
@@ -553,7 +574,7 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
 
                 int x0 = x_v < zero_x ? x_v : zero_x;
                 int x1 = x_v < zero_x ? zero_x : x_v;
-                fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
                 if (edge_handle >= 0) {
                     fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
                 }

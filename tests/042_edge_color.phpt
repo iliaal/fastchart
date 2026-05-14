@@ -5,6 +5,30 @@ fastchart
 --FILE--
 <?php
 
+// Helper added by plutovg pixel-tolerance sweep: accepts $pixel as an
+// AA-blended version of $target against a white background. Plutovg's
+// 1px strokes produce ~50%-coverage centerline pixels rather than the
+// pure target color libgd emitted.
+function fc_color_near($pixel, $target) {
+    $tr = ($target >> 16) & 0xFF;
+    $tg = ($target >>  8) & 0xFF;
+    $tb =  $target        & 0xFF;
+    $r = ($pixel >> 16) & 0xFF;
+    $g = ($pixel >>  8) & 0xFF;
+    $b =  $pixel        & 0xFF;
+    for ($a = 100; $a >= 30; $a -= 5) {
+        $alpha = $a / 100.0;
+        $er = (int)($tr * $alpha + 255 * (1 - $alpha));
+        $eg = (int)($tg * $alpha + 255 * (1 - $alpha));
+        $eb = (int)($tb * $alpha + 255 * (1 - $alpha));
+        if (abs($r - $er) <= 4 && abs($g - $eg) <= 4 && abs($b - $eb) <= 4) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
 // Bar with explicit edge color black.
 $bytes = (new FastChart\BarChart(500, 400))
     ->setEdgeColor(0x000000)
@@ -16,7 +40,7 @@ $im = imagecreatefromstring($bytes);
 $black = 0;
 for ($y = 0; $y < 400; $y++)
     for ($x = 0; $x < 500; $x++)
-        if (imagecolorat($im, $x, $y) === 0x000000) $black++;
+        if (fc_color_near(imagecolorat($im, $x, $y), 0x000000)) $black++;
 echo "bar_edge_present: ", ($black > 100 ? "yes" : "no"), "\n";
 
 // AreaChart edge.
@@ -29,7 +53,7 @@ $im2 = imagecreatefromstring($bytes2);
 $red = 0;
 for ($y = 0; $y < 400; $y++)
     for ($x = 0; $x < 500; $x++)
-        if (imagecolorat($im2, $x, $y) === 0xFF0000) $red++;
+        if (fc_color_near(imagecolorat($im2, $x, $y), 0xFF0000)) $red++;
 echo "area_edge_present: ", ($red > 100 ? "yes" : "no"), "\n";
 
 // Pie edge: green outline replaces theme border.
@@ -41,7 +65,7 @@ $im3 = imagecreatefromstring($bytes3);
 $green = 0;
 for ($y = 0; $y < 400; $y++)
     for ($x = 0; $x < 400; $x++)
-        if (imagecolorat($im3, $x, $y) === 0x00FF00) $green++;
+        if (fc_color_near(imagecolorat($im3, $x, $y), 0x00FF00)) $green++;
 echo "pie_edge_present: ", ($green > 100 ? "yes" : "no"), "\n";
 
 // -1 disables.

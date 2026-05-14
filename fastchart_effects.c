@@ -38,19 +38,6 @@ static int gradient_active(const fastchart_obj *chart)
     return chart->gradient_from >= 0 && chart->gradient_to >= 0;
 }
 
-/* v1.0 deferral: a true SVG <linearGradient> with stops is v1.1 work.
- * For now we flatten the from/to pair to the midpoint and emit a
- * solid fill via the target abstraction. Visually distinguishable
- * from a flat fill (the midpoint isn't either endpoint) but doesn't
- * reproduce the smooth band the libgd-era pipeline did. */
-static int gradient_solid_color_handle(fastchart_target_t *t,
-                                       const fastchart_obj *chart)
-{
-    int mid = fastchart_lerp_rgb((int)chart->gradient_from,
-                                  (int)chart->gradient_to, 0.5);
-    return fastchart_target_color_rgb(t, mid);
-}
-
 int fastchart_gradient_filled_rectangle(fastchart_target_t *t,
                                         fastchart_obj *chart,
                                         int x0, int y0, int x1, int y1)
@@ -59,9 +46,10 @@ int fastchart_gradient_filled_rectangle(fastchart_target_t *t,
     if (x1 < x0) { int tmp = x0; x0 = x1; x1 = tmp; }
     if (y1 < y0) { int tmp = y0; y0 = y1; y1 = tmp; }
 
-    int handle = gradient_solid_color_handle(t, chart);
-    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1,
-                          handle, 1, 1);
+    fastchart_target_gradient_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1,
+                                    (uint32_t)chart->gradient_from,
+                                    (uint32_t)chart->gradient_to,
+                                    (int)chart->gradient_dir);
     return 1;
 }
 
@@ -71,8 +59,10 @@ int fastchart_gradient_filled_polygon(fastchart_target_t *t,
 {
     if (!gradient_active(chart) || n_pts < 3) return 0;
 
-    int handle = gradient_solid_color_handle(t, chart);
-    fastchart_target_polygon(t, poly, n_pts, handle, 1, 1);
+    fastchart_target_gradient_polygon(t, poly, n_pts,
+                                       (uint32_t)chart->gradient_from,
+                                       (uint32_t)chart->gradient_to,
+                                       (int)chart->gradient_dir);
     return 1;
 }
 
@@ -103,23 +93,61 @@ void fastchart_filled_wedge_aa(fastchart_target_t *t, int cx, int cy,
                          color, 1, 1);
 }
 
+/* Translate the chart's libgd-convention shadow alpha (0..127,
+ * 0 = fully opaque, 127 = fully transparent) into the 0..255
+ * (255 = fully opaque) alpha used by fastchart_target_color. */
+static int shadow_alpha_to_255(const fastchart_obj *chart)
+{
+    int a = (int)chart->shadow_alpha;
+    if (a < 0) a = 0; else if (a > 127) a = 127;
+    return 255 - a * 2;
+}
+
+static int shadow_color_handle(fastchart_target_t *t,
+                               const fastchart_obj *chart)
+{
+    int rgb = (int)chart->shadow_color;
+    int r = (rgb >> 16) & 0xFF;
+    int g = (rgb >>  8) & 0xFF;
+    int b =  rgb        & 0xFF;
+    return fastchart_target_color(t, r, g, b, shadow_alpha_to_255(chart));
+}
+
 void fastchart_shadow_filled_rectangle(fastchart_target_t *t,
                                        fastchart_obj *chart,
                                        int x0, int y0, int x1, int y1)
 {
-    /* v1.0 deferral: real SVG drop shadow needs a <filter> stanza
-     * with <feGaussianBlur> + <feOffset> + a chart-wide <defs>
-     * registration. Currently a no-op so the calling renderer
-     * proceeds to paint its primary shape unshadowed. */
-    (void)t; (void)chart; (void)x0; (void)y0; (void)x1; (void)y1;
+    if (!chart->has_drop_shadow) return;
+    if (x1 < x0) { int tmp = x0; x0 = x1; x1 = tmp; }
+    if (y1 < y0) { int tmp = y0; y0 = y1; y1 = tmp; }
+    int handle = shadow_color_handle(t, chart);
+    if (handle < 0) return;
+    fastchart_target_rect(t,
+        x0 + (int)chart->shadow_dx,
+        y0 + (int)chart->shadow_dy,
+        x1 - x0 + 1, y1 - y0 + 1,
+        handle, 1, 0);
 }
 
 void fastchart_shadow_filled_polygon(fastchart_target_t *t,
                                      fastchart_obj *chart,
                                      const fastchart_point_t *poly, int n_pts)
 {
-    /* v1.0 deferral: see fastchart_shadow_filled_rectangle. */
-    (void)t; (void)chart; (void)poly; (void)n_pts;
+    if (!chart->has_drop_shadow || n_pts < 3) return;
+    int handle = shadow_color_handle(t, chart);
+    if (handle < 0) return;
+    int dx = (int)chart->shadow_dx, dy = (int)chart->shadow_dy;
+    fastchart_point_t stack_pts[256];
+    fastchart_point_t *pts = stack_pts;
+    if (n_pts > 256) {
+        pts = emalloc(sizeof(*pts) * (size_t)n_pts);
+    }
+    for (int i = 0; i < n_pts; i++) {
+        pts[i].x = poly[i].x + dx;
+        pts[i].y = poly[i].y + dy;
+    }
+    fastchart_target_polygon(t, pts, n_pts, handle, 1, 0);
+    if (n_pts > 256) efree(pts);
 }
 
 void fastchart_shadow_filled_arc(fastchart_target_t *t,
@@ -127,7 +155,14 @@ void fastchart_shadow_filled_arc(fastchart_target_t *t,
                                  int cx, int cy, int diameter,
                                  int start_deg, int end_deg)
 {
-    /* v1.0 deferral: see fastchart_shadow_filled_rectangle. */
-    (void)t; (void)chart; (void)cx; (void)cy;
-    (void)diameter; (void)start_deg; (void)end_deg;
+    if (!chart->has_drop_shadow) return;
+    int handle = shadow_color_handle(t, chart);
+    if (handle < 0) return;
+    int radius = diameter / 2;
+    fastchart_target_arc(t,
+        cx + (int)chart->shadow_dx,
+        cy + (int)chart->shadow_dy,
+        radius, radius,
+        (double)start_deg, (double)end_deg,
+        handle, 1, 0);
 }

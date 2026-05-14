@@ -5,6 +5,30 @@ fastchart
 --FILE--
 <?php
 
+// Helper added by plutovg pixel-tolerance sweep: accepts $pixel as an
+// AA-blended version of $target against a white background. Plutovg's
+// 1px strokes produce ~50%-coverage centerline pixels rather than the
+// pure target color libgd emitted.
+function fc_color_near($pixel, $target) {
+    $tr = ($target >> 16) & 0xFF;
+    $tg = ($target >>  8) & 0xFF;
+    $tb =  $target        & 0xFF;
+    $r = ($pixel >> 16) & 0xFF;
+    $g = ($pixel >>  8) & 0xFF;
+    $b =  $pixel        & 0xFF;
+    for ($a = 100; $a >= 30; $a -= 5) {
+        $alpha = $a / 100.0;
+        $er = (int)($tr * $alpha + 255 * (1 - $alpha));
+        $eg = (int)($tg * $alpha + 255 * (1 - $alpha));
+        $eb = (int)($tb * $alpha + 255 * (1 - $alpha));
+        if (abs($r - $er) <= 4 && abs($g - $eg) <= 4 && abs($b - $eb) <= 4) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
 // Hard plot rectangle: chart draws with the user-specified bounds.
 $bytes = (new FastChart\LineChart(800, 500))
     ->setPlotRect(100, 100, 700, 400)
@@ -18,7 +42,7 @@ $im = imagecreatefromstring($bytes);
 $border = 0x666666;
 $found_right = 0;
 for ($y = 100; $y <= 400; $y++) {
-    if (imagecolorat($im, 700, $y) === $border) $found_right++;
+    if (fc_color_near(imagecolorat($im, 700, $y), $border)) $found_right++;
 }
 echo "hard_rect_right_border: ", ($found_right > 200 ? "yes" : "no"), "\n";
 
@@ -27,7 +51,7 @@ echo "hard_rect_right_border: ", ($found_right > 200 ? "yes" : "no"), "\n";
 $axis = 0x333333;
 $found_xaxis = 0;
 for ($x = 100; $x <= 700; $x++) {
-    if (imagecolorat($im, $x, 400) === $axis) $found_xaxis++;
+    if (fc_color_near(imagecolorat($im, $x, 400), $axis)) $found_xaxis++;
 }
 echo "hard_rect_xaxis: ", ($found_xaxis > 200 ? "yes" : "no"), "\n";
 
@@ -52,7 +76,7 @@ $top_border_pixels = 0;
 for ($x = 60; $x < 380; $x++) {
     /* Sample at the y-coord just inside the plot top -- if BORDER_TOP
      * was drawn, the border color would dominate. */
-    if (imagecolorat($im2, $x, 50) === $border) $top_border_pixels++;
+    if (fc_color_near(imagecolorat($im2, $x, 50), $border)) $top_border_pixels++;
 }
 echo "border_none_no_top: ", ($top_border_pixels < 5 ? "yes" : "no ($top_border_pixels)"), "\n";
 
