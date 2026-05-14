@@ -3184,7 +3184,8 @@ ZEND_METHOD(FastChart_Chart, setJpegQuality)
 
 /* Emit a HTML <map> for the scatter chart's clickable points. Reads
  * the typed image_map_areas array populated by the renderer; chart
- * must have been draw()'d at least once for any output. */
+ * must have been rendered at least once (via renderPng/Jpeg/Webp/Svg
+ * or renderToFile) for any output. */
 ZEND_METHOD(FastChart_ScatterChart, getImageMap)
 {
     zend_string *name;
@@ -6566,7 +6567,7 @@ PHP_MINFO_FUNCTION(fastchart)
     php_info_print_table_row(2, "libpng",
         fastchart_have_libpng()
             ? fastchart_libpng_version() : "(not compiled in)");
-    php_info_print_table_row(2, "libjpeg-turbo",
+    php_info_print_table_row(2, "libjpeg",
         fastchart_have_libjpeg()
             ? fastchart_libjpeg_version() : "(not compiled in)");
     php_info_print_table_row(2, "libwebp",

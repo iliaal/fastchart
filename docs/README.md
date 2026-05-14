@@ -649,10 +649,10 @@ breakdowns where dozens of < 1% slivers would crowd the legend.
 ## 30. Image map for clickable charts
 
 Scatter points carrying `'href'` (and optional `'tooltip'`) become
-clickable; `getImageMap('mapname')` after `draw()` / `renderToFile()`
-emits the HTML `<map>`. Schemes outside `http(s)://`, `mailto:`,
-fragment, and absolute path are silently rejected. Attribute values
-are HTML-escaped.
+clickable; `getImageMap('mapname')` after any of the render*()
+methods (or `renderToFile()`) emits the HTML `<map>`. Schemes
+outside `http(s)://`, `mailto:`, fragment, and absolute path are
+silently rejected. Attribute values are HTML-escaped.
 
 ```php
 $chart = (new FastChart\ScatterChart(560, 360))
