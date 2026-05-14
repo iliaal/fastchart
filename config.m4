@@ -93,6 +93,8 @@ if test "$PHP_FASTCHART" != "no"; then
     fastchart_heatmap.c \
     fastchart_linear_meter.c \
     fastchart_effects.c \
+    fastchart_encoder.c \
+    fastchart_rasterize.c \
     fastchart_symbol.c \
     fastchart_code128.c \
     fastchart_qrcode.c \
