@@ -40,6 +40,7 @@ void fastchart_pixels_init(fastchart_pixels_t *pix, int w, int h)
 	pix->w    = w;
 	pix->h    = h;
 	pix->has_alpha = 0;
+	pix->dpi  = 0;
 }
 
 void fastchart_pixels_release(fastchart_pixels_t *pix)
@@ -92,6 +93,14 @@ int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix)
 	png_set_IHDR(png, info, pix->w, pix->h, 8, color_type,
 	             PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
 	             PNG_FILTER_TYPE_DEFAULT);
+
+	if (pix->dpi > 0) {
+		/* DPI -> pixels per meter: 1 inch = 0.0254 m. Mirrors what
+		 * libgd's gdImageSetResolution writes into pHYs. */
+		png_uint_32 ppm = (png_uint_32)((double)pix->dpi / 0.0254 + 0.5);
+		png_set_pHYs(png, info, ppm, ppm, PNG_RESOLUTION_METER);
+	}
+
 	png_write_info(png, info);
 
 	if (!pix->has_alpha) {
@@ -161,6 +170,11 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 	jpeg_set_defaults(&cinfo);
 	jpeg_set_quality(&cinfo, quality, TRUE);
 	cinfo.optimize_coding = TRUE;
+	if (pix->dpi > 0) {
+		cinfo.density_unit = 1;            /* dots per inch */
+		cinfo.X_density = (UINT16)pix->dpi;
+		cinfo.Y_density = (UINT16)pix->dpi;
+	}
 	/* 4:2:0 chroma subsampling — matches the eval reference. Setting
 	 * it explicitly because jpeg_set_quality flips to 4:4:4 above
 	 * q=90 in some libjpeg-turbo versions. */

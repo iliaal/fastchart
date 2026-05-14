@@ -529,18 +529,24 @@ abstract class Chart
     /** Render to PNG bytes at the configured size. */
     public function renderPng(): string {}
 
-    /** Render to JPEG bytes. `$quality` is 1..100. */
-    public function renderJpeg(int $quality = 90): string {}
+    /**
+     * Render to JPEG bytes. `$quality` is 1..100; default 0 means
+     * "use the value set via setJpegQuality()" (default 88).
+     */
+    public function renderJpeg(int $quality = 0): string {}
 
-    /** Render to WebP bytes. `$quality` is 0..100. */
+    /** Render to WebP bytes. `$quality` is 1..100. */
     public function renderWebp(int $quality = 90): string {}
 
-    /** Render to GIF bytes. */
+    /**
+     * Dropped in v1.0 — raises \Error. Use renderPng() / renderJpeg() /
+     * renderWebp() / renderSvg() instead.
+     */
     public function renderGif(): string {}
 
     /**
-     * Render to AVIF bytes. `$quality` is 0..100. Raises
-     * \RuntimeException if libgd was built without AVIF support.
+     * Dropped in v1.0 — raises \Error. Use renderPng() / renderJpeg() /
+     * renderWebp() / renderSvg() instead.
      */
     public function renderAvif(int $quality = 60): string {}
 
@@ -1318,9 +1324,11 @@ abstract class Symbol
     public function setJpegQuality(int $quality): static {}
 
     public function renderPng(): string {}
-    public function renderJpeg(int $quality = 90): string {}
+    public function renderJpeg(int $quality = 0): string {}
     public function renderWebp(int $quality = 90): string {}
+    /** Dropped in v1.0 — raises \Error. */
     public function renderGif(): string {}
+    /** Dropped in v1.0 — raises \Error. */
     public function renderAvif(int $quality = 60): string {}
 
     /**

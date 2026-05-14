@@ -31,6 +31,8 @@
 #include "fastchart_target.h"
 #include "fastchart_svg.h"
 #include "fastchart_axis.h"
+#include "fastchart_encoder.h"
+#include "fastchart_rasterize.h"
 
 /* gen_stub.php on PHP 8.4+ emits the 6-arg ZEND_RAW_FENTRY form (the
  * abstract draw() method on Chart). PHP 8.3's macro takes 4 args, and
@@ -4203,6 +4205,11 @@ int fastchart_resolve_canvas_dims(zend_long width, zend_long height,
     return 0;
 }
 
+/* v1.0 raster pipeline. Build a glyph-flattened SVG (PATHS mode is
+ * forced — plutovg cannot render <text>), hand it to
+ * fastchart_rasterize_svg() at physical dims (logical * dpi/96), then
+ * encode the RGBA buffer via libpng / libjpeg-turbo / libwebp. No
+ * gdImagePtr is allocated. format: 0 PNG, 1 JPEG, 2 WebP. */
 static void fastchart_render_to_string(INTERNAL_FUNCTION_PARAMETERS, int format, zend_long quality)
 {
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
@@ -4213,35 +4220,73 @@ static void fastchart_render_to_string(INTERNAL_FUNCTION_PARAMETERS, int format,
     }
 
     int alloc_w, alloc_h;
-    if (fastchart_resolve_canvas_dims(self->width, self->height, self->dpi, &alloc_w, &alloc_h) != 0) {
-        RETURN_THROWS();
-    }
-    gdImagePtr im = gdImageCreateTrueColor(alloc_w, alloc_h);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart: gdImageCreateTrueColor() returned NULL");
+    if (fastchart_resolve_canvas_dims(self->width, self->height,
+                                       self->dpi, &alloc_w, &alloc_h) != 0) {
         RETURN_THROWS();
     }
 
-    if (dispatch_render(self, Z_OBJCE_P(ZEND_THIS), im) != 0 || EG(exception)) {
-        gdImageDestroy(im);
+    /* Build the SVG in PATHS mode regardless of self->svg_text_mode —
+     * plutovg has no text-rendering support. */
+    smart_str svg_buf = {0};
+    fc_svg_emit_doc_open(&svg_buf, (int)self->width, (int)self->height);
+    fc_svg_emit_g_open(&svg_buf, "fastchart");
+
+    fastchart_target_t t;
+    fastchart_target_from_svg(&t, &svg_buf,
+                               (int)self->width, (int)self->height,
+                               (int)self->dpi,
+                               FASTCHART_SVG_TEXT_PATHS);
+
+    if (dispatch_svg_render(self, Z_OBJCE_P(ZEND_THIS), &t) != 0 || EG(exception)) {
+        smart_str_free(&svg_buf);
+        RETURN_THROWS();
+    }
+    fc_svg_emit_g_close(&svg_buf);
+    fc_svg_emit_doc_close(&svg_buf);
+    smart_str_0(&svg_buf);
+
+    if (!svg_buf.s) {
+        zend_throw_error(NULL, "FastChart: SVG renderer produced no output");
         RETURN_THROWS();
     }
 
-    void *bytes = NULL;
-    int sz = 0;
-    if (fastchart_encode_image(im, format, (int)quality, &bytes, &sz) != 0) {
-        if (bytes) gdFree(bytes);
-        gdImageDestroy(im);
-        if (!EG(exception)) {
-            zend_throw_error(NULL, "FastChart: gd encoder produced no output");
-        }
+    /* Rasterize at physical dims. */
+    fastchart_pixels_t pix;
+    fastchart_pixels_init(&pix, alloc_w, alloc_h);
+    pix.dpi = (int)self->dpi;
+    if (fastchart_rasterize_svg(ZSTR_VAL(svg_buf.s), ZSTR_LEN(svg_buf.s),
+                                 alloc_w, alloc_h, &pix) != 0) {
+        smart_str_free(&svg_buf);
+        zend_throw_error(NULL, "FastChart: plutovg rasterization failed");
         RETURN_THROWS();
     }
+    zend_string_release(svg_buf.s);  /* SVG source no longer needed */
 
-    zend_string *out = zend_string_init((const char *)bytes, (size_t)sz, 0);
-    gdFree(bytes);
-    gdImageDestroy(im);
-    RETURN_STR(out);
+    smart_str out_buf = {0};
+    int rc = -1;
+    switch (format) {
+    case 0:
+        rc = fastchart_encode_png(&out_buf, &pix);
+        break;
+    case 1:
+        rc = fastchart_encode_jpeg(&out_buf, &pix,
+            (quality > 0) ? (int)quality : (int)self->jpeg_quality);
+        break;
+    case 2:
+        rc = fastchart_encode_webp(&out_buf, &pix, (int)quality);
+        break;
+    default:
+        break;
+    }
+    fastchart_pixels_release(&pix);
+
+    if (rc != 0 || !out_buf.s) {
+        smart_str_free(&out_buf);
+        zend_throw_error(NULL, "FastChart: encoder produced no output");
+        RETURN_THROWS();
+    }
+    smart_str_0(&out_buf);
+    RETURN_STR(out_buf.s);
 }
 
 ZEND_METHOD(FastChart_Chart, renderPng)
@@ -4252,15 +4297,23 @@ ZEND_METHOD(FastChart_Chart, renderPng)
 
 ZEND_METHOD(FastChart_Chart, renderJpeg)
 {
-    zend_long quality = 90;
+    /* Per-call quality wins when provided; otherwise falls back to
+     * self->jpeg_quality (default 88, settable via setJpegQuality). */
+    zend_long quality = 0;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
         Z_PARAM_LONG(quality)
     ZEND_PARSE_PARAMETERS_END();
 
-    if (quality < 1 || quality > 100) {
-        zend_value_error("FastChart\\Chart::renderJpeg() quality must be in [1, 100]");
-        RETURN_THROWS();
+    if (ZEND_NUM_ARGS() > 0) {
+        if (quality < 1 || quality > 100) {
+            zend_value_error(
+                "FastChart\\Chart::renderJpeg() quality must be in [1, 100]");
+            RETURN_THROWS();
+        }
+    } else {
+        fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+        quality = self->jpeg_quality;
     }
     fastchart_render_to_string(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1, quality);
 }
@@ -4273,8 +4326,8 @@ ZEND_METHOD(FastChart_Chart, renderWebp)
         Z_PARAM_LONG(quality)
     ZEND_PARSE_PARAMETERS_END();
 
-    if (quality < 0 || quality > 100) {
-        zend_value_error("FastChart\\Chart::renderWebp() quality must be in [0, 100]");
+    if (quality < 1 || quality > 100) {
+        zend_value_error("FastChart\\Chart::renderWebp() quality must be in [1, 100]");
         RETURN_THROWS();
     }
     fastchart_render_to_string(INTERNAL_FUNCTION_PARAM_PASSTHRU, 2, quality);
@@ -4283,22 +4336,19 @@ ZEND_METHOD(FastChart_Chart, renderWebp)
 ZEND_METHOD(FastChart_Chart, renderGif)
 {
     ZEND_PARSE_PARAMETERS_NONE();
-    fastchart_render_to_string(INTERNAL_FUNCTION_PARAM_PASSTHRU, 3, 0);
+    zend_throw_error(NULL,
+        "FastChart: GIF output was dropped in v1.0. "
+        "Use renderPng() / renderJpeg() / renderWebp() / renderSvg() instead.");
+    RETURN_THROWS();
 }
 
 ZEND_METHOD(FastChart_Chart, renderAvif)
 {
-    zend_long quality = 60;
-    ZEND_PARSE_PARAMETERS_START(0, 1)
-        Z_PARAM_OPTIONAL
-        Z_PARAM_LONG(quality)
-    ZEND_PARSE_PARAMETERS_END();
-
-    if (quality < 0 || quality > 100) {
-        zend_value_error("FastChart\\Chart::renderAvif() quality must be in [0, 100]");
-        RETURN_THROWS();
-    }
-    fastchart_render_to_string(INTERNAL_FUNCTION_PARAM_PASSTHRU, 4, quality);
+    ZEND_PARSE_PARAMETERS_NONE();
+    zend_throw_error(NULL,
+        "FastChart: AVIF output was dropped in v1.0. "
+        "Use renderPng() / renderJpeg() / renderWebp() / renderSvg() instead.");
+    RETURN_THROWS();
 }
 
 /* SVG render shared between Chart::renderSvg (fragment_only=0, emits a
@@ -4503,32 +4553,35 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
 
     int format = fastchart_format_from_path(ZSTR_VAL(path), ZSTR_LEN(path));
     if (format < 0) {
-        zend_value_error("FastChart\\Chart::renderToFile() could not infer format from extension; expected .png/.jpg/.jpeg/.webp/.gif/.avif/.svg");
+        zend_value_error("FastChart\\Chart::renderToFile() could not infer "
+            "format from extension; expected .png/.jpg/.jpeg/.webp/.svg");
         RETURN_THROWS();
     }
-    /* Format-conditional quality validation. JPEG quality 0 is
-     * degenerate (max compression, near-unrecognisable output) and
-     * matches what renderJpeg() rejects, so reject it here too.
-     * WebP and AVIF treat 0 as a valid "smallest size, lowest
-     * fidelity" setting and renderWebp / renderAvif accept it.
-     * PNG and GIF ignore the argument entirely (libgd doesn't expose
-     * a per-call zlib level for PngPtr / GifPtr) but we still
-     * sanity-check the range. */
-    if (format == 1) {  /* JPEG */
+    if (format == 3) {
+        zend_throw_error(NULL,
+            "FastChart: GIF output was dropped in v1.0. Use .png/.jpg/.webp/.svg.");
+        RETURN_THROWS();
+    }
+    if (format == 4) {
+        zend_throw_error(NULL,
+            "FastChart: AVIF output was dropped in v1.0. Use .png/.jpg/.webp/.svg.");
+        RETURN_THROWS();
+    }
+    /* JPEG range 1..100. PNG and WebP have their own valid ranges;
+     * PNG ignores quality entirely (libpng's compression-level lives
+     * elsewhere and we don't expose it). */
+    if (format == 1) {
         if (quality < 1 || quality > 100) {
             zend_value_error("FastChart\\Chart::renderToFile() JPEG quality must be in [1, 100]");
             RETURN_THROWS();
         }
-    } else {  /* PNG / WebP / GIF / AVIF */
+    } else {
         if (quality < 0 || quality > 100) {
             zend_value_error("FastChart\\Chart::renderToFile() quality must be in [0, 100]");
             RETURN_THROWS();
         }
     }
     if (php_check_open_basedir(ZSTR_VAL(path))) {
-        /* php_check_open_basedir emits E_WARNING but does not set
-         * EG(exception); throw explicitly so RETURN_THROWS does not
-         * assert under debug builds. */
         if (!EG(exception)) {
             zend_throw_error(NULL,
                 "FastChart\\Chart::renderToFile() open_basedir restriction "
@@ -4544,39 +4597,63 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
     }
 
     int alloc_w, alloc_h;
-    if (fastchart_resolve_canvas_dims(self->width, self->height, self->dpi, &alloc_w, &alloc_h) != 0) {
-        RETURN_THROWS();
-    }
-    gdImagePtr im = gdImageCreateTrueColor(alloc_w, alloc_h);
-    if (!im) {
-        zend_throw_error(NULL, "FastChart: gdImageCreateTrueColor() returned NULL");
+    if (fastchart_resolve_canvas_dims(self->width, self->height,
+                                       self->dpi, &alloc_w, &alloc_h) != 0) {
         RETURN_THROWS();
     }
 
-    if (dispatch_render(self, Z_OBJCE_P(ZEND_THIS), im) != 0 || EG(exception)) {
-        gdImageDestroy(im);
-        RETURN_THROWS();
-    }
+    /* Build SVG (PATHS forced), rasterize, encode. Mirrors
+     * fastchart_render_to_string. */
+    smart_str svg_buf = {0};
+    fc_svg_emit_doc_open(&svg_buf, (int)self->width, (int)self->height);
+    fc_svg_emit_g_open(&svg_buf, "fastchart");
 
-    void *bytes = NULL;
-    int sz = 0;
-    if (fastchart_encode_image(im, format, (int)quality, &bytes, &sz) != 0) {
-        if (bytes) gdFree(bytes);
-        gdImageDestroy(im);
-        if (!EG(exception)) {
-            zend_throw_error(NULL, "FastChart: gd encoder produced no output");
-        }
+    fastchart_target_t t;
+    fastchart_target_from_svg(&t, &svg_buf,
+                               (int)self->width, (int)self->height,
+                               (int)self->dpi,
+                               FASTCHART_SVG_TEXT_PATHS);
+
+    if (dispatch_svg_render(self, Z_OBJCE_P(ZEND_THIS), &t) != 0 || EG(exception)) {
+        smart_str_free(&svg_buf);
         RETURN_THROWS();
     }
-    gdImageDestroy(im);
+    fc_svg_emit_g_close(&svg_buf);
+    fc_svg_emit_doc_close(&svg_buf);
+    smart_str_0(&svg_buf);
+
+    fastchart_pixels_t pix;
+    fastchart_pixels_init(&pix, alloc_w, alloc_h);
+    pix.dpi = (int)self->dpi;
+    if (fastchart_rasterize_svg(ZSTR_VAL(svg_buf.s), ZSTR_LEN(svg_buf.s),
+                                 alloc_w, alloc_h, &pix) != 0) {
+        smart_str_free(&svg_buf);
+        zend_throw_error(NULL, "FastChart: plutovg rasterization failed");
+        RETURN_THROWS();
+    }
+    zend_string_release(svg_buf.s);
+
+    smart_str enc_buf = {0};
+    int rc = -1;
+    int q_eff = (int)quality;
+    if (format == 1 && q_eff == 0) q_eff = (int)self->jpeg_quality;
+    switch (format) {
+    case 0: rc = fastchart_encode_png(&enc_buf, &pix); break;
+    case 1: rc = fastchart_encode_jpeg(&enc_buf, &pix, q_eff); break;
+    case 2: rc = fastchart_encode_webp(&enc_buf, &pix, q_eff > 0 ? q_eff : 90); break;
+    }
+    fastchart_pixels_release(&pix);
+    if (rc != 0 || !enc_buf.s) {
+        smart_str_free(&enc_buf);
+        zend_throw_error(NULL, "FastChart: encoder produced no output");
+        RETURN_THROWS();
+    }
+    smart_str_0(&enc_buf);
 
     php_stream *stream = php_stream_open_wrapper(ZSTR_VAL(path), "wb",
         REPORT_ERRORS, NULL);
     if (!stream) {
-        gdFree(bytes);
-        /* REPORT_ERRORS emits E_WARNING but does not set EG(exception).
-         * Throw explicitly so RETURN_THROWS does not assert under
-         * debug builds. */
+        zend_string_release(enc_buf.s);
         if (!EG(exception)) {
             zend_throw_error(NULL,
                 "FastChart\\Chart::renderToFile() could not open %s for writing",
@@ -4585,20 +4662,18 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         RETURN_THROWS();
     }
 
-    ssize_t written = php_stream_write(stream, (const char *)bytes, (size_t)sz);
+    size_t sz = ZSTR_LEN(enc_buf.s);
+    ssize_t written = php_stream_write(stream, ZSTR_VAL(enc_buf.s), sz);
     php_stream_close(stream);
-    gdFree(bytes);
+    zend_string_release(enc_buf.s);
 
     if (written < 0) {
         zend_throw_error(NULL, "FastChart: write to %s failed", ZSTR_VAL(path));
         RETURN_THROWS();
     }
-    /* Short writes leave a truncated file behind. Treat as failure
-     * rather than returning the partial byte count, which a caller
-     * could mistake for success. */
-    if ((size_t)written != (size_t)sz) {
+    if ((size_t)written != sz) {
         zend_throw_error(NULL,
-            "FastChart: short write to %s (%zd of %d bytes)",
+            "FastChart: short write to %s (%zd of %zu bytes)",
             ZSTR_VAL(path), written, sz);
         RETURN_THROWS();
     }
