@@ -57,11 +57,16 @@ php -d extension=./modules/fastchart.so \
 ## Requirements
 
 - PHP 8.3 or later (NTS or ZTS).
-- libpng, libjpeg-turbo, libwebp, FreeType development headers
-  (`libpng-dev libjpeg-turbo-dev libwebp-dev libfreetype-dev` on
-  Debian / Ubuntu; `libpng-devel libjpeg-turbo-devel libwebp-devel
-  freetype-devel` on RHEL / Fedora). config.m4 probes all four via
-  pkg-config.
+- **FreeType** development headers (`libfreetype-dev` /
+  `freetype-devel`). Required — text rendering depends on FreeType.
+- **libpng / libjpeg-turbo / libwebp** development headers. Each is
+  optional; config.m4 probes them independently via pkg-config and
+  the corresponding `renderPng()` / `renderJpeg()` / `renderWebp()`
+  is wired up only for libs that resolve at build time. A missing
+  lib turns the matching method into a "format not compiled in"
+  Error at call time; SVG output stays available regardless.
+  `phpinfo()` reports the resolved version of each lib (or `(not
+  compiled in)`) so you can audit a build.
 - plutovg + plutosvg are vendored under `vendor/`; no separate install
   required.
 

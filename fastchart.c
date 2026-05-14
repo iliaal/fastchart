@@ -34,6 +34,15 @@
 #include "fastchart_encoder.h"
 #include "fastchart_rasterize.h"
 
+#include "plutovg.h"
+#include "plutosvg.h"
+
+/* Compose a "MAJ.MIN.MIC" string literal from three integer macros for
+ * MINFO output. Two-step #/## dance so the inner macros expand before
+ * stringification. */
+#define FC_VER_STR2(a, b, c) #a "." #b "." #c
+#define FC_XSTR_VER(a, b, c) FC_VER_STR2(a, b, c)
+
 /* gen_stub.php on PHP 8.4+ emits the 6-arg ZEND_RAW_FENTRY form (the
  * abstract draw() method on Chart). PHP 8.3's macro takes 4 args, and
  * ZEND_ME there expands into the 4-arg form. Redefine variadically so
@@ -4166,6 +4175,21 @@ static void fastchart_render_to_string(INTERNAL_FUNCTION_PARAMETERS, int format,
         RETURN_THROWS();
     }
 
+    /* Reject before paying for SVG build + rasterization when the
+     * requested format's encoder isn't compiled in. */
+    const char *missing = NULL;
+    switch (format) {
+    case 0: if (!fastchart_have_libpng())  missing = "libpng";        break;
+    case 1: if (!fastchart_have_libjpeg()) missing = "libjpeg-turbo"; break;
+    case 2: if (!fastchart_have_libwebp()) missing = "libwebp";       break;
+    }
+    if (missing) {
+        zend_throw_error(NULL,
+            "FastChart: %s support not compiled in (configure could not find "
+            "the library at build time)", missing);
+        RETURN_THROWS();
+    }
+
     int alloc_w, alloc_h;
     if (fastchart_resolve_canvas_dims(self->width, self->height,
                                        self->dpi, &alloc_w, &alloc_h) != 0) {
@@ -4540,6 +4564,24 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (self->width <= 0 || self->height <= 0) {
         zend_throw_error(NULL, "FastChart: invalid canvas size; setSize() first");
+        RETURN_THROWS();
+    }
+
+    /* Reject before SVG build + rasterization when the format's
+     * encoder lib isn't compiled in. GIF (3) and AVIF (4) are already
+     * rejected above; SVG is on a separate branch. So we're only
+     * guarding the three optional codec formats here. */
+    const char *missing = NULL;
+    switch (format) {
+    case 0: if (!fastchart_have_libpng())  missing = "libpng";        break;
+    case 1: if (!fastchart_have_libjpeg()) missing = "libjpeg-turbo"; break;
+    case 2: if (!fastchart_have_libwebp()) missing = "libwebp";       break;
+    }
+    if (missing) {
+        zend_throw_error(NULL,
+            "FastChart\\Chart::renderToFile(): %s support not compiled "
+            "in (configure could not find the library at build time)",
+            missing);
         RETURN_THROWS();
     }
 
@@ -6509,8 +6551,39 @@ PHP_MINFO_FUNCTION(fastchart)
     php_info_print_table_start();
     php_info_print_table_row(2, "fastchart support", "enabled");
     php_info_print_table_row(2, "fastchart version", PHP_FASTCHART_VERSION);
-    php_info_print_table_row(2, "Backend",
-        "plutovg + libpng + libjpeg-turbo + libwebp + FreeType");
+
+    /* FreeType runtime version. The shared library doesn't expose a
+     * version string macro at link time, only a runtime query — pull
+     * it via FT_Library_Version on the per-process library handle. */
+    FT_Library ft_lib = fastchart_ft_library();
+    char ft_ver[32] = "(init failed)";
+    if (ft_lib) {
+        FT_Int maj = 0, min = 0, patch = 0;
+        FT_Library_Version(ft_lib, &maj, &min, &patch);
+        snprintf(ft_ver, sizeof(ft_ver), "%d.%d.%d",
+                 (int)maj, (int)min, (int)patch);
+    }
+    php_info_print_table_row(2, "FreeType", ft_ver);
+
+    php_info_print_table_row(2, "libpng",
+        fastchart_have_libpng()
+            ? fastchart_libpng_version() : "(not compiled in)");
+    php_info_print_table_row(2, "libjpeg-turbo",
+        fastchart_have_libjpeg()
+            ? fastchart_libjpeg_version() : "(not compiled in)");
+    php_info_print_table_row(2, "libwebp",
+        fastchart_have_libwebp()
+            ? fastchart_libwebp_version() : "(not compiled in)");
+
+    /* plutovg + plutosvg are vendored; the version macros are
+     * compile-time. */
+    php_info_print_table_row(2, "plutovg",
+        FC_XSTR_VER(PLUTOVG_VERSION_MAJOR, PLUTOVG_VERSION_MINOR,
+                    PLUTOVG_VERSION_MICRO));
+    php_info_print_table_row(2, "plutosvg",
+        FC_XSTR_VER(PLUTOSVG_VERSION_MAJOR, PLUTOSVG_VERSION_MINOR,
+                    PLUTOSVG_VERSION_MICRO));
+
     php_info_print_table_row(2, "Default font",
         fastchart_default_font_path
             ? ZSTR_VAL(fastchart_default_font_path)

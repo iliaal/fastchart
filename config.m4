@@ -14,26 +14,40 @@ if test "$PHP_FASTCHART" != "no"; then
   fi
 
   dnl ----- pkg-config-resolved deps ---------------------------------------
-  dnl FreeType: glyph metrics + family-name resolution for SVG output;
-  dnl plus FT_Outline_Decompose for glyph-to-path emission in SVG_TEXT_PATHS
-  dnl mode, and text bbox measurement for chart layout.
+  dnl FreeType: mandatory. Glyph metrics + family-name resolution for
+  dnl SVG output; plus FT_Outline_Decompose for glyph-to-path emission
+  dnl in SVG_TEXT_PATHS mode, and text bbox measurement for chart layout.
   dnl
-  dnl libpng / libjpeg / libwebp: raster encoders. The plutovg-based raster
-  dnl pipeline produces an RGBA buffer that we hand to libpng, libjpeg-turbo,
-  dnl or libwebp directly.
+  dnl libpng / libjpeg-turbo / libwebp: optional, probed independently.
+  dnl Each missing lib drops its corresponding output format — the
+  dnl encoder compiles to a stub that returns -2 and the PHP method
+  dnl throws a clear "format not compiled in" error at call time.
   AC_PATH_PROG(FC_PKGCFG, pkg-config, no)
   if test "$FC_PKGCFG" = "no"; then
     AC_MSG_ERROR([pkg-config not found. Install pkg-config (Debian/Ubuntu) or pkgconf (RHEL).])
   fi
 
-  for fc_lib in freetype2 libpng libjpeg libwebp; do
-    if ! $FC_PKGCFG --exists $fc_lib; then
-      AC_MSG_ERROR([pkg-config $fc_lib not found. Install the corresponding -dev/-devel package.])
+  if ! $FC_PKGCFG --exists freetype2; then
+    AC_MSG_ERROR([pkg-config freetype2 not found. Install libfreetype-dev / freetype-devel — FreeType is required for text rendering.])
+  fi
+
+  FC_PC_CFLAGS=`$FC_PKGCFG --cflags freetype2`
+  FC_PC_LIBS=`$FC_PKGCFG --libs   freetype2`
+  FC_OPT_DEFS=""
+
+  for fc_pair in libpng:HAVE_LIBPNG libjpeg:HAVE_LIBJPEG libwebp:HAVE_LIBWEBP; do
+    fc_lib=`echo $fc_pair | cut -d: -f1`
+    fc_def=`echo $fc_pair | cut -d: -f2`
+    if $FC_PKGCFG --exists $fc_lib; then
+      FC_PC_CFLAGS="$FC_PC_CFLAGS `$FC_PKGCFG --cflags $fc_lib`"
+      FC_PC_LIBS="$FC_PC_LIBS `$FC_PKGCFG --libs $fc_lib`"
+      FC_OPT_DEFS="$FC_OPT_DEFS -D$fc_def=1"
+      AC_MSG_NOTICE([fastchart: $fc_lib found, $fc_def enabled])
+    else
+      AC_MSG_NOTICE([fastchart: $fc_lib not found — corresponding output format will be unavailable at runtime])
     fi
   done
 
-  FC_PC_CFLAGS=`$FC_PKGCFG --cflags freetype2 libpng libjpeg libwebp`
-  FC_PC_LIBS=`$FC_PKGCFG --libs   freetype2 libpng libjpeg libwebp`
   PHP_EVAL_INCLINE([$FC_PC_CFLAGS])
   PHP_EVAL_LIBLINE([$FC_PC_LIBS], FASTCHART_SHARED_LIBADD)
 
@@ -109,7 +123,8 @@ if test "$PHP_FASTCHART" != "no"; then
     -Wno-implicit-fallthrough -Wno-unused-but-set-variable \
     -Wno-misleading-indentation -Wno-missing-field-initializers \
     -fvisibility=hidden \
-    -DPLUTOVG_BUILD_STATIC -DPLUTOSVG_BUILD_STATIC"
+    -DPLUTOVG_BUILD_STATIC -DPLUTOSVG_BUILD_STATIC \
+    $FC_OPT_DEFS"
 
   if test "$PHP_FASTCHART_DEV" = "yes"; then
     FASTCHART_CFLAGS="$FASTCHART_CFLAGS -Werror -Wstrict-prototypes"
