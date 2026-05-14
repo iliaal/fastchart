@@ -6496,6 +6496,11 @@ PHP_MSHUTDOWN_FUNCTION(fastchart)
         zend_string_release_ex(fastchart_default_font_path, /*persistent=*/1);
         fastchart_default_font_path = NULL;
     }
+    /* Release the per-process FreeType library shared by the font-
+     * family resolver, glyph-path emitter, and bbox measurer.
+     * MSHUTDOWN runs after every request ends, so no in-flight
+     * render can race the FT_Done. */
+    fastchart_ft_library_shutdown();
     return SUCCESS;
 }
 
