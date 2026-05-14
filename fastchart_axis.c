@@ -772,155 +772,20 @@ int fastchart_y_categorical_center(const fastchart_rect *plot, int idx, int n)
     return plot->y0 + (int)(step * (idx + 0.5));
 }
 
-/* Source-image budget: reject files larger than 8 MiB AND with
- * declared dimensions over 4096px on either axis, OR a pixel
- * product over 16M, before handing them to libgd. open_basedir
- * already gates which paths are reachable; these caps are
- * defense-in-depth so a caller who passes a user-supplied
- * background / icon path can't make libgd allocate hundreds of
- * MiB to decode a single image — a small JPEG with declared
- * dimensions of 100000x100000 still claims its full bitmap from
- * the decoder.
- *
- * The cap lives at the source-load helper rather than on the
- * setter — setter time is too early to know whether the file at
- * that path is still the same size (or exists at all) by the
- * time draw() runs. */
-#define FASTCHART_SOURCE_IMAGE_MAX_BYTES   (8 * 1024 * 1024)
-#define FASTCHART_SOURCE_IMAGE_MAX_DIM     4096
-#define FASTCHART_SOURCE_IMAGE_MAX_PIXELS  (16 * 1024 * 1024)
-
-/* Sniff PNG / JPEG / GIF / WebP headers to recover the declared
- * width and height before letting libgd decode the file. Returns
- * 0 on success and writes *w / *h, -1 if the format isn't
- * recognised (the caller treats that as "no preflight available"
- * — the byte-size cap still applies). */
-static int fastchart_sniff_image_dims(const char *path, int *w, int *h)
-{
-    FILE *fp = fopen(path, "rb");
-    if (!fp) return -1;
-    unsigned char buf[64];
-    size_t got = fread(buf, 1, sizeof(buf), fp);
-    fclose(fp);
-    if (got < 16) return -1;
-
-    /* PNG: 8-byte signature, IHDR at offset 16..23 carries
-     * width(BE)+height(BE). */
-    if (got >= 24 &&
-        buf[0] == 0x89 && buf[1] == 'P' && buf[2] == 'N' && buf[3] == 'G') {
-        *w = (buf[16] << 24) | (buf[17] << 16) | (buf[18] << 8) | buf[19];
-        *h = (buf[20] << 24) | (buf[21] << 16) | (buf[22] << 8) | buf[23];
-        return 0;
-    }
-    /* GIF: "GIF87a"/"GIF89a", then width(LE), height(LE) at 6..9. */
-    if (buf[0] == 'G' && buf[1] == 'I' && buf[2] == 'F' &&
-        (buf[3] == '8') && (buf[4] == '7' || buf[4] == '9') && buf[5] == 'a') {
-        *w = buf[6] | (buf[7] << 8);
-        *h = buf[8] | (buf[9] << 8);
-        return 0;
-    }
-    /* WebP: "RIFF"....."WEBP" + 4-byte sub-format. */
-    if (got >= 30 &&
-        buf[0] == 'R' && buf[1] == 'I' && buf[2] == 'F' && buf[3] == 'F' &&
-        buf[8] == 'W' && buf[9] == 'E' && buf[10] == 'B' && buf[11] == 'P') {
-        if (buf[12] == 'V' && buf[13] == 'P' && buf[14] == '8' && buf[15] == ' ') {
-            /* Lossy: skip 7-byte frame tag, find 9D 01 2A start code,
-             * then 2 bytes width 14-bit LE + 2 bytes height. The
-             * frame tag + start code start at byte 20; W/H at 26-29. */
-            *w = (buf[26] | (buf[27] << 8)) & 0x3FFF;
-            *h = (buf[28] | (buf[29] << 8)) & 0x3FFF;
-            return 0;
-        }
-        if (got >= 25 &&
-            buf[12] == 'V' && buf[13] == 'P' && buf[14] == '8' && buf[15] == 'L') {
-            /* Lossless: 1-byte signature 0x2F at byte 20, then a
-             * 28-bit packed (width-1, height-1) — 14 bits each, LE. */
-            unsigned long bits = (unsigned long)buf[21]
-                | ((unsigned long)buf[22] << 8)
-                | ((unsigned long)buf[23] << 16)
-                | ((unsigned long)buf[24] << 24);
-            *w = (int)((bits & 0x3FFFu) + 1);
-            *h = (int)(((bits >> 14) & 0x3FFFu) + 1);
-            return 0;
-        }
-        if (got >= 30 &&
-            buf[12] == 'V' && buf[13] == 'P' && buf[14] == '8' && buf[15] == 'X') {
-            /* Extended: canvas width/height each 3-byte LE - 1
-             * starting at byte 24. */
-            *w = (buf[24] | (buf[25] << 8) | (buf[26] << 16)) + 1;
-            *h = (buf[27] | (buf[28] << 8) | (buf[29] << 16)) + 1;
-            return 0;
-        }
-    }
-    /* JPEG: 0xFFD8 SOI, then walk markers. SOF0..SOF15 (excluding
-     * C4 / C8 / CC) carry the dimensions. The first 64 bytes don't
-     * always cover the SOF marker, but for the common JFIF/EXIF
-     * shape we usually find SOF after the APP0/APP1 segment. Read
-     * a bigger window for JPEG only. */
-    if (buf[0] == 0xFF && buf[1] == 0xD8) {
-        FILE *fp2 = fopen(path, "rb");
-        if (!fp2) return -1;
-        unsigned char jb[1024];
-        size_t jgot = fread(jb, 1, sizeof(jb), fp2);
-        fclose(fp2);
-        size_t i = 2;
-        while (i + 9 < jgot) {
-            if (jb[i] != 0xFF) return -1;
-            unsigned char marker = jb[i + 1];
-            /* Skip marker padding 0xFF00 / 0xFFFF run-on. */
-            if (marker == 0x00 || marker == 0xFF) { i++; continue; }
-            /* SOI / EOI carry no length. */
-            if (marker == 0xD8 || marker == 0xD9) { i += 2; continue; }
-            /* SOF markers carry W/H. */
-            if ((marker >= 0xC0 && marker <= 0xCF) &&
-                marker != 0xC4 && marker != 0xC8 && marker != 0xCC) {
-                /* segment length at i+2..i+3 (BE), precision at i+4,
-                 * height at i+5..i+6 (BE), width at i+7..i+8 (BE). */
-                *h = (jb[i + 5] << 8) | jb[i + 6];
-                *w = (jb[i + 7] << 8) | jb[i + 8];
-                return 0;
-            }
-            /* Other segments: skip via 2-byte BE length. */
-            unsigned int seg_len = (jb[i + 2] << 8) | jb[i + 3];
-            if (seg_len < 2) return -1;
-            i += 2 + seg_len;
-        }
-        return -1;
-    }
-    return -1;
-}
-
 /* Source-image emission via SVG <image href="data:...;base64,...">.
  *
  * setBackgroundImage() and addIconAt() store the file path; at draw
- * time the target loads the file (subject to byte-size and dimension
- * caps), base64-encodes it, and emits an <image> element. PNG and
- * JPEG only — plutosvg's data-URI loader handles those two.
- *
- * Cap enforcement lives in fastchart_target_image so a render-time
- * change to the file (race) or to open_basedir still gets blocked. */
+ * time the target loads the file once through the PHP stream layer
+ * (which enforces open_basedir natively — no TOCTOU between a
+ * pre-check and the actual open) and base64-encodes it into an
+ * <image> element. The byte and dimension caps are enforced on the
+ * loaded buffer inside fastchart_target_load_source_image. PNG and
+ * JPEG only — plutosvg's data-URI loader handles those two. */
 
 static int composite_bg_image(fastchart_target_t *t, int W, int H,
                               const char *path)
 {
     if (!path || !*path) return 0;
-
-    /* Preflight dimension check against the declared header w/h —
-     * the byte-size cap runs again inside fastchart_target_image,
-     * but the dimension check needs to happen here so a
-     * pathological declared-100000x100000 JPEG never gets decoded.
-     * If the sniffer can't read dims (unknown format), let the
-     * target_image emitter take its own pass and reject by MIME. */
-    int sw = 0, sh = 0;
-    if (fastchart_sniff_image_dims(path, &sw, &sh) == 0) {
-        if (sw <= 0 || sh <= 0
-            || sw > FASTCHART_SOURCE_IMAGE_MAX_DIM
-            || sh > FASTCHART_SOURCE_IMAGE_MAX_DIM
-            || (long long)sw * (long long)sh
-                > (long long)FASTCHART_SOURCE_IMAGE_MAX_PIXELS) {
-            return 0;
-        }
-    }
     fastchart_target_image(t, 0, 0, W, H, path);
     return 1;
 }
@@ -930,23 +795,13 @@ void fastchart_blit_icon(fastchart_target_t *t, const fastchart_icon *icon,
 {
     if (!icon || !icon->path || !*icon->path) return;
 
-    /* Dimension cap, same shape as background: refuse oversize
-     * declared dims. The byte cap is enforced inside
-     * fastchart_target_image. */
-    int sw = 0, sh = 0;
-    if (fastchart_sniff_image_dims(icon->path, &sw, &sh) == 0) {
-        if (sw <= 0 || sh <= 0
-            || sw > FASTCHART_SOURCE_IMAGE_MAX_DIM
-            || sh > FASTCHART_SOURCE_IMAGE_MAX_DIM
-            || (long long)sw * (long long)sh
-                > (long long)FASTCHART_SOURCE_IMAGE_MAX_PIXELS) {
-            return;
-        }
-    } else {
-        /* Unknown format: skip — icons are decorative and the
-         * setter took the optimistic path. */
-        return;
-    }
+    /* Single source-image load — opens through the PHP stream layer
+     * with open_basedir enforced, caps bytes / dimensions, and sniffs
+     * MIME + width/height from the loaded buffer. */
+    fastchart_image_buf_t buf;
+    if (fastchart_target_load_source_image(icon->path, &buf) != 0) return;
+    int sw = buf.width;
+    int sh = buf.height;
 
     int max_w = icon->max_w > 0 ? icon->max_w : sw;
     int max_h = icon->max_h > 0 ? icon->max_h : sh;
@@ -967,7 +822,8 @@ void fastchart_blit_icon(fastchart_target_t *t, const fastchart_icon *icon,
     /* Center on (px, py). */
     int x = px - dw / 2;
     int y = py - dh / 2;
-    fastchart_target_image(t, x, y, dw, dh, icon->path);
+    fastchart_target_image_emit(t, x, y, dw, dh, &buf);
+    fastchart_target_image_release(&buf);
 }
 
 /* Translate libgd's 0..127 (0=opaque, 127=transparent) per-band alpha

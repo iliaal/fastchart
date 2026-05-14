@@ -18,14 +18,11 @@
 #include "Zend/zend_smart_str.h"
 #include "Zend/zend_exceptions.h"
 #include "ext/standard/base64.h"
-#include "ext/standard/php_filestat.h"
 #include "main/php_streams.h"
-#include "main/php_open_temporary_file.h"
 
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
-#include <sys/stat.h>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -408,69 +405,108 @@ static int fc_sniff_image_dims_mem(const unsigned char *b, size_t n,
     return -1;
 }
 
+/* Load `path` once through the PHP stream layer. The stream wrapper
+ * enforces open_basedir natively, so there is no TOCTOU window
+ * between an open_basedir check and the open. Reads up to
+ * FC_IMAGE_MAX_BYTES + 1 so a file at exactly the cap passes while a
+ * file one byte over gets rejected (php_stream_copy_to_mem with a
+ * smaller cap would silently truncate). On success populates *out
+ * with the bytes, sniffed MIME type, and declared width/height, then
+ * applies the dimension caps. Returns 0 / -1; on -1 nothing is
+ * allocated. */
+int fastchart_target_load_source_image(const char *path,
+                                       fastchart_image_buf_t *out)
+{
+    if (!path || !*path || !out) return -1;
+    memset(out, 0, sizeof(*out));
+
+    /* Suppress the E_WARNING the stream wrapper would emit on
+     * open_basedir refusal / missing file. Background-image and
+     * icon callers fall back to their solid-color backup; the
+     * refusal isn't an error condition from their POV. */
+    int er = EG(error_reporting);
+    EG(error_reporting) = 0;
+    php_stream *stream = php_stream_open_wrapper((char *)path, "rb",
+        IGNORE_PATH | IGNORE_URL, NULL);
+    EG(error_reporting) = er;
+    if (!stream) {
+        if (EG(exception)) zend_clear_exception();
+        return -1;
+    }
+    zend_string *raw =
+        php_stream_copy_to_mem(stream, FC_IMAGE_MAX_BYTES + 1, 0);
+    php_stream_close(stream);
+    if (!raw) return -1;
+    size_t n = ZSTR_LEN(raw);
+    if (n == 0 || n > FC_IMAGE_MAX_BYTES) {
+        zend_string_release(raw);
+        return -1;
+    }
+
+    const unsigned char *bytes = (const unsigned char *)ZSTR_VAL(raw);
+    const char *mime = fc_sniff_image_mime(bytes, n);
+    if (!mime) {
+        zend_string_release(raw);
+        return -1;
+    }
+
+    int src_w = 0, src_h = 0;
+    if (fc_sniff_image_dims_mem(bytes, n, &src_w, &src_h) != 0) {
+        /* MIME passed but dimensions couldn't be recovered — refuse
+         * the load. The dim cap is part of the contract; we don't
+         * accept inputs the cap can't enforce. */
+        zend_string_release(raw);
+        return -1;
+    }
+    if (src_w <= 0 || src_h <= 0
+        || src_w > FC_IMAGE_MAX_DIM
+        || src_h > FC_IMAGE_MAX_DIM
+        || (long long)src_w * (long long)src_h
+            > (long long)FC_IMAGE_MAX_PIXELS) {
+        zend_string_release(raw);
+        return -1;
+    }
+
+    out->bytes  = raw;
+    out->mime   = mime;
+    out->width  = src_w;
+    out->height = src_h;
+    return 0;
+}
+
+void fastchart_target_image_release(fastchart_image_buf_t *buf)
+{
+    if (buf && buf->bytes) {
+        zend_string_release(buf->bytes);
+        buf->bytes = NULL;
+    }
+}
+
+void fastchart_target_image_emit(fastchart_target_t *t,
+                                 int x, int y, int w, int h,
+                                 const fastchart_image_buf_t *buf)
+{
+    if (!t || !buf || !buf->bytes || !buf->mime) return;
+    if (w <= 0 || h <= 0) return;
+
+    zend_string *b64 = php_base64_encode(
+        (const unsigned char *)ZSTR_VAL(buf->bytes),
+        ZSTR_LEN(buf->bytes));
+    if (!b64) return;
+    fc_svg_emit_image_uri(t->u.svg.buf, x, y, w, h, buf->mime, ZSTR_VAL(b64));
+    zend_string_release(b64);
+}
+
 void fastchart_target_image(fastchart_target_t *t,
                              int x, int y, int w, int h,
                              const char *path)
 {
-    if (!path || !*path) return;
     if (w <= 0 || h <= 0) return;
 
-    /* Byte-size cap via stat(2). The cap is enforced before opening
-     * the file so a 100 GiB sparse file or a sketchy /proc entry
-     * doesn't get pulled into memory. */
-    struct stat st;
-    if (stat(path, &st) != 0) return;
-    if (!S_ISREG(st.st_mode)) return;
-    if ((zend_off_t)st.st_size > (zend_off_t)FC_IMAGE_MAX_BYTES) return;
-    if (st.st_size <= 0) return;
-
-    /* open_basedir + stream open. The setter validated this at
-     * configure time but the path could now point at a file outside
-     * basedir (race) or be unreadable; re-check defensively. */
-    if (php_check_open_basedir(path)) return;
-
-    php_stream *stream = php_stream_open_wrapper((char *)path, "rb",
-        REPORT_ERRORS | IGNORE_PATH | STREAM_DISABLE_OPEN_BASEDIR, NULL);
-    if (!stream) {
-        if (EG(exception)) zend_clear_exception();
-        return;
-    }
-    zend_string *raw =
-        php_stream_copy_to_mem(stream, FC_IMAGE_MAX_BYTES, 0);
-    php_stream_close(stream);
-    if (!raw) return;
-    if (ZSTR_LEN(raw) == 0
-        || ZSTR_LEN(raw) > FC_IMAGE_MAX_BYTES) {
-        zend_string_release(raw);
-        return;
-    }
-
-    const unsigned char *bytes = (const unsigned char *)ZSTR_VAL(raw);
-    size_t n = ZSTR_LEN(raw);
-
-    const char *mime = fc_sniff_image_mime(bytes, n);
-    if (!mime) { zend_string_release(raw); return; }
-
-    int src_w = 0, src_h = 0;
-    if (fc_sniff_image_dims_mem(bytes, n, &src_w, &src_h) == 0) {
-        if (src_w <= 0 || src_h <= 0
-            || src_w > FC_IMAGE_MAX_DIM
-            || src_h > FC_IMAGE_MAX_DIM
-            || (long long)src_w * (long long)src_h
-                > (long long)FC_IMAGE_MAX_PIXELS) {
-            zend_string_release(raw);
-            return;
-        }
-    }
-    /* If dims couldn't be sniffed, fall through — the byte cap and
-     * MIME check already shielded against pathological inputs. */
-
-    zend_string *b64 = php_base64_encode(bytes, n);
-    zend_string_release(raw);
-    if (!b64) return;
-
-    fc_svg_emit_image_uri(t->u.svg.buf, x, y, w, h, mime, ZSTR_VAL(b64));
-    zend_string_release(b64);
+    fastchart_image_buf_t buf;
+    if (fastchart_target_load_source_image(path, &buf) != 0) return;
+    fastchart_target_image_emit(t, x, y, w, h, &buf);
+    fastchart_target_image_release(&buf);
 }
 
 void fastchart_target_gradient_rect(fastchart_target_t *t,
