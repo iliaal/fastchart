@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 0237b1f175c86b52fe260574b7021a364d2c73c4 */
+ * Stub hash: 3fbd9275e61853cc117bd920e5f449b7c4ef50f8 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -234,10 +234,6 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setJpegQua
 	ZEND_ARG_TYPE_INFO(0, quality, IS_LONG, 0)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_WITH_RETURN_OBJ_INFO_EX(arginfo_class_FastChart_Chart_draw, 0, 1, GdImage, 0)
-	ZEND_ARG_OBJ_INFO(0, canvas, GdImage, 0)
-ZEND_END_ARG_INFO()
-
 #define arginfo_class_FastChart_Chart_renderPng arginfo_class_FastChart_Chart_version
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_renderJpeg, 0, 0, IS_STRING, 0)
@@ -246,12 +242,6 @@ ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_renderWebp, 0, 0, IS_STRING, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, quality, IS_LONG, 0, "90")
-ZEND_END_ARG_INFO()
-
-#define arginfo_class_FastChart_Chart_renderGif arginfo_class_FastChart_Chart_version
-
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_renderAvif, 0, 0, IS_STRING, 0)
-	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, quality, IS_LONG, 0, "60")
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_renderToFile, 0, 1, IS_LONG, 0)
@@ -277,8 +267,6 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_LineChart_setErr
 	ZEND_ARG_TYPE_INFO(0, errors, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
-#define arginfo_class_FastChart_LineChart_draw arginfo_class_FastChart_Chart_draw
-
 #define arginfo_class_FastChart_AreaChart_setSeries arginfo_class_FastChart_LineChart_setSeries
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_AreaChart_setStacked, 0, 1, IS_STATIC, 0)
@@ -286,8 +274,6 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_AreaChart_setSta
 ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_AreaChart_setFillOpacity arginfo_class_FastChart_Chart_setShadowAlpha
-
-#define arginfo_class_FastChart_AreaChart_draw arginfo_class_FastChart_Chart_draw
 
 #define arginfo_class_FastChart_BarChart_setSeries arginfo_class_FastChart_LineChart_setSeries
 
@@ -300,8 +286,6 @@ ZEND_END_ARG_INFO()
 #define arginfo_class_FastChart_BarChart_setStackMode arginfo_class_FastChart_Chart_setLineInterpolation
 
 #define arginfo_class_FastChart_BarChart_setFloating arginfo_class_FastChart_Chart_setSecondaryYAxis
-
-#define arginfo_class_FastChart_BarChart_draw arginfo_class_FastChart_Chart_draw
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_PieChart_setSlices, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, slices, IS_ARRAY, 0)
@@ -324,8 +308,6 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_PieChart_setOthe
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, label, IS_STRING, 0, "\'Other\'")
 ZEND_END_ARG_INFO()
 
-#define arginfo_class_FastChart_PieChart_draw arginfo_class_FastChart_Chart_draw
-
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_ScatterChart_setPoints, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, points, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
@@ -345,8 +327,6 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_ScatterChart_getImageMap, 0, 0, IS_STRING, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, name, IS_STRING, 0, "\'fastchart\'")
 ZEND_END_ARG_INFO()
-
-#define arginfo_class_FastChart_ScatterChart_draw arginfo_class_FastChart_Chart_draw
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_setOhlcv, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, ohlcv, IS_ARRAY, 0)
@@ -407,8 +387,6 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_addPa
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, af_max, IS_DOUBLE, 0, "0.2")
 ZEND_END_ARG_INFO()
 
-#define arginfo_class_FastChart_StockChart_draw arginfo_class_FastChart_Chart_draw
-
 #define arginfo_class_FastChart_RadarChart_setSeries arginfo_class_FastChart_LineChart_setSeries
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_RadarChart_setMaxValue, 0, 1, IS_STATIC, 0)
@@ -419,19 +397,13 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_RadarChart_setFi
 	ZEND_ARG_TYPE_INFO(0, filled, _IS_BOOL, 0)
 ZEND_END_ARG_INFO()
 
-#define arginfo_class_FastChart_RadarChart_draw arginfo_class_FastChart_Chart_draw
-
 #define arginfo_class_FastChart_BubbleChart_setPoints arginfo_class_FastChart_ScatterChart_setPoints
-
-#define arginfo_class_FastChart_BubbleChart_draw arginfo_class_FastChart_Chart_draw
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_SurfaceChart_setGrid, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, grid, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_SurfaceChart_setShowCellValues arginfo_class_FastChart_Chart_setShowValues
-
-#define arginfo_class_FastChart_SurfaceChart_draw arginfo_class_FastChart_Chart_draw
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_GaugeChart_setValue, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, value, IS_DOUBLE, 0)
@@ -448,8 +420,6 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_GaugeChart_setValueFormat arginfo_class_FastChart_Chart_setYAxisLabelFormat
 
-#define arginfo_class_FastChart_GaugeChart_draw arginfo_class_FastChart_Chart_draw
-
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_GanttChart_setTasks, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, tasks, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
@@ -463,15 +433,11 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_GanttChart_setSh
 	ZEND_ARG_TYPE_INFO(0, show, _IS_BOOL, 0)
 ZEND_END_ARG_INFO()
 
-#define arginfo_class_FastChart_GanttChart_draw arginfo_class_FastChart_Chart_draw
-
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_BoxPlot_setBoxes, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, boxes, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_BoxPlot_setBoxWidth arginfo_class_FastChart_Chart_setBarWidth
-
-#define arginfo_class_FastChart_BoxPlot_draw arginfo_class_FastChart_Chart_draw
 
 #define arginfo_class_FastChart_PolarChart_setSeries arginfo_class_FastChart_LineChart_setSeries
 
@@ -481,8 +447,6 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_PolarChart_setStyle arginfo_class_FastChart_Chart_setLineStyle
 
-#define arginfo_class_FastChart_PolarChart_draw arginfo_class_FastChart_Chart_draw
-
 #define arginfo_class_FastChart_ContourChart_setGrid arginfo_class_FastChart_SurfaceChart_setGrid
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_ContourChart_setLevels, 0, 1, IS_STATIC, 0)
@@ -491,21 +455,15 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_ContourChart_setFilled arginfo_class_FastChart_RadarChart_setFilled
 
-#define arginfo_class_FastChart_ContourChart_draw arginfo_class_FastChart_Chart_draw
-
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Treemap_setItems, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, items, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_Treemap_setShowLabels arginfo_class_FastChart_Chart_setSecondaryYAxis
 
-#define arginfo_class_FastChart_Treemap_draw arginfo_class_FastChart_Chart_draw
-
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Funnel_setStages, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, stages, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
-
-#define arginfo_class_FastChart_Funnel_draw arginfo_class_FastChart_Chart_draw
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Waterfall_setBars, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, bars, IS_ARRAY, 0)
@@ -517,13 +475,9 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_Waterfall_setTotalColor arginfo_class_FastChart_Chart_setBackgroundColor
 
-#define arginfo_class_FastChart_Waterfall_draw arginfo_class_FastChart_Chart_draw
-
 #define arginfo_class_FastChart_Heatmap_setGrid arginfo_class_FastChart_SurfaceChart_setGrid
 
 #define arginfo_class_FastChart_Heatmap_setColorRamp arginfo_class_FastChart_Chart_setColorRamp
-
-#define arginfo_class_FastChart_Heatmap_draw arginfo_class_FastChart_Chart_draw
 
 #define arginfo_class_FastChart_LinearMeter_setRange arginfo_class_FastChart_GaugeChart_setRange
 
@@ -534,8 +488,6 @@ ZEND_END_ARG_INFO()
 #define arginfo_class_FastChart_LinearMeter_setZones arginfo_class_FastChart_GaugeChart_setZones
 
 #define arginfo_class_FastChart_LinearMeter_setValueFormat arginfo_class_FastChart_Chart_setYAxisLabelFormat
-
-#define arginfo_class_FastChart_LinearMeter_draw arginfo_class_FastChart_Chart_draw
 
 #define arginfo_class_FastChart_Symbol_setSize arginfo_class_FastChart_Chart_setSize
 
@@ -564,10 +516,6 @@ ZEND_END_ARG_INFO()
 #define arginfo_class_FastChart_Symbol_renderJpeg arginfo_class_FastChart_Chart_renderJpeg
 
 #define arginfo_class_FastChart_Symbol_renderWebp arginfo_class_FastChart_Chart_renderWebp
-
-#define arginfo_class_FastChart_Symbol_renderGif arginfo_class_FastChart_Chart_version
-
-#define arginfo_class_FastChart_Symbol_renderAvif arginfo_class_FastChart_Chart_renderAvif
 
 #define arginfo_class_FastChart_Symbol_renderSvg arginfo_class_FastChart_Chart_version
 
@@ -652,8 +600,6 @@ ZEND_METHOD(FastChart_Chart, setJpegQuality);
 ZEND_METHOD(FastChart_Chart, renderPng);
 ZEND_METHOD(FastChart_Chart, renderJpeg);
 ZEND_METHOD(FastChart_Chart, renderWebp);
-ZEND_METHOD(FastChart_Chart, renderGif);
-ZEND_METHOD(FastChart_Chart, renderAvif);
 ZEND_METHOD(FastChart_Chart, renderToFile);
 ZEND_METHOD(FastChart_Chart, renderSvg);
 ZEND_METHOD(FastChart_Chart, drawSvgFragment);
@@ -661,31 +607,26 @@ ZEND_METHOD(FastChart_LineChart, setSeries);
 ZEND_METHOD(FastChart_LineChart, setMarkerStyle);
 ZEND_METHOD(FastChart_LineChart, setMarkerSize);
 ZEND_METHOD(FastChart_LineChart, setErrorBars);
-ZEND_METHOD(FastChart_LineChart, draw);
 ZEND_METHOD(FastChart_AreaChart, setSeries);
 ZEND_METHOD(FastChart_AreaChart, setStacked);
 ZEND_METHOD(FastChart_AreaChart, setFillOpacity);
-ZEND_METHOD(FastChart_AreaChart, draw);
 ZEND_METHOD(FastChart_BarChart, setSeries);
 ZEND_METHOD(FastChart_BarChart, setStacked);
 ZEND_METHOD(FastChart_BarChart, setOrientation);
 ZEND_METHOD(FastChart_BarChart, setStackMode);
 ZEND_METHOD(FastChart_BarChart, setFloating);
-ZEND_METHOD(FastChart_BarChart, draw);
 ZEND_METHOD(FastChart_PieChart, setSlices);
 ZEND_METHOD(FastChart_PieChart, setDonutHoleRatio);
 ZEND_METHOD(FastChart_PieChart, setExplode);
 ZEND_METHOD(FastChart_PieChart, setSliceLabelPosition);
 ZEND_METHOD(FastChart_PieChart, setSliceLabelFormat);
 ZEND_METHOD(FastChart_PieChart, setOtherThreshold);
-ZEND_METHOD(FastChart_PieChart, draw);
 ZEND_METHOD(FastChart_ScatterChart, setPoints);
 ZEND_METHOD(FastChart_ScatterChart, setMarkerStyle);
 ZEND_METHOD(FastChart_ScatterChart, setMarkerSize);
 ZEND_METHOD(FastChart_ScatterChart, setTrendLine);
 ZEND_METHOD(FastChart_ScatterChart, setErrorBars);
 ZEND_METHOD(FastChart_ScatterChart, getImageMap);
-ZEND_METHOD(FastChart_ScatterChart, draw);
 ZEND_METHOD(FastChart_StockChart, setOhlcv);
 ZEND_METHOD(FastChart_StockChart, addMovingAverage);
 ZEND_METHOD(FastChart_StockChart, setMovingAverages);
@@ -701,56 +642,42 @@ ZEND_METHOD(FastChart_StockChart, addMACD);
 ZEND_METHOD(FastChart_StockChart, addStochastic);
 ZEND_METHOD(FastChart_StockChart, addBollingerBands);
 ZEND_METHOD(FastChart_StockChart, addParabolicSAR);
-ZEND_METHOD(FastChart_StockChart, draw);
 ZEND_METHOD(FastChart_RadarChart, setSeries);
 ZEND_METHOD(FastChart_RadarChart, setMaxValue);
 ZEND_METHOD(FastChart_RadarChart, setFilled);
-ZEND_METHOD(FastChart_RadarChart, draw);
 ZEND_METHOD(FastChart_BubbleChart, setPoints);
-ZEND_METHOD(FastChart_BubbleChart, draw);
 ZEND_METHOD(FastChart_SurfaceChart, setGrid);
 ZEND_METHOD(FastChart_SurfaceChart, setShowCellValues);
-ZEND_METHOD(FastChart_SurfaceChart, draw);
 ZEND_METHOD(FastChart_GaugeChart, setValue);
 ZEND_METHOD(FastChart_GaugeChart, setRange);
 ZEND_METHOD(FastChart_GaugeChart, setZones);
 ZEND_METHOD(FastChart_GaugeChart, setValueFormat);
-ZEND_METHOD(FastChart_GaugeChart, draw);
 ZEND_METHOD(FastChart_GanttChart, setTasks);
 ZEND_METHOD(FastChart_GanttChart, setTimeRange);
 ZEND_METHOD(FastChart_GanttChart, setShowTaskLabels);
-ZEND_METHOD(FastChart_GanttChart, draw);
 ZEND_METHOD(FastChart_BoxPlot, setBoxes);
 ZEND_METHOD(FastChart_BoxPlot, setBoxWidth);
-ZEND_METHOD(FastChart_BoxPlot, draw);
 ZEND_METHOD(FastChart_PolarChart, setSeries);
 ZEND_METHOD(FastChart_PolarChart, setMaxRadius);
 ZEND_METHOD(FastChart_PolarChart, setFilled);
 ZEND_METHOD(FastChart_PolarChart, setStyle);
-ZEND_METHOD(FastChart_PolarChart, draw);
 ZEND_METHOD(FastChart_ContourChart, setGrid);
 ZEND_METHOD(FastChart_ContourChart, setLevels);
 ZEND_METHOD(FastChart_ContourChart, setFilled);
-ZEND_METHOD(FastChart_ContourChart, draw);
 ZEND_METHOD(FastChart_Treemap, setItems);
 ZEND_METHOD(FastChart_Treemap, setShowLabels);
-ZEND_METHOD(FastChart_Treemap, draw);
 ZEND_METHOD(FastChart_Funnel, setStages);
-ZEND_METHOD(FastChart_Funnel, draw);
 ZEND_METHOD(FastChart_Waterfall, setBars);
 ZEND_METHOD(FastChart_Waterfall, setRiseColor);
 ZEND_METHOD(FastChart_Waterfall, setFallColor);
 ZEND_METHOD(FastChart_Waterfall, setTotalColor);
-ZEND_METHOD(FastChart_Waterfall, draw);
 ZEND_METHOD(FastChart_Heatmap, setGrid);
 ZEND_METHOD(FastChart_Heatmap, setColorRamp);
-ZEND_METHOD(FastChart_Heatmap, draw);
 ZEND_METHOD(FastChart_LinearMeter, setRange);
 ZEND_METHOD(FastChart_LinearMeter, setValue);
 ZEND_METHOD(FastChart_LinearMeter, setOrientation);
 ZEND_METHOD(FastChart_LinearMeter, setZones);
 ZEND_METHOD(FastChart_LinearMeter, setValueFormat);
-ZEND_METHOD(FastChart_LinearMeter, draw);
 ZEND_METHOD(FastChart_Symbol, setSize);
 ZEND_METHOD(FastChart_Symbol, setData);
 ZEND_METHOD(FastChart_Symbol, setQuietZone);
@@ -763,8 +690,6 @@ ZEND_METHOD(FastChart_Symbol, setJpegQuality);
 ZEND_METHOD(FastChart_Symbol, renderPng);
 ZEND_METHOD(FastChart_Symbol, renderJpeg);
 ZEND_METHOD(FastChart_Symbol, renderWebp);
-ZEND_METHOD(FastChart_Symbol, renderGif);
-ZEND_METHOD(FastChart_Symbol, renderAvif);
 ZEND_METHOD(FastChart_Symbol, renderSvg);
 ZEND_METHOD(FastChart_Symbol, drawSvgFragment);
 ZEND_METHOD(FastChart_Symbol, renderToFile);
@@ -836,12 +761,9 @@ static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, setDpi, arginfo_class_FastChart_Chart_setDpi, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setSvgTextMode, arginfo_class_FastChart_Chart_setSvgTextMode, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setJpegQuality, arginfo_class_FastChart_Chart_setJpegQuality, ZEND_ACC_PUBLIC)
-	ZEND_RAW_FENTRY("draw", NULL, arginfo_class_FastChart_Chart_draw, ZEND_ACC_PUBLIC|ZEND_ACC_ABSTRACT, NULL, NULL)
 	ZEND_ME(FastChart_Chart, renderPng, arginfo_class_FastChart_Chart_renderPng, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, renderJpeg, arginfo_class_FastChart_Chart_renderJpeg, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, renderWebp, arginfo_class_FastChart_Chart_renderWebp, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_Chart, renderGif, arginfo_class_FastChart_Chart_renderGif, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_Chart, renderAvif, arginfo_class_FastChart_Chart_renderAvif, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, renderToFile, arginfo_class_FastChart_Chart_renderToFile, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, renderSvg, arginfo_class_FastChart_Chart_renderSvg, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, drawSvgFragment, arginfo_class_FastChart_Chart_drawSvgFragment, ZEND_ACC_PUBLIC)
@@ -853,7 +775,6 @@ static const zend_function_entry class_FastChart_LineChart_methods[] = {
 	ZEND_ME(FastChart_LineChart, setMarkerStyle, arginfo_class_FastChart_LineChart_setMarkerStyle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_LineChart, setMarkerSize, arginfo_class_FastChart_LineChart_setMarkerSize, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_LineChart, setErrorBars, arginfo_class_FastChart_LineChart_setErrorBars, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_LineChart, draw, arginfo_class_FastChart_LineChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -861,7 +782,6 @@ static const zend_function_entry class_FastChart_AreaChart_methods[] = {
 	ZEND_ME(FastChart_AreaChart, setSeries, arginfo_class_FastChart_AreaChart_setSeries, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_AreaChart, setStacked, arginfo_class_FastChart_AreaChart_setStacked, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_AreaChart, setFillOpacity, arginfo_class_FastChart_AreaChart_setFillOpacity, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_AreaChart, draw, arginfo_class_FastChart_AreaChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -871,7 +791,6 @@ static const zend_function_entry class_FastChart_BarChart_methods[] = {
 	ZEND_ME(FastChart_BarChart, setOrientation, arginfo_class_FastChart_BarChart_setOrientation, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_BarChart, setStackMode, arginfo_class_FastChart_BarChart_setStackMode, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_BarChart, setFloating, arginfo_class_FastChart_BarChart_setFloating, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_BarChart, draw, arginfo_class_FastChart_BarChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -882,7 +801,6 @@ static const zend_function_entry class_FastChart_PieChart_methods[] = {
 	ZEND_ME(FastChart_PieChart, setSliceLabelPosition, arginfo_class_FastChart_PieChart_setSliceLabelPosition, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PieChart, setSliceLabelFormat, arginfo_class_FastChart_PieChart_setSliceLabelFormat, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PieChart, setOtherThreshold, arginfo_class_FastChart_PieChart_setOtherThreshold, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_PieChart, draw, arginfo_class_FastChart_PieChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -893,7 +811,6 @@ static const zend_function_entry class_FastChart_ScatterChart_methods[] = {
 	ZEND_ME(FastChart_ScatterChart, setTrendLine, arginfo_class_FastChart_ScatterChart_setTrendLine, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ScatterChart, setErrorBars, arginfo_class_FastChart_ScatterChart_setErrorBars, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ScatterChart, getImageMap, arginfo_class_FastChart_ScatterChart_getImageMap, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_ScatterChart, draw, arginfo_class_FastChart_ScatterChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -913,7 +830,6 @@ static const zend_function_entry class_FastChart_StockChart_methods[] = {
 	ZEND_ME(FastChart_StockChart, addStochastic, arginfo_class_FastChart_StockChart_addStochastic, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, addBollingerBands, arginfo_class_FastChart_StockChart_addBollingerBands, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_StockChart, addParabolicSAR, arginfo_class_FastChart_StockChart_addParabolicSAR, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_StockChart, draw, arginfo_class_FastChart_StockChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -921,20 +837,17 @@ static const zend_function_entry class_FastChart_RadarChart_methods[] = {
 	ZEND_ME(FastChart_RadarChart, setSeries, arginfo_class_FastChart_RadarChart_setSeries, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_RadarChart, setMaxValue, arginfo_class_FastChart_RadarChart_setMaxValue, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_RadarChart, setFilled, arginfo_class_FastChart_RadarChart_setFilled, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_RadarChart, draw, arginfo_class_FastChart_RadarChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
 static const zend_function_entry class_FastChart_BubbleChart_methods[] = {
 	ZEND_ME(FastChart_BubbleChart, setPoints, arginfo_class_FastChart_BubbleChart_setPoints, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_BubbleChart, draw, arginfo_class_FastChart_BubbleChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
 static const zend_function_entry class_FastChart_SurfaceChart_methods[] = {
 	ZEND_ME(FastChart_SurfaceChart, setGrid, arginfo_class_FastChart_SurfaceChart_setGrid, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_SurfaceChart, setShowCellValues, arginfo_class_FastChart_SurfaceChart_setShowCellValues, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_SurfaceChart, draw, arginfo_class_FastChart_SurfaceChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -943,7 +856,6 @@ static const zend_function_entry class_FastChart_GaugeChart_methods[] = {
 	ZEND_ME(FastChart_GaugeChart, setRange, arginfo_class_FastChart_GaugeChart_setRange, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_GaugeChart, setZones, arginfo_class_FastChart_GaugeChart_setZones, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_GaugeChart, setValueFormat, arginfo_class_FastChart_GaugeChart_setValueFormat, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_GaugeChart, draw, arginfo_class_FastChart_GaugeChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -951,14 +863,12 @@ static const zend_function_entry class_FastChart_GanttChart_methods[] = {
 	ZEND_ME(FastChart_GanttChart, setTasks, arginfo_class_FastChart_GanttChart_setTasks, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_GanttChart, setTimeRange, arginfo_class_FastChart_GanttChart_setTimeRange, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_GanttChart, setShowTaskLabels, arginfo_class_FastChart_GanttChart_setShowTaskLabels, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_GanttChart, draw, arginfo_class_FastChart_GanttChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
 static const zend_function_entry class_FastChart_BoxPlot_methods[] = {
 	ZEND_ME(FastChart_BoxPlot, setBoxes, arginfo_class_FastChart_BoxPlot_setBoxes, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_BoxPlot, setBoxWidth, arginfo_class_FastChart_BoxPlot_setBoxWidth, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_BoxPlot, draw, arginfo_class_FastChart_BoxPlot_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -967,7 +877,6 @@ static const zend_function_entry class_FastChart_PolarChart_methods[] = {
 	ZEND_ME(FastChart_PolarChart, setMaxRadius, arginfo_class_FastChart_PolarChart_setMaxRadius, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PolarChart, setFilled, arginfo_class_FastChart_PolarChart_setFilled, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PolarChart, setStyle, arginfo_class_FastChart_PolarChart_setStyle, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_PolarChart, draw, arginfo_class_FastChart_PolarChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -975,20 +884,17 @@ static const zend_function_entry class_FastChart_ContourChart_methods[] = {
 	ZEND_ME(FastChart_ContourChart, setGrid, arginfo_class_FastChart_ContourChart_setGrid, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ContourChart, setLevels, arginfo_class_FastChart_ContourChart_setLevels, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ContourChart, setFilled, arginfo_class_FastChart_ContourChart_setFilled, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_ContourChart, draw, arginfo_class_FastChart_ContourChart_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
 static const zend_function_entry class_FastChart_Treemap_methods[] = {
 	ZEND_ME(FastChart_Treemap, setItems, arginfo_class_FastChart_Treemap_setItems, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Treemap, setShowLabels, arginfo_class_FastChart_Treemap_setShowLabels, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_Treemap, draw, arginfo_class_FastChart_Treemap_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
 static const zend_function_entry class_FastChart_Funnel_methods[] = {
 	ZEND_ME(FastChart_Funnel, setStages, arginfo_class_FastChart_Funnel_setStages, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_Funnel, draw, arginfo_class_FastChart_Funnel_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -997,14 +903,12 @@ static const zend_function_entry class_FastChart_Waterfall_methods[] = {
 	ZEND_ME(FastChart_Waterfall, setRiseColor, arginfo_class_FastChart_Waterfall_setRiseColor, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Waterfall, setFallColor, arginfo_class_FastChart_Waterfall_setFallColor, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Waterfall, setTotalColor, arginfo_class_FastChart_Waterfall_setTotalColor, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_Waterfall, draw, arginfo_class_FastChart_Waterfall_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
 static const zend_function_entry class_FastChart_Heatmap_methods[] = {
 	ZEND_ME(FastChart_Heatmap, setGrid, arginfo_class_FastChart_Heatmap_setGrid, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Heatmap, setColorRamp, arginfo_class_FastChart_Heatmap_setColorRamp, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_Heatmap, draw, arginfo_class_FastChart_Heatmap_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -1014,7 +918,6 @@ static const zend_function_entry class_FastChart_LinearMeter_methods[] = {
 	ZEND_ME(FastChart_LinearMeter, setOrientation, arginfo_class_FastChart_LinearMeter_setOrientation, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_LinearMeter, setZones, arginfo_class_FastChart_LinearMeter_setZones, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_LinearMeter, setValueFormat, arginfo_class_FastChart_LinearMeter_setValueFormat, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_LinearMeter, draw, arginfo_class_FastChart_LinearMeter_draw, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -1031,8 +934,6 @@ static const zend_function_entry class_FastChart_Symbol_methods[] = {
 	ZEND_ME(FastChart_Symbol, renderPng, arginfo_class_FastChart_Symbol_renderPng, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, renderJpeg, arginfo_class_FastChart_Symbol_renderJpeg, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, renderWebp, arginfo_class_FastChart_Symbol_renderWebp, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_Symbol, renderGif, arginfo_class_FastChart_Symbol_renderGif, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_Symbol, renderAvif, arginfo_class_FastChart_Symbol_renderAvif, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, renderSvg, arginfo_class_FastChart_Symbol_renderSvg, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, drawSvgFragment, arginfo_class_FastChart_Symbol_drawSvgFragment, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, renderToFile, arginfo_class_FastChart_Symbol_renderToFile, ZEND_ACC_PUBLIC)

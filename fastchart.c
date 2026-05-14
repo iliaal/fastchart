@@ -6527,14 +6527,11 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
     fastchart_qrcode_ce  = register_class_FastChart_QrCode(fastchart_symbol_ce);
     fastchart_qrcode_ce->create_object  = fastchart_qrcode_create_object;
 
-    fastchart_gd_image_ce = zend_hash_str_find_ptr(CG(class_table),
-        "gdimage", sizeof("gdimage") - 1);
-
-    if (!fastchart_gd_image_ce) {
-        php_error_docref(NULL, E_CORE_ERROR,
-            "fastchart: GdImage class not found; ext/gd must be loaded before fastchart");
-        return FAILURE;
-    }
+    /* v1.0 dropped the draw(\GdImage) entry. The \GdImage class
+     * lookup is gone; ext/gd is no longer a runtime requirement.
+     * fastchart_gd_image_ce stays as a NULL global because the dead
+     * draw()-related branches in chart bodies still reference it;
+     * those branches are unreachable but the symbol must resolve. */
 
     fastchart_default_font_path = fastchart_probe_default_font();
     /* A NULL probe result is not fatal -- users can still call
@@ -6560,7 +6557,8 @@ PHP_MINFO_FUNCTION(fastchart)
     php_info_print_table_start();
     php_info_print_table_row(2, "fastchart support", "enabled");
     php_info_print_table_row(2, "fastchart version", PHP_FASTCHART_VERSION);
-    php_info_print_table_row(2, "Backend", "ext/gd + libgd + FreeType");
+    php_info_print_table_row(2, "Backend",
+        "plutovg + libpng + libjpeg-turbo + libwebp + FreeType");
     php_info_print_table_row(2, "Default font",
         fastchart_default_font_path
             ? ZSTR_VAL(fastchart_default_font_path)
@@ -6568,20 +6566,14 @@ PHP_MINFO_FUNCTION(fastchart)
     php_info_print_table_end();
 }
 
-/* Runtime MINIT order: gd must run first so its class table entry for
-   GdImage and the php_gd_libgdimageptr_from_zval_p export are visible
-   before fastchart resolves them. PHP_ADD_EXTENSION_DEP(fastchart, gd)
-   in config.m4 only affects the build system; the engine ignores it at
-   load time. ZEND_MOD_REQUIRED("gd") is what reorders the MINIT chain
-   regardless of php.ini / conf.d / -d extension= load order. */
-static const zend_module_dep fastchart_deps[] = {
-    ZEND_MOD_REQUIRED("gd")
-    ZEND_MOD_END
-};
-
+/* v1.0 dropped the runtime ext/gd dependency. The chart bodies still
+ * contain dead `if (t->kind == FASTCHART_TARGET_GD)` branches that
+ * reference gdImage* symbols, so libgd is still linked at the .so
+ * level — but the engine no longer needs ext/gd loaded for fastchart
+ * to function. v1.1 will strip the dead branches and drop libgd from
+ * the link line entirely. */
 zend_module_entry fastchart_module_entry = {
-    STANDARD_MODULE_HEADER_EX, NULL,
-    fastchart_deps,
+    STANDARD_MODULE_HEADER,
     "fastchart",
     NULL,                       /* function_entries */
     PHP_MINIT(fastchart),

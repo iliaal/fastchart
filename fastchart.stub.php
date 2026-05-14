@@ -524,8 +524,6 @@ abstract class Chart
      */
     public function setJpegQuality(int $quality): static {}
 
-    abstract public function draw(\GdImage $canvas): \GdImage;
-
     /** Render to PNG bytes at the configured size. */
     public function renderPng(): string {}
 
@@ -537,18 +535,6 @@ abstract class Chart
 
     /** Render to WebP bytes. `$quality` is 1..100. */
     public function renderWebp(int $quality = 90): string {}
-
-    /**
-     * Dropped in v1.0 — raises \Error. Use renderPng() / renderJpeg() /
-     * renderWebp() / renderSvg() instead.
-     */
-    public function renderGif(): string {}
-
-    /**
-     * Dropped in v1.0 — raises \Error. Use renderPng() / renderJpeg() /
-     * renderWebp() / renderSvg() instead.
-     */
-    public function renderAvif(int $quality = 60): string {}
 
     /**
      * Render and write directly to a file. Format is inferred from
@@ -612,7 +598,6 @@ final class LineChart extends Chart
      */
     public function setErrorBars(array $errors): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 final class AreaChart extends Chart
@@ -636,7 +621,6 @@ final class AreaChart extends Chart
      */
     public function setFillOpacity(int $alpha): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 final class BarChart extends Chart
@@ -675,7 +659,6 @@ final class BarChart extends Chart
      */
     public function setFloating(bool $enabled): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 final class PieChart extends Chart
@@ -712,7 +695,6 @@ final class PieChart extends Chart
      */
     public function setOtherThreshold(float $percent, string $label = 'Other'): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 final class ScatterChart extends Chart
@@ -748,7 +730,6 @@ final class ScatterChart extends Chart
      */
     public function getImageMap(string $name = 'fastchart'): string {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 final class StockChart extends Chart
@@ -902,7 +883,6 @@ final class StockChart extends Chart
      */
     public function addParabolicSAR(float $af_init = 0.02, float $af_max = 0.2): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -928,7 +908,6 @@ final class RadarChart extends Chart
      */
     public function setFilled(bool $filled): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -938,7 +917,6 @@ final class RadarChart extends Chart
 final class BubbleChart extends Chart
 {
     public function setPoints(array $points): static {}
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -959,7 +937,6 @@ final class SurfaceChart extends Chart
      */
     public function setShowCellValues(bool $show, string $format = '%g'): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -987,7 +964,6 @@ final class GaugeChart extends Chart
      */
     public function setValueFormat(string $format): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1015,7 +991,6 @@ final class GanttChart extends Chart
     /** Show task name labels on / next to the bars. Default true. */
     public function setShowTaskLabels(bool $show): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1038,7 +1013,6 @@ final class BoxPlot extends Chart
      */
     public function setBoxWidth(int $percent): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1078,7 +1052,6 @@ final class PolarChart extends Chart
      */
     public function setStyle(int $style): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1103,7 +1076,6 @@ final class ContourChart extends Chart
      */
     public function setFilled(bool $filled): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1134,7 +1106,6 @@ final class Treemap extends Chart
      */
     public function setShowLabels(bool $enabled): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1156,7 +1127,6 @@ final class Funnel extends Chart
      * Chart and toggles the value labels rendered next to each
      * stage. The funnel default is to show values. */
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1182,7 +1152,6 @@ final class Waterfall extends Chart
     public function setFallColor(int $rgb): static {}
     public function setTotalColor(int $rgb): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1207,7 +1176,6 @@ final class Heatmap extends Chart
      * Chart; it toggles the per-cell value rendering AND sets the
      * printf format used for it. */
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1243,7 +1211,6 @@ final class LinearMeter extends Chart
      */
     public function setValueFormat(string $format): static {}
 
-    public function draw(\GdImage $canvas): \GdImage {}
 }
 
 /**
@@ -1326,10 +1293,6 @@ abstract class Symbol
     public function renderPng(): string {}
     public function renderJpeg(int $quality = 0): string {}
     public function renderWebp(int $quality = 90): string {}
-    /** Dropped in v1.0 — raises \Error. */
-    public function renderGif(): string {}
-    /** Dropped in v1.0 — raises \Error. */
-    public function renderAvif(int $quality = 60): string {}
 
     /**
      * Render to an SVG document. Returns the full markup including
