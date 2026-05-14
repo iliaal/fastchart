@@ -38,14 +38,17 @@ tmp-php.ini
 /config.h
 /config.h.in
 
-# phpize-generated PHP source mirror (when building against php-src tree)
+# phpize-generated PHP source mirror (when building against php-src
+# tree) and phpize/autotools junk. The /-anchored forms are
+# important: an unanchored "include/" was matching
+# vendor/plutovg/include/ and silently preventing plutovg.h from
+# being checked in, breaking every CI build that depended on the
+# header (the local working tree had the file, so the regression
+# only surfaced on a fresh clone — i.e. CI).
 /main/
 /include/
-
-# phpize/autotools junk
-include/
+/modules/
 main/php_version.h
-modules/
 run-tests-warnings.log
 tests/**/*.diff
 tests/**/*.out
