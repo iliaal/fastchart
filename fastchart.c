@@ -84,6 +84,32 @@ zend_class_entry *fastchart_qrcode_ce;
  * chain. */
 zend_string *fastchart_default_font_path = NULL;
 
+/* TSRM module globals — the FT_Library + face cache per-thread state
+ * declared in php_fastchart.h. Under NTS this is a single globals
+ * struct in BSS; under ZTS each thread gets its own copy via TSRM.
+ *
+ * No PHP_GINIT_FUNCTION: Zend's globals allocator zero-initializes
+ * every thread's struct (BSS for NTS, pcalloc for ZTS), and our
+ * fields all start at the zero-equivalent of "no state yet" —
+ * ft_lib NULL, ft_lib_init_failed 0, face cache slots all zero —
+ * which the lazy-init path in fastchart_ft_library / _ft_face
+ * treats as "needs init on first use".
+ *
+ * GSHUTDOWN IS required. MSHUTDOWN runs once per process; under
+ * ZTS, every non-last thread's accumulated FT state (FT_Library +
+ * cached FT_Face handles) would leak at thread teardown without
+ * a per-thread cleanup hook. fastchart_ft_library_shutdown() reads
+ * via FASTCHART_G() which during GSHUTDOWN resolves to the globals
+ * of the thread being torn down — exactly what we want. Under NTS
+ * GSHUTDOWN runs once at effective-MSHUTDOWN time, so the same
+ * code covers both build flavours. */
+ZEND_DECLARE_MODULE_GLOBALS(fastchart)
+
+static PHP_GSHUTDOWN_FUNCTION(fastchart)
+{
+    fastchart_ft_library_shutdown();
+}
+
 /* Per-class object_handlers. Each chart class's std offset varies
  * because per-type fields shift std's position within its struct.
  * Holding a separate handlers struct per class lets the shared
@@ -6507,11 +6533,9 @@ PHP_MSHUTDOWN_FUNCTION(fastchart)
         zend_string_release_ex(fastchart_default_font_path, /*persistent=*/1);
         fastchart_default_font_path = NULL;
     }
-    /* Release the per-process FreeType library shared by the font-
-     * family resolver, glyph-path emitter, and bbox measurer.
-     * MSHUTDOWN runs after every request ends, so no in-flight
-     * render can race the FT_Done. */
-    fastchart_ft_library_shutdown();
+    /* Per-thread FT state (FT_Library + face cache) is released by
+     * PHP_GSHUTDOWN(fastchart) — once per thread under ZTS, once at
+     * effective-MSHUTDOWN under NTS. Nothing else to free here. */
     return SUCCESS;
 }
 
@@ -6566,7 +6590,11 @@ zend_module_entry fastchart_module_entry = {
     NULL,                       /* RSHUTDOWN */
     PHP_MINFO(fastchart),
     PHP_FASTCHART_VERSION,
-    STANDARD_MODULE_PROPERTIES,
+    PHP_MODULE_GLOBALS(fastchart),  /* globals descriptor */
+    NULL,                       /* globals ctor — Zend zero-inits */
+    PHP_GSHUTDOWN(fastchart),   /* globals dtor — per-thread cleanup */
+    NULL,                       /* post_deactivate */
+    STANDARD_MODULE_PROPERTIES_EX
 };
 
 #ifdef COMPILE_DL_FASTCHART
