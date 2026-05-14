@@ -15,6 +15,7 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 #include <gd.h>
 
 #define FASTCHART_MAX_TICKS 16
@@ -41,7 +42,7 @@ typedef struct {
  * BEFORE any palette / text / background work. fastchart_compute_layout
  * already calls it; non-layout renderers (gauge, radar, polar, surface,
  * contour) need to call it directly. */
-void fastchart_begin_render(fastchart_obj *chart, gdImagePtr im);
+void fastchart_begin_render(fastchart_obj *chart, fastchart_target_t *t);
 
 /* Compute the plot rectangle inside the canvas after subtracting space
  * for title (top), x-axis labels (bottom), and y-axis labels (left).
@@ -53,7 +54,7 @@ void fastchart_begin_render(fastchart_obj *chart, gdImagePtr im);
  * label width — needed for horizontal-bar layouts where the Y axis is
  * categorical and label widths are arbitrary. Pass NULL / 0 for the
  * default numeric Y axis. */
-void fastchart_compute_layout(fastchart_obj *chart, gdImagePtr im,
+void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
                               int has_y_axis, int has_x_axis,
                               const char *const *cat_y_labels,
                               int n_cat_y_labels,
@@ -85,7 +86,7 @@ int fastchart_y_to_pixel(double y,
                          const fastchart_rect *plot);
 
 /* Draw the chart background, plot area, and border. */
-void fastchart_draw_frame(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_frame(fastchart_target_t *t, fastchart_obj *chart,
                           const fastchart_rect *plot,
                           const fastchart_palette *pal);
 
@@ -94,7 +95,7 @@ void fastchart_draw_frame(gdImagePtr im, fastchart_obj *chart,
  * band is a filled, alpha-blended rectangle spanning the full plot
  * width and the [low, high] Y range, clipped to the plot rect.
  * No-op when the chart has no bands. */
-void fastchart_draw_plot_bands(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_plot_bands(fastchart_target_t *t, fastchart_obj *chart,
                                const fastchart_rect *plot,
                                const fastchart_value_range *yrange,
                                const fastchart_palette *pal);
@@ -106,7 +107,7 @@ void fastchart_draw_plot_bands(gdImagePtr im, fastchart_obj *chart,
  * Each renderer that supports vertical bands picks the right one for
  * its X axis and calls it next to fastchart_draw_plot_bands. Each
  * skips horizontal bands (i.e. only entries with is_vertical=true). */
-void fastchart_draw_v_plot_bands_categorical(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_v_plot_bands_categorical(fastchart_target_t *t, fastchart_obj *chart,
                                              const fastchart_rect *plot,
                                              int n_categories,
                                              const fastchart_palette *pal);
@@ -114,15 +115,15 @@ void fastchart_draw_v_plot_bands_categorical(gdImagePtr im, fastchart_obj *chart
 /* Horizontal stripes spanning fractional Y category indices, for
  * horizontal-bar layouts where categories run top-to-bottom. Skips
  * vertical bands. */
-void fastchart_draw_h_plot_bands_categorical(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_h_plot_bands_categorical(fastchart_target_t *t, fastchart_obj *chart,
                                              const fastchart_rect *plot,
                                              int n_categories,
                                              const fastchart_palette *pal);
-void fastchart_draw_v_plot_bands_xrange(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_v_plot_bands_xrange(fastchart_target_t *t, fastchart_obj *chart,
                                         const fastchart_rect *plot,
                                         const fastchart_value_range *xrange,
                                         const fastchart_palette *pal);
-void fastchart_draw_v_plot_bands_time(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_v_plot_bands_time(fastchart_target_t *t, fastchart_obj *chart,
                                       const fastchart_rect *plot,
                                       zend_long t_min, zend_long t_max,
                                       const fastchart_palette *pal);
@@ -133,26 +134,26 @@ void fastchart_draw_v_plot_bands_time(gdImagePtr im, fastchart_obj *chart,
  * "use the source dimension as-is". Honors open_basedir restrictions
  * via php_check_open_basedir_ex; silently skips unreadable / invalid
  * images so a missing icon doesn't abort the whole render. */
-void fastchart_blit_icon(gdImagePtr im, const fastchart_icon *icon,
+void fastchart_blit_icon(fastchart_target_t *t, const fastchart_icon *icon,
                          int px, int py);
 
 /* Draw the title above the plot area (no-op if title is empty).
  * Includes drop-shadow underneath when the chart has setDropShadow()
  * configured. */
-void fastchart_draw_title(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_title(fastchart_target_t *t, fastchart_obj *chart,
                           const fastchart_rect *plot,
                           const fastchart_palette *pal);
 
 /* Like fastchart_draw_title but takes the title baseline directly
  * (no plot rect). Used by charts with a non-rectangular layout
  * (radar, gauge, polar, surface, contour). Includes drop-shadow. */
-void fastchart_draw_floating_title(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_floating_title(fastchart_target_t *t, fastchart_obj *chart,
                                    const fastchart_palette *pal,
                                    int cx, int baseline);
 
 /* Draw the Y axis: vertical line, tick marks, labels (one per tick),
  * and horizontal grid lines. */
-void fastchart_draw_y_axis(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_y_axis(fastchart_target_t *t, fastchart_obj *chart,
                            const fastchart_rect *plot,
                            const fastchart_palette *pal,
                            const fastchart_value_range *range);
@@ -161,7 +162,7 @@ void fastchart_draw_y_axis(gdImagePtr im, fastchart_obj *chart,
  * lines (those would clash with the primary axis grid); just the
  * vertical line, tick marks, and labels. Charts that don't enable
  * setSecondaryYAxis() should skip this call. */
-void fastchart_draw_y_axis_right(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_y_axis_right(fastchart_target_t *t, fastchart_obj *chart,
                                  const fastchart_rect *plot,
                                  const fastchart_palette *pal,
                                  const fastchart_value_range *range);
@@ -169,14 +170,14 @@ void fastchart_draw_y_axis_right(gdImagePtr im, fastchart_obj *chart,
 /* Draw axis-title text: x_axis_title centered below the X-axis
  * labels, y_axis_title rotated 90deg on the left edge. No-op if
  * the corresponding chart field is NULL or empty. */
-void fastchart_draw_axis_titles(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_axis_titles(fastchart_target_t *t, fastchart_obj *chart,
                                 const fastchart_rect *plot,
                                 const fastchart_palette *pal);
 
 /* Draw an X axis whose positions are categorical (one tick per index
  * 0..n-1). Optional `labels` array (NULL means just draw indices); if
  * provided, `labels[i]` is rendered under tick i. */
-void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_x_axis_categorical(fastchart_target_t *t, fastchart_obj *chart,
                                        const fastchart_rect *plot,
                                        const fastchart_palette *pal,
                                        int n_categories,
@@ -184,7 +185,7 @@ void fastchart_draw_x_axis_categorical(gdImagePtr im, fastchart_obj *chart,
 
 /* Draw an X axis whose positions are Unix timestamps. Picks ~5 evenly
  * spaced labels formatted YYYY-MM-DD. */
-void fastchart_draw_x_axis_time(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
                                 const fastchart_rect *plot,
                                 const fastchart_palette *pal,
                                 zend_long t_min, zend_long t_max);
@@ -218,7 +219,7 @@ const char **fastchart_borrow_category_labels(fastchart_obj *b, int n);
 /* Numeric X axis (ticks + gridlines + labels) for charts that put the
  * value axis on X — currently only horizontal-bar. Mirror of the
  * existing fastchart_draw_y_axis. */
-void fastchart_draw_x_axis_numeric(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_x_axis_numeric(fastchart_target_t *t, fastchart_obj *chart,
                                    const fastchart_rect *plot,
                                    const fastchart_palette *pal,
                                    const fastchart_value_range *range);
@@ -226,7 +227,7 @@ void fastchart_draw_x_axis_numeric(gdImagePtr im, fastchart_obj *chart,
 /* Categorical Y axis (labels + tick marks on the left edge) for
  * charts that put the category axis on Y — currently only
  * horizontal-bar. Mirror of fastchart_draw_x_axis_categorical. */
-void fastchart_draw_y_axis_categorical(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_y_axis_categorical(fastchart_target_t *t, fastchart_obj *chart,
                                        const fastchart_rect *plot,
                                        const fastchart_palette *pal,
                                        int n_categories,
@@ -247,7 +248,7 @@ int fastchart_zval_to_long(zval *zv, zend_long *out);
 /* Draw a single point marker. `style` is one of FASTCHART_MARKER_*;
  * `size` is the marker's enclosing diameter in pixels. NONE renders
  * nothing. */
-void fastchart_draw_marker(gdImagePtr im, int x, int y,
+void fastchart_draw_marker(fastchart_target_t *t, int x, int y,
                            int style, int size, int color);
 
 /* Font roles map the calling site to one of three setter buckets
@@ -278,7 +279,7 @@ typedef struct {
  * line_interpolation setting. Linear uses gdImageLine for each
  * consecutive valid pair; smooth uses Catmull-Rom with ~10 sub-
  * segments per interval. Gaps (valid=false) break the polyline. */
-void fastchart_draw_polyline(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_polyline(fastchart_target_t *t, fastchart_obj *chart,
                              const fastchart_pt *pts, int n,
                              int color, int thickness, bool antialiased);
 
@@ -287,7 +288,7 @@ void fastchart_draw_polyline(gdImagePtr im, fastchart_obj *chart,
  * applies the chart's value_format (default "%g"). No-op if the
  * chart has no font or show_values is off. `value` is the raw
  * datum, NaN values render nothing. */
-void fastchart_draw_value_label(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_value_label(fastchart_target_t *t, fastchart_obj *chart,
                                 const fastchart_palette *pal,
                                 int x, int y, double value);
 
@@ -299,13 +300,13 @@ void fastchart_draw_value_label(gdImagePtr im, fastchart_obj *chart,
 /* Overlay rendering for horizontal-bar layouts (value axis is X,
  * category axis is Y). Mirror of fastchart_draw_overlays_categorical
  * with the axes swapped. */
-void fastchart_draw_overlays_horizontal_bar(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_overlays_horizontal_bar(fastchart_target_t *t, fastchart_obj *chart,
                                             const fastchart_rect *plot,
                                             const fastchart_palette *pal,
                                             const fastchart_value_range *xrange,
                                             int n_categories);
 
-void fastchart_draw_overlays_categorical(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_overlays_categorical(fastchart_target_t *t, fastchart_obj *chart,
                                           const fastchart_rect *plot,
                                           const fastchart_palette *pal,
                                           const fastchart_value_range *yrange,
@@ -313,7 +314,7 @@ void fastchart_draw_overlays_categorical(gdImagePtr im, fastchart_obj *chart,
                                           int n_categories);
 
 /* Time-axis variant for StockChart overlays. */
-void fastchart_draw_overlays_time(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_overlays_time(fastchart_target_t *t, fastchart_obj *chart,
                                   const fastchart_rect *plot,
                                   const fastchart_palette *pal,
                                   const fastchart_value_range *yrange,
@@ -327,7 +328,7 @@ void fastchart_draw_overlays_time(gdImagePtr im, fastchart_obj *chart,
  * skipped. The legend has an opaque background so it overdraws
  * data underneath -- callers place this last. No-op if
  * n_entries < 1, the chart has no font, or position == LEGEND_NONE. */
-void fastchart_draw_legend(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_legend(fastchart_target_t *t, fastchart_obj *chart,
                            const fastchart_rect *plot,
                            const fastchart_palette *pal,
                            int n_entries,
@@ -337,7 +338,7 @@ void fastchart_draw_legend(gdImagePtr im, fastchart_obj *chart,
 /* Draw any horizontal-line annotations stored on the chart. The
  * y-mapping uses the supplied value_range. Out-of-range
  * annotations are silently clamped to the plot bounds. */
-void fastchart_draw_h_annotations(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_h_annotations(fastchart_target_t *t, fastchart_obj *chart,
                                   const fastchart_rect *plot,
                                   const fastchart_palette *pal,
                                   const fastchart_value_range *yrange);
@@ -349,23 +350,23 @@ void fastchart_draw_h_annotations(gdImagePtr im, fastchart_obj *chart,
  * annotation list once and draws "h" entries (value-axis) as vertical
  * lines through xrange, and "v" entries (category-axis) as horizontal
  * lines through fractional category indices. */
-void fastchart_draw_horizontal_bar_annotations(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_horizontal_bar_annotations(fastchart_target_t *t, fastchart_obj *chart,
                                                const fastchart_rect *plot,
                                                const fastchart_palette *pal,
                                                const fastchart_value_range *xrange,
                                                int n_categories);
 
-void fastchart_draw_v_annotations_categorical(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_v_annotations_categorical(fastchart_target_t *t, fastchart_obj *chart,
                                               const fastchart_rect *plot,
                                               const fastchart_palette *pal,
                                               int n_categories);
 
-void fastchart_draw_v_annotations_continuous(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_v_annotations_continuous(fastchart_target_t *t, fastchart_obj *chart,
                                              const fastchart_rect *plot,
                                              const fastchart_palette *pal,
                                              const fastchart_value_range *xrange);
 
-void fastchart_draw_v_annotations_time(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_v_annotations_time(fastchart_target_t *t, fastchart_obj *chart,
                                        const fastchart_rect *plot,
                                        const fastchart_palette *pal,
                                        zend_long t_min, zend_long t_max);
@@ -373,7 +374,7 @@ void fastchart_draw_v_annotations_time(gdImagePtr im, fastchart_obj *chart,
 /* Walk chart->config["text_annotations"] and render each free-floating
  * label at the stored canvas pixel coordinates. Per-entry color
  * defaults to pal->text. No-op if there are no annotations. */
-void fastchart_draw_text_annotations(gdImagePtr im, fastchart_obj *chart,
+void fastchart_draw_text_annotations(fastchart_target_t *t, fastchart_obj *chart,
                                      const fastchart_palette *pal);
 
 #endif /* FASTCHART_AXIS_H */

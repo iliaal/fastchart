@@ -21,6 +21,7 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_effects.h"
 
@@ -34,6 +35,8 @@ static inline double area_read_value(const fastchart_series_t *s, int i)
 
 int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
 {
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
     if (self->n_series == 0) {
         zend_throw_error(NULL,
             "FastChart\\AreaChart::draw() requires setSeries() to have been called with non-empty data");
@@ -92,27 +95,27 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
     }
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, NULL, 0, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, &t, 1, 1, NULL, 0, &plot);
 
     fastchart_palette pal;
-    fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(&t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
 
     fastchart_gradient_cache grad_cache;
     fastchart_gradient_cache_reset(&grad_cache);
 
-    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_y_axis(im, (fastchart_obj *)self, &plot, &pal, &range);
-    fastchart_draw_plot_bands(im, (fastchart_obj *)self, &plot, &range, &pal);
-    fastchart_draw_v_plot_bands_categorical(im, (fastchart_obj *)self, &plot,
+    fastchart_draw_frame(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_y_axis(&t, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_plot_bands(&t, (fastchart_obj *)self, &plot, &range, &pal);
+    fastchart_draw_v_plot_bands_categorical(&t, (fastchart_obj *)self, &plot,
                                             max_len, &pal);
 
     const char **label_ptrs = fastchart_borrow_category_labels((fastchart_obj *)self, max_len);
-    fastchart_draw_x_axis_categorical(im, (fastchart_obj *)self, &plot, &pal, max_len, label_ptrs);
+    fastchart_draw_x_axis_categorical(&t, (fastchart_obj *)self, &plot, &pal, max_len, label_ptrs);
     if (label_ptrs) efree((void *)label_ptrs);
 
-    fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_axis_titles(&t, (fastchart_obj *)self, &plot, &pal);
 
     int alpha = (int)self->area_alpha;
     if (alpha < 0) alpha = 0;
@@ -127,7 +130,10 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
     if (stacked) {
         double *cum = ecalloc((size_t)max_len, sizeof(double));
         for (int s = 0; s < n_series; s++) {
-            int rgb_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+            /* pal.series[] holds target handles; resolve to a gd-int
+             * for the direct effects.h primitives below. */
+            int rgb_color = fastchart_target_color_to_gd(&t,
+                pal.series[s % FASTCHART_PALETTE_SERIES_N]);
             int n_pts = 0;
 
             /* Top edge: left to right at cum + v. */
@@ -165,7 +171,7 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
                 int y = fastchart_y_to_pixel(cum[i] + v, &range, &plot);
                 if (prev_valid) {
-                    gdImageLine(im, prev_x, prev_y, x, y, pal.border);
+                    gdImageLine(im, prev_x, prev_y, x, y, fastchart_target_color_to_gd(&t, pal.border));
                 }
                 prev_x = x; prev_y = y; prev_valid = true;
                 cum[i] += v;
@@ -176,7 +182,11 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
         int zero_y = fastchart_y_to_pixel(dmin > 0 ? dmin : 0.0, &range, &plot);
 
         for (int s = 0; s < n_series; s++) {
-            int base_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+            /* pal.series[] is a target handle; translate to gd-int so
+             * the alpha-blended fill and AA outline below can address
+             * libgd directly. */
+            int base_color = fastchart_target_color_to_gd(&t,
+                pal.series[s % FASTCHART_PALETTE_SERIES_N]);
             /* gdImageRed/Green/Blue work on both palette and truecolor
              * canvases; bit-shifting `base_color` would only work on
              * truecolor (where the handle is the packed RGB). */
@@ -229,11 +239,11 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
     }
 
     /* Combo overlays + annotations on top of the area fills. */
-    fastchart_draw_overlays_categorical(im, (fastchart_obj *)self, &plot, &pal,
+    fastchart_draw_overlays_categorical(&t, (fastchart_obj *)self, &plot, &pal,
                                          &range, NULL, max_len);
 
-    fastchart_draw_h_annotations(im, (fastchart_obj *)self, &plot, &pal, &range);
-    fastchart_draw_v_annotations_categorical(im, (fastchart_obj *)self, &plot, &pal, max_len);
+    fastchart_draw_h_annotations(&t, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_v_annotations_categorical(&t, (fastchart_obj *)self, &plot, &pal, max_len);
 
     /* Legend. */
     if (n_series >= 2) {
@@ -247,12 +257,12 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
             legend_count++;
         }
         if (legend_count > 0) {
-            fastchart_draw_legend(im, (fastchart_obj *)self, &plot, &pal,
+            fastchart_draw_legend(&t, (fastchart_obj *)self, &plot, &pal,
                                   legend_count, legend_colors, legend_labels);
         }
     }
 
-    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
 
     if (self->icons && self->n_icons > 0 && max_len > 0) {
         for (int i = 0; i < self->n_icons; i++) {
@@ -262,7 +272,7 @@ int fastchart_area_render_to_image(fastchart_area_obj *self, gdImagePtr im)
                 : 0.5;
             int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
             int py = fastchart_y_to_pixel(ic->y, &range, &plot);
-            fastchart_blit_icon(im, ic, px, py);
+            fastchart_blit_icon(&t, ic, px, py);
         }
     }
     return 0;

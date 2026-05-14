@@ -70,3 +70,8 @@ tests/**/*.php.out
 /AGENTS.md
 /CLAUDE.md
 /.review/
+.plan/
+
+# Local SVG vs PNG comparison HTML produced by scripts/build-svg-compare.php
+# Generated per-developer for visual review; not for commit.
+/compare-svg-png.html

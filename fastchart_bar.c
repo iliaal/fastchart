@@ -19,22 +19,25 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_effects.h"
 
-/* Resolve a per-point RGB into a gd color handle via the render-
- * scoped color cache. setSeries() validated each entry to 0..0xFFFFFF
- * or stored -1. Repeated colors collapse to one allocation. */
+/* Resolve a per-point color override into a target color HANDLE. The
+ * fallback is also a target handle. Per-point RGB overrides flow
+ * through fastchart_target_color_rgb so the handle table dedupes
+ * repeats across all backends. */
 static int bar_per_point_color(zend_long *point_colors, int idx, int fallback,
-                               gdImagePtr im, fastchart_color_cache *cache)
+                               fastchart_target_t *t)
 {
     if (!point_colors) return fallback;
     zend_long c = point_colors[idx];
     if (c < 0) return fallback;
-    return fastchart_color_cache_get(cache, im, (int)c);
+    return fastchart_target_color_rgb(t, (int)c);
 }
 
-static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr im);
+static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
+                                           fastchart_target_t *t);
 
 /* Data-range scan shared by the vertical and horizontal bar render
  * paths. Walks the series array three different ways depending on
@@ -95,7 +98,7 @@ static int bar_compute_range(const fastchart_bar_obj *self,
     return 0;
 }
 
-int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
+int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *t)
 {
     if (self->n_series == 0) {
         zend_throw_error(NULL,
@@ -103,7 +106,7 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
         return -1;
     }
     if (self->bar_orientation == FASTCHART_BAR_HORIZONTAL) {
-        return fastchart_bar_render_horizontal(self, im);
+        return fastchart_bar_render_horizontal(self, t);
     }
     fastchart_series_t *series = self->series;
     int n_series = self->n_series;
@@ -138,24 +141,24 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
     }
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, NULL, 0, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, t, 1, 1, NULL, 0, &plot);
 
     fastchart_palette pal;
-    fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_y_axis(im, (fastchart_obj *)self, &plot, &pal, &range);
-    fastchart_draw_plot_bands(im, (fastchart_obj *)self, &plot, &range, &pal);
-    fastchart_draw_v_plot_bands_categorical(im, (fastchart_obj *)self, &plot,
+    fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_y_axis(t, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_plot_bands(t, (fastchart_obj *)self, &plot, &range, &pal);
+    fastchart_draw_v_plot_bands_categorical(t, (fastchart_obj *)self, &plot,
                                             n_categories, &pal);
 
     const char **label_ptrs = fastchart_borrow_category_labels((fastchart_obj *)self, n_categories);
-    fastchart_draw_x_axis_categorical(im, (fastchart_obj *)self, &plot, &pal, n_categories, label_ptrs);
+    fastchart_draw_x_axis_categorical(t, (fastchart_obj *)self, &plot, &pal, n_categories, label_ptrs);
     if (label_ptrs) efree((void *)label_ptrs);
 
-    fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_axis_titles(t, (fastchart_obj *)self, &plot, &pal);
 
     int zero_y = fastchart_y_to_pixel(0.0, &range, &plot);
 
@@ -179,35 +182,41 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
     if (draw_w < 1) draw_w = 1;
     int sub_inset = (sub_w - draw_w) / 2;
 
-    int edge = (int)self->edge_color;
+    int edge_rgb = (int)self->edge_color;
+    int edge_handle = edge_rgb >= 0
+        ? fastchart_target_color_rgb(t, edge_rgb) : -1;
 
     /* Gradient LUT cache: built lazily on the first per-bar gradient
      * fill, reused across the rest of the chart (~500x speedup on
-     * 500-bar gradient charts). */
+     * 500-bar gradient charts). GD-only effect; SVG path skips it. */
     fastchart_gradient_cache grad_cache;
     fastchart_gradient_cache_reset(&grad_cache);
 
-    /* Per-render color cache for per-point RGB overrides. */
-    fastchart_color_cache color_cache;
-    fastchart_color_cache_init(&color_cache);
-
     /* Allocate translucent series colors once for STACK_LAYER mode.
-     * pal.series[s] is a gd color handle (the return of
-     * gdImageColorAllocate); on a paletted canvas that's an index
-     * into the palette, not a packed 0xRRGGBB. Use the gdImageRed/
-     * Green/Blue accessors so the unpack works for both truecolor
-     * and paletted GdImage canvases. */
+     * Per-handle: unpack the palette rgba and reallocate with a
+     * ~50% alpha so the layered overdraw is visible underneath.
+     * Result handles flow through fastchart_target_rect on both
+     * backends. */
     int layer_colors[FASTCHART_MAX_SERIES] = {0};
     if (stack_layer && n_series > 1) {
         for (int s = 0; s < n_series; s++) {
-            int c = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-            int r = gdImageRed(im, c);
-            int g = gdImageGreen(im, c);
-            int b = gdImageBlue(im, c);
-            layer_colors[s] = gdImageColorAllocateAlpha(im, r, g, b, 64);
+            uint32_t rgba = fastchart_target_color_to_rgba(t,
+                pal.series[s % FASTCHART_PALETTE_SERIES_N]);
+            int r = (rgba >> 16) & 0xFF;
+            int g = (rgba >>  8) & 0xFF;
+            int b =  rgba        & 0xFF;
+            layer_colors[s] = fastchart_target_color(t, r, g, b, 127);
         }
-        gdImageAlphaBlending(im, 1);
+        if (t->kind == FASTCHART_TARGET_GD) {
+            gdImageAlphaBlending(t->u.gd.im, 1);
+        }
     }
+
+    /* Bool toggle for GD-only effects (gradient/shadow). The SVG
+     * backend doesn't support these primitives in this round; bars
+     * render as solid fills there. */
+    bool gd = (t->kind == FASTCHART_TARGET_GD);
+    gdImagePtr im = gd ? t->u.gd.im : NULL;
 
     for (int i = 0; i < n_categories; i++) {
         int slot_left = plot.x0 + i * slot_w + slot_pad;
@@ -221,7 +230,7 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
                 double hi = series[s].values_max ? series[s].values_max[i] : NAN;
                 if (isnan(lo) || isnan(hi)) continue;
                 int series_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-                int color = bar_per_point_color(series[s].point_colors, i, series_color, im, &color_cache);
+                int color = bar_per_point_color(series[s].point_colors, i, series_color, t);
                 int y_lo = fastchart_y_to_pixel(lo, &range, &plot);
                 int y_hi = fastchart_y_to_pixel(hi, &range, &plot);
                 int y0 = y_hi < y_lo ? y_hi : y_lo;
@@ -229,11 +238,17 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
                 int x0 = slot_left + s * sub_w + sub_inset;
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
-                fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
-                if (!fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1)) {
-                    gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                int painted = 0;
+                if (gd) {
+                    fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
+                    painted = fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1);
                 }
-                if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
+                if (!painted) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                }
+                if (edge_handle >= 0) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                }
             }
         } else if (stack_layer && n_series > 1) {
             /* Layered: all series anchor at zero with translucent
@@ -249,11 +264,17 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
                 int x0 = slot_left + sub_inset;
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
-                fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
-                if (!fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1)) {
-                    gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                int painted = 0;
+                if (gd) {
+                    fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
+                    painted = fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1);
                 }
-                if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
+                if (!painted) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                }
+                if (edge_handle >= 0) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                }
             }
         } else if (stacked && n_series > 1) {
             double pos_acc = 0, neg_acc = 0;
@@ -262,7 +283,7 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
                 double v = series[s].values[i];
                 if (isnan(v)) continue;
                 int series_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-                int color = bar_per_point_color(series[s].point_colors, i, series_color, im, &color_cache);
+                int color = bar_per_point_color(series[s].point_colors, i, series_color, t);
 
                 double a, b;
                 if (v >= 0) {
@@ -277,11 +298,17 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
                 int x0 = slot_left + sub_inset;
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
-                fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
-                if (!fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1)) {
-                    gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                int painted = 0;
+                if (gd) {
+                    fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
+                    painted = fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1);
                 }
-                if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
+                if (!painted) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                }
+                if (edge_handle >= 0) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                }
             }
         } else {
             for (int s = 0; s < n_series; s++) {
@@ -289,7 +316,7 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
                 double v = series[s].values[i];
                 if (isnan(v)) continue;
                 int series_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-                int color = bar_per_point_color(series[s].point_colors, i, series_color, im, &color_cache);
+                int color = bar_per_point_color(series[s].point_colors, i, series_color, t);
                 int y_v = fastchart_y_to_pixel(v, &range, &plot);
 
                 int x0 = slot_left + s * sub_w + sub_inset;
@@ -298,17 +325,24 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
 
                 int y0 = y_v < zero_y ? y_v : zero_y;
                 int y1 = y_v < zero_y ? zero_y : y_v;
-                fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
-                if (!fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1)) {
-                    gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                int painted = 0;
+                if (gd) {
+                    fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
+                    painted = fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1);
                 }
-                if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
+                if (!painted) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                }
+                if (edge_handle >= 0) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                }
             }
         }
     }
 
     if (range.min < 0 && range.max > 0) {
-        gdImageLine(im, plot.x0, zero_y, plot.x1, zero_y, pal.axis);
+        fastchart_target_line(t, plot.x0, zero_y, plot.x1, zero_y,
+                              pal.axis, 1, FASTCHART_DASH_SOLID);
     }
 
     /* Value labels above each bar (skipped when stacked since the
@@ -326,16 +360,16 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
                 /* Label sits just above the bar top (or below for
                  * negative bars). */
                 int label_y = (v >= 0) ? y_v : y_v + (int)(self->font_size * 1.4);
-                fastchart_draw_value_label(im, (fastchart_obj *)self, &pal, x_center, label_y, v);
+                fastchart_draw_value_label(t, (fastchart_obj *)self, &pal, x_center, label_y, v);
             }
         }
     }
 
-    fastchart_draw_overlays_categorical(im, (fastchart_obj *)self, &plot, &pal,
+    fastchart_draw_overlays_categorical(t, (fastchart_obj *)self, &plot, &pal,
                                          &range, NULL, n_categories);
 
-    fastchart_draw_h_annotations(im, (fastchart_obj *)self, &plot, &pal, &range);
-    fastchart_draw_v_annotations_categorical(im, (fastchart_obj *)self, &plot, &pal, n_categories);
+    fastchart_draw_h_annotations(t, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_v_annotations_categorical(t, (fastchart_obj *)self, &plot, &pal, n_categories);
 
     if (n_series >= 2) {
         int legend_colors[FASTCHART_MAX_SERIES];
@@ -348,12 +382,12 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
             legend_count++;
         }
         if (legend_count > 0) {
-            fastchart_draw_legend(im, (fastchart_obj *)self, &plot, &pal,
+            fastchart_draw_legend(t, (fastchart_obj *)self, &plot, &pal,
                                   legend_count, legend_colors, legend_labels);
         }
     }
 
-    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
 
     if (self->icons && self->n_icons > 0 && n_categories > 0) {
         for (int i = 0; i < self->n_icons; i++) {
@@ -363,7 +397,7 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
                 : 0.5;
             int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
             int py = fastchart_y_to_pixel(ic->y, &range, &plot);
-            fastchart_blit_icon(im, ic, px, py);
+            fastchart_blit_icon(t, ic, px, py);
         }
     }
     return 0;
@@ -375,7 +409,8 @@ int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
  * anchored at x=0. Stacking, floating, and per-point colors all carry
  * over with the obvious axis swap. Plot bands and value labels skip
  * the horizontal path for now (they assume a vertical chart). */
-static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr im)
+static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
+                                           fastchart_target_t *t)
 {
     fastchart_series_t *series = self->series;
     int n_series = self->n_series;
@@ -416,21 +451,21 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
     const char **label_ptrs = fastchart_borrow_category_labels((fastchart_obj *)self, n_categories);
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1,
+    fastchart_compute_layout((fastchart_obj *)self, t, 1, 1,
                              label_ptrs, n_categories, &plot);
 
     fastchart_palette pal;
-    fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_x_axis_numeric(im, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_x_axis_numeric(t, (fastchart_obj *)self, &plot, &pal, &range);
 
-    fastchart_draw_y_axis_categorical(im, (fastchart_obj *)self, &plot, &pal, n_categories, label_ptrs);
+    fastchart_draw_y_axis_categorical(t, (fastchart_obj *)self, &plot, &pal, n_categories, label_ptrs);
     if (label_ptrs) efree((void *)label_ptrs);
 
-    fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_axis_titles(t, (fastchart_obj *)self, &plot, &pal);
 
     /* Plot bands: in the horizontal-bar layout the value axis is X
      * and the category axis is Y. The user-facing API names are
@@ -442,9 +477,9 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
      *     orientation) -> category-axis stripes via the new
      *     categorical H-bands helper, with low/high read as
      *     fractional category indices on the Y axis. */
-    fastchart_draw_v_plot_bands_xrange(im, (fastchart_obj *)self, &plot,
+    fastchart_draw_v_plot_bands_xrange(t, (fastchart_obj *)self, &plot,
                                        &range, &pal);
-    fastchart_draw_h_plot_bands_categorical(im, (fastchart_obj *)self, &plot,
+    fastchart_draw_h_plot_bands_categorical(t, (fastchart_obj *)self, &plot,
                                             n_categories, &pal);
 
     int zero_x = fastchart_x_to_pixel(0.0, &range, &plot);
@@ -465,25 +500,30 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
     if (draw_h < 1) draw_h = 1;
     int sub_inset = (sub_h - draw_h) / 2;
 
-    int edge = (int)self->edge_color;
+    int edge_rgb = (int)self->edge_color;
+    int edge_handle = edge_rgb >= 0
+        ? fastchart_target_color_rgb(t, edge_rgb) : -1;
 
     fastchart_gradient_cache grad_cache;
     fastchart_gradient_cache_reset(&grad_cache);
 
-    fastchart_color_cache color_cache;
-    fastchart_color_cache_init(&color_cache);
-
     int layer_colors[FASTCHART_MAX_SERIES] = {0};
     if (stack_layer && n_series > 1) {
         for (int s = 0; s < n_series; s++) {
-            int c = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-            int r = gdImageRed(im, c);
-            int g = gdImageGreen(im, c);
-            int b = gdImageBlue(im, c);
-            layer_colors[s] = gdImageColorAllocateAlpha(im, r, g, b, 64);
+            uint32_t rgba = fastchart_target_color_to_rgba(t,
+                pal.series[s % FASTCHART_PALETTE_SERIES_N]);
+            int r = (rgba >> 16) & 0xFF;
+            int g = (rgba >>  8) & 0xFF;
+            int b =  rgba        & 0xFF;
+            layer_colors[s] = fastchart_target_color(t, r, g, b, 127);
         }
-        gdImageAlphaBlending(im, 1);
+        if (t->kind == FASTCHART_TARGET_GD) {
+            gdImageAlphaBlending(t->u.gd.im, 1);
+        }
     }
+
+    bool gd = (t->kind == FASTCHART_TARGET_GD);
+    gdImagePtr im = gd ? t->u.gd.im : NULL;
 
     for (int i = 0; i < n_categories; i++) {
         int slot_top = plot.y0 + i * slot_h + slot_pad;
@@ -495,7 +535,7 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
                 double hi = series[s].values_max ? series[s].values_max[i] : NAN;
                 if (isnan(lo) || isnan(hi)) continue;
                 int series_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-                int color = bar_per_point_color(series[s].point_colors, i, series_color, im, &color_cache);
+                int color = bar_per_point_color(series[s].point_colors, i, series_color, t);
                 int x_lo = fastchart_x_to_pixel(lo, &range, &plot);
                 int x_hi = fastchart_x_to_pixel(hi, &range, &plot);
                 int x0 = x_lo < x_hi ? x_lo : x_hi;
@@ -503,11 +543,17 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
                 int y0 = slot_top + s * sub_h + sub_inset;
                 int y1 = y0 + draw_h - 1;
                 if (y1 > slot_top + slot_inner - 1) y1 = slot_top + slot_inner - 1;
-                fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
-                if (!fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1)) {
-                    gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                int painted = 0;
+                if (gd) {
+                    fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
+                    painted = fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1);
                 }
-                if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
+                if (!painted) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                }
+                if (edge_handle >= 0) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                }
             }
         } else if (stack_layer && n_series > 1) {
             for (int s = 0; s < n_series; s++) {
@@ -521,11 +567,17 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
                 int y0 = slot_top + sub_inset;
                 int y1 = y0 + draw_h - 1;
                 if (y1 > slot_top + slot_inner - 1) y1 = slot_top + slot_inner - 1;
-                fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
-                if (!fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1)) {
-                    gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                int painted = 0;
+                if (gd) {
+                    fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
+                    painted = fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1);
                 }
-                if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
+                if (!painted) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                }
+                if (edge_handle >= 0) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                }
             }
         } else if (stacked && n_series > 1) {
             double pos_acc = 0, neg_acc = 0;
@@ -534,7 +586,7 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
                 double v = series[s].values[i];
                 if (isnan(v)) continue;
                 int series_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-                int color = bar_per_point_color(series[s].point_colors, i, series_color, im, &color_cache);
+                int color = bar_per_point_color(series[s].point_colors, i, series_color, t);
                 double a, b;
                 if (v >= 0) {
                     a = pos_acc; b = pos_acc + v; pos_acc = b;
@@ -548,11 +600,17 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
                 int y0 = slot_top + sub_inset;
                 int y1 = y0 + draw_h - 1;
                 if (y1 > slot_top + slot_inner - 1) y1 = slot_top + slot_inner - 1;
-                fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
-                if (!fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1)) {
-                    gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                int painted = 0;
+                if (gd) {
+                    fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
+                    painted = fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1);
                 }
-                if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
+                if (!painted) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                }
+                if (edge_handle >= 0) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                }
             }
         } else {
             for (int s = 0; s < n_series; s++) {
@@ -560,7 +618,7 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
                 double v = series[s].values[i];
                 if (isnan(v)) continue;
                 int series_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-                int color = bar_per_point_color(series[s].point_colors, i, series_color, im, &color_cache);
+                int color = bar_per_point_color(series[s].point_colors, i, series_color, t);
                 int x_v = fastchart_x_to_pixel(v, &range, &plot);
 
                 int y0 = slot_top + s * sub_h + sub_inset;
@@ -569,17 +627,24 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
 
                 int x0 = x_v < zero_x ? x_v : zero_x;
                 int x1 = x_v < zero_x ? zero_x : x_v;
-                fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
-                if (!fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1)) {
-                    gdImageFilledRectangle(im, x0, y0, x1, y1, color);
+                int painted = 0;
+                if (gd) {
+                    fastchart_shadow_filled_rectangle(im, (fastchart_obj *)self, x0, y0, x1, y1);
+                    painted = fastchart_gradient_filled_rectangle(im, (fastchart_obj *)self, &grad_cache, x0, y0, x1, y1);
                 }
-                if (edge >= 0) gdImageRectangle(im, x0, y0, x1, y1, edge);
+                if (!painted) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
+                }
+                if (edge_handle >= 0) {
+                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                }
             }
         }
     }
 
     if (range.min < 0 && range.max > 0) {
-        gdImageLine(im, zero_x, plot.y0, zero_x, plot.y1, pal.axis);
+        fastchart_target_line(t, zero_x, plot.y0, zero_x, plot.y1,
+                              pal.axis, 1, FASTCHART_DASH_SOLID);
     }
 
     /* Value labels next to each bar tip. Mirror of the vertical
@@ -597,7 +662,7 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
                 int y0 = slot_top + s * sub_h;
                 int y_center = y0 + sub_h / 2;
                 int label_x = (v >= 0) ? x_v + 4 : x_v - 4;
-                fastchart_draw_value_label(im, (fastchart_obj *)self, &pal,
+                fastchart_draw_value_label(t, (fastchart_obj *)self, &pal,
                                            label_x, y_center, v);
             }
         }
@@ -609,9 +674,9 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
      * (addHorizontalLine, value-axis) become vertical screen lines;
      * "v" annotations (addVerticalLine, category-axis) become
      * horizontal screen lines. */
-    fastchart_draw_overlays_horizontal_bar(im, (fastchart_obj *)self, &plot,
+    fastchart_draw_overlays_horizontal_bar(t, (fastchart_obj *)self, &plot,
                                            &pal, &range, n_categories);
-    fastchart_draw_horizontal_bar_annotations(im, (fastchart_obj *)self, &plot,
+    fastchart_draw_horizontal_bar_annotations(t, (fastchart_obj *)self, &plot,
                                               &pal, &range, n_categories);
 
     if (n_series >= 2) {
@@ -625,12 +690,12 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
             legend_count++;
         }
         if (legend_count > 0) {
-            fastchart_draw_legend(im, (fastchart_obj *)self, &plot, &pal,
+            fastchart_draw_legend(t, (fastchart_obj *)self, &plot, &pal,
                                   legend_count, legend_colors, legend_labels);
         }
     }
 
-    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
 
     /* Horizontal-bar IconPlot: x is the value (mapped via the X
      * value range), y is the fractional category index. Mirror of
@@ -643,10 +708,20 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self, gdImagePtr i
                 : 0.5;
             int px = fastchart_x_to_pixel(ic->x, &range, &plot);
             int py = plot.y0 + (int)(frac_y * (plot.y1 - plot.y0) + 0.5);
-            fastchart_blit_icon(im, ic, px, py);
+            fastchart_blit_icon(t, ic, px, py);
         }
     }
     return 0;
+}
+
+/* GD-only shim for the legacy dispatch path (draw(\GdImage) and the
+ * raster encoders that consume a gdImagePtr). Wrap the gd image in a
+ * target and call the target-based renderer. */
+int fastchart_bar_render_to_image(fastchart_bar_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
+    return fastchart_bar_render_to_target(self, &t);
 }
 
 ZEND_METHOD(FastChart_BarChart, draw)

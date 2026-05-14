@@ -19,9 +19,10 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 #include "fastchart_axis.h"
 
-int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im)
+int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t *t)
 {
     if (self->n_series == 0) {
         zend_throw_error(NULL,
@@ -85,27 +86,27 @@ int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im)
     }
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, NULL, 0, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, t, 1, 1, NULL, 0, &plot);
 
     fastchart_palette pal;
-    fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
-    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_y_axis(im, (fastchart_obj *)self, &plot, &pal, &range_l);
+    fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_y_axis(t, (fastchart_obj *)self, &plot, &pal, &range_l);
     if (n_right > 0) {
-        fastchart_draw_y_axis_right(im, (fastchart_obj *)self, &plot, &pal, &range_r);
+        fastchart_draw_y_axis_right(t, (fastchart_obj *)self, &plot, &pal, &range_r);
     }
-    fastchart_draw_plot_bands(im, (fastchart_obj *)self, &plot, &range_l, &pal);
-    fastchart_draw_v_plot_bands_categorical(im, (fastchart_obj *)self, &plot,
+    fastchart_draw_plot_bands(t, (fastchart_obj *)self, &plot, &range_l, &pal);
+    fastchart_draw_v_plot_bands_categorical(t, (fastchart_obj *)self, &plot,
                                             max_len, &pal);
 
     const char **label_ptrs = fastchart_borrow_category_labels((fastchart_obj *)self, max_len);
-    fastchart_draw_x_axis_categorical(im, (fastchart_obj *)self, &plot, &pal, max_len, label_ptrs);
+    fastchart_draw_x_axis_categorical(t, (fastchart_obj *)self, &plot, &pal, max_len, label_ptrs);
     if (label_ptrs) efree((void *)label_ptrs);
 
-    fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_axis_titles(t, (fastchart_obj *)self, &plot, &pal);
 
     int marker_style = self->marker_style >= 0
         ? (int)self->marker_style
@@ -160,28 +161,34 @@ int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im)
                     int py_lo = fastchart_y_to_pixel(values[i] - lo, rng, &plot);
                     int py_hi = fastchart_y_to_pixel(values[i] + hi, rng, &plot);
                     int x = pts[i].x;
-                    gdImageLine(im, x, py_hi, x, py_lo, pal.axis);
-                    gdImageLine(im, x - 4, py_hi, x + 4, py_hi, pal.axis);
-                    gdImageLine(im, x - 4, py_lo, x + 4, py_lo, pal.axis);
+                    fastchart_target_line(t, x, py_hi, x, py_lo,
+                                          pal.axis, 1, FASTCHART_DASH_SOLID);
+                    fastchart_target_line(t, x - 4, py_hi, x + 4, py_hi,
+                                          pal.axis, 1, FASTCHART_DASH_SOLID);
+                    fastchart_target_line(t, x - 4, py_lo, x + 4, py_lo,
+                                          pal.axis, 1, FASTCHART_DASH_SOLID);
                 }
             }
         }
 
-        fastchart_draw_polyline(im, (fastchart_obj *)self, pts, n, color, 2, true);
+        fastchart_draw_polyline(t, (fastchart_obj *)self, pts, n, color, 2, true);
 
         for (int i = 0; i < n; i++) {
             if (!pts[i].valid) continue;
+            /* marker_color is a target handle so it flows into
+             * fastchart_draw_marker unchanged. Per-point RGB overrides
+             * go through the target's dedup table rather than the raw
+             * gdImageColorAllocate path. */
             int marker_color = color;
             if (series[s].point_colors) {
                 zend_long c = series[s].point_colors[i];
                 if (c >= 0) {
-                    marker_color = gdImageColorAllocate(im,
-                        (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+                    marker_color = fastchart_target_color_rgb(t, (int)c);
                 }
             }
-            fastchart_draw_marker(im, pts[i].x, pts[i].y,
+            fastchart_draw_marker(t, pts[i].x, pts[i].y,
                                   marker_style, marker_size, marker_color);
-            fastchart_draw_value_label(im, (fastchart_obj *)self, &pal,
+            fastchart_draw_value_label(t, (fastchart_obj *)self, &pal,
                                        pts[i].x, pts[i].y, values[i]);
         }
 
@@ -193,20 +200,20 @@ int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im)
     }
 
     /* Combo overlays go on top of the primary data. */
-    fastchart_draw_overlays_categorical(im, (fastchart_obj *)self, &plot, &pal,
+    fastchart_draw_overlays_categorical(t, (fastchart_obj *)self, &plot, &pal,
                                          &range_l,
                                          n_right > 0 ? &range_r : NULL,
                                          max_len);
 
-    fastchart_draw_h_annotations(im, (fastchart_obj *)self, &plot, &pal, &range_l);
-    fastchart_draw_v_annotations_categorical(im, (fastchart_obj *)self, &plot, &pal, max_len);
+    fastchart_draw_h_annotations(t, (fastchart_obj *)self, &plot, &pal, &range_l);
+    fastchart_draw_v_annotations_categorical(t, (fastchart_obj *)self, &plot, &pal, max_len);
 
     if (legend_count >= 1 && n_series >= 2) {
-        fastchart_draw_legend(im, (fastchart_obj *)self, &plot, &pal,
+        fastchart_draw_legend(t, (fastchart_obj *)self, &plot, &pal,
                               legend_count, legend_colors, legend_labels);
     }
 
-    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
 
     /* IconPlot overlays at data coordinates. x is treated as a
      * fractional category index (0 = first category, max_len-1 = last);
@@ -220,11 +227,22 @@ int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im)
                 : 0.5;
             int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
             int py = fastchart_y_to_pixel(ic->y, &range_l, &plot);
-            fastchart_blit_icon(im, ic, px, py);
+            fastchart_blit_icon(t, ic, px, py);
         }
     }
 
     return 0;
+}
+
+/* Backwards-compatible shim. The chart dispatcher and ZEND_METHOD entry
+ * still hand in a gdImagePtr; wrap it into a GD-backed target and call
+ * the canonical render. Phase 3+ migrates remaining families to take a
+ * target directly; until then this keeps the dispatch table uniform. */
+int fastchart_line_render_to_image(fastchart_line_obj *self, gdImagePtr im)
+{
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
+    return fastchart_line_render_to_target(self, &t);
 }
 
 ZEND_METHOD(FastChart_LineChart, draw)

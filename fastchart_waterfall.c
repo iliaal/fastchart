@@ -22,6 +22,7 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 
@@ -34,6 +35,8 @@
 
 int fastchart_waterfall_render_to_image(fastchart_waterfall_obj *self, gdImagePtr im)
 {
+    fastchart_target_t t;
+    fastchart_target_from_gd(&t, im, self->dpi);
     if (self->bar_count <= 0) {
         zend_throw_error(NULL,
             "FastChart\\Waterfall::draw() requires setBars() with at least one bar");
@@ -75,17 +78,17 @@ int fastchart_waterfall_render_to_image(fastchart_waterfall_obj *self, gdImagePt
      * long stage names don't clip on the bottom. */
     const char **labels = ecalloc((size_t)n, sizeof(const char *));
     for (int i = 0; i < n; i++) labels[i] = self->bars[i].label;
-    fastchart_compute_layout((fastchart_obj *)self, im, 1, 1, NULL, 0, &plot);
+    fastchart_compute_layout((fastchart_obj *)self, &t, 1, 1, NULL, 0, &plot);
 
     fastchart_palette pal;
-    fastchart_palette_init(im, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(im, (fastchart_obj *)self, &pal);
+    fastchart_palette_init(&t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(&t, (fastchart_obj *)self, &pal);
 
-    fastchart_draw_frame(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(im, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_y_axis(im, (fastchart_obj *)self, &plot, &pal, &range);
-    fastchart_draw_x_axis_categorical(im, (fastchart_obj *)self, &plot, &pal, n, labels);
-    fastchart_draw_axis_titles(im, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_frame(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(&t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_y_axis(&t, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_x_axis_categorical(&t, (fastchart_obj *)self, &plot, &pal, n, labels);
+    fastchart_draw_axis_titles(&t, (fastchart_obj *)self, &plot, &pal);
 
     int rise_rgb  = self->rise_color  >= 0 ? self->rise_color  : WF_DEFAULT_RISE;
     int fall_rgb  = self->fall_color  >= 0 ? self->fall_color  : WF_DEFAULT_FALL;
@@ -116,7 +119,7 @@ int fastchart_waterfall_render_to_image(fastchart_waterfall_obj *self, gdImagePt
             color = fall_c;
         }
         gdImageFilledRectangle(im, x0, y_top, x1, y_bot, color);
-        gdImageRectangle(im, x0, y_top, x1, y_bot, pal.border);
+        gdImageRectangle(im, x0, y_top, x1, y_bot, fastchart_target_color_to_gd(&t, pal.border));
 
         /* Connector line from this bar's right edge to the next
          * bar's left at the running cumulative; gives the chart its
@@ -129,11 +132,11 @@ int fastchart_waterfall_render_to_image(fastchart_waterfall_obj *self, gdImagePt
                 &range, &plot);
             int next_slot_cx = fastchart_x_categorical_center(&plot, i + 1, n);
             int x_next0 = next_slot_cx - bar_w / 2;
-            gdImageLine(im, x1 + 1, y_conn, x_next0 - 1, y_conn, pal.grid);
+            gdImageLine(im, x1 + 1, y_conn, x_next0 - 1, y_conn, fastchart_target_color_to_gd(&t, pal.grid));
         }
     }
 
-    fastchart_draw_text_annotations(im, (fastchart_obj *)self, &pal);
+    fastchart_draw_text_annotations(&t, (fastchart_obj *)self, &pal);
     efree(bar_lo);
     efree(bar_hi);
     efree(labels);

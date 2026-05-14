@@ -16,9 +16,10 @@
 
 #include "php_fastchart.h"
 #include "fastchart_palette.h"
+#include "fastchart_target.h"
 
-/* RGB tuple for a palette entry. Resolved into an allocated gd color
- * index by fastchart_palette_init below. */
+/* RGB tuple for a palette entry. Resolved into a target color handle
+ * by fastchart_palette_init below. */
 typedef struct {
     int r, g, b;
 } rgb_t;
@@ -47,7 +48,7 @@ static const rgb_t DARK_SERIES[FASTCHART_PALETTE_SERIES_N] = {
     { 0xb0, 0xb0, 0xb0 },
 };
 
-void fastchart_palette_init(gdImagePtr im, int theme, fastchart_palette *pal)
+void fastchart_palette_init(fastchart_target_t *t, int theme, fastchart_palette *pal)
 {
     rgb_t bg, plot_bg, axis, grid, text, border, up, down, volume;
     const rgb_t *series_src;
@@ -76,31 +77,28 @@ void fastchart_palette_init(gdImagePtr im, int theme, fastchart_palette *pal)
         series_src = LIGHT_SERIES;
     }
 
-    pal->bg      = gdImageColorAllocate(im, bg.r, bg.g, bg.b);
-    pal->plot_bg = gdImageColorAllocate(im, plot_bg.r, plot_bg.g, plot_bg.b);
-    pal->axis    = gdImageColorAllocate(im, axis.r, axis.g, axis.b);
-    pal->grid    = gdImageColorAllocate(im, grid.r, grid.g, grid.b);
-    pal->text    = gdImageColorAllocate(im, text.r, text.g, text.b);
-    pal->border  = gdImageColorAllocate(im, border.r, border.g, border.b);
-    pal->up      = gdImageColorAllocate(im, up.r, up.g, up.b);
-    pal->down    = gdImageColorAllocate(im, down.r, down.g, down.b);
-    pal->volume  = gdImageColorAllocate(im, volume.r, volume.g, volume.b);
+    pal->bg      = fastchart_target_color(t, bg.r, bg.g, bg.b, 0xFF);
+    pal->plot_bg = fastchart_target_color(t, plot_bg.r, plot_bg.g, plot_bg.b, 0xFF);
+    pal->axis    = fastchart_target_color(t, axis.r, axis.g, axis.b, 0xFF);
+    pal->grid    = fastchart_target_color(t, grid.r, grid.g, grid.b, 0xFF);
+    pal->text    = fastchart_target_color(t, text.r, text.g, text.b, 0xFF);
+    pal->border  = fastchart_target_color(t, border.r, border.g, border.b, 0xFF);
+    pal->up      = fastchart_target_color(t, up.r, up.g, up.b, 0xFF);
+    pal->down    = fastchart_target_color(t, down.r, down.g, down.b, 0xFF);
+    pal->volume  = fastchart_target_color(t, volume.r, volume.g, volume.b, 0xFF);
 
     for (int i = 0; i < FASTCHART_PALETTE_SERIES_N; i++) {
-        pal->series[i] = gdImageColorAllocate(im,
-            series_src[i].r, series_src[i].g, series_src[i].b);
+        pal->series[i] = fastchart_target_color(t,
+            series_src[i].r, series_src[i].g, series_src[i].b, 0xFF);
     }
 }
 
-void fastchart_palette_apply_overrides(gdImagePtr im,
+void fastchart_palette_apply_overrides(fastchart_target_t *t,
                                         const fastchart_obj *chart,
                                         fastchart_palette *pal)
 {
     if (chart->bg_override >= 0) {
-        pal->bg = gdImageColorAllocate(im,
-            (int)((chart->bg_override >> 16) & 0xFF),
-            (int)((chart->bg_override >>  8) & 0xFF),
-            (int)( chart->bg_override        & 0xFF));
+        pal->bg = fastchart_target_color_rgb(t, (int)chart->bg_override);
         /* If only the canvas bg is overridden, mirror to plot_bg
          * so the plot area doesn't visually float on a different
          * background. setPlotBackgroundColor() unsticks them. */
@@ -109,17 +107,11 @@ void fastchart_palette_apply_overrides(gdImagePtr im,
         }
     }
     if (chart->plot_bg_override >= 0) {
-        pal->plot_bg = gdImageColorAllocate(im,
-            (int)((chart->plot_bg_override >> 16) & 0xFF),
-            (int)((chart->plot_bg_override >>  8) & 0xFF),
-            (int)( chart->plot_bg_override        & 0xFF));
+        pal->plot_bg = fastchart_target_color_rgb(t, (int)chart->plot_bg_override);
     }
     for (int i = 0; i < chart->series_colors_n && i < FASTCHART_PALETTE_SERIES_N; i++) {
         if (chart->series_colors[i] < 0) continue;
-        pal->series[i] = gdImageColorAllocate(im,
-            (chart->series_colors[i] >> 16) & 0xFF,
-            (chart->series_colors[i] >>  8) & 0xFF,
-             chart->series_colors[i]        & 0xFF);
+        pal->series[i] = fastchart_target_color_rgb(t, (int)chart->series_colors[i]);
     }
 
     /* Per-element color overrides (axis line, grid lines, border,
@@ -128,10 +120,7 @@ void fastchart_palette_apply_overrides(gdImagePtr im,
 #define APPLY_COLOR_OVERRIDE(field_, override_) \
     do { \
         if (chart->override_ >= 0) { \
-            pal->field_ = gdImageColorAllocate(im, \
-                (int)((chart->override_ >> 16) & 0xFF), \
-                (int)((chart->override_ >>  8) & 0xFF), \
-                (int)( chart->override_        & 0xFF)); \
+            pal->field_ = fastchart_target_color_rgb(t, (int)chart->override_); \
         } \
     } while (0)
     APPLY_COLOR_OVERRIDE(axis,   axis_color_override);
