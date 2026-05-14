@@ -573,6 +573,14 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
      * right edge using the cached probe. */
     if (labels_drawn && has_y_axis && chart->secondary_y && probe_ok) {
         right += probe_w + tick_mark_len + y_label_pad;
+    } else if (labels_drawn && has_y_axis && has_x_axis && probe_ok
+               && left > right * 2) {
+        /* Anchor right margin at left / 2 (visual 2:1 ratio of left to
+         * right). The bare MARGIN_RIGHT_PAD next to a full Y-axis
+         * label reservation on the left read as visibly off-center;
+         * this also gives the rightmost X-axis label half-extent
+         * room to extend past plot.x1 without clipping the canvas. */
+        right = left / 2;
     }
 
     /* X-axis labels. Horizontal labels reserve one line; rotated

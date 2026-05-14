@@ -112,6 +112,14 @@ void fc_svg_emit_doc_open(smart_str *buf, int width, int height)
     smart_str_appendc(buf, ' ');
     smart_str_append_long(buf, height);
     FC_APPENDS(buf, "\">\n");
+    /* Heatmap / Surface / Treemap / QrCode emit grids of adjacent
+     * axis-aligned <rect> cells. SVG defaults rect edges to anti-
+     * aliased rendering, which leaves a faint 1px gap of background
+     * showing through between sub-pixel-aligned neighbours. Pin all
+     * <rect> elements to crispEdges so cell boundaries are flush.
+     * Chart frames, plot backgrounds, and bar series are also axis-
+     * aligned, so crispEdges is a no-loss default for the family. */
+    FC_APPENDS(buf, "<style>rect{shape-rendering:crispEdges}</style>\n");
 }
 
 void fc_svg_emit_doc_close(smart_str *buf)
