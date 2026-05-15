@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: fea5c12aae00bde0729add92872d0141f2f1aede */
+ * Stub hash: 29a3fd059df9cb7b785328dc4ff3faeb72177eb9 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -233,6 +233,8 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setJpegQuality, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, quality, IS_LONG, 0)
 ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_Chart_setWebpMode arginfo_class_FastChart_Chart_setLineInterpolation
 
 #define arginfo_class_FastChart_Chart_renderPng arginfo_class_FastChart_Chart_version
 
@@ -561,6 +563,8 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_Symbol_setJpegQuality arginfo_class_FastChart_Chart_setJpegQuality
 
+#define arginfo_class_FastChart_Symbol_setWebpMode arginfo_class_FastChart_Chart_setLineInterpolation
+
 #define arginfo_class_FastChart_Symbol_renderPng arginfo_class_FastChart_Chart_version
 
 #define arginfo_class_FastChart_Symbol_renderJpeg arginfo_class_FastChart_Chart_renderJpeg
@@ -647,6 +651,7 @@ ZEND_METHOD(FastChart_Chart, setDateAxisStride);
 ZEND_METHOD(FastChart_Chart, setDpi);
 ZEND_METHOD(FastChart_Chart, setSvgTextMode);
 ZEND_METHOD(FastChart_Chart, setJpegQuality);
+ZEND_METHOD(FastChart_Chart, setWebpMode);
 ZEND_METHOD(FastChart_Chart, renderPng);
 ZEND_METHOD(FastChart_Chart, renderJpeg);
 ZEND_METHOD(FastChart_Chart, renderWebp);
@@ -754,6 +759,7 @@ ZEND_METHOD(FastChart_Symbol, setTransparentBackground);
 ZEND_METHOD(FastChart_Symbol, setDpi);
 ZEND_METHOD(FastChart_Symbol, setSvgTextMode);
 ZEND_METHOD(FastChart_Symbol, setJpegQuality);
+ZEND_METHOD(FastChart_Symbol, setWebpMode);
 ZEND_METHOD(FastChart_Symbol, renderPng);
 ZEND_METHOD(FastChart_Symbol, renderJpeg);
 ZEND_METHOD(FastChart_Symbol, renderWebp);
@@ -828,6 +834,7 @@ static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, setDpi, arginfo_class_FastChart_Chart_setDpi, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setSvgTextMode, arginfo_class_FastChart_Chart_setSvgTextMode, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setJpegQuality, arginfo_class_FastChart_Chart_setJpegQuality, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setWebpMode, arginfo_class_FastChart_Chart_setWebpMode, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, renderPng, arginfo_class_FastChart_Chart_renderPng, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, renderJpeg, arginfo_class_FastChart_Chart_renderJpeg, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, renderWebp, arginfo_class_FastChart_Chart_renderWebp, ZEND_ACC_PUBLIC)
@@ -1043,6 +1050,7 @@ static const zend_function_entry class_FastChart_Symbol_methods[] = {
 	ZEND_ME(FastChart_Symbol, setDpi, arginfo_class_FastChart_Symbol_setDpi, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, setSvgTextMode, arginfo_class_FastChart_Symbol_setSvgTextMode, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, setJpegQuality, arginfo_class_FastChart_Symbol_setJpegQuality, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Symbol, setWebpMode, arginfo_class_FastChart_Symbol_setWebpMode, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, renderPng, arginfo_class_FastChart_Symbol_renderPng, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, renderJpeg, arginfo_class_FastChart_Symbol_renderJpeg, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Symbol, renderWebp, arginfo_class_FastChart_Symbol_renderWebp, ZEND_ACC_PUBLIC)
@@ -1406,6 +1414,30 @@ static zend_class_entry *register_class_FastChart_Chart(void)
 	zend_string *const_SVG_TEXT_PATHS_name = zend_string_init_interned("SVG_TEXT_PATHS", sizeof("SVG_TEXT_PATHS") - 1, 1);
 	zend_declare_typed_class_constant(class_entry, const_SVG_TEXT_PATHS_name, &const_SVG_TEXT_PATHS_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
 	zend_string_release(const_SVG_TEXT_PATHS_name);
+
+	zval const_WEBP_DRAWING_value;
+	ZVAL_LONG(&const_WEBP_DRAWING_value, 0);
+	zend_string *const_WEBP_DRAWING_name = zend_string_init_interned("WEBP_DRAWING", sizeof("WEBP_DRAWING") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_WEBP_DRAWING_name, &const_WEBP_DRAWING_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_WEBP_DRAWING_name);
+
+	zval const_WEBP_PHOTO_value;
+	ZVAL_LONG(&const_WEBP_PHOTO_value, 1);
+	zend_string *const_WEBP_PHOTO_name = zend_string_init_interned("WEBP_PHOTO", sizeof("WEBP_PHOTO") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_WEBP_PHOTO_name, &const_WEBP_PHOTO_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_WEBP_PHOTO_name);
+
+	zval const_WEBP_LOSSLESS_value;
+	ZVAL_LONG(&const_WEBP_LOSSLESS_value, 2);
+	zend_string *const_WEBP_LOSSLESS_name = zend_string_init_interned("WEBP_LOSSLESS", sizeof("WEBP_LOSSLESS") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_WEBP_LOSSLESS_name, &const_WEBP_LOSSLESS_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_WEBP_LOSSLESS_name);
+
+	zval const_WEBP_FAST_value;
+	ZVAL_LONG(&const_WEBP_FAST_value, 3);
+	zend_string *const_WEBP_FAST_name = zend_string_init_interned("WEBP_FAST", sizeof("WEBP_FAST") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_WEBP_FAST_name, &const_WEBP_FAST_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_WEBP_FAST_name);
 
 	return class_entry;
 }

@@ -122,6 +122,19 @@ $chart->renderToFile('/tmp/out.webp');   // setJpegQuality only affects
 PNG is always lossless; there's no quality knob. The encoder is
 libpng with default filter selection.
 
+WebP has four encoder modes selectable via `setWebpMode()`. The
+default `WEBP_DRAWING` is tuned for chart-shaped content (flat
+fills, sharp edges); see the table in
+[`docs/examples/50_webp_modes.php`](docs/examples/50_webp_modes.php)
+for the speed/size trade-offs each mode picks.
+
+```php
+$chart->setWebpMode(FastChart\Chart::WEBP_LOSSLESS);  // archival
+$chart->setWebpMode(FastChart\Chart::WEBP_FAST);      // preview pipelines
+$chart->setWebpMode(FastChart\Chart::WEBP_PHOTO);     // photo backgrounds
+$chart->setWebpMode(FastChart\Chart::WEBP_DRAWING);   // back to default
+```
+
 Call `renderSvg()` on the same chart object for vector output:
 dashboards, print, anywhere infinite-zoom matters.
 

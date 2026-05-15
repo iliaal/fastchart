@@ -53,6 +53,7 @@ void fastchart_symbol_base_init_defaults(fastchart_symbol_obj *b)
     b->quiet_zone = -1;      /* -1 = pick class default at render time */
     b->svg_text_mode = FASTCHART_SVG_TEXT_PATHS;
     b->jpeg_quality = 88;
+    b->webp_mode    = FASTCHART_WEBP_DRAWING;
 }
 
 void fastchart_symbol_base_release_owned(fastchart_symbol_obj *b)
@@ -301,7 +302,8 @@ static void fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAMETERS,
             (quality > 0) ? (int)quality : (int)self->jpeg_quality);
         break;
     case 2:
-        rc = fastchart_encode_webp(&enc_buf, &pix, (int)quality);
+        rc = fastchart_encode_webp(&enc_buf, &pix, (int)quality,
+            (int)self->webp_mode);
         break;
     }
     fastchart_pixels_release(&pix);
@@ -615,6 +617,26 @@ ZEND_METHOD(FastChart_Symbol, setJpegQuality)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+ZEND_METHOD(FastChart_Symbol, setWebpMode)
+{
+    zend_long mode;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(mode)
+    ZEND_PARSE_PARAMETERS_END();
+    if (mode != FASTCHART_WEBP_DRAWING
+        && mode != FASTCHART_WEBP_PHOTO
+        && mode != FASTCHART_WEBP_LOSSLESS
+        && mode != FASTCHART_WEBP_FAST) {
+        zend_value_error(
+            "FastChart\\Symbol::setWebpMode() expects one of WEBP_DRAWING, "
+            "WEBP_PHOTO, WEBP_LOSSLESS, WEBP_FAST");
+        RETURN_THROWS();
+    }
+    fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
+    self->webp_mode = mode;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 /* ---------------- Symbol render shortcuts ------------------------- */
 
 ZEND_METHOD(FastChart_Symbol, renderPng)
@@ -804,7 +826,8 @@ ZEND_METHOD(FastChart_Symbol, renderToFile)
     switch (format) {
     case 0: rc = fastchart_encode_png(&enc_buf, &pix); break;
     case 1: rc = fastchart_encode_jpeg(&enc_buf, &pix, q_eff); break;
-    case 2: rc = fastchart_encode_webp(&enc_buf, &pix, q_eff > 0 ? q_eff : 90); break;
+    case 2: rc = fastchart_encode_webp(&enc_buf, &pix,
+                q_eff > 0 ? q_eff : 90, (int)self->webp_mode); break;
     }
     fastchart_pixels_release(&pix);
     if (rc != 0 || !enc_buf.s) {

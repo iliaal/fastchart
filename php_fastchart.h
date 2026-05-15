@@ -210,6 +210,9 @@ extern zend_class_entry *fastchart_qrcode_ce;
     /* JPEG encode quality 1..100, default 88. Affects renderJpeg() and \
      * renderToFile('*.jpg'). */ \
     zend_long jpeg_quality; \
+    /* WebP encode mode (FASTCHART_WEBP_*). Default DRAWING, tuned for \
+     * chart-shaped content. Affects renderWebp() and renderToFile('*.webp'). */ \
+    zend_long webp_mode; \
     zval config;
 
 /* Base view type. fastchart_obj* is what base setters and shared
@@ -1088,7 +1091,11 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self,
      * any future Symbol-with-text variants honor this. */ \
     zend_long svg_text_mode; \
     /* JPEG encode quality 1..100, default 88. */ \
-    zend_long jpeg_quality;
+    zend_long jpeg_quality; \
+    /* WebP encode mode (FASTCHART_WEBP_*). Default DRAWING. \
+     * LOSSLESS is the natural pick for QR codes (bit-exact recovery \
+     * matters more than file size for machine-readable codes). */ \
+    zend_long webp_mode;
 
 typedef struct _fastchart_symbol_obj { FASTCHART_SYMBOL_BASE_FIELDS } fastchart_symbol_obj;
 

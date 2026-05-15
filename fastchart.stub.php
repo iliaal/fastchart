@@ -104,6 +104,37 @@ abstract class Chart
     public const int SVG_TEXT_PATHS  = 1;
 
     /**
+     * WebP encoder modes selected via `setWebpMode()`.
+     *
+     * `WEBP_DRAWING` (default) — `WEBP_PRESET_DRAWING` + `method=2`,
+     * tuned for chart-shaped content (flat fills, sharp edges, small
+     * palette). Best speed/size trade-off for most charts.
+     *
+     * `WEBP_PHOTO` — `WEBP_PRESET_PHOTO` + `method=4`. Better for
+     * charts that embed photographic background images via
+     * `setBackgroundImage()`; libwebp's photo entropy model handles
+     * gradient and natural-image regions more efficiently than the
+     * drawing preset.
+     *
+     * `WEBP_LOSSLESS` — `lossless=1` + `method=6`. Bit-exact output
+     * with no perceptual loss. For chart content with limited
+     * palettes, lossless WebP often produces similar or smaller
+     * files than lossy at quality 90 and is faster to encode (no
+     * quality-search pass). Use for archival output or when the
+     * downstream tooling needs pixel-exact recovery. The `quality`
+     * parameter to `renderWebp()` is ignored in this mode.
+     *
+     * `WEBP_FAST` — `WEBP_PRESET_DRAWING` + `method=0`. Fastest
+     * encode at the cost of larger files (~10-20% larger than
+     * DRAWING). Use for short-lived previews and hot paths where
+     * encode time dominates.
+     */
+    public const int WEBP_DRAWING  = 0;
+    public const int WEBP_PHOTO    = 1;
+    public const int WEBP_LOSSLESS = 2;
+    public const int WEBP_FAST     = 3;
+
+    /**
      * Optionally pass canvas dimensions at construction so callers
      * can skip the `imagecreatetruecolor()` step entirely when they
      * use the renderXxx() shortcuts. Both `null` keeps the default
@@ -521,6 +552,15 @@ abstract class Chart
      * `optimize_coding=TRUE` and 4:2:0 chroma subsampling.
      */
     public function setJpegQuality(int $quality): static {}
+
+    /**
+     * Select the WebP encoder mode used by `renderWebp()` and
+     * `renderToFile('*.webp')`. Pass one of `self::WEBP_DRAWING`
+     * (default), `WEBP_PHOTO`, `WEBP_LOSSLESS`, or `WEBP_FAST`. See
+     * the constant docblocks for the trade-offs each mode picks.
+     * Throws `\ValueError` on any other value.
+     */
+    public function setWebpMode(int $mode): static {}
 
     /** Render to PNG bytes at the configured size. */
     public function renderPng(): string {}
@@ -1487,6 +1527,15 @@ abstract class Symbol
      * Chart::setJpegQuality().
      */
     public function setJpegQuality(int $quality): static {}
+
+    /**
+     * WebP encoder mode. Pass one of Chart::WEBP_DRAWING (default),
+     * WEBP_PHOTO, WEBP_LOSSLESS, WEBP_FAST. LOSSLESS is the natural
+     * pick for QR codes — bit-exact recovery matters for machine-
+     * readable codes, and the encoder compresses the flat black/
+     * white pattern efficiently. See Chart::setWebpMode().
+     */
+    public function setWebpMode(int $mode): static {}
 
     public function renderPng(): string {}
     public function renderJpeg(int $quality = 0): string {}
