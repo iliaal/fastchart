@@ -22,6 +22,8 @@ extension; `renderPng()` / `renderJpeg()` / `renderWebp()` /
 
 ![fastchart: 26 chart types in one PHP extension](images/fastchart-hero.jpg)
 
+**[Live gallery →](https://iliaal.github.io/fastchart/v1-gallery.html)** — side-by-side SVG / PNG / JPG / WebP renders for every chart family, with the source PHP shown above each row.
+
 ## Status
 
 v1.0: rebuilt around plutovg, libgd dropped as a runtime dependency,
