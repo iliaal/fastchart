@@ -552,7 +552,9 @@ abstract class Chart
      * AreaChart, BarChart, PieChart, ScatterChart, BubbleChart,
      * RadarChart, PolarChart, SurfaceChart, ContourChart, GaugeChart,
      * GanttChart, BoxPlot, Treemap, Funnel, Waterfall, Heatmap,
-     * LinearMeter, StockChart). The `Symbol` family (Code128, QrCode)
+     * LinearMeter, BulletChart, ParetoChart, CalendarHeatmap,
+     * SunburstChart, SankeyChart, MarimekkoChart, VectorChart,
+     * StockChart). The `Symbol` family (Code128, QrCode)
      * exposes the same method on its own abstract base.
      *
      * The output viewport matches the logical `setSize()` dimensions.
@@ -1227,6 +1229,185 @@ final class LinearMeter extends Chart
      * Default `%.0f`. Same validation rules as setYAxisLabelFormat.
      */
     public function setValueFormat(string $format): static {}
+
+}
+
+/**
+ * Bullet chart (Stephen Few). One horizontal performance bar against
+ * qualitative background bands and a target tick mark. Designed as
+ * a compact replacement for radial gauges in dashboards. Range,
+ * bands, and value units all share one scalar axis.
+ */
+final class BulletChart extends Chart
+{
+    /** Data range. min must be < max. */
+    public function setRange(float $min, float $max): static {}
+
+    /** Current performance value. Clamped to [min, max] at draw time. */
+    public function setValue(float $value): static {}
+
+    /**
+     * Target value rendered as a vertical tick across the bar.
+     * Pass NAN to suppress the marker. Defaults to NAN (no target).
+     */
+    public function setTarget(float $target): static {}
+
+    /**
+     * Qualitative background bands. Each entry:
+     * `['from' => number, 'to' => number, 'color' => int?]`. Up to
+     * 8 bands; out-of-range or empty bands are skipped. Bands paint
+     * behind the performance bar, conventionally light → dark to
+     * mark poor / satisfactory / good ranges.
+     */
+    public function setBands(array $bands): static {}
+
+    /**
+     * Printf format for the min / max / current-value labels.
+     * Default `%.0f`. Same validation rules as setYAxisLabelFormat.
+     */
+    public function setValueFormat(string $format): static {}
+
+}
+
+/**
+ * Pareto chart: descending-value bars + cumulative-percentage line
+ * overlay on a secondary axis. The convention is bars sorted high
+ * to low at setBars() time; the cumulative line crosses 80% near
+ * the few categories that explain most of the total ("80/20 rule").
+ */
+final class ParetoChart extends Chart
+{
+    /**
+     * Bars in display order. Each entry:
+     * `['label' => string, 'value' => number, 'color' => int?]`.
+     * Negative values are dropped. The renderer does NOT re-sort —
+     * caller controls the order so labels stay meaningful.
+     */
+    public function setBars(array $bars): static {}
+
+    /**
+     * Color of the cumulative-% overlay line. Default uses the
+     * palette's accent color. 24-bit RGB.
+     */
+    public function setLineColor(int $rgb): static {}
+
+    /**
+     * Printf format for the bar value labels (when setShowValues is
+     * on). Default `%.0f`. Same validation rules as
+     * setYAxisLabelFormat.
+     */
+    public function setValueFormat(string $format): static {}
+
+}
+
+/**
+ * Calendar heatmap: GitHub-style day-grid of value-colored cells.
+ * Seven day-of-week rows × N week columns; cells colored on a
+ * low → high ramp like `Heatmap::setColorRamp()`. Useful for
+ * activity charts, attendance, daily metrics.
+ */
+final class CalendarHeatmap extends Chart
+{
+    /**
+     * Per-day values, keyed by ISO-8601 date string `YYYY-MM-DD`.
+     * `['2026-01-01' => 12, '2026-01-02' => 3, ...]`. The date range
+     * is inferred from the min / max key; missing days render as
+     * empty cells in the palette's grid color.
+     */
+    public function setData(array $values): static {}
+
+    /**
+     * Color ramp for value → cell color. Both arguments are 24-bit
+     * RGB. Defaults to a cool-blue → warm-red ramp.
+     */
+    public function setColorRamp(int $low, int $high): static {}
+
+}
+
+/**
+ * Sunburst (radial hierarchical donut): nested rings where each
+ * ring is a level of the hierarchy and each slice's angular span is
+ * proportional to its value. Children always sum to their parent.
+ */
+final class SunburstChart extends Chart
+{
+    /**
+     * Hierarchical tree. Each node:
+     * `['label' => string?, 'value' => number?, 'color' => int?,
+     *   'children' => array?]`. Leaf nodes need a value; interior
+     * nodes sum their children's values if no value is set.
+     */
+    public function setHierarchy(array $root): static {}
+
+}
+
+/**
+ * Sankey diagram: bipartite (or multi-layered) flow with bezier
+ * ribbons whose width is proportional to flow value. Suitable for
+ * energy / cost / user-flow attribution where source → sink shares
+ * matter more than absolute counts.
+ */
+final class SankeyChart extends Chart
+{
+    /**
+     * Node list. Each entry:
+     * `['label' => string?, 'color' => int?]`. Order in the array
+     * is the node id used in `setLinks()`.
+     */
+    public function setNodes(array $nodes): static {}
+
+    /**
+     * Flow list. Each entry:
+     * `['from' => int, 'to' => int, 'value' => number]`. `from` /
+     * `to` are 0-based indices into the `setNodes()` array. Negative
+     * or non-positive values are dropped.
+     */
+    public function setLinks(array $links): static {}
+
+}
+
+/**
+ * Marimekko (Mekko) chart: stacked columns where each column's
+ * width is proportional to its category total, and segment heights
+ * within each column are proportional to component values. Reads
+ * the entire data set as a percent breakdown both horizontally and
+ * vertically.
+ */
+final class MarimekkoChart extends Chart
+{
+    /**
+     * Category columns. Each entry:
+     * `['label' => string, 'segments' => [['label' => string?,
+     *   'value' => number, 'color' => int?], ...]]`. Column widths
+     * are derived from the sum of each column's segment values.
+     */
+    public function setColumns(array $columns): static {}
+
+}
+
+/**
+ * Vector chart: arrow-on-grid field. Each datum is an (x, y) anchor
+ * with a (dx, dy) component pair; arrows render at the anchor
+ * pointing in the (dx, dy) direction with length proportional to
+ * magnitude. Optional color ramp drives arrow color from magnitude.
+ */
+final class VectorChart extends Chart
+{
+    /**
+     * Vector data. Each entry:
+     * `['x' => number, 'y' => number, 'dx' => number, 'dy' => number,
+     *   'color' => int?]`. Magnitude is computed from (dx, dy);
+     * arrow length scales relative to the max magnitude across the
+     * data set.
+     */
+    public function setVectors(array $vectors): static {}
+
+    /**
+     * Color ramp for magnitude → arrow color. Both arguments are
+     * 24-bit RGB. When set, per-entry `color` overrides are ignored
+     * in favor of the ramp interpolation.
+     */
+    public function setColorRamp(int $low, int $high): static {}
 
 }
 

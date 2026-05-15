@@ -5,7 +5,7 @@
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-green.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![Follow @iliaa](https://img.shields.io/badge/Follow-@iliaa-000000?style=flat&logo=x&logoColor=white)](https://x.com/intent/follow?screen_name=iliaa)
 
-Native C PHP extension. 19 chart types behind a modern OO API with
+Native C PHP extension. 26 chart types behind a modern OO API with
 fluent setters and `final` classes. Line, area, bar, scatter, bubble,
 pie, radar, polar, surface, contour, gauge, gantt, box-plot, treemap,
 funnel, waterfall, heatmap, linear meter, plus a deep `StockChart`
@@ -20,12 +20,12 @@ without rebuilding state. `renderToFile()` picks the encoder from the
 extension; `renderPng()` / `renderJpeg()` / `renderWebp()` /
 `renderSvg()` return bytes in-process.
 
-![fastchart: 19 chart types in one PHP extension](images/fastchart-hero.jpg)
+![fastchart: 26 chart types in one PHP extension](images/fastchart-hero.jpg)
 
 ## Status
 
 v1.0: rebuilt around plutovg, libgd dropped as a runtime dependency,
-`draw($canvas)` replaced by SVG + raster shortcuts. 19 chart types,
+`draw($canvas)` replaced by SVG + raster shortcuts. 26 chart types,
 2-class Symbol family, 84 phpt tests passing, raster and SVG output
 for every type. See [`CHANGELOG.md`](CHANGELOG.md) for the full
 breaking-change list.
@@ -186,7 +186,7 @@ Iteration count via `FC_BENCH_ITERS` (default 50). Bench source at
 
 ## What you can render
 
-19 chart classes plus a 2-class symbology family, all under the
+26 chart classes plus a 2-class symbology family, all under the
 `FastChart\` namespace. Each name links to its rendered example image:
 
 - **Cartesian:** [`LineChart`](docs/examples/01_line_basic.png),
@@ -213,7 +213,15 @@ Iteration count via `FC_BENCH_ITERS` (default 50). Bench source at
   [`Treemap`](docs/examples/32_treemap.png),
   [`Funnel`](docs/examples/33_funnel.png),
   [`Waterfall`](docs/examples/34_waterfall.png),
-  [`Heatmap`](docs/examples/35_heatmap.png).
+  [`Heatmap`](docs/examples/35_heatmap.png),
+  [`BulletChart`](docs/examples/43_bullet.png),
+  [`ParetoChart`](docs/examples/44_pareto.png),
+  [`CalendarHeatmap`](docs/examples/45_calendar_heatmap.png).
+- **Hierarchical / flow:**
+  [`SunburstChart`](docs/examples/46_sunburst.png),
+  [`SankeyChart`](docs/examples/47_sankey.png),
+  [`MarimekkoChart`](docs/examples/48_marimekko.png),
+  [`VectorChart`](docs/examples/49_vector.png).
 - **Symbology:** [`Code128`](docs/examples/41a_code128_alphanumeric.png)
   (1D barcode, ISO/IEC 15417, auto-switching A/B/C subsets, optional
   human-readable text), [`QrCode`](docs/examples/42b_qrcode_ecc_m.png)
