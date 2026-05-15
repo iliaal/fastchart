@@ -2,6 +2,7 @@
 SVG_TEXT_NATIVE: C0 controls AND malformed UTF-8 are sanitized
 --EXTENSIONS--
 fastchart
+simplexml
 --FILE--
 <?php
 

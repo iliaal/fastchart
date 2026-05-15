@@ -3,6 +3,7 @@ Chart::renderToFile() routes .svg to the vector backend
 --EXTENSIONS--
 fastchart
 gd
+simplexml
 --INI--
 asan.detect_leaks=0
 --FILE--

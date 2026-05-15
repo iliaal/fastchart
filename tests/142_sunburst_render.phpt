@@ -2,6 +2,7 @@
 SunburstChart: nested ring polygons
 --EXTENSIONS--
 fastchart
+simplexml
 --FILE--
 <?php
 
