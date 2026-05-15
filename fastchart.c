@@ -3497,6 +3497,40 @@ static int fastchart_svg_has_data_image(const char *s, size_t n)
     return 0;
 }
 
+/* Count "<use" occurrences in SVG bytes (case-insensitive on the tag
+ * name; "<use" is 4 chars). plutosvg's <use href="#id"> at
+ * vendor/plutosvg/source/plutosvg.c:2121 renders the referenced
+ * subtree inline; its cycle detector compares element pointers along
+ * the ancestor chain but does NOT count fan-out. A 2 KB SVG with
+ * 10 nested <g> levels, each containing 10× <use> of the next, can
+ * trigger 10^10 shape renders (billion-laughs equivalent). Cap the
+ * caller's <use> count to a generous-but-bounded value at the entry
+ * point. fastchart-side renderSvg / drawSvgFragment doesn't emit
+ * <use> internally, so this cap only affects caller-supplied SVG.
+ * Returns the count; caller compares against FC_SVG_MAX_USE_COUNT. */
+#define FC_SVG_MAX_USE_COUNT 256
+static size_t fastchart_svg_count_use_elements(const char *s, size_t n)
+{
+    static const char needle[] = "<use";
+    static const size_t nlen = sizeof(needle) - 1;
+    if (n < nlen) return 0;
+    size_t count = 0;
+    for (size_t i = 0; i + nlen <= n; i++) {
+        if (s[i] != '<') continue;
+        char u = s[i + 1], s2 = s[i + 2], e = s[i + 3];
+        if ((u != 'u' && u != 'U') || (s2 != 's' && s2 != 'S')
+            || (e != 'e' && e != 'E')) continue;
+        /* Next char must be a tag-name boundary (whitespace, '>',
+         * or '/') so we don't match "<userdata" or similar. */
+        char nxt = (i + nlen < n) ? s[i + nlen] : ' ';
+        if (nxt != ' ' && nxt != '\t' && nxt != '\n' && nxt != '\r'
+            && nxt != '>' && nxt != '/') continue;
+        count++;
+        if (count > FC_SVG_MAX_USE_COUNT) return count;  /* early bail */
+    }
+    return count;
+}
+
 /* Shared front-half for the three static SVG-to-raster methods.
  * Validates input bytes, extracts intrinsic dimensions, enforces
  * dim caps, rasterizes via plutosvg + plutovg. On success the
@@ -3526,6 +3560,20 @@ static int fastchart_svg_to_pixels(
             "(embedded raster bypasses output dimension caps; "
             "decode embedded images separately)",
             method_name);
+        return -1;
+    }
+
+    /* <use> fan-out is a billion-laughs vector via plutosvg
+     * (see fastchart_svg_count_use_elements comment). Cap is
+     * generous — typical chart-stitching workflows don't use
+     * <use> at all. */
+    size_t use_count = fastchart_svg_count_use_elements(
+        ZSTR_VAL(svg), ZSTR_LEN(svg));
+    if (use_count > FC_SVG_MAX_USE_COUNT) {
+        zend_value_error(
+            "%s() SVG contains too many <use> elements (%zu, max %d) "
+            "— prevents billion-laughs fan-out via plutosvg",
+            method_name, use_count, FC_SVG_MAX_USE_COUNT);
         return -1;
     }
 
@@ -7369,17 +7417,13 @@ ZEND_METHOD(FastChart_SunburstChart, setHierarchy)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_sunburst_obj *self = Z_FASTCHART_SUNBURST_OBJ_P(ZEND_THIS);
-    if (self->nodes) {
-        for (int i = 0; i < self->node_count; i++) {
-            if (self->nodes[i].label) efree(self->nodes[i].label);
-        }
-        efree(self->nodes);
-        self->nodes = NULL;
-    }
-    self->node_count = 0;
-    self->max_depth = 0;
-    self->total_value = 0.0;
 
+    /* Parse into locals FIRST; only release self after build succeeds.
+     * build_rec returns -1 on depth > FASTCHART_SUNBURST_MAX_DEPTH or
+     * node count > FASTCHART_MAX_SUNBURST_NODES — both reachable from
+     * user input. Pre-fix, the self-clearing block ran ahead of the
+     * build call and a depth-overflow exception left the chart with
+     * an empty hierarchy. */
     fastchart_sunburst_node *nodes = NULL;
     int n = 0, cap = 0, max_depth = 0;
     if (fastchart_sunburst_build_rec(
@@ -7394,6 +7438,14 @@ ZEND_METHOD(FastChart_SunburstChart, setHierarchy)
             "FastChart\\SunburstChart::setHierarchy() received a malformed "
             "hierarchy (max nesting depth is 32)");
         RETURN_THROWS();
+    }
+
+    /* Swap. */
+    if (self->nodes) {
+        for (int i = 0; i < self->node_count; i++) {
+            if (self->nodes[i].label) efree(self->nodes[i].label);
+        }
+        efree(self->nodes);
     }
     self->nodes = nodes;
     self->node_count = n;
