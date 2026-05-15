@@ -219,7 +219,10 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
      * 2 = rising (vol >= 1.5x avg), 1 = climax (vol >= 2x avg OR
      * volume*range >= max(volume*range over baseT)). For volume-
      * scaled bodies (STYLE_VOLUME) we just need the avg. */
-    const int baseT = 10;
+    /* MSVC's C compiler treats const int as a runtime value, so a
+     * later `int dq[baseT + 1]` declaration tripped C2057 (expected
+     * constant expression). Macro form is portable. */
+#define baseT 10
     int *va = NULL;
     double *vol_scale = NULL;
 
@@ -800,5 +803,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
             fastchart_blit_icon(t, ic, px, py);
         }
     }
+#undef baseT
     return 0;
 }
