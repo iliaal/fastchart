@@ -9,7 +9,11 @@ fastchart
  * shared the same HashTable. Setters that write into Z_ARRVAL(self->config)
  * (annotations, overlays, horizontal/vertical lines, ...) then triggered
  * a Zend hash assertion (refcount > 1 on update) and aborted the process
- * with exit=134. Fix: zend_array_dup when config is IS_ARRAY. */
+ * with exit=134. Fix: recursive deep-copy of config so the outer hash AND
+ * every nested list zval (config['annotations'], config['overlays'], ...)
+ * is independently owned by the clone. A shallow zend_array_dup() leaves
+ * nested lists shared, so a chart that already had an annotation aborted
+ * the second add on a clone. */
 $c = (new FastChart\LineChart(400, 200))
     ->setSeries([['data' => [1, 2, 3, 4, 5]]]);
 $svg_pristine = $c->renderSvg();
@@ -49,6 +53,61 @@ $c7 = clone $c;
 $c7->addTextAnnotation('b', 90, 90);
 echo "sibling_clones_distinct: ",
     ($c6->renderSvg() !== $c7->renderSvg() ? "ok" : "fail"), "\n";
+
+/* Nested-list scenario the shallow-dup fix missed: seed config first,
+ * THEN clone, THEN append. The outer HashTable is independent but
+ * config['text_annotations'] / ['overlays'] / ['annotations'] are
+ * still shared list zvals between src and dst. The second append on
+ * the clone aborted with refcount > 1. Native-text mode lets the
+ * test see the literal annotation strings in the SVG (path mode
+ * flattens to glyph outlines). */
+$seeded = (new FastChart\LineChart(400, 200))
+    ->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE)
+    ->setSeries([['data' => [1, 2, 3, 4, 5]]]);
+$seeded->addTextAnnotation('first', 10, 10);
+
+$nest = clone $seeded;
+$nest->addTextAnnotation('second', 20, 20);
+echo "seed_text_then_clone_then_append: ok\n";
+
+/* After the second append, the original must still own 'first' only;
+ * the clone must own 'first' + 'second'. Asymmetric containment
+ * proves the nested list is no longer shared. */
+$seeded->addTextAnnotation('third', 30, 30);
+$svg_a = $seeded->renderSvg();
+$svg_b = $nest->renderSvg();
+$orig_has = substr_count($svg_a, 'first') >= 1
+         && substr_count($svg_a, 'third') >= 1
+         && substr_count($svg_a, 'second') === 0;
+$clone_has = substr_count($svg_b, 'first') >= 1
+          && substr_count($svg_b, 'second') >= 1
+          && substr_count($svg_b, 'third') === 0;
+echo "nested_text_isolation: ",
+    ($orig_has && $clone_has ? "ok" : "fail"), "\n";
+
+/* Same scenario for overlays — different config key, different inner
+ * list, exercises the deep-copy walk against another nested array. */
+$ov = (new FastChart\LineChart(400, 200))
+    ->setSeries([['data' => [1, 2, 3]]]);
+$ov->addOverlaySeries('line', [10, 20, 30]);
+$ov2 = clone $ov;
+$ov2->addOverlaySeries('line', [40, 50, 60]);
+echo "seed_overlay_then_clone_then_append: ok\n";
+
+/* And for h-line / v-line, which share the 'annotations' list. */
+$hv = (new FastChart\LineChart(400, 200))
+    ->setSeries([['data' => [1, 2, 3]]]);
+$hv->addHorizontalLine(1.5);
+$hv2 = clone $hv;
+$hv2->addVerticalLine(2.0);  /* same list, different kind */
+echo "seed_hline_clone_append_vline: ok\n";
+
+/* Clone-of-clone: deep copy must hold across multiple generations. */
+$g1 = clone $hv;
+$g1->addHorizontalLine(2.5);
+$g2 = clone $g1;
+$g2->addHorizontalLine(3.5);
+echo "grandchild_clone_append: ok\n";
 
 /* F2 (Important): renderToFile('*.jpg') ignored setJpegQuality() because
  * the default $quality=90 made the q_eff==0 fallback unreachable. Fix:
@@ -117,6 +176,11 @@ clone_addVerticalLine: ok
 clone_isolation: ok
 clone_mutations_distinct: ok
 sibling_clones_distinct: ok
+seed_text_then_clone_then_append: ok
+nested_text_isolation: ok
+seed_overlay_then_clone_then_append: ok
+seed_hline_clone_append_vline: ok
+grandchild_clone_append: ok
 chart_renderToFile_uses_jpegQuality: ok
 chart_explicit_quality_wins: ok
 chart_explicit_quality_1: ok
