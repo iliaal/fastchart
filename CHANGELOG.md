@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-05-15
+
+A build/packaging patch: the 1.0.1 Linux prebuilt binaries linked
+against the build host's `libjpeg.so.8` (Ubuntu's libjpeg-turbo
+soname) and failed to load on Debian-based PHP, including every
+official `php:X.Y-cli` Docker image where Debian's libjpeg-turbo
+ships as `libjpeg.so.62` instead. Debian provides no package that
+satisfies `libjpeg.so.8`, so `pie install iliaal/fastchart` on a
+Debian PHP fell back to source build.
+
+### Fixed
+
+- **Linux prebuilt binaries now portable across distros.** Each
+  `.so` produced by `.github/workflows/release-linux.yml` statically
+  links freetype + libpng + libjpeg-turbo + libwebp from
+  `./configure`-time source builds (pinned versions in workflow
+  env). `--with-fastchart-static-codecs=<prefix>` is the new
+  `config.m4` flag that drives it: prepends the prefix to
+  `PKG_CONFIG_PATH`, switches every pkg-config call to `--static`,
+  and appends `-Wl,--exclude-libs=ALL` so the codec-archive symbols
+  stay local in `fastchart.so`. Without `--exclude-libs`, loading
+  `ext/gd` (dynamically linked against the system libjpeg) in the
+  same process collides on `jpeg_CreateCompress` with two different
+  `JPEG_LIB_VERSION` values and produces "encoder produced no
+  output" on the first `renderJpeg()`.
+- **`readelf -d fastchart.so` NEEDED entries** trimmed from
+  `libjpeg.so.8`, `libfreetype.so.6`, `libpng16.so.16`,
+  `libwebp.so.7`, `libz.so.1`, `libm`, `libc` → just `libz`, `libm`,
+  `libc`, `ld-linux`. Works on Ubuntu, Debian, RHEL, anywhere glibc
+  + zlib are present.
+- **macOS prebuilts unaffected.** Mach-O resolves by install-name
+  (absolute path baked at link time), not soname major, so the
+  Ubuntu↔Debian issue doesn't manifest. The macOS path keeps
+  dynamic linking against Homebrew kegs.
+
+### Changed
+
+- `release-linux.yml` gains a `workflow_dispatch` trigger so
+  maintainers can validate the recipe end-to-end without cutting a
+  release tag. The release-asset upload step is gated on
+  `github.event_name == 'release'`; manual runs build + verify but
+  do not upload.
+- `release-linux.yml` adds a `Verify codec libs are static` step
+  that fails the job if `libjpeg`, `libpng`, `libwebp`, or
+  `libfreetype` appears in the produced `.so`'s NEEDED entries —
+  catches link-flag regressions immediately.
+- Static-built codec libs cached via `actions/cache@v4` keyed on
+  the pinned lib versions (env: `FT_VERSION`, `PNG_VERSION`,
+  `JPEG_VERSION`, `WEBP_VERSION`). First build ~4min; subsequent
+  cache-hit builds skip the source build.
+
+Trade-off: `.so` size grows from ~4MB → ~6.8MB on Linux. Acceptable
+in exchange for cross-distro portability.
+
 ## [1.0.1] - 2026-05-15
 
 This is the first release with prebuilt binaries on GitHub Releases.
@@ -545,7 +599,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.0.1...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.0.2...HEAD
+[1.0.2]: https://github.com/iliaal/fastchart/releases/tag/1.0.2
 [1.0.1]: https://github.com/iliaal/fastchart/releases/tag/1.0.1
 [1.0.0]: https://github.com/iliaal/fastchart/releases/tag/1.0.0
 [0.2.0]: https://github.com/iliaal/fastchart/releases/tag/0.2.0
