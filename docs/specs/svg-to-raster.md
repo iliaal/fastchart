@@ -58,10 +58,15 @@ namespace FastChart;
 
 class Chart {
     public static function svgToPng(string $svg): string {}
-    public static function svgToJpeg(string $svg, int $quality = 88): string {}
+    public static function svgToJpeg(string $svg, int $quality = 88, int $bgRgb = 0xFFFFFF): string {}
     public static function svgToWebp(string $svg, int $quality = 90, int $mode = self::WEBP_DRAWING): string {}
 }
 ```
+
+`svgToJpeg` accepts a `$bgRgb` parameter (24-bit RGB, default white
+`0xFFFFFF`) because JPEG has no alpha channel — transparent SVG
+regions are composited under this color before encoding. PNG and
+WebP preserve alpha natively and don't need the parameter.
 
 Returns the encoded raster bytes (matching the existing
 `renderPng()` / `renderJpeg()` / `renderWebp()` shape). Throws
@@ -136,9 +141,10 @@ SVG and resolving fonts via FreeType. Non-trivial; deferred.
 ### 4. Output dimension cap
 
 Same `FC_IMAGE_MAX_DIM` and `FC_IMAGE_MAX_PIXELS` caps already
-enforced by `setBackgroundImage()` apply: 16384 px on either axis,
-~64M total pixels. A malformed or adversarial SVG that declares
-huge dimensions is rejected before allocation.
+enforced by `setBackgroundImage()` apply: 4096 px on either axis,
+~16M total pixels (~64 MB RGBA buffer worst case). A malformed or
+adversarial SVG that declares huge dimensions is rejected before
+allocation.
 
 ### 5. Embedded `data:image/` URIs are rejected
 
