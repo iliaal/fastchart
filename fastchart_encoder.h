@@ -52,9 +52,19 @@ int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix);
 int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
                           int quality);
 
-/* Encode pix into WebP bytes (lossy). -2 if libwebp is not compiled in. */
+/* WebP encoding mode. See setWebpMode() in fastchart.stub.php for the
+ * caller-facing description. DRAWING is the default and is tuned for
+ * chart-shaped content (flat fills, sharp edges). */
+#define FASTCHART_WEBP_DRAWING   0  /* WEBP_PRESET_DRAWING, method=2 */
+#define FASTCHART_WEBP_PHOTO     1  /* WEBP_PRESET_PHOTO,   method=4 */
+#define FASTCHART_WEBP_LOSSLESS  2  /* lossless = 1,        method=6 */
+#define FASTCHART_WEBP_FAST      3  /* WEBP_PRESET_DRAWING, method=0 */
+
+/* Encode pix into WebP bytes. mode is one of FASTCHART_WEBP_*; in
+ * LOSSLESS mode `quality` is ignored for perceptual quality and the
+ * encoder uses lossless compression. -2 if libwebp is not compiled in. */
 int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
-                          int quality);
+                          int quality, int mode);
 
 /* Build-time availability + version strings. The "_version" helpers
  * return NULL when the lib isn't compiled in. */

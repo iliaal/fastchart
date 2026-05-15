@@ -293,17 +293,38 @@ const char *fastchart_libjpeg_version(void) { return NULL; }
  * The encoder still produces a baseline-compatible .webp stream that
  * every conformant decoder accepts. */
 int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
-                          int quality)
+                          int quality, int mode)
 {
 	float q = (float)quality;
 	if (q < 1.0f)   q = 1.0f;
 	if (q > 100.0f) q = 100.0f;
 
 	WebPConfig config;
-	if (!WebPConfigPreset(&config, WEBP_PRESET_DRAWING, q)) {
-		return -1;
+	switch (mode) {
+	case FASTCHART_WEBP_PHOTO:
+		if (!WebPConfigPreset(&config, WEBP_PRESET_PHOTO, q)) return -1;
+		config.method = 4;
+		break;
+	case FASTCHART_WEBP_LOSSLESS:
+		/* Lossless ignores perceptual quality; the encoder picks
+		 * compression strategy from method. method=6 is the
+		 * highest-compression setting and is the right pick when
+		 * the user asks for "lossless" (size matters more than
+		 * speed in that scenario). */
+		if (!WebPConfigPreset(&config, WEBP_PRESET_DEFAULT, q)) return -1;
+		config.lossless = 1;
+		config.method = 6;
+		break;
+	case FASTCHART_WEBP_FAST:
+		if (!WebPConfigPreset(&config, WEBP_PRESET_DRAWING, q)) return -1;
+		config.method = 0;
+		break;
+	case FASTCHART_WEBP_DRAWING:
+	default:
+		if (!WebPConfigPreset(&config, WEBP_PRESET_DRAWING, q)) return -1;
+		config.method = 2;
+		break;
 	}
-	config.method = 2;
 	config.thread_level = 1;
 
 	WebPPicture picture;
@@ -365,9 +386,9 @@ const char *fastchart_libwebp_version(void)
 }
 #else  /* !HAVE_LIBWEBP */
 int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
-                          int quality)
+                          int quality, int mode)
 {
-	(void)out; (void)pix; (void)quality;
+	(void)out; (void)pix; (void)quality; (void)mode;
 	return -2;
 }
 int fastchart_have_libwebp(void)         { return 0; }

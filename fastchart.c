@@ -248,6 +248,7 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
      * default), JPEG quality 88 (the eval-validated sweet spot). */
     b->svg_text_mode = FASTCHART_SVG_TEXT_PATHS;
     b->jpeg_quality = 88;
+    b->webp_mode    = FASTCHART_WEBP_DRAWING;
 
     b->font_path = fastchart_default_font_path
         ? zend_string_copy(fastchart_default_font_path) : NULL;
@@ -3446,6 +3447,26 @@ ZEND_METHOD(FastChart_Chart, setJpegQuality)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+ZEND_METHOD(FastChart_Chart, setWebpMode)
+{
+    zend_long mode;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(mode)
+    ZEND_PARSE_PARAMETERS_END();
+    if (mode != FASTCHART_WEBP_DRAWING
+        && mode != FASTCHART_WEBP_PHOTO
+        && mode != FASTCHART_WEBP_LOSSLESS
+        && mode != FASTCHART_WEBP_FAST) {
+        zend_value_error(
+            "FastChart\\Chart::setWebpMode() expects one of WEBP_DRAWING, "
+            "WEBP_PHOTO, WEBP_LOSSLESS, WEBP_FAST");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->webp_mode = mode;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 /* Emit a HTML <map> for the scatter chart's clickable points. Reads
  * the typed image_map_areas array populated by the renderer; chart
  * must have been rendered at least once (via renderPng/Jpeg/Webp/Svg
@@ -4549,7 +4570,8 @@ static void fastchart_render_to_string(INTERNAL_FUNCTION_PARAMETERS, int format,
             (quality > 0) ? (int)quality : (int)self->jpeg_quality);
         break;
     case 2:
-        rc = fastchart_encode_webp(&out_buf, &pix, (int)quality);
+        rc = fastchart_encode_webp(&out_buf, &pix, (int)quality,
+            (int)self->webp_mode);
         break;
     default:
         break;
@@ -4916,7 +4938,8 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
     switch (format) {
     case 0: rc = fastchart_encode_png(&enc_buf, &pix); break;
     case 1: rc = fastchart_encode_jpeg(&enc_buf, &pix, q_eff); break;
-    case 2: rc = fastchart_encode_webp(&enc_buf, &pix, q_eff > 0 ? q_eff : 90); break;
+    case 2: rc = fastchart_encode_webp(&enc_buf, &pix,
+                q_eff > 0 ? q_eff : 90, (int)self->webp_mode); break;
     }
     fastchart_pixels_release(&pix);
     if (rc != 0 || !enc_buf.s) {
