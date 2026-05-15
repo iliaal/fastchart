@@ -132,8 +132,15 @@ static PHP_GINIT_FUNCTION(fastchart)
 #if defined(COMPILE_DL_FASTCHART) && defined(ZTS)
     ZEND_TSRMLS_CACHE_UPDATE();
 #endif
-    /* Globals are zero-init'd by Zend; nothing else to do. */
-    (void)fastchart_globals;
+    /* Explicit zero-init. Under NTS the globals struct lives in BSS
+     * (linker zero-fills); under ZTS it is heap-allocated per thread
+     * and Zend does NOT zero it for us. Valgrind on Linux ZTS
+     * caught reads of uninitialised ft_lib / ft_lib_init_failed /
+     * ft_face_cache[i].path through fastchart_ft_library /
+     * fastchart_ft_face; on Windows ZTS x64 the random heap content
+     * happened to look like a live FT_Library, so FT_Done_Face /
+     * FT_New_Face dereferenced garbage and segfaulted at first use. */
+    memset(fastchart_globals, 0, sizeof(*fastchart_globals));
 }
 
 static PHP_GSHUTDOWN_FUNCTION(fastchart)
