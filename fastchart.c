@@ -1760,7 +1760,12 @@ FASTCHART_DEFINE_LIFECYCLE(vector,    fastchart_vector_obj)
  *   Fedora / RHEL:      /usr/share/fonts/dejavu-sans-fonts/...
  *   Arch:               /usr/share/fonts/TTF/...
  *   Alpine:             /usr/share/fonts/TTF/...
- *   macOS:              /Library/Fonts/... (system) or /System/Library/Fonts/... */
+ *   macOS:              /Library/Fonts/... (system) or /System/Library/Fonts/...
+ *   Windows:            C:\Windows\Fonts\arial.ttf (always present
+ *                       since Windows 95) — every text-rendering
+ *                       method silently no-ops when font_path is
+ *                       NULL, so without a Windows entry every
+ *                       chart renders blank text. */
 static const char *FASTCHART_DEFAULT_FONT_CANDIDATES[] = {
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
@@ -1768,6 +1773,8 @@ static const char *FASTCHART_DEFAULT_FONT_CANDIDATES[] = {
     "/usr/share/fonts/dejavu/DejaVuSans.ttf",
     "/Library/Fonts/Arial.ttf",
     "/System/Library/Fonts/Helvetica.ttc",
+    "C:\\Windows\\Fonts\\arial.ttf",
+    "C:\\Windows\\Fonts\\segoeui.ttf",
     NULL,
 };
 
