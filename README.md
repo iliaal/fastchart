@@ -32,7 +32,25 @@ breaking-change list.
 
 ## Install
 
-Build from source against the PHP install you want to extend:
+### Via PIE (recommended)
+
+[PIE](https://github.com/php/pie) handles the configure / make /
+install cycle for you against your active PHP install:
+
+```sh
+pie install iliaal/fastchart
+```
+
+PIE picks up the latest tagged release from Packagist and respects
+your platform's `pkg-config` for the FreeType / libpng /
+libjpeg-turbo / libwebp probes. After install, enable the
+extension via your distribution's mechanism (e.g.
+`docker-php-ext-enable fastchart` on the official PHP images, or
+add `extension=fastchart` to `php.ini`).
+
+### From source
+
+Build manually against the PHP install you want to extend:
 
 ```sh
 phpize
@@ -285,8 +303,18 @@ Companion native PHP extensions for high-throughput PHP workloads:
 ## License
 
 BSD 3-Clause for the extension itself; see [`LICENSE`](LICENSE).
-The vendored QR encoder under `vendor/qrcodegen/` (nayuki/QR-Code-generator,
-C variant) is MIT — see [`vendor/qrcodegen/LICENSE`](vendor/qrcodegen/LICENSE).
+Vendored third-party code (all MIT):
+
+- `vendor/plutovg/` — Samuel Ugochukwu's
+  [plutovg](https://github.com/sammycage/plutovg) 2D rasterizer.
+  See [`vendor/plutovg/LICENSE`](vendor/plutovg/LICENSE).
+- `vendor/plutosvg/` — Samuel Ugochukwu's
+  [plutosvg](https://github.com/sammycage/plutosvg) SVG document
+  parser. See [`vendor/plutosvg/LICENSE`](vendor/plutosvg/LICENSE).
+- `vendor/qrcodegen/` — nayuki's
+  [QR-Code-generator](https://github.com/nayuki/QR-Code-generator)
+  (C variant). See [`vendor/qrcodegen/LICENSE`](vendor/qrcodegen/LICENSE).
+
 SPDX: `(BSD-3-Clause AND MIT)`.
 
 ---
