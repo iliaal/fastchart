@@ -322,7 +322,9 @@ All under the `FastChart\` namespace:
   milestones.
 - `BoxPlot`: five-number summaries with per-category outliers.
 - `Treemap`, `Funnel`, `Waterfall`: value-encoded layouts (rectangle
-  packing, stage drop-off, signed-delta running totals).
+  packing, stage drop-off, signed-delta running totals). `Funnel`
+  supports a triangle-with-bands layout via `setStyle(STYLE_PYRAMID)`
+  for callers who want the classic pyramid shape.
 - `Heatmap`: 2D grid with linear color-ramp interpolation.
 
 Every setter returns `static`, so a single fluent expression configures

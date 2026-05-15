@@ -7,32 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **`Funnel::STYLE_PYRAMID`**: opt into a triangle-with-bands layout
-  instead of the default descending-trapezoid look. Value still
-  drives shape — band heights are value-proportional, widths follow
-  the triangle's natural taper.
-- **Seven new chart families** covering common dashboard / analytics
-  patterns:
-  - `BulletChart` — Stephen Few bullet: performance bar against
-    qualitative bands with a target tick.
-  - `ParetoChart` — descending bars + cumulative-percentage line
-    overlay (the 80/20 visualization).
-  - `CalendarHeatmap` — GitHub-style day-grid keyed by `YYYY-MM-DD`
-    with a low/high color ramp.
-  - `SunburstChart` — radial hierarchical donut; recursive `children`
-    arrays with optional `value` per node (interior nodes auto-sum).
-  - `SankeyChart` — bipartite / multi-layer flow with bezier ribbons;
-    `setNodes()` + `setLinks()` with `from` / `to` indices.
-  - `MarimekkoChart` — variable-width stacked columns where column
-    width is proportional to category total.
-  - `VectorChart` — arrow-on-grid vector field with magnitude scaling
-    and optional ramp coloring.
-
-Chart family count rises from 19 to 26.
-
-## [1.0.0] - 2026-05-14
+## [1.0.0] - 2026-05-15
 
 This release rebuilds the rendering pipeline around an SVG-canonical
 architecture. SVG is now the source of truth; every raster output
@@ -67,6 +42,49 @@ rasterizing through plutovg, and encoding with libpng / libjpeg-turbo
 
 ### Added
 
+- **Seven new chart families** lifting the family count from 19 to 26:
+  - `BulletChart` — Stephen Few bullet: performance bar against
+    qualitative bands with a target tick.
+  - `ParetoChart` — descending bars + cumulative-percentage line
+    overlay (the 80/20 visualization).
+  - `CalendarHeatmap` — GitHub-style day-grid keyed by `YYYY-MM-DD`
+    with a low/high color ramp.
+  - `SunburstChart` — radial hierarchical donut; recursive `children`
+    arrays with optional `value` per node (interior nodes auto-sum).
+  - `SankeyChart` — bipartite / multi-layer flow with bezier ribbons;
+    `setNodes()` + `setLinks()` with `from` / `to` indices.
+  - `MarimekkoChart` — variable-width stacked columns where column
+    width is proportional to category total.
+  - `VectorChart` — arrow-on-grid vector field with magnitude scaling
+    and optional ramp coloring.
+- **`Funnel::STYLE_PYRAMID`**: opt into a triangle-with-bands layout
+  instead of the default descending-trapezoid look. Value still
+  drives shape — band heights are value-proportional, widths follow
+  the triangle's natural taper.
+- **`Chart::svgToPng() / svgToJpeg() / svgToWebp()`**: three static
+  methods that hand caller-supplied SVG bytes to the same plutovg +
+  encoder pipeline used by `renderPng()` / `renderJpeg()` /
+  `renderWebp()`. Lets callers stitch chart fragments (via
+  `drawSvgFragment()`) into one SVG document and round-trip the
+  whole thing back to raster without ImageMagick / `rsvg-convert` /
+  pure-PHP rasterizers. `svgToJpeg($svg, int $q = 88, int $bgRgb =
+  0xFFFFFF)` composites transparent regions under `$bgRgb` before
+  JPEG encode (JPEG has no alpha); `svgToWebp($svg, int $q = 90,
+  int $mode = WEBP_DRAWING)` honours the same mode as the instance-
+  side encoder. Hard caps: 16 MB input cap; output dims capped at
+  4096 px / 16 Mpx; embedded `data:image/` URIs and `<use>` elements
+  rejected (plutosvg's data-URI loader bypasses the output-dim cap,
+  and its `<use>` renderer's cycle detector doesn't count fan-out,
+  so a nested `<g><use/>×10` tree can hit billion-laughs expansion).
+  Text in caller-supplied SVG renders blank — plutovg has no text
+  renderer; flatten `<text>` to `<path>` upstream.
+- **`Chart::setWebpMode(int)`** with class constants `WEBP_DRAWING`
+  (default; encoder preset tuned for vector-like content),
+  `WEBP_PHOTO` (preset for photo input), `WEBP_LOSSLESS` (lossless
+  encode), and `WEBP_FAST` (lower-effort encode for batch jobs).
+  Same setter on `Symbol`. Default `WEBP_DRAWING` matches what chart
+  content actually is and produces visibly tighter file sizes than
+  the libwebp simple-API default this release also drops.
 - **plutovg + plutosvg rasterizer**, vendored under `vendor/plutovg/`
   and `vendor/plutosvg/`. Builds with `PLUTOVG_BUILD_STATIC` +
   `PLUTOSVG_BUILD_STATIC` + `-fvisibility=hidden` so the library
@@ -299,6 +317,82 @@ Tests added: 136 (S_ISREG rejection of non-regular inputs), 137
 probes (lone continuation, truncated 2/3-byte, surrogate, overlong,
 above-U+10FFFF, valid round-trip). 103 / 103 phpts pass.
 
+### Followups landed (post-1.0 draft audit rounds)
+
+After the first 1.0.0 draft of CHANGELOG was written, five audit
+rounds against the new SVG and chart-family surface produced the
+following fixes. None of these are user-visible API changes; they
+harden behaviour the 1.0.0 surface already exposed.
+
+- **WebP encoder ~2× faster on chart content.** Switched from
+  libwebp's `WebPEncodeRGBA` simple API to the advanced API with
+  `WebPConfigPreset(WEBP_PRESET_DRAWING)`, `method=2`, and
+  `thread_level=1`. Default `setWebpMode()` is `WEBP_DRAWING`;
+  callers who actually encode photographic content can opt into
+  `WEBP_PHOTO`, lossless via `WEBP_LOSSLESS`, or low-effort
+  batches via `WEBP_FAST`.
+- **`renderToFile('*.jpg')` now honours `setJpegQuality()`.** The
+  default `$quality` argument was 90 and the validation rejected 0,
+  which made the "fall back to instance setting" path unreachable.
+  Default is now 0 (sentinel for "use per-format default"); JPEG
+  promotes 0 to `self->jpeg_quality`, WebP promotes 0 to 90.
+  Explicit `[1, 100]` still validated, OOB still rejected. Same
+  shape on `Symbol::renderToFile`.
+- **`clone $chart` deep-copies `config`.** Previously the lifecycle
+  clone `Z_TRY_ADDREF`'d the config zval, so both clones shared the
+  same HashTable. Setters like `addTextAnnotation`,
+  `addOverlaySeries`, `addHorizontalLine`, `addVerticalLine` then
+  aborted the process (Zend hash assertion, exit=134) on the first
+  clone-side mutation. Lifecycle clone now recursively deep-copies
+  every nested array in `config`, so a clone-then-append on a chart
+  that already had annotations/overlays works regardless of how
+  deep the config tree goes.
+- **`svgToPng/Jpeg/Webp()` rejects DoS-amplifying inputs.** SVGs
+  carrying `data:image/...` data URIs bypass the output-dim cap
+  (plutosvg's loader decodes the embedded raster inline before our
+  cap check sees the rasterized dims). SVGs carrying `<use>`
+  elements can hit billion-laughs-style fan-out because plutosvg's
+  cycle detector checks ancestor pointers but not source-tag count.
+  Both are rejected with `\ValueError` at the entry point.
+- **Atomic mutation on setters that take collections.** Line / Area
+  / Bar `setSeries`, Surface / Contour `setGrid`, and Sunburst
+  `setHierarchy` now parse into a local temp first and swap into
+  `self` only on success. Strict-mode failures and depth-cap
+  rejections no longer leave the chart with a partial replacement
+  and the original collection released.
+- **`SunburstChart`**: depth capped at `FASTCHART_SUNBURST_MAX_DEPTH=32`.
+  Unbounded recursion in `setHierarchy` was a stack-exhaustion
+  vector with adversarial input.
+- **`BoxPlot::setBoxes`** silently drops entries that violate
+  `min ≤ q1 ≤ median ≤ q3 ≤ max`. Pre-fix, an unordered five-number
+  summary produced negative-height SVG rects.
+- **`SankeyChart`**: `setNodes` now clears the previously-parsed
+  link table; stale `from`/`to` indices into a longer node array
+  could index past the new node count.
+- **`VectorChart`**: rejects vectors whose magnitude is non-finite
+  (NaN / ±inf) before float-to-int cast UB.
+- **PNG dimension field UB**. Background-image PNG dimensions
+  parsed via signed shift, which is undefined for the high bit.
+  Parsed via `uint32_t` now and rejected when above `INT_MAX`.
+- **`GanttChart`**: dependency narrowing — `zend_long` bounded into
+  `[0, INT_MAX]` before the `(int)` cast.
+- **`CalendarHeatmap`**: per-month day validation with leap-year
+  handling. Bad ISO dates (`2026-02-30`) are rejected at setter
+  time instead of being parsed into garbage offsets.
+- **README + spec polish.** PHP-side docblocks for the SVG-to-raster
+  entry points spell out the input-size cap, output-dim cap, and
+  rejected-construct list. `docs/specs/svg-to-raster.md` matches
+  the implementation (parameter signatures, dimension caps,
+  embedded-image and `<use>` rejection notes).
+
+Tests added in this wave: 138 (Funnel pyramid), 139–145 (one per
+new chart family), 146 (Sankey/Sunburst/Vector/Bullet fresh-eyes
+fixes), 147 (PNG dim UB / Gantt narrowing / ISO date), 148 (WebP
+modes), 149 (svgToPng/Jpeg/Webp round-trip), 150 (data:image URI
+rejection, atomic setSeries, BoxPlot monotonicity), 151 (Sunburst
+atomic, `<use>` rejection), 152 (clone deep-copy + renderToFile
+JPEG quality). 118 / 118 phpts pass.
+
 ## [0.2.0] - 2026-05-09
 
 ### Added
@@ -359,7 +453,8 @@ above-U+10FFFF, valid round-trip). 103 / 103 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/0.2.0...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.0.0...HEAD
+[1.0.0]: https://github.com/iliaal/fastchart/releases/tag/1.0.0
 [0.2.0]: https://github.com/iliaal/fastchart/releases/tag/0.2.0
 [0.1.1]: https://github.com/iliaal/fastchart/releases/tag/0.1.1
 [0.1.0]: https://github.com/iliaal/fastchart/releases/tag/0.1.0
