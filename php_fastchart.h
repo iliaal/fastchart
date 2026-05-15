@@ -1081,7 +1081,7 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self,
     zend_string *data;          /* user payload, owned; NUL-free */ \
     zend_long fg_rgb;           /* 0..0xFFFFFF; default 0x000000 */ \
     zend_long bg_rgb;           /* 0..0xFFFFFF; default 0xFFFFFF */ \
-    bool transparent_bg;        /* honoured by PNG/WebP/AVIF encoders */ \
+    bool transparent_bg;        /* honoured by PNG/WebP encoders */ \
     zend_long quiet_zone;       /* per-class units; -1 = class default */ \
     /* SVG text-rendering mode: 0 = NATIVE, 1 = PATHS (default). Same \
      * semantics as the Chart side. Code128's human-readable text and \
@@ -1148,10 +1148,10 @@ int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,
                                        struct fastchart_target *t);
 
 /* Fill the canvas with the configured background, honouring
- * `transparent_bg`. Backend-aware: GD performs the alpha-blending
- * dance so PNG/WebP/AVIF outputs preserve alpha (libgd quirk:
- * gdImageColorTransparent does NOT rewrite truecolor pixel alpha);
- * SVG emits a single bg rect (or nothing on transparent_bg). */
+ * `transparent_bg`. SVG emits a single bg rect (or nothing on
+ * transparent_bg); the raster pipeline rasterizes that SVG via
+ * plutovg + libpng / libwebp, and the empty (no-rect) case
+ * produces a fully-transparent PNG/WebP buffer. */
 void fastchart_symbol_fill_background(fastchart_symbol_obj *self,
                                        struct fastchart_target *t);
 
