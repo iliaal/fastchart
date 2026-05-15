@@ -5,6 +5,14 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "plutovg-stb-image-write.h"
 
+/* fastchart only feeds PNG and JPEG bytes into plutosvg's data URI
+ * loader (gated by fc_sniff_image_mime in fastchart_target.c). The
+ * other stb_image decoders (BMP/GIF/PSD/TGA/HDR/PIC/PNM) are dead
+ * code from our reachability standpoint; disabling them drops ~70%
+ * of plutovg-stb-image.h's compiled surface and shrinks fastchart.so
+ * accordingly. */
+#define STBI_ONLY_PNG
+#define STBI_ONLY_JPEG
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #include "plutovg-stb-image.h"
