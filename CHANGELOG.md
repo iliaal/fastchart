@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Prebuilt binaries on GitHub Releases.** `composer.json` now declares
+  `download-url-method: ["pre-packaged-binary", "composer-default"]`,
+  so PIE prefers a prebuilt asset and falls back to source build when
+  no asset matches the install target. Two new workflows attach
+  binaries on release publish:
+  - `.github/workflows/windows.yml` — Windows DLLs for PHP-8.3/8.4/8.5
+    (NTS + TS, x64 + x86) via `php/php-windows-builder`. System
+    deps (freetype, libpng, libjpeg-turbo, libwebp) come through the
+    action's `libs:` input and resolve via vcpkg.
+  - `.github/workflows/release-linux.yml` — Linux x86_64
+    (`ubuntu-24.04`), Linux arm64 (`ubuntu-24.04-arm`), and macOS arm64
+    (`macos-14`) `.so` binaries for PHP-8.4 and 8.5 (NTS) via
+    `php/pie-ext-binary-builder`. apt-get / brew install the four
+    deps before the build.
+
+  PHP-8.3 on Linux/macOS, macOS Intel, and Alpine musl users continue
+  to source-build via PIE's composer-default fallback. No API change.
+
 ## [1.0.0] - 2026-05-15
 
 This release rebuilds the rendering pipeline around an SVG-canonical

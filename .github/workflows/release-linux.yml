@@ -1,0 +1,97 @@
+name: Release Linux & macOS binaries
+
+# Triggered when a GitHub Release is published. Builds .so binaries for
+# Linux glibc (x86_64 + arm64) and macOS arm64 at PHP 8.4 and 8.5 (NTS
+# only, ZTS lives in the Windows lane), uploads each as a release asset
+# via php/pie-ext-binary-builder using PIE's pre-packaged-binary naming
+# convention.
+#
+# 8.3 is intentionally absent: PIE's composer-default fallback
+# source-builds for any PHP version not covered by a prebuilt, so 8.3
+# users still get an install path; it just requires a build toolchain.
+# Drop the 8.4 lane when 8.4 hits actual EOL.
+#
+# macOS Intel (macos-13) is intentionally absent: GitHub's Intel runner
+# pool is too contended to ship reliably (jobs queue 30+ min on busy
+# days, blocking release closeout), and macOS 26 drops Intel support
+# anyway. Intel-Mac users source-build via PIE's composer-default
+# fallback, same path PHP 8.3 users already take.
+#
+# Linux musl (Alpine) is intentionally absent: shivammathur/setup-php
+# in Alpine containers needs more setup, and Alpine users get install
+# via PIE's composer-default source-build fallback in the meantime.
+#
+# composer.json declares
+#   "download-url-method": ["pre-packaged-binary", "composer-default"]
+# in the php-ext block, so PIE prefers the prebuilt asset and falls
+# back to source-build when no asset matches.
+#
+# fastchart's config.m4 probes four pkg-config deps (freetype, libpng,
+# libjpeg-turbo, libwebp) before the build can proceed. The
+# Install build deps step lays them down before pie-ext-binary-builder
+# runs. plutovg / plutosvg / qrcodegen ship vendored under vendor/ so
+# don't need a system-package equivalent.
+#
+# Third-party actions are pinned to commit SHAs because this job has
+# contents:write -- a moved tag would inherit the release-write token.
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    name: ${{ matrix.os }} php ${{ matrix.php }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-24.04 (x86_64), ubuntu-24.04-arm (arm64),
+        # macos-14 (Apple Silicon arm64). Pinned over `*-latest` to
+        # avoid silent runner shifts that would change the toolchain /
+        # glibc baseline on published release assets without a repo
+        # diff.
+        os:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - macos-14
+        php: ['8.4', '8.5']
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@728c6c6b8cf02c2e48117716a91ee48313958a19 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Install build deps (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu-')
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev \
+            pkg-config
+
+      - name: Install build deps (macOS)
+        if: startsWith(matrix.os, 'macos-')
+        run: |
+          brew install freetype libpng jpeg-turbo webp pkg-config
+          # Apple Silicon Homebrew lives under /opt/homebrew; expose
+          # the pkg-config dirs so config.m4's PKG_CHECK_MODULES sees
+          # the kegs. jpeg-turbo and freetype are keg-only, so brew
+          # doesn't symlink their .pc into the default search path.
+          {
+            echo "PKG_CONFIG_PATH=$(brew --prefix jpeg-turbo)/lib/pkgconfig:$(brew --prefix freetype)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          } >> "$GITHUB_ENV"
+
+      - name: Build and upload prebuilt binary
+        uses: php/pie-ext-binary-builder@e35d497ffaac8ded7f05c62597d4387d849644d7 # 0.0.3
+        with:
+          release-tag: ${{ github.event.release.tag_name }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          configure-flags: '--enable-fastchart'

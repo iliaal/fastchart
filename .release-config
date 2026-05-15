@@ -12,13 +12,17 @@ build_matrix:
   - PHP-8.5
 configure_base: "--enable-fastchart --enable-fastchart-dev"
 
-# Prebuilt-binary release lanes are off pending Windows wheels. Linux
-# source builds via PIE work on any host with freetype / libpng /
-# libjpeg / libwebp dev packages reachable through pkg-config (see
-# config.m4). Re-enable linux_prebuilt once the binary-builder lane
-# has the four pkg-config deps available.
-windows_ci: false
-linux_prebuilt: false
+# Prebuilt-binary release lanes. windows.yml builds Windows DLLs for
+# PHP-8.3/8.4/8.5 (NTS+TS, x64+x86) via php-windows-builder; the four
+# system deps (freetype, libpng, libjpeg-turbo, libwebp) come through
+# the action's libs: input which resolves via vcpkg. release-linux.yml
+# builds .so for Linux x86_64 + Linux arm64 + macOS arm64 at PHP-8.4/8.5
+# via php/pie-ext-binary-builder, with apt-get/brew install steps for
+# the four deps before the build. PHP-8.3 and macOS Intel users source-
+# build through PIE's composer-default fallback (composer.json declares
+# both download-url-methods).
+windows_ci: true
+linux_prebuilt: true
 
 # PIE install + functional smoke test. Runs against php:8.x-cli with
 # freetype / libpng / libjpeg / libwebp dev packages and ext/gd
