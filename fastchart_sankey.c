@@ -174,7 +174,11 @@ int fastchart_sankey_render_to_target(fastchart_sankey_obj *self, fastchart_targ
         return -1;
     }
 
-    int plot_x0 = 80, plot_x1 = W - 80;
+    /* Right margin sized for the rightmost column's labels; left
+     * margin sized for the leftmost column's labels. Both columns
+     * use the OUTER side of their node bars for text, so the inner
+     * plot region stays clear of label collisions with ribbons. */
+    int plot_x0 = 140, plot_x1 = W - 140;
     int plot_y0 = top_pad + 12, plot_y1 = H - 16;
     int avail_h = plot_y1 - plot_y0;
     int node_gap = 8;
@@ -250,14 +254,20 @@ int fastchart_sankey_render_to_target(fastchart_sankey_obj *self, fastchart_targ
         fastchart_target_rect(t, nx, ny, node_w, nh, color, 1, 0);
         fastchart_target_rect(t, nx, ny, node_w, nh, pal.border, 0, 1);
         if (font && self->nodes[i].label) {
-            /* Labels: rightmost column = align RIGHT (label on left
-             * of node); all others = align LEFT (label on right). */
+            /* Leftmost column (layer 0): label to the LEFT of the
+             * node, right-aligned. All other columns including the
+             * rightmost: label to the RIGHT of the node, left-
+             * aligned. Putting every interior label on the right
+             * side keeps the visual flow direction consistent
+             * (left-to-right) and avoids label/ribbon collisions
+             * since the OUTER side of leftmost / rightmost columns
+             * has no ribbons. */
             int label_x, align;
-            if (L[i].layer == max_layer) {
-                label_x = nx - 4;
+            if (L[i].layer == 0) {
+                label_x = nx - 6;
                 align = FASTCHART_ALIGN_RIGHT;
             } else {
-                label_x = nx + node_w + 4;
+                label_x = nx + node_w + 6;
                 align = FASTCHART_ALIGN_LEFT;
             }
             int label_y = ny + nh / 2 + (int)(size * 0.4);

@@ -122,13 +122,25 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
                           plot.x1 - plot.x0 + 1, plot.y1 - plot.y0 + 1,
                           pal.border, 0, 1);
 
-    /* Max arrow length: cap at half the smaller plot-axis tick spacing
+    /* Max arrow length: cap at the smaller plot-axis tick spacing
      * so dense fields don't overlap. */
     double tick_dx = (plot.x1 - plot.x0) / (double)(xr.n_ticks > 1 ? xr.n_ticks - 1 : 1);
     double tick_dy = (plot.y1 - plot.y0) / (double)(yr.n_ticks > 1 ? yr.n_ticks - 1 : 1);
     double cap_px = (tick_dx < tick_dy ? tick_dx : tick_dy) * 0.9;
     if (cap_px < 8) cap_px = 8;
     double mag_max = self->mag_max > 0 ? self->mag_max : 1.0;
+
+    /* Inset the anchor-placement rect by cap_px on each side so an
+     * arrow at the extreme data corner pointing outward still fits
+     * inside the plot frame. The grid lines + axis ticks computed
+     * above still use the full plot rect (they mark data range, not
+     * arrow positions). */
+    int anchor_x0 = plot.x0 + (int)cap_px;
+    int anchor_x1 = plot.x1 - (int)cap_px;
+    int anchor_y0 = plot.y0 + (int)cap_px;
+    int anchor_y1 = plot.y1 - (int)cap_px;
+    if (anchor_x1 <= anchor_x0) { anchor_x0 = plot.x0; anchor_x1 = plot.x1; }
+    if (anchor_y1 <= anchor_y0) { anchor_y0 = plot.y0; anchor_y1 = plot.y1; }
 
     /* Ramp colors if both endpoints set. */
     int have_ramp = (self->color_low_rgb >= 0 && self->color_high_rgb >= 0);
@@ -155,8 +167,8 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
             ? (self->vectors[i].x - xmin) / dxr : 0.5;
         double ayu = (ymax > ymin)
             ? (self->vectors[i].y - ymin) / dyr : 0.5;
-        int ax = plot.x0 + (int)(axu * (plot.x1 - plot.x0));
-        int ay = plot.y1 - (int)(ayu * (plot.y1 - plot.y0));
+        int ax = anchor_x0 + (int)(axu * (anchor_x1 - anchor_x0));
+        int ay = anchor_y1 - (int)(ayu * (anchor_y1 - anchor_y0));
         double ang = atan2(self->vectors[i].dy, self->vectors[i].dx);
         int tx = ax + (int)(cos(ang) * len);
         int ty = ay - (int)(sin(ang) * len);  /* screen-Y is inverted */
