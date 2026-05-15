@@ -1,5 +1,5 @@
-/* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 29b5948b34f773c3c8d2bd4c1d6ca93167e17cd9 */
+/* This is a generated file, edit fastchart.stub.php instead.
+ * Stub hash: dd9a9f926b6eeb9d9b176af03a35100b82b8c05b */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -465,6 +465,8 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Funnel_setStages
 	ZEND_ARG_TYPE_INFO(0, stages, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
+#define arginfo_class_FastChart_Funnel_setStyle arginfo_class_FastChart_Chart_setLineStyle
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Waterfall_setBars, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, bars, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
@@ -667,6 +669,7 @@ ZEND_METHOD(FastChart_ContourChart, setFilled);
 ZEND_METHOD(FastChart_Treemap, setItems);
 ZEND_METHOD(FastChart_Treemap, setShowLabels);
 ZEND_METHOD(FastChart_Funnel, setStages);
+ZEND_METHOD(FastChart_Funnel, setStyle);
 ZEND_METHOD(FastChart_Waterfall, setBars);
 ZEND_METHOD(FastChart_Waterfall, setRiseColor);
 ZEND_METHOD(FastChart_Waterfall, setFallColor);
@@ -895,6 +898,7 @@ static const zend_function_entry class_FastChart_Treemap_methods[] = {
 
 static const zend_function_entry class_FastChart_Funnel_methods[] = {
 	ZEND_ME(FastChart_Funnel, setStages, arginfo_class_FastChart_Funnel_setStages, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Funnel, setStyle, arginfo_class_FastChart_Funnel_setStyle, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -961,339 +965,339 @@ static zend_class_entry *register_class_FastChart_Chart(void)
 
 	zval const_THEME_LIGHT_value;
 	ZVAL_LONG(&const_THEME_LIGHT_value, 0);
-	zend_string *const_THEME_LIGHT_name = zend_string_init_interned("THEME_LIGHT", sizeof("THEME_LIGHT") - 1, 1);
+	zend_string *const_THEME_LIGHT_name = zend_string_init_interned("THEME_LIGHT", sizeof("THEME_LIGHT") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_THEME_LIGHT_name, &const_THEME_LIGHT_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_THEME_LIGHT_name);
+	zend_string_release_ex(const_THEME_LIGHT_name, true);
 
 	zval const_THEME_DARK_value;
 	ZVAL_LONG(&const_THEME_DARK_value, 1);
-	zend_string *const_THEME_DARK_name = zend_string_init_interned("THEME_DARK", sizeof("THEME_DARK") - 1, 1);
+	zend_string *const_THEME_DARK_name = zend_string_init_interned("THEME_DARK", sizeof("THEME_DARK") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_THEME_DARK_name, &const_THEME_DARK_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_THEME_DARK_name);
+	zend_string_release_ex(const_THEME_DARK_name, true);
 
 	zval const_MARKER_NONE_value;
 	ZVAL_LONG(&const_MARKER_NONE_value, 0);
-	zend_string *const_MARKER_NONE_name = zend_string_init_interned("MARKER_NONE", sizeof("MARKER_NONE") - 1, 1);
+	zend_string *const_MARKER_NONE_name = zend_string_init_interned("MARKER_NONE", sizeof("MARKER_NONE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_MARKER_NONE_name, &const_MARKER_NONE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_MARKER_NONE_name);
+	zend_string_release_ex(const_MARKER_NONE_name, true);
 
 	zval const_MARKER_CIRCLE_value;
 	ZVAL_LONG(&const_MARKER_CIRCLE_value, 1);
-	zend_string *const_MARKER_CIRCLE_name = zend_string_init_interned("MARKER_CIRCLE", sizeof("MARKER_CIRCLE") - 1, 1);
+	zend_string *const_MARKER_CIRCLE_name = zend_string_init_interned("MARKER_CIRCLE", sizeof("MARKER_CIRCLE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_MARKER_CIRCLE_name, &const_MARKER_CIRCLE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_MARKER_CIRCLE_name);
+	zend_string_release_ex(const_MARKER_CIRCLE_name, true);
 
 	zval const_MARKER_SQUARE_value;
 	ZVAL_LONG(&const_MARKER_SQUARE_value, 2);
-	zend_string *const_MARKER_SQUARE_name = zend_string_init_interned("MARKER_SQUARE", sizeof("MARKER_SQUARE") - 1, 1);
+	zend_string *const_MARKER_SQUARE_name = zend_string_init_interned("MARKER_SQUARE", sizeof("MARKER_SQUARE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_MARKER_SQUARE_name, &const_MARKER_SQUARE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_MARKER_SQUARE_name);
+	zend_string_release_ex(const_MARKER_SQUARE_name, true);
 
 	zval const_MARKER_DIAMOND_value;
 	ZVAL_LONG(&const_MARKER_DIAMOND_value, 3);
-	zend_string *const_MARKER_DIAMOND_name = zend_string_init_interned("MARKER_DIAMOND", sizeof("MARKER_DIAMOND") - 1, 1);
+	zend_string *const_MARKER_DIAMOND_name = zend_string_init_interned("MARKER_DIAMOND", sizeof("MARKER_DIAMOND") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_MARKER_DIAMOND_name, &const_MARKER_DIAMOND_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_MARKER_DIAMOND_name);
+	zend_string_release_ex(const_MARKER_DIAMOND_name, true);
 
 	zval const_MARKER_CROSS_value;
 	ZVAL_LONG(&const_MARKER_CROSS_value, 4);
-	zend_string *const_MARKER_CROSS_name = zend_string_init_interned("MARKER_CROSS", sizeof("MARKER_CROSS") - 1, 1);
+	zend_string *const_MARKER_CROSS_name = zend_string_init_interned("MARKER_CROSS", sizeof("MARKER_CROSS") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_MARKER_CROSS_name, &const_MARKER_CROSS_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_MARKER_CROSS_name);
+	zend_string_release_ex(const_MARKER_CROSS_name, true);
 
 	zval const_MARKER_PLUS_value;
 	ZVAL_LONG(&const_MARKER_PLUS_value, 5);
-	zend_string *const_MARKER_PLUS_name = zend_string_init_interned("MARKER_PLUS", sizeof("MARKER_PLUS") - 1, 1);
+	zend_string *const_MARKER_PLUS_name = zend_string_init_interned("MARKER_PLUS", sizeof("MARKER_PLUS") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_MARKER_PLUS_name, &const_MARKER_PLUS_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_MARKER_PLUS_name);
+	zend_string_release_ex(const_MARKER_PLUS_name, true);
 
 	zval const_LEGEND_NONE_value;
 	ZVAL_LONG(&const_LEGEND_NONE_value, 0);
-	zend_string *const_LEGEND_NONE_name = zend_string_init_interned("LEGEND_NONE", sizeof("LEGEND_NONE") - 1, 1);
+	zend_string *const_LEGEND_NONE_name = zend_string_init_interned("LEGEND_NONE", sizeof("LEGEND_NONE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_LEGEND_NONE_name, &const_LEGEND_NONE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_LEGEND_NONE_name);
+	zend_string_release_ex(const_LEGEND_NONE_name, true);
 
 	zval const_LEGEND_TOP_RIGHT_value;
 	ZVAL_LONG(&const_LEGEND_TOP_RIGHT_value, 1);
-	zend_string *const_LEGEND_TOP_RIGHT_name = zend_string_init_interned("LEGEND_TOP_RIGHT", sizeof("LEGEND_TOP_RIGHT") - 1, 1);
+	zend_string *const_LEGEND_TOP_RIGHT_name = zend_string_init_interned("LEGEND_TOP_RIGHT", sizeof("LEGEND_TOP_RIGHT") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_LEGEND_TOP_RIGHT_name, &const_LEGEND_TOP_RIGHT_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_LEGEND_TOP_RIGHT_name);
+	zend_string_release_ex(const_LEGEND_TOP_RIGHT_name, true);
 
 	zval const_LEGEND_TOP_LEFT_value;
 	ZVAL_LONG(&const_LEGEND_TOP_LEFT_value, 2);
-	zend_string *const_LEGEND_TOP_LEFT_name = zend_string_init_interned("LEGEND_TOP_LEFT", sizeof("LEGEND_TOP_LEFT") - 1, 1);
+	zend_string *const_LEGEND_TOP_LEFT_name = zend_string_init_interned("LEGEND_TOP_LEFT", sizeof("LEGEND_TOP_LEFT") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_LEGEND_TOP_LEFT_name, &const_LEGEND_TOP_LEFT_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_LEGEND_TOP_LEFT_name);
+	zend_string_release_ex(const_LEGEND_TOP_LEFT_name, true);
 
 	zval const_LEGEND_BOTTOM_RIGHT_value;
 	ZVAL_LONG(&const_LEGEND_BOTTOM_RIGHT_value, 3);
-	zend_string *const_LEGEND_BOTTOM_RIGHT_name = zend_string_init_interned("LEGEND_BOTTOM_RIGHT", sizeof("LEGEND_BOTTOM_RIGHT") - 1, 1);
+	zend_string *const_LEGEND_BOTTOM_RIGHT_name = zend_string_init_interned("LEGEND_BOTTOM_RIGHT", sizeof("LEGEND_BOTTOM_RIGHT") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_LEGEND_BOTTOM_RIGHT_name, &const_LEGEND_BOTTOM_RIGHT_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_LEGEND_BOTTOM_RIGHT_name);
+	zend_string_release_ex(const_LEGEND_BOTTOM_RIGHT_name, true);
 
 	zval const_LEGEND_BOTTOM_LEFT_value;
 	ZVAL_LONG(&const_LEGEND_BOTTOM_LEFT_value, 4);
-	zend_string *const_LEGEND_BOTTOM_LEFT_name = zend_string_init_interned("LEGEND_BOTTOM_LEFT", sizeof("LEGEND_BOTTOM_LEFT") - 1, 1);
+	zend_string *const_LEGEND_BOTTOM_LEFT_name = zend_string_init_interned("LEGEND_BOTTOM_LEFT", sizeof("LEGEND_BOTTOM_LEFT") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_LEGEND_BOTTOM_LEFT_name, &const_LEGEND_BOTTOM_LEFT_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_LEGEND_BOTTOM_LEFT_name);
+	zend_string_release_ex(const_LEGEND_BOTTOM_LEFT_name, true);
 
 	zval const_SCALE_LINEAR_value;
 	ZVAL_LONG(&const_SCALE_LINEAR_value, 0);
-	zend_string *const_SCALE_LINEAR_name = zend_string_init_interned("SCALE_LINEAR", sizeof("SCALE_LINEAR") - 1, 1);
+	zend_string *const_SCALE_LINEAR_name = zend_string_init_interned("SCALE_LINEAR", sizeof("SCALE_LINEAR") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_SCALE_LINEAR_name, &const_SCALE_LINEAR_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_SCALE_LINEAR_name);
+	zend_string_release_ex(const_SCALE_LINEAR_name, true);
 
 	zval const_SCALE_LOG_value;
 	ZVAL_LONG(&const_SCALE_LOG_value, 1);
-	zend_string *const_SCALE_LOG_name = zend_string_init_interned("SCALE_LOG", sizeof("SCALE_LOG") - 1, 1);
+	zend_string *const_SCALE_LOG_name = zend_string_init_interned("SCALE_LOG", sizeof("SCALE_LOG") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_SCALE_LOG_name, &const_SCALE_LOG_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_SCALE_LOG_name);
+	zend_string_release_ex(const_SCALE_LOG_name, true);
 
 	zval const_LABEL_NONE_value;
 	ZVAL_LONG(&const_LABEL_NONE_value, 0);
-	zend_string *const_LABEL_NONE_name = zend_string_init_interned("LABEL_NONE", sizeof("LABEL_NONE") - 1, 1);
+	zend_string *const_LABEL_NONE_name = zend_string_init_interned("LABEL_NONE", sizeof("LABEL_NONE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_LABEL_NONE_name, &const_LABEL_NONE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_LABEL_NONE_name);
+	zend_string_release_ex(const_LABEL_NONE_name, true);
 
 	zval const_LABEL_INSIDE_value;
 	ZVAL_LONG(&const_LABEL_INSIDE_value, 1);
-	zend_string *const_LABEL_INSIDE_name = zend_string_init_interned("LABEL_INSIDE", sizeof("LABEL_INSIDE") - 1, 1);
+	zend_string *const_LABEL_INSIDE_name = zend_string_init_interned("LABEL_INSIDE", sizeof("LABEL_INSIDE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_LABEL_INSIDE_name, &const_LABEL_INSIDE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_LABEL_INSIDE_name);
+	zend_string_release_ex(const_LABEL_INSIDE_name, true);
 
 	zval const_LABEL_OUTSIDE_value;
 	ZVAL_LONG(&const_LABEL_OUTSIDE_value, 2);
-	zend_string *const_LABEL_OUTSIDE_name = zend_string_init_interned("LABEL_OUTSIDE", sizeof("LABEL_OUTSIDE") - 1, 1);
+	zend_string *const_LABEL_OUTSIDE_name = zend_string_init_interned("LABEL_OUTSIDE", sizeof("LABEL_OUTSIDE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_LABEL_OUTSIDE_name, &const_LABEL_OUTSIDE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_LABEL_OUTSIDE_name);
+	zend_string_release_ex(const_LABEL_OUTSIDE_name, true);
 
 	zval const_STYLE_CANDLE_value;
 	ZVAL_LONG(&const_STYLE_CANDLE_value, 0);
-	zend_string *const_STYLE_CANDLE_name = zend_string_init_interned("STYLE_CANDLE", sizeof("STYLE_CANDLE") - 1, 1);
+	zend_string *const_STYLE_CANDLE_name = zend_string_init_interned("STYLE_CANDLE", sizeof("STYLE_CANDLE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_STYLE_CANDLE_name, &const_STYLE_CANDLE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_STYLE_CANDLE_name);
+	zend_string_release_ex(const_STYLE_CANDLE_name, true);
 
 	zval const_STYLE_BAR_value;
 	ZVAL_LONG(&const_STYLE_BAR_value, 1);
-	zend_string *const_STYLE_BAR_name = zend_string_init_interned("STYLE_BAR", sizeof("STYLE_BAR") - 1, 1);
+	zend_string *const_STYLE_BAR_name = zend_string_init_interned("STYLE_BAR", sizeof("STYLE_BAR") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_STYLE_BAR_name, &const_STYLE_BAR_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_STYLE_BAR_name);
+	zend_string_release_ex(const_STYLE_BAR_name, true);
 
 	zval const_STYLE_DIAMOND_value;
 	ZVAL_LONG(&const_STYLE_DIAMOND_value, 2);
-	zend_string *const_STYLE_DIAMOND_name = zend_string_init_interned("STYLE_DIAMOND", sizeof("STYLE_DIAMOND") - 1, 1);
+	zend_string *const_STYLE_DIAMOND_name = zend_string_init_interned("STYLE_DIAMOND", sizeof("STYLE_DIAMOND") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_STYLE_DIAMOND_name, &const_STYLE_DIAMOND_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_STYLE_DIAMOND_name);
+	zend_string_release_ex(const_STYLE_DIAMOND_name, true);
 
 	zval const_STYLE_I_CAP_value;
 	ZVAL_LONG(&const_STYLE_I_CAP_value, 3);
-	zend_string *const_STYLE_I_CAP_name = zend_string_init_interned("STYLE_I_CAP", sizeof("STYLE_I_CAP") - 1, 1);
+	zend_string *const_STYLE_I_CAP_name = zend_string_init_interned("STYLE_I_CAP", sizeof("STYLE_I_CAP") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_STYLE_I_CAP_name, &const_STYLE_I_CAP_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_STYLE_I_CAP_name);
+	zend_string_release_ex(const_STYLE_I_CAP_name, true);
 
 	zval const_STYLE_HOLLOW_value;
 	ZVAL_LONG(&const_STYLE_HOLLOW_value, 4);
-	zend_string *const_STYLE_HOLLOW_name = zend_string_init_interned("STYLE_HOLLOW", sizeof("STYLE_HOLLOW") - 1, 1);
+	zend_string *const_STYLE_HOLLOW_name = zend_string_init_interned("STYLE_HOLLOW", sizeof("STYLE_HOLLOW") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_STYLE_HOLLOW_name, &const_STYLE_HOLLOW_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_STYLE_HOLLOW_name);
+	zend_string_release_ex(const_STYLE_HOLLOW_name, true);
 
 	zval const_STYLE_VOLUME_value;
 	ZVAL_LONG(&const_STYLE_VOLUME_value, 5);
-	zend_string *const_STYLE_VOLUME_name = zend_string_init_interned("STYLE_VOLUME", sizeof("STYLE_VOLUME") - 1, 1);
+	zend_string *const_STYLE_VOLUME_name = zend_string_init_interned("STYLE_VOLUME", sizeof("STYLE_VOLUME") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_STYLE_VOLUME_name, &const_STYLE_VOLUME_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_STYLE_VOLUME_name);
+	zend_string_release_ex(const_STYLE_VOLUME_name, true);
 
 	zval const_STYLE_VECTOR_value;
 	ZVAL_LONG(&const_STYLE_VECTOR_value, 6);
-	zend_string *const_STYLE_VECTOR_name = zend_string_init_interned("STYLE_VECTOR", sizeof("STYLE_VECTOR") - 1, 1);
+	zend_string *const_STYLE_VECTOR_name = zend_string_init_interned("STYLE_VECTOR", sizeof("STYLE_VECTOR") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_STYLE_VECTOR_name, &const_STYLE_VECTOR_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_STYLE_VECTOR_name);
+	zend_string_release_ex(const_STYLE_VECTOR_name, true);
 
 	zval const_BORDER_NONE_value;
 	ZVAL_LONG(&const_BORDER_NONE_value, 0);
-	zend_string *const_BORDER_NONE_name = zend_string_init_interned("BORDER_NONE", sizeof("BORDER_NONE") - 1, 1);
+	zend_string *const_BORDER_NONE_name = zend_string_init_interned("BORDER_NONE", sizeof("BORDER_NONE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_BORDER_NONE_name, &const_BORDER_NONE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_BORDER_NONE_name);
+	zend_string_release_ex(const_BORDER_NONE_name, true);
 
 	zval const_BORDER_LEFT_value;
 	ZVAL_LONG(&const_BORDER_LEFT_value, 1);
-	zend_string *const_BORDER_LEFT_name = zend_string_init_interned("BORDER_LEFT", sizeof("BORDER_LEFT") - 1, 1);
+	zend_string *const_BORDER_LEFT_name = zend_string_init_interned("BORDER_LEFT", sizeof("BORDER_LEFT") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_BORDER_LEFT_name, &const_BORDER_LEFT_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_BORDER_LEFT_name);
+	zend_string_release_ex(const_BORDER_LEFT_name, true);
 
 	zval const_BORDER_RIGHT_value;
 	ZVAL_LONG(&const_BORDER_RIGHT_value, 2);
-	zend_string *const_BORDER_RIGHT_name = zend_string_init_interned("BORDER_RIGHT", sizeof("BORDER_RIGHT") - 1, 1);
+	zend_string *const_BORDER_RIGHT_name = zend_string_init_interned("BORDER_RIGHT", sizeof("BORDER_RIGHT") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_BORDER_RIGHT_name, &const_BORDER_RIGHT_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_BORDER_RIGHT_name);
+	zend_string_release_ex(const_BORDER_RIGHT_name, true);
 
 	zval const_BORDER_TOP_value;
 	ZVAL_LONG(&const_BORDER_TOP_value, 4);
-	zend_string *const_BORDER_TOP_name = zend_string_init_interned("BORDER_TOP", sizeof("BORDER_TOP") - 1, 1);
+	zend_string *const_BORDER_TOP_name = zend_string_init_interned("BORDER_TOP", sizeof("BORDER_TOP") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_BORDER_TOP_name, &const_BORDER_TOP_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_BORDER_TOP_name);
+	zend_string_release_ex(const_BORDER_TOP_name, true);
 
 	zval const_BORDER_BOTTOM_value;
 	ZVAL_LONG(&const_BORDER_BOTTOM_value, 8);
-	zend_string *const_BORDER_BOTTOM_name = zend_string_init_interned("BORDER_BOTTOM", sizeof("BORDER_BOTTOM") - 1, 1);
+	zend_string *const_BORDER_BOTTOM_name = zend_string_init_interned("BORDER_BOTTOM", sizeof("BORDER_BOTTOM") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_BORDER_BOTTOM_name, &const_BORDER_BOTTOM_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_BORDER_BOTTOM_name);
+	zend_string_release_ex(const_BORDER_BOTTOM_name, true);
 
 	zval const_BORDER_ALL_value;
 	ZVAL_LONG(&const_BORDER_ALL_value, 15);
-	zend_string *const_BORDER_ALL_name = zend_string_init_interned("BORDER_ALL", sizeof("BORDER_ALL") - 1, 1);
+	zend_string *const_BORDER_ALL_name = zend_string_init_interned("BORDER_ALL", sizeof("BORDER_ALL") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_BORDER_ALL_name, &const_BORDER_ALL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_BORDER_ALL_name);
+	zend_string_release_ex(const_BORDER_ALL_name, true);
 
 	zval const_INTERP_LINEAR_value;
 	ZVAL_LONG(&const_INTERP_LINEAR_value, 0);
-	zend_string *const_INTERP_LINEAR_name = zend_string_init_interned("INTERP_LINEAR", sizeof("INTERP_LINEAR") - 1, 1);
+	zend_string *const_INTERP_LINEAR_name = zend_string_init_interned("INTERP_LINEAR", sizeof("INTERP_LINEAR") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_INTERP_LINEAR_name, &const_INTERP_LINEAR_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_INTERP_LINEAR_name);
+	zend_string_release_ex(const_INTERP_LINEAR_name, true);
 
 	zval const_INTERP_SMOOTH_value;
 	ZVAL_LONG(&const_INTERP_SMOOTH_value, 1);
-	zend_string *const_INTERP_SMOOTH_name = zend_string_init_interned("INTERP_SMOOTH", sizeof("INTERP_SMOOTH") - 1, 1);
+	zend_string *const_INTERP_SMOOTH_name = zend_string_init_interned("INTERP_SMOOTH", sizeof("INTERP_SMOOTH") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_INTERP_SMOOTH_name, &const_INTERP_SMOOTH_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_INTERP_SMOOTH_name);
+	zend_string_release_ex(const_INTERP_SMOOTH_name, true);
 
 	zval const_INTERP_STEP_AFTER_value;
 	ZVAL_LONG(&const_INTERP_STEP_AFTER_value, 2);
-	zend_string *const_INTERP_STEP_AFTER_name = zend_string_init_interned("INTERP_STEP_AFTER", sizeof("INTERP_STEP_AFTER") - 1, 1);
+	zend_string *const_INTERP_STEP_AFTER_name = zend_string_init_interned("INTERP_STEP_AFTER", sizeof("INTERP_STEP_AFTER") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_INTERP_STEP_AFTER_name, &const_INTERP_STEP_AFTER_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_INTERP_STEP_AFTER_name);
+	zend_string_release_ex(const_INTERP_STEP_AFTER_name, true);
 
 	zval const_INTERP_STEP_BEFORE_value;
 	ZVAL_LONG(&const_INTERP_STEP_BEFORE_value, 3);
-	zend_string *const_INTERP_STEP_BEFORE_name = zend_string_init_interned("INTERP_STEP_BEFORE", sizeof("INTERP_STEP_BEFORE") - 1, 1);
+	zend_string *const_INTERP_STEP_BEFORE_name = zend_string_init_interned("INTERP_STEP_BEFORE", sizeof("INTERP_STEP_BEFORE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_INTERP_STEP_BEFORE_name, &const_INTERP_STEP_BEFORE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_INTERP_STEP_BEFORE_name);
+	zend_string_release_ex(const_INTERP_STEP_BEFORE_name, true);
 
 	zval const_TICK_NONE_value;
 	ZVAL_LONG(&const_TICK_NONE_value, 0);
-	zend_string *const_TICK_NONE_name = zend_string_init_interned("TICK_NONE", sizeof("TICK_NONE") - 1, 1);
+	zend_string *const_TICK_NONE_name = zend_string_init_interned("TICK_NONE", sizeof("TICK_NONE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_TICK_NONE_name, &const_TICK_NONE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_TICK_NONE_name);
+	zend_string_release_ex(const_TICK_NONE_name, true);
 
 	zval const_TICK_LABELS_value;
 	ZVAL_LONG(&const_TICK_LABELS_value, 1);
-	zend_string *const_TICK_LABELS_name = zend_string_init_interned("TICK_LABELS", sizeof("TICK_LABELS") - 1, 1);
+	zend_string *const_TICK_LABELS_name = zend_string_init_interned("TICK_LABELS", sizeof("TICK_LABELS") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_TICK_LABELS_name, &const_TICK_LABELS_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_TICK_LABELS_name);
+	zend_string_release_ex(const_TICK_LABELS_name, true);
 
 	zval const_TICK_POINTS_value;
 	ZVAL_LONG(&const_TICK_POINTS_value, 2);
-	zend_string *const_TICK_POINTS_name = zend_string_init_interned("TICK_POINTS", sizeof("TICK_POINTS") - 1, 1);
+	zend_string *const_TICK_POINTS_name = zend_string_init_interned("TICK_POINTS", sizeof("TICK_POINTS") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_TICK_POINTS_name, &const_TICK_POINTS_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_TICK_POINTS_name);
+	zend_string_release_ex(const_TICK_POINTS_name, true);
 
 	zval const_TICK_BOTH_value;
 	ZVAL_LONG(&const_TICK_BOTH_value, 3);
-	zend_string *const_TICK_BOTH_name = zend_string_init_interned("TICK_BOTH", sizeof("TICK_BOTH") - 1, 1);
+	zend_string *const_TICK_BOTH_name = zend_string_init_interned("TICK_BOTH", sizeof("TICK_BOTH") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_TICK_BOTH_name, &const_TICK_BOTH_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_TICK_BOTH_name);
+	zend_string_release_ex(const_TICK_BOTH_name, true);
 
 	zval const_STACK_SUM_value;
 	ZVAL_LONG(&const_STACK_SUM_value, 0);
-	zend_string *const_STACK_SUM_name = zend_string_init_interned("STACK_SUM", sizeof("STACK_SUM") - 1, 1);
+	zend_string *const_STACK_SUM_name = zend_string_init_interned("STACK_SUM", sizeof("STACK_SUM") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_STACK_SUM_name, &const_STACK_SUM_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_STACK_SUM_name);
+	zend_string_release_ex(const_STACK_SUM_name, true);
 
 	zval const_STACK_BESIDE_value;
 	ZVAL_LONG(&const_STACK_BESIDE_value, 1);
-	zend_string *const_STACK_BESIDE_name = zend_string_init_interned("STACK_BESIDE", sizeof("STACK_BESIDE") - 1, 1);
+	zend_string *const_STACK_BESIDE_name = zend_string_init_interned("STACK_BESIDE", sizeof("STACK_BESIDE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_STACK_BESIDE_name, &const_STACK_BESIDE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_STACK_BESIDE_name);
+	zend_string_release_ex(const_STACK_BESIDE_name, true);
 
 	zval const_STACK_LAYER_value;
 	ZVAL_LONG(&const_STACK_LAYER_value, 2);
-	zend_string *const_STACK_LAYER_name = zend_string_init_interned("STACK_LAYER", sizeof("STACK_LAYER") - 1, 1);
+	zend_string *const_STACK_LAYER_name = zend_string_init_interned("STACK_LAYER", sizeof("STACK_LAYER") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_STACK_LAYER_name, &const_STACK_LAYER_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_STACK_LAYER_name);
+	zend_string_release_ex(const_STACK_LAYER_name, true);
 
 	zval const_LABEL_LEFT_value;
 	ZVAL_LONG(&const_LABEL_LEFT_value, 3);
-	zend_string *const_LABEL_LEFT_name = zend_string_init_interned("LABEL_LEFT", sizeof("LABEL_LEFT") - 1, 1);
+	zend_string *const_LABEL_LEFT_name = zend_string_init_interned("LABEL_LEFT", sizeof("LABEL_LEFT") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_LABEL_LEFT_name, &const_LABEL_LEFT_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_LABEL_LEFT_name);
+	zend_string_release_ex(const_LABEL_LEFT_name, true);
 
 	zval const_LABEL_RIGHT_value;
 	ZVAL_LONG(&const_LABEL_RIGHT_value, 4);
-	zend_string *const_LABEL_RIGHT_name = zend_string_init_interned("LABEL_RIGHT", sizeof("LABEL_RIGHT") - 1, 1);
+	zend_string *const_LABEL_RIGHT_name = zend_string_init_interned("LABEL_RIGHT", sizeof("LABEL_RIGHT") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_LABEL_RIGHT_name, &const_LABEL_RIGHT_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_LABEL_RIGHT_name);
+	zend_string_release_ex(const_LABEL_RIGHT_name, true);
 
 	zval const_LINE_SOLID_value;
 	ZVAL_LONG(&const_LINE_SOLID_value, 0);
-	zend_string *const_LINE_SOLID_name = zend_string_init_interned("LINE_SOLID", sizeof("LINE_SOLID") - 1, 1);
+	zend_string *const_LINE_SOLID_name = zend_string_init_interned("LINE_SOLID", sizeof("LINE_SOLID") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_LINE_SOLID_name, &const_LINE_SOLID_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_LINE_SOLID_name);
+	zend_string_release_ex(const_LINE_SOLID_name, true);
 
 	zval const_LINE_DASHED_value;
 	ZVAL_LONG(&const_LINE_DASHED_value, 1);
-	zend_string *const_LINE_DASHED_name = zend_string_init_interned("LINE_DASHED", sizeof("LINE_DASHED") - 1, 1);
+	zend_string *const_LINE_DASHED_name = zend_string_init_interned("LINE_DASHED", sizeof("LINE_DASHED") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_LINE_DASHED_name, &const_LINE_DASHED_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_LINE_DASHED_name);
+	zend_string_release_ex(const_LINE_DASHED_name, true);
 
 	zval const_LINE_DOTTED_value;
 	ZVAL_LONG(&const_LINE_DOTTED_value, 2);
-	zend_string *const_LINE_DOTTED_name = zend_string_init_interned("LINE_DOTTED", sizeof("LINE_DOTTED") - 1, 1);
+	zend_string *const_LINE_DOTTED_name = zend_string_init_interned("LINE_DOTTED", sizeof("LINE_DOTTED") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_LINE_DOTTED_name, &const_LINE_DOTTED_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_LINE_DOTTED_name);
+	zend_string_release_ex(const_LINE_DOTTED_name, true);
 
 	zval const_GRADIENT_VERTICAL_value;
 	ZVAL_LONG(&const_GRADIENT_VERTICAL_value, 0);
-	zend_string *const_GRADIENT_VERTICAL_name = zend_string_init_interned("GRADIENT_VERTICAL", sizeof("GRADIENT_VERTICAL") - 1, 1);
+	zend_string *const_GRADIENT_VERTICAL_name = zend_string_init_interned("GRADIENT_VERTICAL", sizeof("GRADIENT_VERTICAL") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_GRADIENT_VERTICAL_name, &const_GRADIENT_VERTICAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_GRADIENT_VERTICAL_name);
+	zend_string_release_ex(const_GRADIENT_VERTICAL_name, true);
 
 	zval const_GRADIENT_HORIZONTAL_value;
 	ZVAL_LONG(&const_GRADIENT_HORIZONTAL_value, 1);
-	zend_string *const_GRADIENT_HORIZONTAL_name = zend_string_init_interned("GRADIENT_HORIZONTAL", sizeof("GRADIENT_HORIZONTAL") - 1, 1);
+	zend_string *const_GRADIENT_HORIZONTAL_name = zend_string_init_interned("GRADIENT_HORIZONTAL", sizeof("GRADIENT_HORIZONTAL") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_GRADIENT_HORIZONTAL_name, &const_GRADIENT_HORIZONTAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_GRADIENT_HORIZONTAL_name);
+	zend_string_release_ex(const_GRADIENT_HORIZONTAL_name, true);
 
 	zval const_DATE_DAY_value;
 	ZVAL_LONG(&const_DATE_DAY_value, 0);
-	zend_string *const_DATE_DAY_name = zend_string_init_interned("DATE_DAY", sizeof("DATE_DAY") - 1, 1);
+	zend_string *const_DATE_DAY_name = zend_string_init_interned("DATE_DAY", sizeof("DATE_DAY") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_DATE_DAY_name, &const_DATE_DAY_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_DATE_DAY_name);
+	zend_string_release_ex(const_DATE_DAY_name, true);
 
 	zval const_DATE_WEEK_value;
 	ZVAL_LONG(&const_DATE_WEEK_value, 1);
-	zend_string *const_DATE_WEEK_name = zend_string_init_interned("DATE_WEEK", sizeof("DATE_WEEK") - 1, 1);
+	zend_string *const_DATE_WEEK_name = zend_string_init_interned("DATE_WEEK", sizeof("DATE_WEEK") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_DATE_WEEK_name, &const_DATE_WEEK_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_DATE_WEEK_name);
+	zend_string_release_ex(const_DATE_WEEK_name, true);
 
 	zval const_DATE_MONTH_value;
 	ZVAL_LONG(&const_DATE_MONTH_value, 2);
-	zend_string *const_DATE_MONTH_name = zend_string_init_interned("DATE_MONTH", sizeof("DATE_MONTH") - 1, 1);
+	zend_string *const_DATE_MONTH_name = zend_string_init_interned("DATE_MONTH", sizeof("DATE_MONTH") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_DATE_MONTH_name, &const_DATE_MONTH_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_DATE_MONTH_name);
+	zend_string_release_ex(const_DATE_MONTH_name, true);
 
 	zval const_DATE_QUARTER_value;
 	ZVAL_LONG(&const_DATE_QUARTER_value, 3);
-	zend_string *const_DATE_QUARTER_name = zend_string_init_interned("DATE_QUARTER", sizeof("DATE_QUARTER") - 1, 1);
+	zend_string *const_DATE_QUARTER_name = zend_string_init_interned("DATE_QUARTER", sizeof("DATE_QUARTER") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_DATE_QUARTER_name, &const_DATE_QUARTER_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_DATE_QUARTER_name);
+	zend_string_release_ex(const_DATE_QUARTER_name, true);
 
 	zval const_DATE_YEAR_value;
 	ZVAL_LONG(&const_DATE_YEAR_value, 4);
-	zend_string *const_DATE_YEAR_name = zend_string_init_interned("DATE_YEAR", sizeof("DATE_YEAR") - 1, 1);
+	zend_string *const_DATE_YEAR_name = zend_string_init_interned("DATE_YEAR", sizeof("DATE_YEAR") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_DATE_YEAR_name, &const_DATE_YEAR_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_DATE_YEAR_name);
+	zend_string_release_ex(const_DATE_YEAR_name, true);
 
 	zval const_SVG_TEXT_NATIVE_value;
 	ZVAL_LONG(&const_SVG_TEXT_NATIVE_value, 0);
-	zend_string *const_SVG_TEXT_NATIVE_name = zend_string_init_interned("SVG_TEXT_NATIVE", sizeof("SVG_TEXT_NATIVE") - 1, 1);
+	zend_string *const_SVG_TEXT_NATIVE_name = zend_string_init_interned("SVG_TEXT_NATIVE", sizeof("SVG_TEXT_NATIVE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_SVG_TEXT_NATIVE_name, &const_SVG_TEXT_NATIVE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_SVG_TEXT_NATIVE_name);
+	zend_string_release_ex(const_SVG_TEXT_NATIVE_name, true);
 
 	zval const_SVG_TEXT_PATHS_value;
 	ZVAL_LONG(&const_SVG_TEXT_PATHS_value, 1);
-	zend_string *const_SVG_TEXT_PATHS_name = zend_string_init_interned("SVG_TEXT_PATHS", sizeof("SVG_TEXT_PATHS") - 1, 1);
+	zend_string *const_SVG_TEXT_PATHS_name = zend_string_init_interned("SVG_TEXT_PATHS", sizeof("SVG_TEXT_PATHS") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_SVG_TEXT_PATHS_name, &const_SVG_TEXT_PATHS_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_SVG_TEXT_PATHS_name);
+	zend_string_release_ex(const_SVG_TEXT_PATHS_name, true);
 
 	return class_entry;
 }
@@ -1327,15 +1331,15 @@ static zend_class_entry *register_class_FastChart_BarChart(zend_class_entry *cla
 
 	zval const_BAR_VERTICAL_value;
 	ZVAL_LONG(&const_BAR_VERTICAL_value, 0);
-	zend_string *const_BAR_VERTICAL_name = zend_string_init_interned("BAR_VERTICAL", sizeof("BAR_VERTICAL") - 1, 1);
+	zend_string *const_BAR_VERTICAL_name = zend_string_init_interned("BAR_VERTICAL", sizeof("BAR_VERTICAL") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_BAR_VERTICAL_name, &const_BAR_VERTICAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_BAR_VERTICAL_name);
+	zend_string_release_ex(const_BAR_VERTICAL_name, true);
 
 	zval const_BAR_HORIZONTAL_value;
 	ZVAL_LONG(&const_BAR_HORIZONTAL_value, 1);
-	zend_string *const_BAR_HORIZONTAL_name = zend_string_init_interned("BAR_HORIZONTAL", sizeof("BAR_HORIZONTAL") - 1, 1);
+	zend_string *const_BAR_HORIZONTAL_name = zend_string_init_interned("BAR_HORIZONTAL", sizeof("BAR_HORIZONTAL") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_BAR_HORIZONTAL_name, &const_BAR_HORIZONTAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_BAR_HORIZONTAL_name);
+	zend_string_release_ex(const_BAR_HORIZONTAL_name, true);
 
 	return class_entry;
 }
@@ -1369,21 +1373,21 @@ static zend_class_entry *register_class_FastChart_StockChart(zend_class_entry *c
 
 	zval const_MA_SMA_value;
 	ZVAL_LONG(&const_MA_SMA_value, 0);
-	zend_string *const_MA_SMA_name = zend_string_init_interned("MA_SMA", sizeof("MA_SMA") - 1, 1);
+	zend_string *const_MA_SMA_name = zend_string_init_interned("MA_SMA", sizeof("MA_SMA") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_MA_SMA_name, &const_MA_SMA_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_MA_SMA_name);
+	zend_string_release_ex(const_MA_SMA_name, true);
 
 	zval const_MA_EMA_value;
 	ZVAL_LONG(&const_MA_EMA_value, 1);
-	zend_string *const_MA_EMA_name = zend_string_init_interned("MA_EMA", sizeof("MA_EMA") - 1, 1);
+	zend_string *const_MA_EMA_name = zend_string_init_interned("MA_EMA", sizeof("MA_EMA") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_MA_EMA_name, &const_MA_EMA_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_MA_EMA_name);
+	zend_string_release_ex(const_MA_EMA_name, true);
 
 	zval const_MA_WMA_value;
 	ZVAL_LONG(&const_MA_WMA_value, 2);
-	zend_string *const_MA_WMA_name = zend_string_init_interned("MA_WMA", sizeof("MA_WMA") - 1, 1);
+	zend_string *const_MA_WMA_name = zend_string_init_interned("MA_WMA", sizeof("MA_WMA") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_MA_WMA_name, &const_MA_WMA_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_MA_WMA_name);
+	zend_string_release_ex(const_MA_WMA_name, true);
 
 	return class_entry;
 }
@@ -1457,15 +1461,15 @@ static zend_class_entry *register_class_FastChart_PolarChart(zend_class_entry *c
 
 	zval const_STYLE_LINE_value;
 	ZVAL_LONG(&const_STYLE_LINE_value, 0);
-	zend_string *const_STYLE_LINE_name = zend_string_init_interned("STYLE_LINE", sizeof("STYLE_LINE") - 1, 1);
+	zend_string *const_STYLE_LINE_name = zend_string_init_interned("STYLE_LINE", sizeof("STYLE_LINE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_STYLE_LINE_name, &const_STYLE_LINE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_STYLE_LINE_name);
+	zend_string_release_ex(const_STYLE_LINE_name, true);
 
 	zval const_STYLE_ROSE_value;
 	ZVAL_LONG(&const_STYLE_ROSE_value, 1);
-	zend_string *const_STYLE_ROSE_name = zend_string_init_interned("STYLE_ROSE", sizeof("STYLE_ROSE") - 1, 1);
+	zend_string *const_STYLE_ROSE_name = zend_string_init_interned("STYLE_ROSE", sizeof("STYLE_ROSE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_STYLE_ROSE_name, &const_STYLE_ROSE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_STYLE_ROSE_name);
+	zend_string_release_ex(const_STYLE_ROSE_name, true);
 
 	return class_entry;
 }
@@ -1496,6 +1500,18 @@ static zend_class_entry *register_class_FastChart_Funnel(zend_class_entry *class
 
 	INIT_NS_CLASS_ENTRY(ce, "FastChart", "Funnel", class_FastChart_Funnel_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	zval const_STYLE_FUNNEL_value;
+	ZVAL_LONG(&const_STYLE_FUNNEL_value, 0);
+	zend_string *const_STYLE_FUNNEL_name = zend_string_init_interned("STYLE_FUNNEL", sizeof("STYLE_FUNNEL") - 1, true);
+	zend_declare_typed_class_constant(class_entry, const_STYLE_FUNNEL_name, &const_STYLE_FUNNEL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release_ex(const_STYLE_FUNNEL_name, true);
+
+	zval const_STYLE_PYRAMID_value;
+	ZVAL_LONG(&const_STYLE_PYRAMID_value, 1);
+	zend_string *const_STYLE_PYRAMID_name = zend_string_init_interned("STYLE_PYRAMID", sizeof("STYLE_PYRAMID") - 1, true);
+	zend_declare_typed_class_constant(class_entry, const_STYLE_PYRAMID_name, &const_STYLE_PYRAMID_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release_ex(const_STYLE_PYRAMID_name, true);
 
 	return class_entry;
 }
@@ -1529,15 +1545,15 @@ static zend_class_entry *register_class_FastChart_LinearMeter(zend_class_entry *
 
 	zval const_METER_HORIZONTAL_value;
 	ZVAL_LONG(&const_METER_HORIZONTAL_value, 0);
-	zend_string *const_METER_HORIZONTAL_name = zend_string_init_interned("METER_HORIZONTAL", sizeof("METER_HORIZONTAL") - 1, 1);
+	zend_string *const_METER_HORIZONTAL_name = zend_string_init_interned("METER_HORIZONTAL", sizeof("METER_HORIZONTAL") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_METER_HORIZONTAL_name, &const_METER_HORIZONTAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_METER_HORIZONTAL_name);
+	zend_string_release_ex(const_METER_HORIZONTAL_name, true);
 
 	zval const_METER_VERTICAL_value;
 	ZVAL_LONG(&const_METER_VERTICAL_value, 1);
-	zend_string *const_METER_VERTICAL_name = zend_string_init_interned("METER_VERTICAL", sizeof("METER_VERTICAL") - 1, 1);
+	zend_string *const_METER_VERTICAL_name = zend_string_init_interned("METER_VERTICAL", sizeof("METER_VERTICAL") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_METER_VERTICAL_name, &const_METER_VERTICAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_METER_VERTICAL_name);
+	zend_string_release_ex(const_METER_VERTICAL_name, true);
 
 	return class_entry;
 }
@@ -1551,15 +1567,15 @@ static zend_class_entry *register_class_FastChart_Symbol(void)
 
 	zval const_SVG_TEXT_NATIVE_value;
 	ZVAL_LONG(&const_SVG_TEXT_NATIVE_value, 0);
-	zend_string *const_SVG_TEXT_NATIVE_name = zend_string_init_interned("SVG_TEXT_NATIVE", sizeof("SVG_TEXT_NATIVE") - 1, 1);
+	zend_string *const_SVG_TEXT_NATIVE_name = zend_string_init_interned("SVG_TEXT_NATIVE", sizeof("SVG_TEXT_NATIVE") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_SVG_TEXT_NATIVE_name, &const_SVG_TEXT_NATIVE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_SVG_TEXT_NATIVE_name);
+	zend_string_release_ex(const_SVG_TEXT_NATIVE_name, true);
 
 	zval const_SVG_TEXT_PATHS_value;
 	ZVAL_LONG(&const_SVG_TEXT_PATHS_value, 1);
-	zend_string *const_SVG_TEXT_PATHS_name = zend_string_init_interned("SVG_TEXT_PATHS", sizeof("SVG_TEXT_PATHS") - 1, 1);
+	zend_string *const_SVG_TEXT_PATHS_name = zend_string_init_interned("SVG_TEXT_PATHS", sizeof("SVG_TEXT_PATHS") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_SVG_TEXT_PATHS_name, &const_SVG_TEXT_PATHS_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_SVG_TEXT_PATHS_name);
+	zend_string_release_ex(const_SVG_TEXT_PATHS_name, true);
 
 	return class_entry;
 }
@@ -1593,27 +1609,27 @@ static zend_class_entry *register_class_FastChart_QrCode(zend_class_entry *class
 
 	zval const_ECC_L_value;
 	ZVAL_LONG(&const_ECC_L_value, 0);
-	zend_string *const_ECC_L_name = zend_string_init_interned("ECC_L", sizeof("ECC_L") - 1, 1);
+	zend_string *const_ECC_L_name = zend_string_init_interned("ECC_L", sizeof("ECC_L") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_ECC_L_name, &const_ECC_L_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_ECC_L_name);
+	zend_string_release_ex(const_ECC_L_name, true);
 
 	zval const_ECC_M_value;
 	ZVAL_LONG(&const_ECC_M_value, 1);
-	zend_string *const_ECC_M_name = zend_string_init_interned("ECC_M", sizeof("ECC_M") - 1, 1);
+	zend_string *const_ECC_M_name = zend_string_init_interned("ECC_M", sizeof("ECC_M") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_ECC_M_name, &const_ECC_M_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_ECC_M_name);
+	zend_string_release_ex(const_ECC_M_name, true);
 
 	zval const_ECC_Q_value;
 	ZVAL_LONG(&const_ECC_Q_value, 2);
-	zend_string *const_ECC_Q_name = zend_string_init_interned("ECC_Q", sizeof("ECC_Q") - 1, 1);
+	zend_string *const_ECC_Q_name = zend_string_init_interned("ECC_Q", sizeof("ECC_Q") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_ECC_Q_name, &const_ECC_Q_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_ECC_Q_name);
+	zend_string_release_ex(const_ECC_Q_name, true);
 
 	zval const_ECC_H_value;
 	ZVAL_LONG(&const_ECC_H_value, 3);
-	zend_string *const_ECC_H_name = zend_string_init_interned("ECC_H", sizeof("ECC_H") - 1, 1);
+	zend_string *const_ECC_H_name = zend_string_init_interned("ECC_H", sizeof("ECC_H") - 1, true);
 	zend_declare_typed_class_constant(class_entry, const_ECC_H_name, &const_ECC_H_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
-	zend_string_release(const_ECC_H_name);
+	zend_string_release_ex(const_ECC_H_name, true);
 
 	return class_entry;
 }

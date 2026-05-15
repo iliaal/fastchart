@@ -72,15 +72,17 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
         return -1;
     }
 
-    /* Each stage is a horizontal trapezoid centred on the canvas;
-     * width is proportional to its value relative to the largest
-     * stage. Stage heights are equal — the value contrast lives in
-     * the width, matching ChartDirector / CD-style funnels. */
-    double max_v = 0;
+    /* Per-stage layout differs by style. FUNNEL: equal-height
+     * trapezoids; widths track each stage's value relative to the
+     * largest stage. PYRAMID: single triangle subdivided into
+     * value-proportional bands; widths follow the triangle's
+     * natural taper (0 at the apex, full at the base). */
+    double max_v = 0, total_v = 0;
     for (int i = 0; i < n; i++) {
         if (self->stages[i].value > max_v) max_v = self->stages[i].value;
+        total_v += self->stages[i].value;
     }
-    if (max_v <= 0) {
+    if (max_v <= 0 || total_v <= 0) {
         zend_throw_error(NULL,
             "FastChart\\Funnel::draw() requires at least one stage with value > 0");
         return -1;
@@ -92,17 +94,37 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
     int cx = (x_left + x_right) / 2;
     int max_half = (x_right - x_left) / 2;
 
+    bool pyramid = (self->funnel_style == FASTCHART_FUNNEL_STYLE_PYRAMID);
+
     const char *label_font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double label_size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base_size);
 
+    /* PYRAMID: cumulative-value scan top-down to position each band
+     * within the triangle. Width at any y is linear in (y - y0). */
+    double cum_v = 0.0;
     for (int i = 0; i < n; i++) {
-        double v_top = self->stages[i].value;
-        double v_bot = (i + 1 < n) ? self->stages[i + 1].value : v_top * 0.6;
-        if (v_bot < 0) v_bot = 0;
-        int half_top = (int)(max_half * v_top / max_v + 0.5);
-        int half_bot = (int)(max_half * v_bot / max_v + 0.5);
-        int yt = y0 + i * stage_h;
-        int yb = yt + stage_h - 2;
+        double v_top, v_bot;
+        int half_top, half_bot, yt, yb;
+        if (pyramid) {
+            double y_top = y0 + cum_v / total_v * total_h;
+            cum_v += self->stages[i].value;
+            double y_bot = y0 + cum_v / total_v * total_h;
+            yt = (int)(y_top + 0.5);
+            yb = (int)(y_bot + 0.5) - 1;
+            if (yb <= yt) yb = yt + 1;
+            half_top = (int)(max_half * (y_top - y0) / total_h + 0.5);
+            half_bot = (int)(max_half * (y_bot - y0) / total_h + 0.5);
+            v_top = self->stages[i].value;
+            v_bot = v_top;  /* unused in pyramid label path; kept for symmetry */
+        } else {
+            v_top = self->stages[i].value;
+            v_bot = (i + 1 < n) ? self->stages[i + 1].value : v_top * 0.6;
+            if (v_bot < 0) v_bot = 0;
+            half_top = (int)(max_half * v_top / max_v + 0.5);
+            half_bot = (int)(max_half * v_bot / max_v + 0.5);
+            yt = y0 + i * stage_h;
+            yb = yt + stage_h - 2;
+        }
 
         int color;
         if (self->stages[i].color_rgb >= 0) {

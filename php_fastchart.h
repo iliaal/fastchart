@@ -659,6 +659,9 @@ typedef struct {
 #define FASTCHART_POLAR_STYLE_LINE  0
 #define FASTCHART_POLAR_STYLE_ROSE  1
 
+#define FASTCHART_FUNNEL_STYLE_FUNNEL   0
+#define FASTCHART_FUNNEL_STYLE_PYRAMID  1
+
 typedef struct {
     FASTCHART_BASE_FIELDS
     bool contour_filled;
@@ -680,6 +683,7 @@ typedef struct {
     FASTCHART_BASE_FIELDS
     fastchart_funnel_stage *stages;    /* malloc'd, stage_count entries */
     int stage_count;
+    int funnel_style;                  /* 0 = funnel (default), 1 = pyramid */
     /* show_values + value_format inherit from FASTCHART_BASE_FIELDS;
      * the funnel default is to show values, set in init_extras after
      * the base init defaults to false. */
