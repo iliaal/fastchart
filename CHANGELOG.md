@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`Funnel::STYLE_PYRAMID`**: opt into a triangle-with-bands layout
+  instead of the default descending-trapezoid look. Value still
+  drives shape — band heights are value-proportional, widths follow
+  the triangle's natural taper.
+- **Seven new chart families** covering common dashboard / analytics
+  patterns:
+  - `BulletChart` — Stephen Few bullet: performance bar against
+    qualitative bands with a target tick.
+  - `ParetoChart` — descending bars + cumulative-percentage line
+    overlay (the 80/20 visualization).
+  - `CalendarHeatmap` — GitHub-style day-grid keyed by `YYYY-MM-DD`
+    with a low/high color ramp.
+  - `SunburstChart` — radial hierarchical donut; recursive `children`
+    arrays with optional `value` per node (interior nodes auto-sum).
+  - `SankeyChart` — bipartite / multi-layer flow with bezier ribbons;
+    `setNodes()` + `setLinks()` with `from` / `to` indices.
+  - `MarimekkoChart` — variable-width stacked columns where column
+    width is proportional to category total.
+  - `VectorChart` — arrow-on-grid vector field with magnitude scaling
+    and optional ramp coloring.
+
+Chart family count rises from 19 to 26.
+
 ## [1.0.0] - 2026-05-14
 
 This release rebuilds the rendering pipeline around an SVG-canonical

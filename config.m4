@@ -78,6 +78,13 @@ if test "$PHP_FASTCHART" != "no"; then
     fastchart_waterfall.c \
     fastchart_heatmap.c \
     fastchart_linear_meter.c \
+    fastchart_bullet.c \
+    fastchart_pareto.c \
+    fastchart_calendar.c \
+    fastchart_sunburst.c \
+    fastchart_sankey.c \
+    fastchart_marimekko.c \
+    fastchart_vector.c \
     fastchart_effects.c \
     fastchart_encoder.c \
     fastchart_rasterize.c \

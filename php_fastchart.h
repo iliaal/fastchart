@@ -561,6 +561,64 @@ typedef struct {
 } fastchart_waterfall_bar;
 
 typedef struct {
+    char *label;          /* malloc'd, NUL-terminated; NULL = no label */
+    double value;         /* >= 0; negative entries dropped at setBars() */
+    int color_rgb;        /* -1 = palette default */
+} fastchart_pareto_bar;
+
+/* Calendar heatmap day: epoch-day index (days since 1970-01-01) +
+ * value. Storing the index instead of broken-down struct tm keeps
+ * the per-cell array compact and makes contiguous-range scans
+ * trivial. */
+typedef struct {
+    long  day;            /* days since 1970-01-01 (UTC) */
+    double value;
+} fastchart_calendar_day;
+
+/* Sunburst node: flat array; children indices stored as a range
+ * [child_first, child_first + child_count) into the same node array.
+ * Tree built once at setHierarchy(), walked twice at render. */
+typedef struct {
+    char *label;          /* malloc'd, NUL-terminated; NULL = no label */
+    double value;         /* leaf value, or sum-of-children for interior */
+    int color_rgb;        /* -1 = palette default by leaf-position */
+    int depth;            /* 0 = root, 1 = first ring, ... */
+    int parent;           /* -1 for root */
+    int child_first;      /* index of first child in node array; -1 if leaf */
+    int child_count;
+} fastchart_sunburst_node;
+
+typedef struct {
+    char *label;          /* malloc'd, NUL-terminated; NULL = no label */
+    int color_rgb;        /* -1 = palette default */
+} fastchart_sankey_node;
+
+typedef struct {
+    int from;             /* node index */
+    int to;               /* node index */
+    double value;         /* > 0; non-positive dropped at setLinks() */
+} fastchart_sankey_link;
+
+typedef struct {
+    char *label;
+    double value;         /* > 0 */
+    int color_rgb;        /* -1 = palette default */
+} fastchart_marimekko_segment;
+
+typedef struct {
+    char *label;
+    fastchart_marimekko_segment *segments;
+    int n_segments;
+    double total;         /* sum of segment values */
+} fastchart_marimekko_column;
+
+typedef struct {
+    double x, y;          /* anchor coordinates in data space */
+    double dx, dy;        /* vector components */
+    int color_rgb;        /* -1 = palette / ramp */
+} fastchart_vector_datum;
+
+typedef struct {
     FASTCHART_BASE_FIELDS
     zend_long candle_style;
     fastchart_candle *candles;          /* malloc'd, owned */
@@ -724,6 +782,73 @@ typedef struct {
     zend_object std;
 } fastchart_linear_meter_obj;
 
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    double bullet_value;
+    double bullet_target;              /* NAN = no target tick */
+    double bullet_min;
+    double bullet_max;
+    fastchart_gauge_zone bands[FASTCHART_MAX_METER_ZONES];
+    int n_bands;
+    zend_string *bullet_value_format;  /* nullable */
+    zend_object std;
+} fastchart_bullet_obj;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_pareto_bar *bars;        /* malloc'd, bar_count entries */
+    int bar_count;
+    int line_color;                    /* -1 = palette default */
+    zend_string *value_label_format;   /* nullable; printf for bar labels */
+    zend_object std;
+} fastchart_pareto_obj;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_calendar_day *days;      /* malloc'd, sorted by .day asc */
+    int day_count;
+    int color_low_rgb;                 /* -1 = palette default */
+    int color_high_rgb;                /* -1 = palette default */
+    zend_object std;
+} fastchart_calendar_obj;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_sunburst_node *nodes;    /* malloc'd; nodes[0] = root */
+    int node_count;
+    int max_depth;
+    double total_value;                /* root sum */
+    zend_object std;
+} fastchart_sunburst_obj;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_sankey_node *nodes;
+    int node_count;
+    fastchart_sankey_link *links;
+    int link_count;
+    zend_object std;
+} fastchart_sankey_obj;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_marimekko_column *columns;
+    int column_count;
+    double total_width;                /* sum of column totals */
+    zend_object std;
+} fastchart_marimekko_obj;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_vector_datum *vectors;
+    int vector_count;
+    int color_low_rgb;                 /* -1 = no ramp; per-entry color used */
+    int color_high_rgb;                /* -1 = no ramp */
+    double mag_min;                    /* cached at setVectors() */
+    double mag_max;
+    zend_object std;
+} fastchart_vector_obj;
+
 /* Walk back from zend_object* to the start of the containing per-type
  * struct using each class's handlers->offset. Cast to fastchart_obj*
  * is the common-initial-sequence access — base fields land at the
@@ -752,6 +877,13 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define Z_FASTCHART_WATERFALL_OBJ_P(zv) ((fastchart_waterfall_obj *)Z_FASTCHART_OBJ_P(zv))
 #define Z_FASTCHART_HEATMAP_OBJ_P(zv) ((fastchart_heatmap_obj *)Z_FASTCHART_OBJ_P(zv))
 #define Z_FASTCHART_LINEAR_METER_OBJ_P(zv) ((fastchart_linear_meter_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_BULLET_OBJ_P(zv)    ((fastchart_bullet_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_PARETO_OBJ_P(zv)    ((fastchart_pareto_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_CALENDAR_OBJ_P(zv)  ((fastchart_calendar_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_SUNBURST_OBJ_P(zv)  ((fastchart_sunburst_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_SANKEY_OBJ_P(zv)    ((fastchart_sankey_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_MARIMEKKO_OBJ_P(zv) ((fastchart_marimekko_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_VECTOR_OBJ_P(zv)    ((fastchart_vector_obj *)Z_FASTCHART_OBJ_P(zv))
 
 #define FASTCHART_DEFAULT_WIDTH      800
 #define FASTCHART_DEFAULT_HEIGHT     600
@@ -906,6 +1038,20 @@ int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self,
                                         struct fastchart_target *t);
 int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self,
                                              struct fastchart_target *t);
+int fastchart_bullet_render_to_target(fastchart_bullet_obj *self,
+                                       struct fastchart_target *t);
+int fastchart_pareto_render_to_target(fastchart_pareto_obj *self,
+                                       struct fastchart_target *t);
+int fastchart_calendar_render_to_target(fastchart_calendar_obj *self,
+                                         struct fastchart_target *t);
+int fastchart_sunburst_render_to_target(fastchart_sunburst_obj *self,
+                                         struct fastchart_target *t);
+int fastchart_sankey_render_to_target(fastchart_sankey_obj *self,
+                                       struct fastchart_target *t);
+int fastchart_marimekko_render_to_target(fastchart_marimekko_obj *self,
+                                          struct fastchart_target *t);
+int fastchart_vector_render_to_target(fastchart_vector_obj *self,
+                                       struct fastchart_target *t);
 
 /* --- Symbol family (1D/2D codes) ----------------------------------
  *

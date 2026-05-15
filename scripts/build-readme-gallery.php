@@ -1,16 +1,16 @@
 <?php
-/* Build the GitHub-Pages-publishable PNG vs SVG gallery for the 21
- * chart variants referenced from the project README. Each case
- * mirrors the construction in docs/examples/ but renders both
- * outputs in-process so the page is self-contained.
+/* Canonical case list for the gallery generators. Originally wrote
+ * docs/svg-gallery.html (PNG + SVG side-by-side, 21 cases); v1.0
+ * promoted docs/v1-gallery.html (SVG / PNG / JPG / WebP four-up)
+ * via build-v1-gallery.php, which eval's the prefix of this file
+ * for $cases. Running this file directly now only prints summary
+ * stats — the rendered HTML output landed in v1-gallery.html.
  *
- * Output: docs/svg-gallery.html (self-contained; PNG via base64
- * data URI, SVG inlined). Open at:
- *   docs/svg-gallery.html (file://)
- *   iliaal.github.io/fastchart/svg-gallery.html (Pages)
+ * Each case mirrors the construction in docs/examples/ but renders
+ * inline so the gallery is self-contained.
  *
- * Run with the fastchart + gd extensions loaded — see CLAUDE.md
- * for the explicit -d extension= invocation. */
+ * Run with the fastchart extension loaded — see CLAUDE.md for the
+ * explicit -d extension= invocation. */
 
 if (!class_exists('FastChart\\Chart')) {
     fwrite(STDERR, "FastChart not loaded; load fastchart.so + gd.so.\n");
@@ -780,7 +780,299 @@ PHP,
 ];
 
 $cases[] = [
-    'label' => '20a. Code128 — alphanumeric, human-readable text',
+    'label' => '20. BulletChart — Q3 revenue vs plan',
+    'ref'   => 'docs/examples/43_bullet.php',
+    'code'  => <<<'PHP'
+(new FastChart\BulletChart(560, 120))
+    ->setTitle('Q3 revenue vs plan')
+    ->setRange(0, 120)
+    ->setBands([
+        ['from' =>   0, 'to' =>  60, 'color' => 0xE5E7EB],
+        ['from' =>  60, 'to' =>  90, 'color' => 0xCBD5E1],
+        ['from' =>  90, 'to' => 120, 'color' => 0x94A3B8],
+    ])
+    ->setValue(78)
+    ->setTarget(95)
+    ->setValueFormat('%.0fM');
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\BulletChart(560, 120))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Q3 revenue vs plan')
+            ->setRange(0, 120)
+            ->setBands([
+                ['from' =>   0, 'to' =>  60, 'color' => 0xE5E7EB],
+                ['from' =>  60, 'to' =>  90, 'color' => 0xCBD5E1],
+                ['from' =>  90, 'to' => 120, 'color' => 0x94A3B8],
+            ])
+            ->setValue(78)
+            ->setTarget(95)
+            ->setValueFormat('%.0fM');
+    },
+];
+
+$cases[] = [
+    'label' => '21. ParetoChart — defect categories with 80/20 line',
+    'ref'   => 'docs/examples/44_pareto.php',
+    'code'  => <<<'PHP'
+(new FastChart\ParetoChart(680, 420))
+    ->setTitle('Defect categories, last quarter')
+    ->setBars([
+        ['label' => 'Soldering', 'value' => 142],
+        ['label' => 'Plating',   'value' =>  88],
+        ['label' => 'Etching',   'value' =>  61],
+        ['label' => 'Drilling',  'value' =>  34],
+        ['label' => 'Cutting',   'value' =>  21],
+        ['label' => 'Other',     'value' =>  12],
+    ])
+    ->setLineColor(0xE34A6F)
+    ->setShowValues(true);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\ParetoChart(680, 420))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Defect categories, last quarter')
+            ->setBars([
+                ['label' => 'Soldering', 'value' => 142],
+                ['label' => 'Plating',   'value' =>  88],
+                ['label' => 'Etching',   'value' =>  61],
+                ['label' => 'Drilling',  'value' =>  34],
+                ['label' => 'Cutting',   'value' =>  21],
+                ['label' => 'Other',     'value' =>  12],
+            ])
+            ->setLineColor(0xE34A6F)
+            ->setShowValues(true);
+    },
+];
+
+$cases[] = [
+    'label' => '22. CalendarHeatmap — daily activity for one year',
+    'ref'   => 'docs/examples/45_calendar_heatmap.php',
+    'code'  => <<<'PHP'
+$data = [];
+$start = strtotime('2025-05-01');
+$end   = strtotime('2026-04-30');
+for ($ts = $start; $ts <= $end; $ts += 86400) {
+    $iso = date('Y-m-d', $ts);
+    $dow = (int)date('w', $ts);
+    $base = $dow >= 1 && $dow <= 5 ? 6 : 1;
+    $burst = sin($ts / 86400 / 7) * 4 + cos($ts / 86400 / 3) * 3;
+    $v = max(0, $base + $burst);
+    if ($v > 0) $data[$iso] = round($v);
+}
+(new FastChart\CalendarHeatmap(900, 170))
+    ->setTitle('Daily commits, last 12 months')
+    ->setData($data)
+    ->setColorRamp(0xEBEDEF, 0x216E39);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        $data = [];
+        $start = strtotime('2025-05-01');
+        $end   = strtotime('2026-04-30');
+        for ($ts = $start; $ts <= $end; $ts += 86400) {
+            $iso = date('Y-m-d', $ts);
+            $dow = (int)date('w', $ts);
+            $base = $dow >= 1 && $dow <= 5 ? 6 : 1;
+            $burst = sin($ts / 86400 / 7) * 4 + cos($ts / 86400 / 3) * 3;
+            $v = max(0, $base + $burst);
+            if ($v > 0) $data[$iso] = round($v);
+        }
+        return (new FastChart\CalendarHeatmap(900, 170))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Daily commits, last 12 months')
+            ->setData($data)
+            ->setColorRamp(0xEBEDEF, 0x216E39);
+    },
+];
+
+$cases[] = [
+    'label' => '23. SunburstChart — engineering workload by team',
+    'ref'   => 'docs/examples/46_sunburst.php',
+    'code'  => <<<'PHP'
+(new FastChart\SunburstChart(520, 520))
+    ->setTitle('Workload by team & project')
+    ->setHierarchy([
+        'label' => 'Eng',
+        'children' => [
+            ['label' => 'Backend', 'children' => [
+                ['label' => 'API',     'value' => 18],
+                ['label' => 'Workers', 'value' => 12],
+                ['label' => 'DB',      'value' =>  9],
+            ]],
+            ['label' => 'Frontend', 'children' => [
+                ['label' => 'Web',    'value' => 14],
+                ['label' => 'Mobile', 'value' => 10],
+            ]],
+            ['label' => 'Infra', 'children' => [
+                ['label' => 'CI',       'value' => 7],
+                ['label' => 'Observ.',  'value' => 5],
+                ['label' => 'Security', 'value' => 4],
+            ]],
+        ],
+    ]);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\SunburstChart(520, 520))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Workload by team & project')
+            ->setHierarchy([
+                'label' => 'Eng',
+                'children' => [
+                    ['label' => 'Backend', 'children' => [
+                        ['label' => 'API',     'value' => 18],
+                        ['label' => 'Workers', 'value' => 12],
+                        ['label' => 'DB',      'value' =>  9],
+                    ]],
+                    ['label' => 'Frontend', 'children' => [
+                        ['label' => 'Web',    'value' => 14],
+                        ['label' => 'Mobile', 'value' => 10],
+                    ]],
+                    ['label' => 'Infra', 'children' => [
+                        ['label' => 'CI',       'value' => 7],
+                        ['label' => 'Observ.',  'value' => 5],
+                        ['label' => 'Security', 'value' => 4],
+                    ]],
+                ],
+            ]);
+    },
+];
+
+$cases[] = [
+    'label' => '24. SankeyChart — acquisition → activation flow',
+    'ref'   => 'docs/examples/47_sankey.php',
+    'code'  => <<<'PHP'
+(new FastChart\SankeyChart(760, 400))
+    ->setTitle('Acquisition → activation funnel')
+    ->setNodes([
+        ['label' => 'Search'],   ['label' => 'Social'],
+        ['label' => 'Referral'], ['label' => 'Landing'],
+        ['label' => 'Signup'],   ['label' => 'Active'],
+        ['label' => 'Churned'],
+    ])
+    ->setLinks([
+        ['from' => 0, 'to' => 3, 'value' => 60],
+        ['from' => 1, 'to' => 3, 'value' => 25],
+        ['from' => 2, 'to' => 3, 'value' => 15],
+        ['from' => 3, 'to' => 4, 'value' => 70],
+        ['from' => 3, 'to' => 6, 'value' => 30],
+        ['from' => 4, 'to' => 5, 'value' => 55],
+        ['from' => 4, 'to' => 6, 'value' => 15],
+    ]);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\SankeyChart(760, 400))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Acquisition → activation funnel')
+            ->setNodes([
+                ['label' => 'Search'],   ['label' => 'Social'],
+                ['label' => 'Referral'], ['label' => 'Landing'],
+                ['label' => 'Signup'],   ['label' => 'Active'],
+                ['label' => 'Churned'],
+            ])
+            ->setLinks([
+                ['from' => 0, 'to' => 3, 'value' => 60],
+                ['from' => 1, 'to' => 3, 'value' => 25],
+                ['from' => 2, 'to' => 3, 'value' => 15],
+                ['from' => 3, 'to' => 4, 'value' => 70],
+                ['from' => 3, 'to' => 6, 'value' => 30],
+                ['from' => 4, 'to' => 5, 'value' => 55],
+                ['from' => 4, 'to' => 6, 'value' => 15],
+            ]);
+    },
+];
+
+$cases[] = [
+    'label' => '25. MarimekkoChart — revenue mix by region & product',
+    'ref'   => 'docs/examples/48_marimekko.php',
+    'code'  => <<<'PHP'
+(new FastChart\MarimekkoChart(700, 480))
+    ->setTitle('Revenue mix by region & product')
+    ->setColumns([
+        ['label' => 'NA',   'segments' => [
+            ['label' => 'Hardware', 'value' => 80, 'color' => 0x2563EB],
+            ['label' => 'Services', 'value' => 50, 'color' => 0x10B981],
+            ['label' => 'Cloud',    'value' => 70, 'color' => 0xF59E0B],
+        ]],
+        ['label' => 'EMEA', 'segments' => [
+            ['label' => 'Hardware', 'value' => 45, 'color' => 0x2563EB],
+            ['label' => 'Services', 'value' => 35, 'color' => 0x10B981],
+            ['label' => 'Cloud',    'value' => 25, 'color' => 0xF59E0B],
+        ]],
+        ['label' => 'APAC', 'segments' => [
+            ['label' => 'Hardware', 'value' => 30, 'color' => 0x2563EB],
+            ['label' => 'Services', 'value' => 15, 'color' => 0x10B981],
+            ['label' => 'Cloud',    'value' => 40, 'color' => 0xF59E0B],
+        ]],
+        ['label' => 'LATAM','segments' => [
+            ['label' => 'Hardware', 'value' => 12, 'color' => 0x2563EB],
+            ['label' => 'Services', 'value' =>  8, 'color' => 0x10B981],
+        ]],
+    ]);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\MarimekkoChart(700, 480))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Revenue mix by region & product')
+            ->setColumns([
+                ['label' => 'NA',   'segments' => [
+                    ['label' => 'Hardware', 'value' => 80, 'color' => 0x2563EB],
+                    ['label' => 'Services', 'value' => 50, 'color' => 0x10B981],
+                    ['label' => 'Cloud',    'value' => 70, 'color' => 0xF59E0B],
+                ]],
+                ['label' => 'EMEA', 'segments' => [
+                    ['label' => 'Hardware', 'value' => 45, 'color' => 0x2563EB],
+                    ['label' => 'Services', 'value' => 35, 'color' => 0x10B981],
+                    ['label' => 'Cloud',    'value' => 25, 'color' => 0xF59E0B],
+                ]],
+                ['label' => 'APAC', 'segments' => [
+                    ['label' => 'Hardware', 'value' => 30, 'color' => 0x2563EB],
+                    ['label' => 'Services', 'value' => 15, 'color' => 0x10B981],
+                    ['label' => 'Cloud',    'value' => 40, 'color' => 0xF59E0B],
+                ]],
+                ['label' => 'LATAM','segments' => [
+                    ['label' => 'Hardware', 'value' => 12, 'color' => 0x2563EB],
+                    ['label' => 'Services', 'value' =>  8, 'color' => 0x10B981],
+                ]],
+            ]);
+    },
+];
+
+$cases[] = [
+    'label' => '26. VectorChart — rotational vector field',
+    'ref'   => 'docs/examples/49_vector.php',
+    'code'  => <<<'PHP'
+$vecs = [];
+for ($x = 0; $x <= 10; $x++) {
+    for ($y = 0; $y <= 10; $y++) {
+        $vecs[] = ['x' => $x, 'y' => $y,
+                   'dx' => -($y - 5) * 0.3,
+                   'dy' =>  ($x - 5) * 0.3];
+    }
+}
+(new FastChart\VectorChart(560, 520))
+    ->setTitle('Rotational vector field')
+    ->setVectors($vecs)
+    ->setColorRamp(0xDDE7FF, 0x1E3A8A);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        $vecs = [];
+        for ($x = 0; $x <= 10; $x++) {
+            for ($y = 0; $y <= 10; $y++) {
+                $vecs[] = ['x' => $x, 'y' => $y,
+                           'dx' => -($y - 5) * 0.3,
+                           'dy' =>  ($x - 5) * 0.3];
+            }
+        }
+        return (new FastChart\VectorChart(560, 520))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Rotational vector field')
+            ->setVectors($vecs)
+            ->setColorRamp(0xDDE7FF, 0x1E3A8A);
+    },
+];
+
+$cases[] = [
+    'label' => '27a. Code128 — alphanumeric, human-readable text',
     'ref'   => 'docs/examples/41_code128.php',
     'code'  => <<<'PHP'
 (new FastChart\Code128())
@@ -798,7 +1090,7 @@ PHP,
 ];
 
 $cases[] = [
-    'label' => '20b. Code128 — pure digits (encoded entirely in subset C)',
+    'label' => '27b. Code128 — pure digits (encoded entirely in subset C)',
     'ref'   => 'docs/examples/41_code128.php',
     'code'  => <<<'PHP'
 (new FastChart\Code128())
@@ -816,7 +1108,7 @@ PHP,
 ];
 
 $cases[] = [
-    'label' => '20c. Code128 — compact bars only, no human-readable text',
+    'label' => '27c. Code128 — compact bars only, no human-readable text',
     'ref'   => 'docs/examples/41_code128.php',
     'code'  => <<<'PHP'
 (new FastChart\Code128())
@@ -834,7 +1126,7 @@ PHP,
 ];
 
 $cases[] = [
-    'label' => '21a. QrCode — ECC level L (~7% recovery, smallest symbol)',
+    'label' => '28a. QrCode — ECC level L (~7% recovery, smallest symbol)',
     'ref'   => 'docs/examples/42_qrcode.php',
     'code'  => <<<'PHP'
 (new FastChart\QrCode())
@@ -854,7 +1146,7 @@ PHP,
 ];
 
 $cases[] = [
-    'label' => '21b. QrCode — ECC level M (~15% recovery, default)',
+    'label' => '28b. QrCode — ECC level M (~15% recovery, default)',
     'ref'   => 'docs/examples/42_qrcode.php',
     'code'  => <<<'PHP'
 (new FastChart\QrCode())
@@ -874,7 +1166,7 @@ PHP,
 ];
 
 $cases[] = [
-    'label' => '21c. QrCode — ECC level Q (~25% recovery, logo overlays)',
+    'label' => '28c. QrCode — ECC level Q (~25% recovery, logo overlays)',
     'ref'   => 'docs/examples/42_qrcode.php',
     'code'  => <<<'PHP'
 (new FastChart\QrCode())
@@ -894,7 +1186,7 @@ PHP,
 ];
 
 $cases[] = [
-    'label' => '21d. QrCode — ECC level H (~30% recovery, outdoor / damaged)',
+    'label' => '28d. QrCode — ECC level H (~30% recovery, outdoor / damaged)',
     'ref'   => 'docs/examples/42_qrcode.php',
     'code'  => <<<'PHP'
 (new FastChart\QrCode())
@@ -1069,9 +1361,15 @@ footer a { color: var(--accent); }
 </html>
 HTML;
 
-$out = __DIR__ . '/../docs/svg-gallery.html';
-file_put_contents($out, $html);
-echo "wrote ", realpath($out),
-     " (", number_format(filesize($out) / 1024, 1), " KB)\n";
-echo "SVG total: {$total_svg_kb} KB across {$ncharts} charts\n";
-echo "PNG total: {$total_png_kb} KB across {$ncharts} charts\n";
+/* docs/svg-gallery.html was retired in favor of docs/v1-gallery.html
+ * (built by build-v1-gallery.php). This script is now used only as
+ * the canonical case list — build-v1-gallery.php evals the prefix
+ * up to the "Build the HTML" marker to reuse $cases. Run from the
+ * command line still prints summary stats so the case list can be
+ * smoke-checked. */
+echo "case count: {$ncharts}\n";
+echo "SVG total: {$total_svg_kb} KB\n";
+echo "PNG total: {$total_png_kb} KB\n";
+/* $html / $rows / $toc are retained as locals so the file's tail
+ * remains semantically valid even though we no longer write them
+ * anywhere. */

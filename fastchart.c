@@ -70,6 +70,13 @@ zend_class_entry *fastchart_funnel_ce;
 zend_class_entry *fastchart_waterfall_ce;
 zend_class_entry *fastchart_heatmap_ce;
 zend_class_entry *fastchart_linear_meter_ce;
+zend_class_entry *fastchart_bullet_chart_ce;
+zend_class_entry *fastchart_pareto_chart_ce;
+zend_class_entry *fastchart_calendar_heatmap_ce;
+zend_class_entry *fastchart_sunburst_chart_ce;
+zend_class_entry *fastchart_sankey_chart_ce;
+zend_class_entry *fastchart_marimekko_chart_ce;
+zend_class_entry *fastchart_vector_chart_ce;
 zend_class_entry *fastchart_symbol_ce;
 zend_class_entry *fastchart_barcode_ce;
 zend_class_entry *fastchart_code128_ce;
@@ -136,6 +143,13 @@ static zend_object_handlers fastchart_funnel_handlers;
 static zend_object_handlers fastchart_waterfall_handlers;
 static zend_object_handlers fastchart_heatmap_handlers;
 static zend_object_handlers fastchart_linear_meter_handlers;
+static zend_object_handlers fastchart_bullet_handlers;
+static zend_object_handlers fastchart_pareto_handlers;
+static zend_object_handlers fastchart_calendar_handlers;
+static zend_object_handlers fastchart_sunburst_handlers;
+static zend_object_handlers fastchart_sankey_handlers;
+static zend_object_handlers fastchart_marimekko_handlers;
+static zend_object_handlers fastchart_vector_handlers;
 
 /* Base lifecycle. Operates on the common-initial-sequence layout —
  * any fastchart_X_obj* aliases as fastchart_obj* for these reads /
@@ -1382,6 +1396,239 @@ static void fastchart_linear_meter_addref_extras(fastchart_linear_meter_obj *o)
     if (o->meter_value_format) zend_string_addref(o->meter_value_format);
 }
 
+static void fastchart_bullet_init_extras(fastchart_bullet_obj *o)
+{
+    o->bullet_value  = 0.0;
+    o->bullet_target = NAN;
+    o->bullet_min    = 0.0;
+    o->bullet_max    = 100.0;
+    o->n_bands       = 0;
+    o->bullet_value_format = NULL;
+}
+static void fastchart_bullet_release_extras(fastchart_bullet_obj *o)
+{
+    if (o->bullet_value_format) zend_string_release(o->bullet_value_format);
+}
+static void fastchart_bullet_addref_extras(fastchart_bullet_obj *o)
+{
+    if (o->bullet_value_format) zend_string_addref(o->bullet_value_format);
+}
+
+static void fastchart_pareto_init_extras(fastchart_pareto_obj *o)
+{
+    o->bars = NULL;
+    o->bar_count = 0;
+    o->line_color = -1;
+    o->value_label_format = NULL;
+}
+static void fastchart_pareto_release_extras(fastchart_pareto_obj *o)
+{
+    if (o->bars) {
+        for (int i = 0; i < o->bar_count; i++) {
+            if (o->bars[i].label) efree(o->bars[i].label);
+        }
+        efree(o->bars);
+        o->bars = NULL;
+    }
+    o->bar_count = 0;
+    if (o->value_label_format) zend_string_release(o->value_label_format);
+}
+static void fastchart_pareto_addref_extras(fastchart_pareto_obj *o)
+{
+    if (o->bars && o->bar_count > 0) {
+        fastchart_pareto_bar *copy = emalloc(sizeof(*copy) * o->bar_count);
+        for (int i = 0; i < o->bar_count; i++) {
+            copy[i] = o->bars[i];
+            copy[i].label = o->bars[i].label ? estrdup(o->bars[i].label) : NULL;
+        }
+        o->bars = copy;
+    } else {
+        o->bars = NULL;
+    }
+    if (o->value_label_format) zend_string_addref(o->value_label_format);
+}
+
+static void fastchart_calendar_init_extras(fastchart_calendar_obj *o)
+{
+    o->days = NULL;
+    o->day_count = 0;
+    o->color_low_rgb = -1;
+    o->color_high_rgb = -1;
+}
+static void fastchart_calendar_release_extras(fastchart_calendar_obj *o)
+{
+    if (o->days) efree(o->days);
+    o->days = NULL;
+    o->day_count = 0;
+}
+static void fastchart_calendar_addref_extras(fastchart_calendar_obj *o)
+{
+    if (o->days && o->day_count > 0) {
+        size_t bytes = (size_t)o->day_count * sizeof(*o->days);
+        fastchart_calendar_day *copy = emalloc(bytes);
+        memcpy(copy, o->days, bytes);
+        o->days = copy;
+    } else {
+        o->days = NULL;
+    }
+}
+
+static void fastchart_sunburst_init_extras(fastchart_sunburst_obj *o)
+{
+    o->nodes = NULL;
+    o->node_count = 0;
+    o->max_depth = 0;
+    o->total_value = 0.0;
+}
+static void fastchart_sunburst_release_extras(fastchart_sunburst_obj *o)
+{
+    if (o->nodes) {
+        for (int i = 0; i < o->node_count; i++) {
+            if (o->nodes[i].label) efree(o->nodes[i].label);
+        }
+        efree(o->nodes);
+        o->nodes = NULL;
+    }
+    o->node_count = 0;
+}
+static void fastchart_sunburst_addref_extras(fastchart_sunburst_obj *o)
+{
+    if (o->nodes && o->node_count > 0) {
+        fastchart_sunburst_node *copy = emalloc(sizeof(*copy) * o->node_count);
+        for (int i = 0; i < o->node_count; i++) {
+            copy[i] = o->nodes[i];
+            copy[i].label = o->nodes[i].label ? estrdup(o->nodes[i].label) : NULL;
+        }
+        o->nodes = copy;
+    } else {
+        o->nodes = NULL;
+    }
+}
+
+static void fastchart_sankey_init_extras(fastchart_sankey_obj *o)
+{
+    o->nodes = NULL;
+    o->node_count = 0;
+    o->links = NULL;
+    o->link_count = 0;
+}
+static void fastchart_sankey_release_extras(fastchart_sankey_obj *o)
+{
+    if (o->nodes) {
+        for (int i = 0; i < o->node_count; i++) {
+            if (o->nodes[i].label) efree(o->nodes[i].label);
+        }
+        efree(o->nodes);
+        o->nodes = NULL;
+    }
+    o->node_count = 0;
+    if (o->links) efree(o->links);
+    o->links = NULL;
+    o->link_count = 0;
+}
+static void fastchart_sankey_addref_extras(fastchart_sankey_obj *o)
+{
+    if (o->nodes && o->node_count > 0) {
+        fastchart_sankey_node *copy = emalloc(sizeof(*copy) * o->node_count);
+        for (int i = 0; i < o->node_count; i++) {
+            copy[i] = o->nodes[i];
+            copy[i].label = o->nodes[i].label ? estrdup(o->nodes[i].label) : NULL;
+        }
+        o->nodes = copy;
+    } else {
+        o->nodes = NULL;
+    }
+    if (o->links && o->link_count > 0) {
+        size_t bytes = (size_t)o->link_count * sizeof(*o->links);
+        fastchart_sankey_link *copy = emalloc(bytes);
+        memcpy(copy, o->links, bytes);
+        o->links = copy;
+    } else {
+        o->links = NULL;
+    }
+}
+
+static void fastchart_marimekko_init_extras(fastchart_marimekko_obj *o)
+{
+    o->columns = NULL;
+    o->column_count = 0;
+    o->total_width = 0.0;
+}
+static void fastchart_marimekko_release_extras(fastchart_marimekko_obj *o)
+{
+    if (o->columns) {
+        for (int i = 0; i < o->column_count; i++) {
+            if (o->columns[i].label) efree(o->columns[i].label);
+            if (o->columns[i].segments) {
+                for (int j = 0; j < o->columns[i].n_segments; j++) {
+                    if (o->columns[i].segments[j].label) {
+                        efree(o->columns[i].segments[j].label);
+                    }
+                }
+                efree(o->columns[i].segments);
+            }
+        }
+        efree(o->columns);
+        o->columns = NULL;
+    }
+    o->column_count = 0;
+}
+static void fastchart_marimekko_addref_extras(fastchart_marimekko_obj *o)
+{
+    if (o->columns && o->column_count > 0) {
+        fastchart_marimekko_column *copy =
+            emalloc(sizeof(*copy) * o->column_count);
+        for (int i = 0; i < o->column_count; i++) {
+            copy[i] = o->columns[i];
+            copy[i].label = o->columns[i].label
+                ? estrdup(o->columns[i].label) : NULL;
+            if (o->columns[i].segments && o->columns[i].n_segments > 0) {
+                size_t bytes = (size_t)o->columns[i].n_segments
+                    * sizeof(*o->columns[i].segments);
+                fastchart_marimekko_segment *sc = emalloc(bytes);
+                for (int j = 0; j < o->columns[i].n_segments; j++) {
+                    sc[j] = o->columns[i].segments[j];
+                    sc[j].label = o->columns[i].segments[j].label
+                        ? estrdup(o->columns[i].segments[j].label) : NULL;
+                }
+                copy[i].segments = sc;
+            } else {
+                copy[i].segments = NULL;
+            }
+        }
+        o->columns = copy;
+    } else {
+        o->columns = NULL;
+    }
+}
+
+static void fastchart_vector_init_extras(fastchart_vector_obj *o)
+{
+    o->vectors = NULL;
+    o->vector_count = 0;
+    o->color_low_rgb = -1;
+    o->color_high_rgb = -1;
+    o->mag_min = 0.0;
+    o->mag_max = 0.0;
+}
+static void fastchart_vector_release_extras(fastchart_vector_obj *o)
+{
+    if (o->vectors) efree(o->vectors);
+    o->vectors = NULL;
+    o->vector_count = 0;
+}
+static void fastchart_vector_addref_extras(fastchart_vector_obj *o)
+{
+    if (o->vectors && o->vector_count > 0) {
+        size_t bytes = (size_t)o->vector_count * sizeof(*o->vectors);
+        fastchart_vector_datum *copy = emalloc(bytes);
+        memcpy(copy, o->vectors, bytes);
+        o->vectors = copy;
+    } else {
+        o->vectors = NULL;
+    }
+}
+
 /* Generates the create / free / clone trio for one chart class.
  * The handlers struct must already exist in static scope; MINIT
  * memcpy's std_object_handlers into it and sets offset / dtor. */
@@ -1436,6 +1683,13 @@ FASTCHART_DEFINE_LIFECYCLE(funnel,  fastchart_funnel_obj)
 FASTCHART_DEFINE_LIFECYCLE(waterfall, fastchart_waterfall_obj)
 FASTCHART_DEFINE_LIFECYCLE(heatmap, fastchart_heatmap_obj)
 FASTCHART_DEFINE_LIFECYCLE(linear_meter, fastchart_linear_meter_obj)
+FASTCHART_DEFINE_LIFECYCLE(bullet,    fastchart_bullet_obj)
+FASTCHART_DEFINE_LIFECYCLE(pareto,    fastchart_pareto_obj)
+FASTCHART_DEFINE_LIFECYCLE(calendar,  fastchart_calendar_obj)
+FASTCHART_DEFINE_LIFECYCLE(sunburst,  fastchart_sunburst_obj)
+FASTCHART_DEFINE_LIFECYCLE(sankey,    fastchart_sankey_obj)
+FASTCHART_DEFINE_LIFECYCLE(marimekko, fastchart_marimekko_obj)
+FASTCHART_DEFINE_LIFECYCLE(vector,    fastchart_vector_obj)
 
 /* Common locations for a sans-serif TTF that ships by default on the
  * platforms PIE supports. Probed in order; the first existing path
@@ -4100,7 +4354,21 @@ static int dispatch_svg_render(fastchart_obj *self, zend_class_entry *ce, fastch
         return fastchart_treemap_render_to_target((fastchart_treemap_obj *)self, t);
     if (ce == fastchart_scatter_chart_ce)
         return fastchart_scatter_render_to_target((fastchart_scatter_obj *)self, t);
-    /* All 19 chart families are wired above. Reaching this branch
+    if (ce == fastchart_bullet_chart_ce)
+        return fastchart_bullet_render_to_target((fastchart_bullet_obj *)self, t);
+    if (ce == fastchart_pareto_chart_ce)
+        return fastchart_pareto_render_to_target((fastchart_pareto_obj *)self, t);
+    if (ce == fastchart_calendar_heatmap_ce)
+        return fastchart_calendar_render_to_target((fastchart_calendar_obj *)self, t);
+    if (ce == fastchart_sunburst_chart_ce)
+        return fastchart_sunburst_render_to_target((fastchart_sunburst_obj *)self, t);
+    if (ce == fastchart_sankey_chart_ce)
+        return fastchart_sankey_render_to_target((fastchart_sankey_obj *)self, t);
+    if (ce == fastchart_marimekko_chart_ce)
+        return fastchart_marimekko_render_to_target((fastchart_marimekko_obj *)self, t);
+    if (ce == fastchart_vector_chart_ce)
+        return fastchart_vector_render_to_target((fastchart_vector_obj *)self, t);
+    /* All 26 chart families are wired above. Reaching this branch
      * means dispatch was invoked on a class entry the Chart base
      * doesn't acknowledge — defensive, should never happen. */
     zend_throw_error(NULL,
@@ -6418,6 +6686,635 @@ ZEND_METHOD(FastChart_LinearMeter, setValueFormat)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+/* --- BulletChart ---------------------------------------------------- */
+
+ZEND_METHOD(FastChart_BulletChart, setRange)
+{
+    double mn, mx;
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_DOUBLE(mn)
+        Z_PARAM_DOUBLE(mx)
+    ZEND_PARSE_PARAMETERS_END();
+    if (!isfinite(mn) || !isfinite(mx) || mx <= mn) {
+        zend_value_error("FastChart\\BulletChart::setRange() requires finite min < max");
+        RETURN_THROWS();
+    }
+    fastchart_bullet_obj *self = Z_FASTCHART_BULLET_OBJ_P(ZEND_THIS);
+    self->bullet_min = mn;
+    self->bullet_max = mx;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_BulletChart, setValue)
+{
+    double v;
+    ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_DOUBLE(v) ZEND_PARSE_PARAMETERS_END();
+    if (!isfinite(v)) {
+        zend_value_error("FastChart\\BulletChart::setValue() requires a finite number");
+        RETURN_THROWS();
+    }
+    fastchart_bullet_obj *self = Z_FASTCHART_BULLET_OBJ_P(ZEND_THIS);
+    self->bullet_value = v;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_BulletChart, setTarget)
+{
+    double v;
+    ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_DOUBLE(v) ZEND_PARSE_PARAMETERS_END();
+    /* NAN is the documented "clear target" sentinel. */
+    fastchart_bullet_obj *self = Z_FASTCHART_BULLET_OBJ_P(ZEND_THIS);
+    self->bullet_target = v;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_BulletChart, setBands)
+{
+    zval *bands;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(bands)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_bullet_obj *self = Z_FASTCHART_BULLET_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(bands);
+    int idx = 0;
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (idx >= FASTCHART_MAX_METER_ZONES) break;
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        HashTable *eht = Z_ARRVAL_P(entry);
+        double from, to;
+        zval *zfrom = zend_hash_str_find(eht, "from", sizeof("from") - 1);
+        zval *zto   = zend_hash_str_find(eht, "to",   sizeof("to") - 1);
+        if (!zfrom || !zto) continue;
+        if (fastchart_zval_to_double(zfrom, &from) != 0 || !isfinite(from)) continue;
+        if (fastchart_zval_to_double(zto,   &to)   != 0 || !isfinite(to))   continue;
+        if (to <= from) continue;
+        self->bands[idx].from = from;
+        self->bands[idx].to   = to;
+        self->bands[idx].color_rgb = -1;
+        zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc && Z_TYPE_P(zc) == IS_LONG) {
+            zend_long c = Z_LVAL_P(zc);
+            if (c >= 0 && c <= 0xFFFFFF) self->bands[idx].color_rgb = (int)c;
+        }
+        idx++;
+    } ZEND_HASH_FOREACH_END();
+    self->n_bands = idx;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_BulletChart, setValueFormat)
+{
+    zend_string *fmt;
+    ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_STR(fmt) ZEND_PARSE_PARAMETERS_END();
+    if (fastchart_validate_double_format(fmt, "BulletChart::setValueFormat") != 0) {
+        RETURN_THROWS();
+    }
+    fastchart_bullet_obj *self = Z_FASTCHART_BULLET_OBJ_P(ZEND_THIS);
+    if (self->bullet_value_format) zend_string_release(self->bullet_value_format);
+    self->bullet_value_format = ZSTR_LEN(fmt) == 0 ? NULL : zend_string_copy(fmt);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* --- ParetoChart ---------------------------------------------------- */
+
+ZEND_METHOD(FastChart_ParetoChart, setBars)
+{
+    zval *bars;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(bars)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_pareto_obj *self = Z_FASTCHART_PARETO_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(bars);
+    int n = zend_hash_num_elements(ht);
+    if (self->bars) {
+        for (int i = 0; i < self->bar_count; i++) {
+            if (self->bars[i].label) efree(self->bars[i].label);
+        }
+        efree(self->bars);
+        self->bars = NULL;
+    }
+    self->bar_count = 0;
+    if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+
+    fastchart_pareto_bar *parsed = ecalloc(n, sizeof(*parsed));
+    int kept = 0;
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        HashTable *eht = Z_ARRVAL_P(entry);
+        zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
+        double val;
+        if (!zv || fastchart_zval_to_double(zv, &val) != 0 || !isfinite(val) || val < 0) {
+            continue;
+        }
+        parsed[kept].value = val;
+        parsed[kept].color_rgb = -1;
+        const char *lbl = fastchart_label_or_null(
+            zend_hash_str_find(eht, "label", sizeof("label") - 1));
+        parsed[kept].label = lbl ? estrdup(lbl) : NULL;
+        zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc && Z_TYPE_P(zc) == IS_LONG) {
+            zend_long c = Z_LVAL_P(zc);
+            if (c >= 0 && c <= 0xFFFFFF) parsed[kept].color_rgb = (int)c;
+        }
+        kept++;
+    } ZEND_HASH_FOREACH_END();
+
+    if (kept == 0) { efree(parsed); RETURN_ZVAL(ZEND_THIS, 1, 0); }
+    self->bars = parsed;
+    self->bar_count = kept;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_ParetoChart, setLineColor)
+{
+    zend_long rgb;
+    ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_LONG(rgb) ZEND_PARSE_PARAMETERS_END();
+    FASTCHART_VALIDATE_RGB_OR_DEFAULT(rgb, "FastChart\\ParetoChart::setLineColor");
+    fastchart_pareto_obj *self = Z_FASTCHART_PARETO_OBJ_P(ZEND_THIS);
+    self->line_color = (int)rgb;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_ParetoChart, setValueFormat)
+{
+    zend_string *fmt;
+    ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_STR(fmt) ZEND_PARSE_PARAMETERS_END();
+    if (fastchart_validate_double_format(fmt, "ParetoChart::setValueFormat") != 0) {
+        RETURN_THROWS();
+    }
+    fastchart_pareto_obj *self = Z_FASTCHART_PARETO_OBJ_P(ZEND_THIS);
+    if (self->value_label_format) zend_string_release(self->value_label_format);
+    self->value_label_format = ZSTR_LEN(fmt) == 0 ? NULL : zend_string_copy(fmt);
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* --- CalendarHeatmap ------------------------------------------------- */
+
+/* Convert a "YYYY-MM-DD" string to a days-since-1970-01-01 index.
+ * Returns -1 on parse failure. Uses the proleptic Gregorian calendar
+ * via a closed-form day count to avoid pulling in mktime/gmtime —
+ * those carry timezone weight we don't need for date arithmetic. */
+static long fastchart_parse_iso_date(const char *s, size_t len)
+{
+    if (len != 10) return -1;
+    if (s[4] != '-' || s[7] != '-') return -1;
+    for (int i = 0; i < 10; i++) {
+        if (i == 4 || i == 7) continue;
+        if (s[i] < '0' || s[i] > '9') return -1;
+    }
+    int y = (s[0]-'0')*1000 + (s[1]-'0')*100 + (s[2]-'0')*10 + (s[3]-'0');
+    int m = (s[5]-'0')*10 + (s[6]-'0');
+    int d = (s[8]-'0')*10 + (s[9]-'0');
+    if (m < 1 || m > 12) return -1;
+    if (d < 1 || d > 31) return -1;
+
+    /* Howard Hinnant's days_from_civil algorithm — exact for all
+     * proleptic Gregorian dates within long range. */
+    y -= (m <= 2);
+    long era = (y >= 0 ? y : y - 399) / 400;
+    unsigned yoe = (unsigned)(y - era * 400);
+    unsigned doy = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1;
+    unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + (long)doe - 719468;
+}
+
+static int fastchart_calendar_day_cmp(const void *a, const void *b)
+{
+    long da = ((const fastchart_calendar_day *)a)->day;
+    long db = ((const fastchart_calendar_day *)b)->day;
+    return (da > db) - (da < db);
+}
+
+ZEND_METHOD(FastChart_CalendarHeatmap, setData)
+{
+    zval *data;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(data)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_calendar_obj *self = Z_FASTCHART_CALENDAR_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(data);
+    int n = zend_hash_num_elements(ht);
+    if (self->days) efree(self->days);
+    self->days = NULL;
+    self->day_count = 0;
+    if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+
+    fastchart_calendar_day *parsed = ecalloc(n, sizeof(*parsed));
+    int kept = 0;
+    zend_string *key;
+    zval *val;
+    ZEND_HASH_FOREACH_STR_KEY_VAL(ht, key, val) {
+        if (!key) continue;
+        long day = fastchart_parse_iso_date(ZSTR_VAL(key), ZSTR_LEN(key));
+        if (day < 0) continue;
+        double dv;
+        if (fastchart_zval_to_double(val, &dv) != 0 || !isfinite(dv)) continue;
+        parsed[kept].day = day;
+        parsed[kept].value = dv;
+        kept++;
+    } ZEND_HASH_FOREACH_END();
+
+    if (kept == 0) { efree(parsed); RETURN_ZVAL(ZEND_THIS, 1, 0); }
+    qsort(parsed, kept, sizeof(*parsed), fastchart_calendar_day_cmp);
+    self->days = parsed;
+    self->day_count = kept;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_CalendarHeatmap, setColorRamp)
+{
+    zend_long lo, hi;
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_LONG(lo)
+        Z_PARAM_LONG(hi)
+    ZEND_PARSE_PARAMETERS_END();
+    FASTCHART_VALIDATE_RGB(lo, "FastChart\\CalendarHeatmap::setColorRamp");
+    FASTCHART_VALIDATE_RGB(hi, "FastChart\\CalendarHeatmap::setColorRamp");
+    fastchart_calendar_obj *self = Z_FASTCHART_CALENDAR_OBJ_P(ZEND_THIS);
+    self->color_low_rgb  = (int)lo;
+    self->color_high_rgb = (int)hi;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* --- SunburstChart -------------------------------------------------- */
+
+/* Recursively flatten a tree into a depth-first node list. Each
+ * call appends one node and (optionally) recurses into its children.
+ * Returns 0 on success, -1 on a malformed node we want to abort on. */
+static int fastchart_sunburst_build_rec(
+    HashTable *ht, fastchart_sunburst_node **nodes, int *n, int *cap,
+    int parent, int depth, int *max_depth)
+{
+    if (depth > *max_depth) *max_depth = depth;
+    /* Grow array if needed. */
+    if (*n >= *cap) {
+        int new_cap = *cap ? *cap * 2 : 16;
+        *nodes = erealloc(*nodes, (size_t)new_cap * sizeof(**nodes));
+        *cap = new_cap;
+    }
+    int self_idx = (*n)++;
+    fastchart_sunburst_node *self = &(*nodes)[self_idx];
+    memset(self, 0, sizeof(*self));
+    self->parent = parent;
+    self->depth = depth;
+    self->color_rgb = -1;
+    self->child_first = -1;
+    self->child_count = 0;
+
+    const char *lbl = fastchart_label_or_null(
+        zend_hash_str_find(ht, "label", sizeof("label") - 1));
+    self->label = lbl ? estrdup(lbl) : NULL;
+    zval *zc = zend_hash_str_find(ht, "color", sizeof("color") - 1);
+    if (zc && Z_TYPE_P(zc) == IS_LONG) {
+        zend_long c = Z_LVAL_P(zc);
+        if (c >= 0 && c <= 0xFFFFFF) self->color_rgb = (int)c;
+    }
+    double val_set = 0.0;
+    bool have_val = false;
+    zval *zv = zend_hash_str_find(ht, "value", sizeof("value") - 1);
+    if (zv && fastchart_zval_to_double(zv, &val_set) == 0
+        && isfinite(val_set) && val_set >= 0) {
+        have_val = true;
+    }
+
+    /* Recurse into children. */
+    zval *zch = zend_hash_str_find(ht, "children", sizeof("children") - 1);
+    if (zch && Z_TYPE_P(zch) == IS_ARRAY) {
+        HashTable *cht = Z_ARRVAL_P(zch);
+        if (zend_hash_num_elements(cht) > 0) {
+            int first_child = *n;
+            int kept = 0;
+            zval *ce;
+            ZEND_HASH_FOREACH_VAL(cht, ce) {
+                if (Z_TYPE_P(ce) != IS_ARRAY) continue;
+                if (fastchart_sunburst_build_rec(
+                        Z_ARRVAL_P(ce), nodes, n, cap,
+                        self_idx, depth + 1, max_depth) != 0) {
+                    return -1;
+                }
+                kept++;
+            } ZEND_HASH_FOREACH_END();
+            self = &(*nodes)[self_idx];  /* erealloc may have moved it */
+            self->child_first = kept > 0 ? first_child : -1;
+            self->child_count = kept;
+        }
+    }
+
+    /* Aggregate value: explicit if leaf or if user set one; sum of
+     * children otherwise. */
+    if (self->child_count > 0 && !have_val) {
+        double sum = 0.0;
+        for (int i = 0; i < self->child_count; i++) {
+            sum += (*nodes)[self->child_first + i].value;
+        }
+        self->value = sum;
+    } else {
+        self->value = have_val ? val_set : 0.0;
+    }
+    return 0;
+}
+
+ZEND_METHOD(FastChart_SunburstChart, setHierarchy)
+{
+    zval *root;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(root)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_sunburst_obj *self = Z_FASTCHART_SUNBURST_OBJ_P(ZEND_THIS);
+    if (self->nodes) {
+        for (int i = 0; i < self->node_count; i++) {
+            if (self->nodes[i].label) efree(self->nodes[i].label);
+        }
+        efree(self->nodes);
+        self->nodes = NULL;
+    }
+    self->node_count = 0;
+    self->max_depth = 0;
+    self->total_value = 0.0;
+
+    fastchart_sunburst_node *nodes = NULL;
+    int n = 0, cap = 0, max_depth = 0;
+    if (fastchart_sunburst_build_rec(
+            Z_ARRVAL_P(root), &nodes, &n, &cap, -1, 0, &max_depth) != 0) {
+        if (nodes) {
+            for (int i = 0; i < n; i++) {
+                if (nodes[i].label) efree(nodes[i].label);
+            }
+            efree(nodes);
+        }
+        zend_value_error(
+            "FastChart\\SunburstChart::setHierarchy() received a malformed node");
+        RETURN_THROWS();
+    }
+    self->nodes = nodes;
+    self->node_count = n;
+    self->max_depth = max_depth;
+    self->total_value = n > 0 ? nodes[0].value : 0.0;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* --- SankeyChart ---------------------------------------------------- */
+
+ZEND_METHOD(FastChart_SankeyChart, setNodes)
+{
+    zval *nodes;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(nodes)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_sankey_obj *self = Z_FASTCHART_SANKEY_OBJ_P(ZEND_THIS);
+    if (self->nodes) {
+        for (int i = 0; i < self->node_count; i++) {
+            if (self->nodes[i].label) efree(self->nodes[i].label);
+        }
+        efree(self->nodes);
+        self->nodes = NULL;
+    }
+    self->node_count = 0;
+
+    HashTable *ht = Z_ARRVAL_P(nodes);
+    int n = zend_hash_num_elements(ht);
+    if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    fastchart_sankey_node *parsed = ecalloc(n, sizeof(*parsed));
+    int kept = 0;
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (Z_TYPE_P(entry) != IS_ARRAY) {
+            parsed[kept].label = NULL;
+            parsed[kept].color_rgb = -1;
+            kept++;
+            continue;
+        }
+        HashTable *eht = Z_ARRVAL_P(entry);
+        const char *lbl = fastchart_label_or_null(
+            zend_hash_str_find(eht, "label", sizeof("label") - 1));
+        parsed[kept].label = lbl ? estrdup(lbl) : NULL;
+        parsed[kept].color_rgb = -1;
+        zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc && Z_TYPE_P(zc) == IS_LONG) {
+            zend_long c = Z_LVAL_P(zc);
+            if (c >= 0 && c <= 0xFFFFFF) parsed[kept].color_rgb = (int)c;
+        }
+        kept++;
+    } ZEND_HASH_FOREACH_END();
+    self->nodes = parsed;
+    self->node_count = kept;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_SankeyChart, setLinks)
+{
+    zval *links;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(links)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_sankey_obj *self = Z_FASTCHART_SANKEY_OBJ_P(ZEND_THIS);
+    if (self->links) efree(self->links);
+    self->links = NULL;
+    self->link_count = 0;
+
+    HashTable *ht = Z_ARRVAL_P(links);
+    int n = zend_hash_num_elements(ht);
+    if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    fastchart_sankey_link *parsed = ecalloc(n, sizeof(*parsed));
+    int kept = 0;
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        HashTable *eht = Z_ARRVAL_P(entry);
+        zval *zf = zend_hash_str_find(eht, "from",  sizeof("from")  - 1);
+        zval *zt = zend_hash_str_find(eht, "to",    sizeof("to")    - 1);
+        zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
+        if (!zf || !zt || !zv) continue;
+        if (Z_TYPE_P(zf) != IS_LONG || Z_TYPE_P(zt) != IS_LONG) continue;
+        zend_long from = Z_LVAL_P(zf), to = Z_LVAL_P(zt);
+        double val;
+        if (fastchart_zval_to_double(zv, &val) != 0 || !isfinite(val) || val <= 0) {
+            continue;
+        }
+        if (from < 0 || from >= self->node_count) continue;
+        if (to   < 0 || to   >= self->node_count) continue;
+        if (from == to) continue;
+        parsed[kept].from = (int)from;
+        parsed[kept].to   = (int)to;
+        parsed[kept].value = val;
+        kept++;
+    } ZEND_HASH_FOREACH_END();
+    if (kept == 0) { efree(parsed); RETURN_ZVAL(ZEND_THIS, 1, 0); }
+    self->links = parsed;
+    self->link_count = kept;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* --- MarimekkoChart ------------------------------------------------- */
+
+ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
+{
+    zval *cols;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(cols)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_marimekko_obj *self = Z_FASTCHART_MARIMEKKO_OBJ_P(ZEND_THIS);
+    if (self->columns) {
+        for (int i = 0; i < self->column_count; i++) {
+            if (self->columns[i].label) efree(self->columns[i].label);
+            if (self->columns[i].segments) {
+                for (int j = 0; j < self->columns[i].n_segments; j++) {
+                    if (self->columns[i].segments[j].label) {
+                        efree(self->columns[i].segments[j].label);
+                    }
+                }
+                efree(self->columns[i].segments);
+            }
+        }
+        efree(self->columns);
+        self->columns = NULL;
+    }
+    self->column_count = 0;
+    self->total_width = 0.0;
+
+    HashTable *ht = Z_ARRVAL_P(cols);
+    int n = zend_hash_num_elements(ht);
+    if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    fastchart_marimekko_column *parsed = ecalloc(n, sizeof(*parsed));
+    int kept = 0;
+    double total_w = 0.0;
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        HashTable *eht = Z_ARRVAL_P(entry);
+        zval *zsegs = zend_hash_str_find(eht, "segments", sizeof("segments") - 1);
+        if (!zsegs || Z_TYPE_P(zsegs) != IS_ARRAY) continue;
+        HashTable *sht = Z_ARRVAL_P(zsegs);
+        int sn = zend_hash_num_elements(sht);
+        if (sn <= 0) continue;
+        fastchart_marimekko_segment *segs = ecalloc(sn, sizeof(*segs));
+        int skept = 0;
+        double col_total = 0.0;
+        zval *se;
+        ZEND_HASH_FOREACH_VAL(sht, se) {
+            if (Z_TYPE_P(se) != IS_ARRAY) continue;
+            HashTable *seh = Z_ARRVAL_P(se);
+            zval *zv = zend_hash_str_find(seh, "value", sizeof("value") - 1);
+            double val;
+            if (!zv || fastchart_zval_to_double(zv, &val) != 0
+                || !isfinite(val) || val <= 0) {
+                continue;
+            }
+            segs[skept].value = val;
+            segs[skept].color_rgb = -1;
+            const char *lbl = fastchart_label_or_null(
+                zend_hash_str_find(seh, "label", sizeof("label") - 1));
+            segs[skept].label = lbl ? estrdup(lbl) : NULL;
+            zval *zc = zend_hash_str_find(seh, "color", sizeof("color") - 1);
+            if (zc && Z_TYPE_P(zc) == IS_LONG) {
+                zend_long c = Z_LVAL_P(zc);
+                if (c >= 0 && c <= 0xFFFFFF) segs[skept].color_rgb = (int)c;
+            }
+            col_total += val;
+            skept++;
+        } ZEND_HASH_FOREACH_END();
+        if (skept == 0) { efree(segs); continue; }
+        const char *lbl = fastchart_label_or_null(
+            zend_hash_str_find(eht, "label", sizeof("label") - 1));
+        parsed[kept].label = lbl ? estrdup(lbl) : NULL;
+        parsed[kept].segments = segs;
+        parsed[kept].n_segments = skept;
+        parsed[kept].total = col_total;
+        total_w += col_total;
+        kept++;
+    } ZEND_HASH_FOREACH_END();
+    if (kept == 0) { efree(parsed); RETURN_ZVAL(ZEND_THIS, 1, 0); }
+    self->columns = parsed;
+    self->column_count = kept;
+    self->total_width = total_w;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* --- VectorChart ---------------------------------------------------- */
+
+ZEND_METHOD(FastChart_VectorChart, setVectors)
+{
+    zval *vecs;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(vecs)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_vector_obj *self = Z_FASTCHART_VECTOR_OBJ_P(ZEND_THIS);
+    if (self->vectors) efree(self->vectors);
+    self->vectors = NULL;
+    self->vector_count = 0;
+    self->mag_min = 0.0;
+    self->mag_max = 0.0;
+
+    HashTable *ht = Z_ARRVAL_P(vecs);
+    int n = zend_hash_num_elements(ht);
+    if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    fastchart_vector_datum *parsed = ecalloc(n, sizeof(*parsed));
+    int kept = 0;
+    double mag_min = 0.0, mag_max = 0.0;
+    bool first = true;
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        HashTable *eht = Z_ARRVAL_P(entry);
+        zval *zx = zend_hash_str_find(eht, "x",  sizeof("x")  - 1);
+        zval *zy = zend_hash_str_find(eht, "y",  sizeof("y")  - 1);
+        zval *zdx = zend_hash_str_find(eht, "dx", sizeof("dx") - 1);
+        zval *zdy = zend_hash_str_find(eht, "dy", sizeof("dy") - 1);
+        if (!zx || !zy || !zdx || !zdy) continue;
+        double x, y, dx, dy;
+        if (fastchart_zval_to_double(zx,  &x)  != 0 || !isfinite(x))  continue;
+        if (fastchart_zval_to_double(zy,  &y)  != 0 || !isfinite(y))  continue;
+        if (fastchart_zval_to_double(zdx, &dx) != 0 || !isfinite(dx)) continue;
+        if (fastchart_zval_to_double(zdy, &dy) != 0 || !isfinite(dy)) continue;
+        parsed[kept].x = x;
+        parsed[kept].y = y;
+        parsed[kept].dx = dx;
+        parsed[kept].dy = dy;
+        parsed[kept].color_rgb = -1;
+        zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc && Z_TYPE_P(zc) == IS_LONG) {
+            zend_long c = Z_LVAL_P(zc);
+            if (c >= 0 && c <= 0xFFFFFF) parsed[kept].color_rgb = (int)c;
+        }
+        double m = sqrt(dx * dx + dy * dy);
+        if (first || m < mag_min) mag_min = m;
+        if (first || m > mag_max) mag_max = m;
+        first = false;
+        kept++;
+    } ZEND_HASH_FOREACH_END();
+    if (kept == 0) { efree(parsed); RETURN_ZVAL(ZEND_THIS, 1, 0); }
+    self->vectors = parsed;
+    self->vector_count = kept;
+    self->mag_min = mag_min;
+    self->mag_max = mag_max;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_VectorChart, setColorRamp)
+{
+    zend_long lo, hi;
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_LONG(lo)
+        Z_PARAM_LONG(hi)
+    ZEND_PARSE_PARAMETERS_END();
+    FASTCHART_VALIDATE_RGB(lo, "FastChart\\VectorChart::setColorRamp");
+    FASTCHART_VALIDATE_RGB(hi, "FastChart\\VectorChart::setColorRamp");
+    fastchart_vector_obj *self = Z_FASTCHART_VECTOR_OBJ_P(ZEND_THIS);
+    self->color_low_rgb  = (int)lo;
+    self->color_high_rgb = (int)hi;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 PHP_MINIT_FUNCTION(fastchart)
 {
     /* Per-class handlers init. Each handlers struct gets its own
@@ -6454,6 +7351,13 @@ FASTCHART_INIT_HANDLERS(funnel,  fastchart_funnel_obj);
 FASTCHART_INIT_HANDLERS(waterfall, fastchart_waterfall_obj);
 FASTCHART_INIT_HANDLERS(heatmap, fastchart_heatmap_obj);
 FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
+    FASTCHART_INIT_HANDLERS(bullet,    fastchart_bullet_obj);
+    FASTCHART_INIT_HANDLERS(pareto,    fastchart_pareto_obj);
+    FASTCHART_INIT_HANDLERS(calendar,  fastchart_calendar_obj);
+    FASTCHART_INIT_HANDLERS(sunburst,  fastchart_sunburst_obj);
+    FASTCHART_INIT_HANDLERS(sankey,    fastchart_sankey_obj);
+    FASTCHART_INIT_HANDLERS(marimekko, fastchart_marimekko_obj);
+    FASTCHART_INIT_HANDLERS(vector,    fastchart_vector_obj);
     /* Symbol family handlers. Same pattern as the chart classes; the
      * lifecycle macro in fastchart_symbol.c emits the create / free /
      * clone trio with external linkage so this MINIT can wire them in. */
@@ -6522,6 +7426,27 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
 
     fastchart_linear_meter_ce  = register_class_FastChart_LinearMeter(fastchart_chart_ce);
     fastchart_linear_meter_ce->create_object = fastchart_linear_meter_create_object;
+
+    fastchart_bullet_chart_ce  = register_class_FastChart_BulletChart(fastchart_chart_ce);
+    fastchart_bullet_chart_ce->create_object = fastchart_bullet_create_object;
+
+    fastchart_pareto_chart_ce  = register_class_FastChart_ParetoChart(fastchart_chart_ce);
+    fastchart_pareto_chart_ce->create_object = fastchart_pareto_create_object;
+
+    fastchart_calendar_heatmap_ce = register_class_FastChart_CalendarHeatmap(fastchart_chart_ce);
+    fastchart_calendar_heatmap_ce->create_object = fastchart_calendar_create_object;
+
+    fastchart_sunburst_chart_ce = register_class_FastChart_SunburstChart(fastchart_chart_ce);
+    fastchart_sunburst_chart_ce->create_object = fastchart_sunburst_create_object;
+
+    fastchart_sankey_chart_ce = register_class_FastChart_SankeyChart(fastchart_chart_ce);
+    fastchart_sankey_chart_ce->create_object = fastchart_sankey_create_object;
+
+    fastchart_marimekko_chart_ce = register_class_FastChart_MarimekkoChart(fastchart_chart_ce);
+    fastchart_marimekko_chart_ce->create_object = fastchart_marimekko_create_object;
+
+    fastchart_vector_chart_ce = register_class_FastChart_VectorChart(fastchart_chart_ce);
+    fastchart_vector_chart_ce->create_object = fastchart_vector_create_object;
 
     /* Symbol family. Parallel hierarchy to Chart: Symbol (abstract)
      * → Barcode (abstract, 1D) and Symbol → QrCode (final, 2D).
