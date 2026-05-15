@@ -102,8 +102,23 @@ encoder from the file extension:
 ```
 
 `renderPng()`, `renderJpeg()`, and `renderWebp()` return the encoded
-bytes if you need them in memory. `setJpegQuality(int)` tunes the
-JPEG encoder (1..100, default 88).
+bytes if you need them in memory. Raster compression knobs:
+
+```php
+$chart->setJpegQuality(75);              // sticks on the chart instance;
+$chart->renderJpeg();                    // ...used by every render call
+$chart->renderJpeg(95);                  // per-call override (1..100)
+
+$chart->renderWebp();                    // default quality 90
+$chart->renderWebp(60);                  // smaller, lossier (1..100)
+
+$chart->renderToFile('/tmp/out.webp');   // setJpegQuality only affects
+                                         // .jpg; renderToFile uses the
+                                         // built-in WebP default
+```
+
+PNG is always lossless; there's no quality knob. The encoder is
+libpng with default filter selection.
 
 For vector output — dashboards, print, anywhere infinite-zoom matters
 — call `renderSvg()` on the same chart object:
