@@ -2,6 +2,21 @@
 Per-render font cache invalidates at draw entry: open_basedir narrowing between two draws of the same chart object is honored on every renderer
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+/* The test pins to /usr/share fonts because the open_basedir narrowing
+ * step needs a path that's reachable before the narrow and outside
+ * the narrowed dir afterwards. Windows / macOS hosts don't have
+ * /usr/share, so skip cleanly there. */
+$cands = [
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/usr/share/fonts/dejavu/DejaVuSans.ttf',
+    '/usr/share/fonts/TTF/DejaVuSans.ttf',
+];
+$ok = false;
+foreach ($cands as $c) { if (file_exists($c)) { $ok = true; break; } }
+if (!$ok) { echo "skip: no /usr/share font present\n"; }
+?>
 --FILE--
 <?php
 /* Regression for the open_basedir bypass via the per-render font
