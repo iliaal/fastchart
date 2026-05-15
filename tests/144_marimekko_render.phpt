@@ -2,6 +2,7 @@
 MarimekkoChart: variable-width stacked columns
 --EXTENSIONS--
 fastchart
+simplexml
 --FILE--
 <?php
 

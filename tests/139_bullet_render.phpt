@@ -2,6 +2,7 @@
 BulletChart: bands + performance bar + target tick
 --EXTENSIONS--
 fastchart
+simplexml
 --FILE--
 <?php
 

@@ -2,6 +2,7 @@
 VectorChart: arrow-on-grid vector field
 --EXTENSIONS--
 fastchart
+simplexml
 --FILE--
 <?php
 

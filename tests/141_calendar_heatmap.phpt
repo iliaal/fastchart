@@ -2,6 +2,7 @@
 CalendarHeatmap: day-grid layout with sparse data
 --EXTENSIONS--
 fastchart
+simplexml
 --FILE--
 <?php
 

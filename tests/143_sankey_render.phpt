@@ -2,6 +2,7 @@
 SankeyChart: bipartite flow ribbons
 --EXTENSIONS--
 fastchart
+simplexml
 --FILE--
 <?php
 

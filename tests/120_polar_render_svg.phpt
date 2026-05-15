@@ -3,6 +3,7 @@ PolarChart::renderSvg(): structural validation of vector output (rose + line)
 --EXTENSIONS--
 fastchart
 gd
+simplexml
 --INI--
 asan.detect_leaks=0
 --FILE--

@@ -2,6 +2,7 @@
 ParetoChart: bars + cumulative line overlay
 --EXTENSIONS--
 fastchart
+simplexml
 --FILE--
 <?php
 

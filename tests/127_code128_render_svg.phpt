@@ -3,6 +3,7 @@ Code128::renderSvg(): structural validation of vector output
 --EXTENSIONS--
 fastchart
 gd
+simplexml
 --INI--
 asan.detect_leaks=0
 --FILE--
