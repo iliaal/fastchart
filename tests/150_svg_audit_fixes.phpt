@@ -83,13 +83,21 @@ echo "boxplot_positional_validated: ",
     (preg_match('/height="-/', $c3->renderSvg()) ? "REGRESSION" : "ok"), "\n";
 
 /* Bonus: Surface/ContourChart::setGrid() now uses parse-then-swap
- * (was clear-then-parse). A type-error on a bad input must leave
- * the original grid intact. */
+ * (was clear-then-parse). The throw must come from INSIDE
+ * fastchart_parse_grid (not from ZEND_PARSE_PARAMETERS) — pass an
+ * oversized array that gets past Z_PARAM_ARRAY but trips the cell-
+ * count cap (FASTCHART_MAX_GRID_CELLS=10000) deep in the C body.
+ * That's the path the fix actually changed; an arg-parse failure
+ * would have already aborted before any clear-then-parse damage. */
+$rows = 200;
+$cols = 200;   /* 200*200 = 40000 > 10000 cell cap → throws inside parser */
+$oversized = array_fill(0, $rows, array_fill(0, $cols, 0.0));
 foreach (['SurfaceChart', 'ContourChart'] as $cls) {
     $fqn = "FastChart\\$cls";
     $c = (new $fqn(400, 300))->setGrid([[1, 2, 3], [4, 5, 6]]);
     $before = $c->renderSvg();
-    try { $c->setGrid('not an array'); } catch (\TypeError $e) {}
+    try { $c->setGrid($oversized); echo "grid_oversized_accepted_$cls: REGRESSION\n"; }
+    catch (\ValueError $e) {}
     $after = $c->renderSvg();
     echo "grid_atomic_$cls: ", ($before === $after ? "ok" : "fail"), "\n";
 }

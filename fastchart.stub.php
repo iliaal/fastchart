@@ -165,6 +165,19 @@ abstract class Chart
      * Outlines", or `text-to-path` in your SVG toolchain before
      * passing the bytes here.
      *
+     * **Rejected for safety, all throw `\ValueError`:**
+     * - SVG containing `data:image/` URIs (any case). plutosvg's
+     *   `<image href="data:image/...">` loader decodes the embedded
+     *   raster inline via libpng/libjpeg, bypassing the output
+     *   dimension caps below. Decode embedded images separately
+     *   if your workflow needs them.
+     * - SVG containing `<use>` elements (any case). plutosvg's
+     *   reference-expansion path is a billion-laughs vector — a
+     *   sub-2-KB SVG can trigger 10^8+ shape renders via nested
+     *   `<use>` fan-out. Inline the referenced content with
+     *   `<g transform="...">` to compose multiple chart fragments
+     *   instead.
+     *
      * Caps: SVG input ≤ 16 MB, output ≤ 4096 px per side and
      * ≤ 16M total pixels. Malformed XML or out-of-range dimensions
      * throw `\ValueError`. Rasterizer or encoder failure throws

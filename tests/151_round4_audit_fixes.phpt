@@ -1,5 +1,5 @@
 --TEST--
-Round-4 audit fixes: Sunburst atomic, <use> fan-out cap
+Round-4 audit fixes: Sunburst atomic, <use> rejection
 --EXTENSIONS--
 fastchart
 --FILE--
@@ -41,53 +41,68 @@ $c->setHierarchy([
 echo "sunburst_recoverable: ",
     ($c->renderSvg() !== $before ? "ok" : "fail"), "\n";
 
-/* A2: Chart::svgToPng/Jpeg/Webp() must reject SVG with > 256
- * <use> elements. plutosvg's <use href="#id"> renders the
- * referenced subtree inline; the cycle detector compares element
- * pointers along the ancestor chain but does NOT count fan-out.
- * A 2 KB SVG with 10 nested <g> levels, each containing 10x <use>
- * of the next, can trigger 10^10 shape renders (billion-laughs
- * equivalent). */
-$ok = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">'
-    . '<defs><g id="a"><rect width="10" height="10"/></g></defs>'
-    . '<use href="#a"/></svg>';
-$png = FastChart\Chart::svgToPng($ok);
-echo "one_use_ok: ", (substr($png, 0, 8) === "\x89PNG\r\n\x1A\n" ? "ok" : "fail"), "\n";
+/* A2: Chart::svgToPng/Jpeg/Webp() reject ANY <use> element. plutosvg's
+ * <use href="#id"> renderer walks the referenced subtree inline; the
+ * cycle detector compares element pointers along the ancestor chain
+ * but does NOT count fan-out. A 1.4 KB SVG with 8 nested <g> levels
+ * where each contains 10x <use> of the next triggers ~10^8 shape
+ * renders (~14s on commodity hardware) — billion-laughs equivalent
+ * that escapes any naive source-count cap.
+ *
+ * A prior fix capped source <use> count at 256; that was insufficient
+ * because nesting amplifies independently of source count. Reject
+ * any <use> at the entry point. */
+$benign = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">'
+        . '<rect width="100" height="100" fill="#FF0000"/></svg>';
+$png = FastChart\Chart::svgToPng($benign);
+echo "no_use_ok: ", (substr($png, 0, 8) === "\x89PNG\r\n\x1A\n" ? "ok" : "fail"), "\n";
 
-/* 257 <use> elements (one over the cap). */
-$many = str_repeat('<use href="#a"/>', 257);
-$bad_svg = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">'
-    . '<defs><g id="a"><rect width="10" height="10"/></g></defs>'
-    . $many . '</svg>';
+/* Single <use> — would have been accepted under the old count cap,
+ * now rejected. */
+$one_use = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">'
+         . '<defs><g id="a"><rect width="10" height="10"/></g></defs>'
+         . '<use href="#a"/></svg>';
 foreach (['svgToPng', 'svgToJpeg', 'svgToWebp'] as $m) {
     try {
-        FastChart\Chart::$m($bad_svg);
-        echo "fan_out_accepted_$m: REGRESSION\n";
+        FastChart\Chart::$m($one_use);
+        echo "use_accepted_$m: REGRESSION\n";
     } catch (\ValueError $e) {
-        echo "fan_out_rejected_$m: ",
+        echo "use_rejected_$m: ",
             (str_contains($e->getMessage(), '<use>') ? "ok" : "wrong-msg"), "\n";
     }
 }
 
-/* Boundary check: must NOT match <userdata or <usepath or <UseRange.
- * Tag-name boundary check (whitespace / > / /) keeps the pattern
- * narrow. The example below uses both <use> (1 instance) and an
- * unrelated <userdata>-like construct (in a comment, so plutosvg
- * skips it; the scanner has to also skip it). */
+/* The nested fan-out attack the count cap missed: only 71 source
+ * <use> tags but exponential expansion. Must also reject. */
+$fan_svg = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><defs>';
+$fan_svg .= '<g id="a"><rect width="1" height="1"/></g>';
+for ($i = 1; $i < 8; $i++) {
+    $prev = $i - 1 === 0 ? 'a' : 'g' . ($i - 1);
+    $cur  = "g$i";
+    $body = str_repeat("<use href=\"#$prev\"/>", 10);
+    $fan_svg .= "<g id=\"$cur\">$body</g>";
+}
+$fan_svg .= '</defs><use href="#g7"/></svg>';
+try {
+    FastChart\Chart::svgToPng($fan_svg);
+    echo "fanout_accepted: REGRESSION\n";
+} catch (\ValueError $e) {
+    echo "fanout_rejected: ok\n";
+}
+
+/* Boundary check: <userdata> must NOT trigger rejection. */
 $mixed = '<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50">'
        . '<!-- <usefulinfo>blah</usefulinfo> -->'
-       . '<defs><g id="a"><rect width="5" height="5"/></g></defs>'
-       . '<use href="#a"/></svg>';
+       . '<rect width="50" height="50" fill="#00FF00"/></svg>';
 $mixed_png = FastChart\Chart::svgToPng($mixed);
 echo "boundary_narrow_match: ",
     (substr($mixed_png, 0, 8) === "\x89PNG\r\n\x1A\n" ? "ok" : "fail"), "\n";
 
-/* Uppercase <USE > should also count toward the cap (defense-in-
- * depth even though plutosvg's tag lookup is lowercase). */
-$upper_uses = str_repeat('<USE href="#a"/>', 300);
+/* Uppercase <USE > also rejected (defense-in-depth even though
+ * plutosvg's tag lookup is lowercase). */
 $upper_svg = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">'
            . '<defs><g id="a"><rect/></g></defs>'
-           . $upper_uses . '</svg>';
+           . '<USE href="#a"/></svg>';
 try {
     FastChart\Chart::svgToPng($upper_svg);
     echo "upper_use_accepted: REGRESSION\n";
@@ -100,10 +115,11 @@ echo "ok\n";
 --EXPECT--
 sunburst_atomic: ok
 sunburst_recoverable: ok
-one_use_ok: ok
-fan_out_rejected_svgToPng: ok
-fan_out_rejected_svgToJpeg: ok
-fan_out_rejected_svgToWebp: ok
+no_use_ok: ok
+use_rejected_svgToPng: ok
+use_rejected_svgToJpeg: ok
+use_rejected_svgToWebp: ok
+fanout_rejected: ok
 boundary_narrow_match: ok
 upper_use_rejected: ok
 ok

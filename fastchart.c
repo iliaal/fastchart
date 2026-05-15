@@ -3497,38 +3497,40 @@ static int fastchart_svg_has_data_image(const char *s, size_t n)
     return 0;
 }
 
-/* Count "<use" occurrences in SVG bytes (case-insensitive on the tag
- * name; "<use" is 4 chars). plutosvg's <use href="#id"> at
- * vendor/plutosvg/source/plutosvg.c:2121 renders the referenced
- * subtree inline; its cycle detector compares element pointers along
- * the ancestor chain but does NOT count fan-out. A 2 KB SVG with
- * 10 nested <g> levels, each containing 10× <use> of the next, can
- * trigger 10^10 shape renders (billion-laughs equivalent). Cap the
- * caller's <use> count to a generous-but-bounded value at the entry
- * point. fastchart-side renderSvg / drawSvgFragment doesn't emit
- * <use> internally, so this cap only affects caller-supplied SVG.
- * Returns the count; caller compares against FC_SVG_MAX_USE_COUNT. */
-#define FC_SVG_MAX_USE_COUNT 256
-static size_t fastchart_svg_count_use_elements(const char *s, size_t n)
+/* Scan SVG bytes for a "<use" tag (case-insensitive). plutosvg's
+ * <use href="#id"> at vendor/plutosvg/source/plutosvg.c:2121
+ * renders the referenced subtree inline; its cycle detector
+ * compares element pointers along the ancestor chain but does NOT
+ * count fan-out. A 1.4 KB SVG defining 8 nested <g> levels where
+ * each contains 10x <use> of the next triggers ~10^8 shape renders
+ * and ~14 s of render time on commodity hardware — a billion-laughs
+ * equivalent that's well-shaped to evade any naive source-count
+ * cap (only 71 source <use> tags).
+ *
+ * Reject ANY <use> occurrence at the entry point. fastchart's own
+ * SVG output (renderSvg / drawSvgFragment) does not emit <use>;
+ * caller stitching workflows position fragments via
+ * <g transform="translate(...)"> instead. Rejection has no
+ * legitimate cost.
+ *
+ * Returns 1 if found, 0 otherwise. Tag-name boundary check
+ * (whitespace, '>', '/') keeps the pattern narrow so <userdata>
+ * and similar are not flagged. */
+static int fastchart_svg_has_use_element(const char *s, size_t n)
 {
-    static const char needle[] = "<use";
-    static const size_t nlen = sizeof(needle) - 1;
+    static const size_t nlen = 4;  /* "<use" */
     if (n < nlen) return 0;
-    size_t count = 0;
     for (size_t i = 0; i + nlen <= n; i++) {
         if (s[i] != '<') continue;
         char u = s[i + 1], s2 = s[i + 2], e = s[i + 3];
         if ((u != 'u' && u != 'U') || (s2 != 's' && s2 != 'S')
             || (e != 'e' && e != 'E')) continue;
-        /* Next char must be a tag-name boundary (whitespace, '>',
-         * or '/') so we don't match "<userdata" or similar. */
         char nxt = (i + nlen < n) ? s[i + nlen] : ' ';
         if (nxt != ' ' && nxt != '\t' && nxt != '\n' && nxt != '\r'
             && nxt != '>' && nxt != '/') continue;
-        count++;
-        if (count > FC_SVG_MAX_USE_COUNT) return count;  /* early bail */
+        return 1;
     }
-    return count;
+    return 0;
 }
 
 /* Shared front-half for the three static SVG-to-raster methods.
@@ -3564,16 +3566,18 @@ static int fastchart_svg_to_pixels(
     }
 
     /* <use> fan-out is a billion-laughs vector via plutosvg
-     * (see fastchart_svg_count_use_elements comment). Cap is
-     * generous — typical chart-stitching workflows don't use
-     * <use> at all. */
-    size_t use_count = fastchart_svg_count_use_elements(
-        ZSTR_VAL(svg), ZSTR_LEN(svg));
-    if (use_count > FC_SVG_MAX_USE_COUNT) {
+     * (see fastchart_svg_has_use_element comment). A source count
+     * cap is not enough because exponential expansion lives in
+     * level-nesting, not source-tag count — 71 source <use> tags
+     * can trigger 10^8 renders. Reject any <use>; fastchart's own
+     * SVG output doesn't emit it. */
+    if (fastchart_svg_has_use_element(ZSTR_VAL(svg), ZSTR_LEN(svg))) {
         zend_value_error(
-            "%s() SVG contains too many <use> elements (%zu, max %d) "
-            "— prevents billion-laughs fan-out via plutosvg",
-            method_name, use_count, FC_SVG_MAX_USE_COUNT);
+            "%s() SVG must not contain <use> elements "
+            "(<use href> reference expansion in plutosvg is a "
+            "billion-laughs vector — use <g transform=\"...\"> "
+            "to position content inline instead)",
+            method_name);
         return -1;
     }
 
