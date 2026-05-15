@@ -323,6 +323,36 @@ const char **fastchart_borrow_category_labels(fastchart_obj *b, int n)
     F(value_format) F(bg_image_path) F(y_axis_label_format) \
     F(x_axis_label_format) F(y_axis_title2)
 
+/* Recursive deep copy of a zend_array. zend_array_dup() copies the
+ * outer hash but only addrefs its entries — nested arrays remain
+ * shared, so a clone whose config already contains a list (e.g.
+ * "annotations") aborts the second mutation with refcount > 1.
+ * Walk the dup, replace each IS_ARRAY entry with its own deep copy.
+ * Strings and other immutable refcounted scalars are fine to share. */
+static zend_array *fc_zend_array_deep_dup(zend_array *src)
+{
+    zend_array *dst = zend_array_dup(src);
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(dst, entry) {
+        if (Z_TYPE_P(entry) == IS_ARRAY) {
+            zend_array *inner = fc_zend_array_deep_dup(Z_ARR_P(entry));
+            zval_ptr_dtor(entry);  /* drop shared ref from zend_array_dup */
+            ZVAL_ARR(entry, inner);
+        } else if (Z_TYPE_P(entry) == IS_REFERENCE) {
+            /* Plain config never produces references, but if a user
+             * shoved one in via reflection we still own a separate
+             * copy of the referenced array. */
+            zval *real = Z_REFVAL_P(entry);
+            if (Z_TYPE_P(real) == IS_ARRAY) {
+                zend_array *inner = fc_zend_array_deep_dup(Z_ARR_P(real));
+                zval_ptr_dtor(entry);
+                ZVAL_ARR(entry, inner);
+            }
+        }
+    } ZEND_HASH_FOREACH_END();
+    return dst;
+}
+
 static void fastchart_base_release_owned(fastchart_obj *b)
 {
 #define FC_RELEASE(field) if (b->field) zend_string_release(b->field);
@@ -383,12 +413,18 @@ static void fastchart_base_addref_owned(fastchart_obj *b)
     /* config is a real PHP HashTable wrapped in a zval; the lifecycle
      * macro's memcpy aliased the HashTable pointer between src and
      * dst. Setters that mutate config (addTextAnnotation,
-     * addOverlaySeries, addHorizontalLine, addVerticalLine, etc.)
-     * call zend_hash_str_update on an array whose refcount > 1, which
-     * Zend rejects with E_CORE_ERROR (SIGABRT, exit 134). Deep-copy
-     * the HashTable so dst owns its own independent array. */
+     * addOverlaySeries, addHorizontalLine, addVerticalLine, ...) call
+     * zend_hash_str_update / add_next_index_zval, both of which Zend
+     * rejects with E_CORE_ERROR (SIGABRT, exit 134) when the target
+     * array's refcount > 1. zend_array_dup() only separates the top
+     * level — inner arrays like config['annotations'] are still
+     * shared between src and dst, so a clone of a chart that already
+     * had an annotation re-aborts on the second add. Recursive deep
+     * copy gives dst full ownership of every nested array. Strings
+     * stay shared via refcount; they're immutable and never the
+     * target of a mutating hash op. */
     if (Z_TYPE(b->config) == IS_ARRAY) {
-        zend_array *dup = zend_array_dup(Z_ARRVAL(b->config));
+        zend_array *dup = fc_zend_array_deep_dup(Z_ARRVAL(b->config));
         ZVAL_ARR(&b->config, dup);
     } else {
         Z_TRY_ADDREF(b->config);  /* unreachable today; defensive */
