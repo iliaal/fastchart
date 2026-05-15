@@ -6,12 +6,14 @@
 // trees compile with the same -DPLUTOVG_BUILD_STATIC /
 // -DPLUTOSVG_BUILD_STATIC flags so their symbols stay internal.
 //
-// Library availability on the Windows builder comes from the
-// php-windows-builder action's `libs:` input
-// (freetype,libpng,libjpeg-turbo,libwebp). FreeType is mandatory;
-// the three codec libs are optional. The DLL/header layout the
-// action provides matches the standard PHP-on-Windows SDK shape
-// that ext/gd already consumes.
+// Library names + include paths follow ext/gd's config.w32 because
+// the PHP SDK deps layout (..\deps\lib\<libname>_a.lib;
+// ..\deps\include\<subdir>) is what the action's libs: input
+// deploys. Per-lib file resolution:
+//   freetype_a.lib + ..\deps\include\freetype2\ft2build.h
+//   libpng_a.lib   + ..\deps\include\libpng16\png.h
+//   libjpeg_a.lib  + ..\deps\include\jpeglib.h
+//   libwebp_a.lib  + ..\deps\include\webp\encode.h
 
 ARG_ENABLE("fastchart", "Enable fastchart support", "no");
 ARG_ENABLE("fastchart-dev", "Upgrade wrapper warnings to /WX (development builds)", "no");
@@ -20,10 +22,10 @@ if (PHP_FASTCHART != "no") {
 
     // FreeType is mandatory (text rendering: glyph metrics, family
     // name resolution, FT_Outline_Decompose for SVG_TEXT_PATHS).
-    if (CHECK_LIB("freetype.lib", "fastchart", PHP_FASTCHART) &&
+    if (CHECK_LIB("freetype_a.lib;freetype.lib", "fastchart", PHP_FASTCHART) &&
         CHECK_HEADER_ADD_INCLUDE("ft2build.h", "CFLAGS_FASTCHART",
-            PHP_FASTCHART + "\\..\\deps\\include\\freetype2;" +
-            PHP_FASTCHART + "\\..\\deps\\include")) {
+            PHP_FASTCHART + ";" + PHP_PHP_BUILD + "\\include\\freetype2;" +
+            PHP_PHP_BUILD + "\\include\\freetype")) {
         AC_DEFINE("HAVE_FREETYPE", 1, "Have FreeType");
     } else {
         WARNING("fastchart not enabled — freetype is required.");
@@ -38,7 +40,8 @@ if (PHP_FASTCHART != "no") {
         // "format not compiled in" error at call time. Mirrors the
         // config.m4 per-lib loop.
         if (CHECK_LIB("libpng_a.lib;libpng.lib", "fastchart", PHP_FASTCHART) &&
-            CHECK_HEADER_ADD_INCLUDE("png.h", "CFLAGS_FASTCHART")) {
+            CHECK_HEADER_ADD_INCLUDE("png.h", "CFLAGS_FASTCHART",
+                PHP_FASTCHART + ";" + PHP_PHP_BUILD + "\\include\\libpng16")) {
             AC_DEFINE("HAVE_LIBPNG", 1, "Have libpng");
             ADD_FLAG("CFLAGS_FASTCHART", "/DHAVE_LIBPNG=1");
             STDOUT.WriteLine("fastchart: libpng found");
@@ -47,7 +50,8 @@ if (PHP_FASTCHART != "no") {
         }
 
         if (CHECK_LIB("libjpeg_a.lib;libjpeg.lib", "fastchart", PHP_FASTCHART) &&
-            CHECK_HEADER_ADD_INCLUDE("jpeglib.h", "CFLAGS_FASTCHART")) {
+            CHECK_HEADER_ADD_INCLUDE("jpeglib.h", "CFLAGS_FASTCHART",
+                PHP_FASTCHART + ";" + PHP_PHP_BUILD + "\\include")) {
             AC_DEFINE("HAVE_LIBJPEG", 1, "Have libjpeg-turbo");
             ADD_FLAG("CFLAGS_FASTCHART", "/DHAVE_LIBJPEG=1");
             STDOUT.WriteLine("fastchart: libjpeg-turbo found");
@@ -56,7 +60,8 @@ if (PHP_FASTCHART != "no") {
         }
 
         if (CHECK_LIB("libwebp_a.lib;libwebp.lib", "fastchart", PHP_FASTCHART) &&
-            CHECK_HEADER_ADD_INCLUDE("webp/encode.h", "CFLAGS_FASTCHART")) {
+            CHECK_HEADER_ADD_INCLUDE("encode.h", "CFLAGS_FASTCHART",
+                PHP_FASTCHART + ";" + PHP_PHP_BUILD + "\\include\\webp")) {
             AC_DEFINE("HAVE_LIBWEBP", 1, "Have libwebp");
             ADD_FLAG("CFLAGS_FASTCHART", "/DHAVE_LIBWEBP=1");
             STDOUT.WriteLine("fastchart: libwebp found");
