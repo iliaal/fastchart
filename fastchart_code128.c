@@ -487,9 +487,9 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
     const char *text_font = NULL;
     int text_strip_h = 0;
     if (self->show_text && fastchart_default_font_path &&
-        php_check_open_basedir_ex(ZSTR_VAL(fastchart_default_font_path),
+        php_check_open_basedir_ex(fastchart_default_font_path,
                                   /*warn=*/0) == 0) {
-        text_font = ZSTR_VAL(fastchart_default_font_path);
+        text_font = fastchart_default_font_path;
         text_strip_h = H / 5;
         if (text_strip_h < 14) text_strip_h = 14;
         if (text_strip_h > H / 2) text_strip_h = H / 2;
