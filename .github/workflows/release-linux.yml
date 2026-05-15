@@ -6,16 +6,31 @@ name: Release Linux & macOS binaries
 # via php/pie-ext-binary-builder using PIE's pre-packaged-binary naming
 # convention.
 #
+# Linux build statically links the four codec deps (freetype, libpng,
+# libjpeg-turbo, libwebp). Otherwise the resulting .so picks up the
+# build host's soname for libjpeg (libjpeg.so.8 on Ubuntu, .so.62 on
+# Debian) and fails to load on the other lineage. The official
+# php:X.Y-cli Docker images are Debian-based; an .so.8-linked prebuilt
+# fails there with "libjpeg.so.8: cannot open shared object file".
+# Static linking eliminates all codec-lib NEEDED entries from the
+# produced .so — only libc / libm / libpthread / libz remain dynamic.
+# Trade: +~4min per build slot (cacheable; see Cache step below);
+# .so grows from ~4MB to ~10MB.
+#
+# macOS keeps the brew-installed dynamic libs. The Mach-O linker
+# resolves by install-name (absolute path baked into the .dylib at
+# build time), not by soname major, so the same compat issue doesn't
+# manifest. Homebrew lives at /opt/homebrew on Apple Silicon; the
+# prebuilt's install-name entries point there.
+#
 # 8.3 is intentionally absent: PIE's composer-default fallback
 # source-builds for any PHP version not covered by a prebuilt, so 8.3
 # users still get an install path; it just requires a build toolchain.
 # Drop the 8.4 lane when 8.4 hits actual EOL.
 #
 # macOS Intel (macos-13) is intentionally absent: GitHub's Intel runner
-# pool is too contended to ship reliably (jobs queue 30+ min on busy
-# days, blocking release closeout), and macOS 26 drops Intel support
-# anyway. Intel-Mac users source-build via PIE's composer-default
-# fallback, same path PHP 8.3 users already take.
+# pool is too contended to ship reliably, and macOS 26 drops Intel
+# support anyway.
 #
 # Linux musl (Alpine) is intentionally absent: shivammathur/setup-php
 # in Alpine containers needs more setup, and Alpine users get install
@@ -26,18 +41,27 @@ name: Release Linux & macOS binaries
 # in the php-ext block, so PIE prefers the prebuilt asset and falls
 # back to source-build when no asset matches.
 #
-# fastchart's config.m4 probes four pkg-config deps (freetype, libpng,
-# libjpeg-turbo, libwebp) before the build can proceed. The
-# Install build deps step lays them down before pie-ext-binary-builder
-# runs. plutovg / plutosvg / qrcodegen ship vendored under vendor/ so
-# don't need a system-package equivalent.
-#
 # Third-party actions are pinned to commit SHAs because this job has
 # contents:write -- a moved tag would inherit the release-write token.
 
 on:
   release:
     types: [published]
+  # workflow_dispatch lets a maintainer re-run the prebuilt build
+  # without cutting a fresh release tag — useful when validating
+  # static-link changes to release-linux.yml itself before publishing.
+  # The release step is gated on github.event_name == 'release' so a
+  # manual run produces artifacts (visible in the run summary) but
+  # does not upload to a release.
+  workflow_dispatch:
+
+# Pin the codec lib versions in one place. Bumping a version here
+# invalidates the static-deps cache key automatically.
+env:
+  FT_VERSION: '2.13.3'
+  PNG_VERSION: '1.6.43'
+  JPEG_VERSION: '3.0.4'
+  WEBP_VERSION: '1.4.0'
 
 jobs:
   build:
@@ -69,13 +93,89 @@ jobs:
           php-version: ${{ matrix.php }}
           coverage: none
 
-      - name: Install build deps (Ubuntu)
+      - name: Install host build tools (Linux)
         if: startsWith(matrix.os, 'ubuntu-')
         run: |
           sudo apt-get update -qq
+          # zlib is the only system lib we still link dynamically:
+          # libz.so.1 has been ABI-stable across distros for a decade.
+          # Everything else gets built from source as a static archive
+          # so the .so has no codec-lib NEEDED entries.
           sudo apt-get install -y --no-install-recommends \
-            libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev \
-            pkg-config
+            build-essential cmake nasm pkg-config zlib1g-dev
+
+      - name: Cache static codec libs (Linux)
+        if: startsWith(matrix.os, 'ubuntu-')
+        id: static-deps-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/static-deps
+          # Key on runner OS + lib versions. Bumping any of the env
+          # versions above forces a rebuild; same versions reuse the
+          # cached static archives across runs (~4min savings per slot).
+          key: static-deps-${{ matrix.os }}-ft${{ env.FT_VERSION }}-png${{ env.PNG_VERSION }}-jpeg${{ env.JPEG_VERSION }}-webp${{ env.WEBP_VERSION }}-v2
+
+      - name: Build static codec libs (Linux, cache miss)
+        if: startsWith(matrix.os, 'ubuntu-') && steps.static-deps-cache.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          PREFIX="$HOME/static-deps"
+          mkdir -p "$PREFIX" "$HOME/src" && cd "$HOME/src"
+          export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
+
+          # --- FreeType ---
+          # Disable every optional integration (zlib/bz2/png/brotli/
+          # harfbuzz) so the static archive links only against libc.
+          # PIC mandatory for the .a → .so inclusion downstream.
+          curl -sSL -o ft.tar.xz "https://download.savannah.gnu.org/releases/freetype/freetype-${FT_VERSION}.tar.xz"
+          tar xf ft.tar.xz && cd "freetype-${FT_VERSION}"
+          ./configure --prefix="$PREFIX" --enable-static --disable-shared \
+            --with-zlib=no --with-bzip2=no --with-png=no --with-brotli=no \
+            --with-harfbuzz=no CFLAGS=-fPIC
+          make -j$(nproc) install
+          cd ..
+
+          # --- libpng (linked against system zlib) ---
+          curl -sSL -o png.tar.gz "https://download.sourceforge.net/libpng/libpng-${PNG_VERSION}.tar.gz"
+          tar xf png.tar.gz && cd "libpng-${PNG_VERSION}"
+          ./configure --prefix="$PREFIX" --enable-static --disable-shared CFLAGS=-fPIC
+          make -j$(nproc) install
+          cd ..
+
+          # --- libjpeg-turbo (cmake; ENABLE_SHARED=0 produces libjpeg.a) ---
+          curl -sSL -o jpeg.tar.gz "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/${JPEG_VERSION}/libjpeg-turbo-${JPEG_VERSION}.tar.gz"
+          tar xf jpeg.tar.gz && cd "libjpeg-turbo-${JPEG_VERSION}"
+          mkdir build && cd build
+          cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+                -DCMAKE_INSTALL_LIBDIR=lib \
+                -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+                -DENABLE_SHARED=0 -DENABLE_STATIC=1 -DWITH_TURBOJPEG=0 ..
+          make -j$(nproc) install
+          cd ../..
+
+          # --- libwebp (static, no demux/mux extras) ---
+          curl -sSL -o webp.tar.gz "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${WEBP_VERSION}.tar.gz"
+          tar xf webp.tar.gz && cd "libwebp-${WEBP_VERSION}"
+          ./configure --prefix="$PREFIX" --enable-static --disable-shared \
+            --disable-libwebpmux --disable-libwebpdemux --disable-libwebpextras \
+            CFLAGS=-fPIC
+          make -j$(nproc) install
+          cd ..
+
+          # Clean source trees out of the cache path so only PREFIX/
+          # bytes get persisted.
+          rm -rf "$HOME/src"
+
+      - name: Export static-codec env (Linux)
+        if: startsWith(matrix.os, 'ubuntu-')
+        run: |
+          PREFIX="$HOME/static-deps"
+          {
+            echo "STATIC_DEPS_PREFIX=$PREFIX"
+            echo "PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig"
+          } >> "$GITHUB_ENV"
+          echo "Static prefix contents:"
+          ls -la "$PREFIX/lib"/*.a "$PREFIX/lib/pkgconfig"/ 2>&1 | head -20
 
       - name: Install build deps (macOS)
         if: startsWith(matrix.os, 'macos-')
@@ -89,9 +189,42 @@ jobs:
             echo "PKG_CONFIG_PATH=$(brew --prefix jpeg-turbo)/lib/pkgconfig:$(brew --prefix freetype)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
           } >> "$GITHUB_ENV"
 
-      - name: Build and upload prebuilt binary
+      - name: Build and upload prebuilt binary (Linux, static codecs)
+        if: startsWith(matrix.os, 'ubuntu-')
         uses: php/pie-ext-binary-builder@e35d497ffaac8ded7f05c62597d4387d849644d7 # 0.0.3
         with:
-          release-tag: ${{ github.event.release.tag_name }}
+          release-tag: ${{ github.event.release.tag_name || github.ref_name }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          configure-flags: '--enable-fastchart --with-fastchart-static-codecs=${{ env.STATIC_DEPS_PREFIX }}'
+
+      - name: Build and upload prebuilt binary (macOS)
+        if: startsWith(matrix.os, 'macos-')
+        uses: php/pie-ext-binary-builder@e35d497ffaac8ded7f05c62597d4387d849644d7 # 0.0.3
+        with:
+          release-tag: ${{ github.event.release.tag_name || github.ref_name }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           configure-flags: '--enable-fastchart'
+
+      - name: Verify codec libs are static (Linux)
+        if: startsWith(matrix.os, 'ubuntu-')
+        run: |
+          # PIE builds in a workspace under $HOME/.pie or
+          # $HOME/work/_temp; the .so lands in modules/. Find whichever
+          # path pie-ext-binary-builder used and assert no codec-lib
+          # NEEDED entries.
+          SO=$(find "$HOME" -name fastchart.so -path '*/modules/*' 2>/dev/null | head -1)
+          if [ -z "$SO" ]; then
+            SO=$(find / -name fastchart.so -path '*/modules/*' 2>/dev/null | head -1)
+          fi
+          if [ -z "$SO" ]; then
+            echo "fastchart.so not found after build"; exit 1
+          fi
+          echo "Inspecting $SO ($(stat -c '%s' "$SO") bytes)"
+          echo "--- NEEDED entries ---"
+          readelf -d "$SO" | grep NEEDED || true
+          echo "--- assertion ---"
+          if readelf -d "$SO" | grep NEEDED | grep -qiE "libjpeg|libpng|libwebp|libfreetype"; then
+            echo "FAIL: codec libs still appear in NEEDED — static link did not take"
+            exit 1
+          fi
+          echo "OK: codec libs are statically linked into fastchart.so"

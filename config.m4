@@ -6,6 +6,17 @@ PHP_ARG_ENABLE(fastchart, whether to enable fastchart support,
 PHP_ARG_ENABLE(fastchart-dev, whether to enable developer build flags,
 [  --enable-fastchart-dev  Upgrade wrapper warnings to -Werror plus strict checks], no, no)
 
+PHP_ARG_WITH(fastchart-static-codecs, prefix containing static-built codec libs,
+[  --with-fastchart-static-codecs[=PREFIX]
+                          Link freetype / libpng / libjpeg-turbo / libwebp
+                          statically from .a archives in PREFIX/lib. Set by
+                          the Linux prebuilt-binary release lane so the
+                          produced fastchart.so has no codec-lib NEEDED
+                          entries and works on both Ubuntu and Debian
+                          (which disagree on libjpeg soname major).
+                          PREFIX of "yes" uses whatever PKG_CONFIG_PATH
+                          already resolves.], no, no)
+
 if test "$PHP_FASTCHART" != "no"; then
 
   PHP_VERSION_ID=$($PHP_CONFIG --vernum)
@@ -27,20 +38,50 @@ if test "$PHP_FASTCHART" != "no"; then
     AC_MSG_ERROR([pkg-config not found. Install pkg-config (Debian/Ubuntu) or pkgconf (RHEL).])
   fi
 
+  dnl Static-codec-libs mode: prepend the static-prefix to
+  dnl PKG_CONFIG_PATH and switch every pkg-config invocation to
+  dnl --static. The --static flag emits transitive Requires.private
+  dnl deps onto the link line; in dynamic mode those deps were
+  dnl already pulled in via the shared libs' NEEDED entries so
+  dnl adding them again is harmless. In static mode they're the
+  dnl only way the linker finds the transitive .a archives.
+  dnl
+  dnl Also force --exclude-libs=ALL so the libjpeg / libpng / libwebp
+  dnl / libfreetype symbols pulled in from .a archives are localized
+  dnl in the produced fastchart.so rather than exported globally.
+  dnl Without this, loading ext/gd (which dynamically links the
+  dnl system libjpeg.so.8) alongside our statically-linked
+  dnl libjpeg-turbo 3.x in the same process collides on the
+  dnl jpeg_CreateCompress / jpeg_destroy / etc. symbol table —
+  dnl callers inside fastchart.so end up resolving against
+  dnl ext/gd's older libjpeg's symbol versions and JPEG_LIB_VERSION
+  dnl validation rejects the call ("encoder produced no output").
+  dnl -fvisibility=hidden in CFLAGS doesn't cover static-archive
+  dnl symbols; --exclude-libs is the link-time equivalent.
+  FC_PKGCFG_STATIC=""
+  if test "$PHP_FASTCHART_STATIC_CODECS" != "no"; then
+    if test "$PHP_FASTCHART_STATIC_CODECS" != "yes"; then
+      PKG_CONFIG_PATH="$PHP_FASTCHART_STATIC_CODECS/lib/pkgconfig:$PKG_CONFIG_PATH"
+      export PKG_CONFIG_PATH
+    fi
+    FC_PKGCFG_STATIC="--static"
+    AC_MSG_NOTICE([fastchart: static-codec-libs mode, PKG_CONFIG_PATH=$PKG_CONFIG_PATH])
+  fi
+
   if ! $FC_PKGCFG --exists freetype2; then
     AC_MSG_ERROR([pkg-config freetype2 not found. Install libfreetype-dev / freetype-devel — FreeType is required for text rendering.])
   fi
 
-  FC_PC_CFLAGS=`$FC_PKGCFG --cflags freetype2`
-  FC_PC_LIBS=`$FC_PKGCFG --libs   freetype2`
+  FC_PC_CFLAGS=`$FC_PKGCFG $FC_PKGCFG_STATIC --cflags freetype2`
+  FC_PC_LIBS=`$FC_PKGCFG $FC_PKGCFG_STATIC --libs   freetype2`
   FC_OPT_DEFS=""
 
   for fc_pair in libpng:HAVE_LIBPNG libjpeg:HAVE_LIBJPEG libwebp:HAVE_LIBWEBP; do
     fc_lib=`echo $fc_pair | cut -d: -f1`
     fc_def=`echo $fc_pair | cut -d: -f2`
     if $FC_PKGCFG --exists $fc_lib; then
-      FC_PC_CFLAGS="$FC_PC_CFLAGS `$FC_PKGCFG --cflags $fc_lib`"
-      FC_PC_LIBS="$FC_PC_LIBS `$FC_PKGCFG --libs $fc_lib`"
+      FC_PC_CFLAGS="$FC_PC_CFLAGS `$FC_PKGCFG $FC_PKGCFG_STATIC --cflags $fc_lib`"
+      FC_PC_LIBS="$FC_PC_LIBS `$FC_PKGCFG $FC_PKGCFG_STATIC --libs $fc_lib`"
       FC_OPT_DEFS="$FC_OPT_DEFS -D$fc_def=1"
       AC_MSG_NOTICE([fastchart: $fc_lib found, $fc_def enabled])
     else
@@ -50,6 +91,21 @@ if test "$PHP_FASTCHART" != "no"; then
 
   PHP_EVAL_INCLINE([$FC_PC_CFLAGS])
   PHP_EVAL_LIBLINE([$FC_PC_LIBS], FASTCHART_SHARED_LIBADD)
+
+  dnl In static-codec mode, append -Wl,--exclude-libs=ALL to the
+  dnl extension's link line so libjpeg / libpng / libwebp / libfreetype
+  dnl symbols pulled in from .a archives are localized in fastchart.so
+  dnl rather than exported globally. Without this, loading ext/gd in
+  dnl the same process (it dynamically links the system libjpeg.so.8)
+  dnl alongside our statically-linked libjpeg-turbo 3.x collides on
+  dnl the jpeg_CreateCompress / jpeg_destroy / etc. symbol table —
+  dnl JPEG_LIB_VERSION validation rejects the call ("encoder produced
+  dnl no output"). -fvisibility=hidden in CFLAGS doesn't cover
+  dnl static-archive symbols; --exclude-libs is the link-time
+  dnl equivalent.
+  if test "$PHP_FASTCHART_STATIC_CODECS" != "no"; then
+    FASTCHART_SHARED_LIBADD="$FASTCHART_SHARED_LIBADD -Wl,--exclude-libs=ALL"
+  fi
 
   PHP_SUBST(FASTCHART_SHARED_LIBADD)
 
