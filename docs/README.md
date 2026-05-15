@@ -708,6 +708,203 @@ file_put_contents('31b_two_charts.svg', $svg);
 
 ---
 
+## 43. Bullet chart (Stephen Few)
+
+`FastChart\BulletChart` packs a horizontal performance bar, a target
+tick, and qualitative background bands into one compact strip.
+Designed as a dashboard replacement for radial gauges.
+
+```php
+(new FastChart\BulletChart(560, 120))
+    ->setTitle('Q3 revenue vs plan')
+    ->setRange(0, 120)
+    ->setBands([
+        ['from' =>   0, 'to' =>  60, 'color' => 0xE5E7EB],
+        ['from' =>  60, 'to' =>  90, 'color' => 0xCBD5E1],
+        ['from' =>  90, 'to' => 120, 'color' => 0x94A3B8],
+    ])
+    ->setValue(78)
+    ->setTarget(95)
+    ->setValueFormat('%.0fM')
+    ->renderToFile('43_bullet.png');
+```
+
+![](examples/43_bullet.png)
+
+## 44. Pareto chart (80/20)
+
+`FastChart\ParetoChart` draws descending bars with a cumulative-
+percentage line overlay on a secondary axis. The line crosses 80%
+near the few categories that explain most of the total.
+
+```php
+(new FastChart\ParetoChart(680, 420))
+    ->setTitle('Defect categories, last quarter')
+    ->setBars([
+        ['label' => 'Soldering', 'value' => 142],
+        ['label' => 'Plating',   'value' =>  88],
+        ['label' => 'Etching',   'value' =>  61],
+        ['label' => 'Drilling',  'value' =>  34],
+        ['label' => 'Cutting',   'value' =>  21],
+        ['label' => 'Other',     'value' =>  12],
+    ])
+    ->setLineColor(0xE34A6F)
+    ->setShowValues(true)
+    ->renderToFile('44_pareto.png');
+```
+
+![](examples/44_pareto.png)
+
+## 45. Calendar heatmap
+
+`FastChart\CalendarHeatmap` builds a GitHub-style day-grid: seven
+day-of-week rows by N week columns, each cell colored by value via
+a low/high RGB ramp. Pass the data as `['YYYY-MM-DD' => value, ...]`.
+Missing days render in the palette grid color.
+
+```php
+$data = [];
+$start = strtotime('2025-05-01');
+$end   = strtotime('2026-04-30');
+for ($ts = $start; $ts <= $end; $ts += 86400) {
+    $iso = date('Y-m-d', $ts);
+    $dow = (int)date('w', $ts);
+    $base = $dow >= 1 && $dow <= 5 ? 6 : 1;
+    $v = max(0, $base + sin($ts / 86400 / 7) * 4);
+    if ($v > 0) $data[$iso] = round($v);
+}
+(new FastChart\CalendarHeatmap(900, 170))
+    ->setTitle('Daily commits, last 12 months')
+    ->setData($data)
+    ->setColorRamp(0xEBEDEF, 0x216E39)
+    ->renderToFile('45_calendar_heatmap.png');
+```
+
+![](examples/45_calendar_heatmap.png)
+
+## 46. Sunburst chart
+
+`FastChart\SunburstChart` is a nested ring donut. Each ring is one
+level of the hierarchy; each slice's angular span is proportional
+to its value. Interior nodes auto-sum their children when no
+explicit `value` is set.
+
+```php
+(new FastChart\SunburstChart(520, 520))
+    ->setTitle('Workload by team & project')
+    ->setHierarchy([
+        'label' => 'Eng',
+        'children' => [
+            ['label' => 'Backend', 'children' => [
+                ['label' => 'API',     'value' => 18],
+                ['label' => 'Workers', 'value' => 12],
+                ['label' => 'DB',      'value' =>  9],
+            ]],
+            ['label' => 'Frontend', 'children' => [
+                ['label' => 'Web',    'value' => 14],
+                ['label' => 'Mobile', 'value' => 10],
+            ]],
+            ['label' => 'Infra', 'children' => [
+                ['label' => 'CI',       'value' => 7],
+                ['label' => 'Observ.',  'value' => 5],
+                ['label' => 'Security', 'value' => 4],
+            ]],
+        ],
+    ])
+    ->renderToFile('46_sunburst.png');
+```
+
+![](examples/46_sunburst.png)
+
+## 47. Sankey diagram
+
+`FastChart\SankeyChart` lays out bipartite (or multi-layered) flow
+with bezier ribbons. Node columns come from a topological pass;
+ribbon widths are proportional to flow value. Links reference nodes
+by 0-based index into `setNodes()`.
+
+```php
+(new FastChart\SankeyChart(760, 400))
+    ->setTitle('Acquisition -> activation funnel')
+    ->setNodes([
+        ['label' => 'Search'],   ['label' => 'Social'],
+        ['label' => 'Referral'], ['label' => 'Landing'],
+        ['label' => 'Signup'],   ['label' => 'Active'],
+        ['label' => 'Churned'],
+    ])
+    ->setLinks([
+        ['from' => 0, 'to' => 3, 'value' => 60],
+        ['from' => 1, 'to' => 3, 'value' => 25],
+        ['from' => 2, 'to' => 3, 'value' => 15],
+        ['from' => 3, 'to' => 4, 'value' => 70],
+        ['from' => 3, 'to' => 6, 'value' => 30],
+        ['from' => 4, 'to' => 5, 'value' => 55],
+        ['from' => 4, 'to' => 6, 'value' => 15],
+    ])
+    ->renderToFile('47_sankey.png');
+```
+
+![](examples/47_sankey.png)
+
+## 48. Marimekko (Mekko) chart
+
+`FastChart\MarimekkoChart` is a stacked column where each column's
+width is proportional to its category total, and segment heights
+within each column are proportional to component values. Reads as
+percent-of-category and percent-of-total in one shape.
+
+```php
+(new FastChart\MarimekkoChart(700, 480))
+    ->setTitle('Revenue mix by region & product')
+    ->setColumns([
+        ['label' => 'NA',   'segments' => [
+            ['label' => 'Hardware', 'value' => 80, 'color' => 0x2563EB],
+            ['label' => 'Services', 'value' => 50, 'color' => 0x10B981],
+            ['label' => 'Cloud',    'value' => 70, 'color' => 0xF59E0B],
+        ]],
+        ['label' => 'EMEA', 'segments' => [
+            ['label' => 'Hardware', 'value' => 45, 'color' => 0x2563EB],
+            ['label' => 'Services', 'value' => 35, 'color' => 0x10B981],
+            ['label' => 'Cloud',    'value' => 25, 'color' => 0xF59E0B],
+        ]],
+        ['label' => 'APAC', 'segments' => [
+            ['label' => 'Hardware', 'value' => 30, 'color' => 0x2563EB],
+            ['label' => 'Services', 'value' => 15, 'color' => 0x10B981],
+            ['label' => 'Cloud',    'value' => 40, 'color' => 0xF59E0B],
+        ]],
+    ])
+    ->renderToFile('48_marimekko.png');
+```
+
+![](examples/48_marimekko.png)
+
+## 49. Vector chart
+
+`FastChart\VectorChart` draws an arrow at each `(x, y)` anchor
+pointing in the `(dx, dy)` direction. Arrow length is proportional
+to vector magnitude relative to the field's max; `setColorRamp()`
+optionally tints arrows by magnitude.
+
+```php
+$vecs = [];
+for ($x = 0; $x <= 10; $x++) {
+    for ($y = 0; $y <= 10; $y++) {
+        $vecs[] = ['x' => $x, 'y' => $y,
+                   'dx' => -($y - 5) * 0.3,
+                   'dy' =>  ($x - 5) * 0.3];
+    }
+}
+(new FastChart\VectorChart(560, 520))
+    ->setTitle('Rotational vector field')
+    ->setVectors($vecs)
+    ->setColorRamp(0xDDE7FF, 0x1E3A8A)
+    ->renderToFile('49_vector.png');
+```
+
+![](examples/49_vector.png)
+
+---
+
 ## 41. Code 128 barcode (1D)
 
 `FastChart\Code128` ships a complete ISO/IEC 15417 encoder. Three
