@@ -165,32 +165,33 @@ add the rasterize cost on top of the SVG-only number.
 
 | Chart        | SVG ms | PNG ms | WebP ms | JPG ms |
 |--------------|-------:|-------:|--------:|-------:|
-| AreaChart    |    8.2 |   79.5 |   112.1 |   34.8 |
-| BarChart     |   13.4 |   75.6 |   109.2 |   40.3 |
-| BoxPlot      |    5.2 |   65.5 |   101.2 |   31.5 |
-| BubbleChart  |    3.0 |   85.0 |   118.3 |   39.8 |
-| ContourChart |    3.1 |   79.5 |   118.3 |   35.7 |
-| Funnel       |    5.1 |   63.2 |   102.1 |   29.5 |
-| GanttChart   |    6.8 |   66.7 |    99.2 |   31.6 |
-| GaugeChart   |    1.6 |   69.8 |   101.8 |   28.8 |
-| Heatmap      |    1.9 |   63.7 |   100.1 |   32.8 |
-| LineChart    |    6.4 |   75.6 |   119.5 |   36.5 |
-| LinearMeter  |    1.6 |   65.8 |    90.1 |   24.8 |
-| PieChart     |    3.6 |   72.6 |   105.0 |   32.9 |
-| PolarChart   |    1.4 |   72.4 |   106.5 |   31.7 |
-| RadarChart   |    4.0 |   76.2 |   110.8 |   35.9 |
-| ScatterChart |    5.8 |   70.7 |    99.7 |   33.2 |
-| StockChart   |    9.8 |   81.6 |   121.3 |   41.3 |
-| SurfaceChart |    2.5 |   62.6 |   100.3 |   28.8 |
-| Treemap      |    6.1 |   67.2 |   105.2 |   30.7 |
-| Waterfall    |    5.9 |   65.9 |   104.0 |   31.5 |
+| AreaChart    |    5.7 |   71.7 |    54.4 |   34.5 |
+| BarChart     |   11.0 |   75.8 |    57.0 |   38.8 |
+| BoxPlot      |    4.4 |   65.0 |    47.5 |   31.6 |
+| BubbleChart  |    2.6 |   90.9 |    62.7 |   38.6 |
+| ContourChart |    3.0 |   79.1 |    60.0 |   35.3 |
+| Funnel       |    4.2 |   62.6 |    47.4 |   30.9 |
+| GanttChart   |    5.7 |   65.9 |    48.8 |   30.8 |
+| GaugeChart   |    1.2 |   69.4 |    49.7 |   29.1 |
+| Heatmap      |    1.7 |   69.3 |    52.1 |   34.5 |
+| LineChart    |    5.4 |   74.2 |    55.5 |   34.3 |
+| LinearMeter  |    1.4 |   62.7 |    40.7 |   25.2 |
+| PieChart     |    2.8 |   71.6 |    51.9 |   33.0 |
+| PolarChart   |    1.2 |   73.7 |    51.7 |   31.8 |
+| RadarChart   |    3.7 |   75.3 |    56.2 |   36.5 |
+| ScatterChart |    5.0 |   72.6 |    51.1 |   34.6 |
+| StockChart   |    8.4 |   80.8 |    63.3 |   41.0 |
+| SurfaceChart |    2.3 |   64.7 |    46.4 |   28.3 |
+| Treemap      |    4.8 |   65.0 |    48.5 |   31.5 |
+| Waterfall    |    5.2 |   65.2 |    48.3 |   31.1 |
 
 SVG is in the single-digit-ms range across the board because there's
 no rasterization; the backend appends strings into a `smart_str`.
-PNG and JPG land in the 60–85 ms band; WebP is the slowest encoder
-(libwebp's encoder costs more than libpng / libjpeg-turbo for our
-typical chart-shaped images). All four formats stay under 125 ms
-at 1080p on one thread.
+The raster encoders split into three bands: JPG fastest (25-41 ms,
+libjpeg-turbo with 4:2:0 subsampling), WebP middle (40-63 ms,
+libwebp with `WEBP_PRESET_DRAWING` + method=2 + multi-thread), PNG
+slowest (62-91 ms, libpng's deflate dominates). All four formats
+stay under 95 ms at 1080p on one thread.
 
 Repro the numbers locally:
 
