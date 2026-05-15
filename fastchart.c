@@ -3469,6 +3469,34 @@ ZEND_METHOD(FastChart_Chart, setWebpMode)
 
 /* --- Chart::svgToPng/Jpeg/Webp() ---------------------------------- */
 
+/* Scan SVG bytes for "data:image/" (case-insensitive) substring.
+ * plutosvg's <image href="data:image/(png|jpg|jpeg);base64,..."> loader
+ * decodes the embedded raster directly via libpng/libjpeg, outside
+ * fastchart's source-image dim caps. A 10x10 root SVG with a 4097x4097
+ * embedded PNG would otherwise allocate ~67 MB inside plutosvg before
+ * our cap check sees the actual rasterized dims. Reject any SVG that
+ * contains the substring — callers who legitimately need embedded
+ * raster can decode their images separately.
+ * Returns 1 if found, 0 otherwise. Linear scan; no allocation. */
+static int fastchart_svg_has_data_image(const char *s, size_t n)
+{
+    static const char needle[] = "data:image/";
+    static const size_t nlen = sizeof(needle) - 1;
+    if (n < nlen) return 0;
+    for (size_t i = 0; i + nlen <= n; i++) {
+        size_t j = 0;
+        while (j < nlen) {
+            char a = s[i + j];
+            char b = needle[j];
+            if (a >= 'A' && a <= 'Z') a = (char)(a + ('a' - 'A'));
+            if (a != b) break;
+            j++;
+        }
+        if (j == nlen) return 1;
+    }
+    return 0;
+}
+
 /* Shared front-half for the three static SVG-to-raster methods.
  * Validates input bytes, extracts intrinsic dimensions, enforces
  * dim caps, rasterizes via plutosvg + plutovg. On success the
@@ -3487,6 +3515,17 @@ static int fastchart_svg_to_pixels(
         zend_value_error(
             "%s() SVG input must be 1..%d bytes",
             method_name, FC_SVG_MAX_BYTES);
+        return -1;
+    }
+
+    /* Embedded data URI images bypass fastchart's dim caps via the
+     * plutosvg side door (see fastchart_svg_has_data_image comment). */
+    if (fastchart_svg_has_data_image(ZSTR_VAL(svg), ZSTR_LEN(svg))) {
+        zend_value_error(
+            "%s() SVG must not contain data:image/ URIs "
+            "(embedded raster bypasses output dimension caps; "
+            "decode embedded images separately)",
+            method_name);
         return -1;
     }
 
@@ -4445,18 +4484,28 @@ ZEND_METHOD(FastChart_LineChart, setSeries)
         Z_PARAM_ARRAY(arr)
     ZEND_PARSE_PARAMETERS_END();
     fastchart_line_obj *self = Z_FASTCHART_LINE_OBJ_P(ZEND_THIS);
-    fastchart_series_array_release(self->series, self->n_series);
-    self->n_series = 0;
-    self->max_len = 0;
+    /* Parse into a stack-local temp so partial-failure (e.g. strict
+     * mode rejecting series N+1) doesn't leave self with a mangled
+     * prefix of the new data. On failure we release temp; on success
+     * we release the old self->series then memcpy temp in and zero
+     * temp so its destructor is a no-op. */
+    fastchart_series_t temp[FASTCHART_MAX_SERIES];
+    fastchart_series_array_init(temp, FASTCHART_MAX_SERIES);
+    int temp_n = 0, temp_max_len = 0;
     int flags = FC_SERIES_F_COLORS | FC_SERIES_F_RIGHTAXIS;
     if (self->strict) flags |= FC_SERIES_F_STRICT;
-    if (fastchart_collect_series_into(arr, self->series, &self->n_series,
-                                      &self->max_len, flags) != 0) {
+    if (fastchart_collect_series_into(arr, temp, &temp_n,
+                                      &temp_max_len, flags) != 0) {
+        fastchart_series_array_release(temp, temp_n);
         if (!EG(exception)) {
             zend_value_error("FastChart\\LineChart::setSeries() expects a numeric list or list of {data: [...], label?, colors?, axis?}");
         }
         RETURN_THROWS();
     }
+    fastchart_series_array_release(self->series, self->n_series);
+    memcpy(self->series, temp, sizeof(temp));
+    self->n_series = temp_n;
+    self->max_len  = temp_max_len;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -4467,18 +4516,23 @@ ZEND_METHOD(FastChart_AreaChart, setSeries)
         Z_PARAM_ARRAY(arr)
     ZEND_PARSE_PARAMETERS_END();
     fastchart_area_obj *self = Z_FASTCHART_AREA_OBJ_P(ZEND_THIS);
-    fastchart_series_array_release(self->series, self->n_series);
-    self->n_series = 0;
-    self->max_len = 0;
+    fastchart_series_t temp[FASTCHART_MAX_SERIES];
+    fastchart_series_array_init(temp, FASTCHART_MAX_SERIES);
+    int temp_n = 0, temp_max_len = 0;
     int flags = FC_SERIES_F_RIGHTAXIS;
     if (self->strict) flags |= FC_SERIES_F_STRICT;
-    if (fastchart_collect_series_into(arr, self->series, &self->n_series,
-                                      &self->max_len, flags) != 0) {
+    if (fastchart_collect_series_into(arr, temp, &temp_n,
+                                      &temp_max_len, flags) != 0) {
+        fastchart_series_array_release(temp, temp_n);
         if (!EG(exception)) {
             zend_value_error("FastChart\\AreaChart::setSeries() expects a numeric list or list of {data: [...], label?, axis?}");
         }
         RETURN_THROWS();
     }
+    fastchart_series_array_release(self->series, self->n_series);
+    memcpy(self->series, temp, sizeof(temp));
+    self->n_series = temp_n;
+    self->max_len  = temp_max_len;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -4489,19 +4543,24 @@ ZEND_METHOD(FastChart_BarChart, setSeries)
         Z_PARAM_ARRAY(arr)
     ZEND_PARSE_PARAMETERS_END();
     fastchart_bar_obj *self = Z_FASTCHART_BAR_OBJ_P(ZEND_THIS);
-    fastchart_series_array_release(self->series, self->n_series);
-    self->n_series = 0;
-    self->max_len = 0;
+    fastchart_series_t temp[FASTCHART_MAX_SERIES];
+    fastchart_series_array_init(temp, FASTCHART_MAX_SERIES);
+    int temp_n = 0, temp_max_len = 0;
     int flags = FC_SERIES_F_COLORS;
     if (self->bar_floating) flags |= FC_SERIES_F_FLOATING;
     if (self->strict) flags |= FC_SERIES_F_STRICT;
-    if (fastchart_collect_series_into(arr, self->series, &self->n_series,
-                                      &self->max_len, flags) != 0) {
+    if (fastchart_collect_series_into(arr, temp, &temp_n,
+                                      &temp_max_len, flags) != 0) {
+        fastchart_series_array_release(temp, temp_n);
         if (!EG(exception)) {
             zend_value_error("FastChart\\BarChart::setSeries() expects a numeric list or list of {data: [...], label?, colors?}");
         }
         RETURN_THROWS();
     }
+    fastchart_series_array_release(self->series, self->n_series);
+    memcpy(self->series, temp, sizeof(temp));
+    self->n_series = temp_n;
+    self->max_len  = temp_max_len;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -5251,12 +5310,16 @@ ZEND_METHOD(FastChart_SurfaceChart, setGrid)
         Z_PARAM_ARRAY(arr)
     ZEND_PARSE_PARAMETERS_END();
     fastchart_surface_obj *self = Z_FASTCHART_SURFACE_OBJ_P(ZEND_THIS);
-    if (self->grid.cells) { efree(self->grid.cells); self->grid.cells = NULL; }
-    self->grid.rows = 0;
-    self->grid.cols = 0;
-    if (fastchart_parse_grid(arr, &self->grid, "FastChart\\SurfaceChart::setGrid()") != 0) {
+    /* Parse-then-swap (matches Heatmap::setGrid): partial-failure
+     * inside fastchart_parse_grid used to leave self->grid with a
+     * NULL cells pointer + zero rows/cols, silently wiping the
+     * caller's existing grid. */
+    fastchart_grid parsed = { NULL, 0, 0 };
+    if (fastchart_parse_grid(arr, &parsed, "FastChart\\SurfaceChart::setGrid()") != 0) {
         RETURN_THROWS();
     }
+    if (self->grid.cells) efree(self->grid.cells);
+    self->grid = parsed;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -5267,12 +5330,12 @@ ZEND_METHOD(FastChart_ContourChart, setGrid)
         Z_PARAM_ARRAY(arr)
     ZEND_PARSE_PARAMETERS_END();
     fastchart_contour_obj *self = Z_FASTCHART_CONTOUR_OBJ_P(ZEND_THIS);
-    if (self->grid.cells) { efree(self->grid.cells); self->grid.cells = NULL; }
-    self->grid.rows = 0;
-    self->grid.cols = 0;
-    if (fastchart_parse_grid(arr, &self->grid, "FastChart\\ContourChart::setGrid()") != 0) {
+    fastchart_grid parsed = { NULL, 0, 0 };
+    if (fastchart_parse_grid(arr, &parsed, "FastChart\\ContourChart::setGrid()") != 0) {
         RETURN_THROWS();
     }
+    if (self->grid.cells) efree(self->grid.cells);
+    self->grid = parsed;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -5624,6 +5687,19 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxes)
             z = zend_hash_index_find(eh, 2); if (!z || fastchart_zval_to_double(z, &out->median) != 0) continue;
             z = zend_hash_index_find(eh, 3); if (!z || fastchart_zval_to_double(z, &out->q3) != 0) continue;
             z = zend_hash_index_find(eh, 4); if (!z || fastchart_zval_to_double(z, &out->max) != 0) continue;
+        }
+        /* Five-number summaries are monotonic by definition. Unordered
+         * input would render as negative-height SVG rects downstream.
+         * Drop the malformed entry — matches the silent-drop policy
+         * applied to other setters (e.g. setVectors with NaN). */
+        if (!(out->min <= out->q1 && out->q1 <= out->median
+              && out->median <= out->q3 && out->q3 <= out->max)) {
+            fc_efree_opt(out->label);
+            fc_efree_opt(out->outliers);
+            out->label = NULL;
+            out->outliers = NULL;
+            out->outlier_count = 0;
+            continue;
         }
         slot++;
     } ZEND_HASH_FOREACH_END();
