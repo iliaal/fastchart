@@ -144,6 +144,60 @@ abstract class Chart
 
     public static function version(): string {}
 
+    /**
+     * Rasterize a caller-supplied SVG document to PNG bytes via the
+     * same plutosvg + plutovg + libpng pipeline that powers
+     * `renderPng()`. Useful for converting stitched
+     * `drawSvgFragment()` output back to raster, or for any
+     * SVG-bytes → PNG conversion that fastchart can serve in-process
+     * (no fork / ImageMagick dependency).
+     *
+     * Output dimensions are read from the root `<svg>` element's
+     * `width` / `height` / `viewBox`. Percentage dimensions are
+     * rejected — fastchart doesn't carry an outer viewport.
+     *
+     * **SVG `<text>` elements are not rendered.** plutovg has no
+     * text engine; fastchart's own SVG output flattens text to
+     * `<path>` data via `SVG_TEXT_PATHS` mode before rasterizing.
+     * Caller-supplied SVG must do the same — `<text>` elements
+     * survive parsing but produce no glyph geometry in the output.
+     * Use Inkscape's "Object to Path", Illustrator's "Create
+     * Outlines", or `text-to-path` in your SVG toolchain before
+     * passing the bytes here.
+     *
+     * Caps: SVG input ≤ 16 MB, output ≤ 4096 px per side and
+     * ≤ 16M total pixels. Malformed XML or out-of-range dimensions
+     * throw `\ValueError`. Rasterizer or encoder failure throws
+     * `\Error`.
+     */
+    public static function svgToPng(string $svg): string {}
+
+    /**
+     * Rasterize SVG to JPEG bytes. Same constraints as
+     * `svgToPng()`, plus a flat background color (`$bgRgb`,
+     * 24-bit RGB, default white `0xFFFFFF`) is composited under
+     * the rasterized output before JPEG encoding — JPEG has no
+     * alpha channel, so transparent SVG regions would otherwise
+     * render as black.
+     *
+     * `$quality` is 1..100; default 88 matches the chart-side
+     * default. The encoder runs libjpeg-turbo with
+     * `optimize_coding=TRUE` and 4:2:0 chroma subsampling.
+     */
+    public static function svgToJpeg(string $svg, int $quality = 88,
+                                      int $bgRgb = 0xFFFFFF): string {}
+
+    /**
+     * Rasterize SVG to WebP bytes. Same constraints as
+     * `svgToPng()`. `$quality` is 1..100; ignored when
+     * `$mode === Chart::WEBP_LOSSLESS`. `$mode` is one of
+     * `WEBP_DRAWING` (default), `WEBP_PHOTO`, `WEBP_LOSSLESS`,
+     * `WEBP_FAST` — see the `WEBP_*` constants for the per-mode
+     * encoder configuration.
+     */
+    public static function svgToWebp(string $svg, int $quality = 90,
+                                      int $mode = Chart::WEBP_DRAWING): string {}
+
     public function setSize(int $width, int $height): static {}
     public function setTitle(string $title): static {}
     public function setTheme(int $theme): static {}

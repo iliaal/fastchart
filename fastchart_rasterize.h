@@ -27,6 +27,18 @@
 #include "php.h"
 #include "fastchart_encoder.h"
 
+/* Output dimension caps. Apply to caller-supplied SVG via the
+ * Chart::svgToPng/Jpeg/Webp() entry points and to source images
+ * loaded via setBackgroundImage(). Per-axis cap (4096) keeps single
+ * dimensions sane for screen output; total-pixel cap (16M) bounds
+ * the RGBA buffer below ~64 MB. */
+#define FC_IMAGE_MAX_DIM     4096
+#define FC_IMAGE_MAX_PIXELS  (16 * 1024 * 1024)
+
+/* Max SVG bytes accepted by Chart::svgToPng/Jpeg/Webp(). Keeps
+ * plutosvg's parser from chewing on adversarially huge input. */
+#define FC_SVG_MAX_BYTES     (16 * 1024 * 1024)
+
 /* Rasterize the given SVG bytes at the requested target dimensions.
  * On success: pix->rgba is emalloc'd, pix->w/h match the requested
  * dims, return 0.
@@ -34,5 +46,13 @@
 int fastchart_rasterize_svg(const char *svg, size_t svg_len,
                             int target_w, int target_h,
                             fastchart_pixels_t *pix);
+
+/* Parse the SVG just enough to discover its intrinsic width/height
+ * (from the root <svg> element's width / height / viewBox). Used by
+ * Chart::svgToPng/Jpeg/Webp() to size the output before allocating
+ * the rasterize buffer. Returns 0 on success, -1 if the document
+ * can't be parsed or has no resolvable intrinsic dimensions. */
+int fastchart_svg_get_intrinsic_dims(const char *svg, size_t svg_len,
+                                      int *out_w, int *out_h);
 
 #endif /* FASTCHART_RASTERIZE_H */

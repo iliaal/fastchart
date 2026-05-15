@@ -16,7 +16,35 @@
 #include <plutosvg.h>
 #include <plutovg.h>
 
+#include <math.h>
 #include <string.h>
+
+int fastchart_svg_get_intrinsic_dims(const char *svg, size_t svg_len,
+                                     int *out_w, int *out_h)
+{
+	plutosvg_document_t *doc =
+	    plutosvg_document_load_from_data(svg, (int)svg_len, -1, -1,
+	                                     NULL, NULL);
+	if (!doc) return -1;
+
+	float w = plutosvg_document_get_width(doc);
+	float h = plutosvg_document_get_height(doc);
+	plutosvg_document_destroy(doc);
+
+	/* plutosvg returns -1 when the document declares percentage
+	 * dimensions without a container, or 0 when it has neither
+	 * width/height nor viewBox. Either is "unresolvable" for our
+	 * purposes — fastchart doesn't carry an outer viewport. */
+	if (!isfinite(w) || !isfinite(h) || w <= 0 || h <= 0) return -1;
+
+	int iw = (int)(w + 0.5f);
+	int ih = (int)(h + 0.5f);
+	if (iw <= 0 || ih <= 0) return -1;
+
+	*out_w = iw;
+	*out_h = ih;
+	return 0;
+}
 
 int fastchart_rasterize_svg(const char *svg, size_t svg_len,
                             int target_w, int target_h,
