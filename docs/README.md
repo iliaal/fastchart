@@ -704,7 +704,7 @@ file_put_contents('31b_two_charts.svg', $svg);
 
 | setSize after construction | Two charts on one canvas | Background image |
 |---|---|---|
-| ![](examples/31a_setsize.png) | ![](examples/31b_two_charts_one_canvas.png) | ![](examples/31d_bg_image.png) |
+| ![](examples/31a_setsize.png) | ![](examples/31b_two_charts_one_canvas.svg) | ![](examples/31d_bg_image.png) |
 
 ---
 
