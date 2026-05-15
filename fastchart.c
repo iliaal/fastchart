@@ -4310,10 +4310,10 @@ ZEND_METHOD(FastChart_AreaChart, setFillOpacity)
  * struct; we cast to the specific type for each renderer. The cast
  * is safe because Z_FASTCHART_OBJ_P landed on the start of whatever
  * subclass the user actually instantiated. */
-/* SVG-side dispatch. All 19 chart families are wired to a
+/* SVG-side dispatch. All 26 chart families are wired to a
  * fastchart_<family>_render_to_target() entry. The Symbol family
- * (Code128, QrCode) has its own dispatcher (dispatch_symbol_render);
- * SVG support for Symbol is a separate wave. */
+ * (Code128, QrCode) has its own dispatcher (dispatch_symbol_render
+ * / dispatch_symbol_svg_render in fastchart_symbol.c). */
 static int dispatch_svg_render(fastchart_obj *self, zend_class_entry *ce, fastchart_target_t *t)
 {
     if (ce == fastchart_line_chart_ce)
@@ -5115,7 +5115,16 @@ ZEND_METHOD(FastChart_GanttChart, setTasks)
                 ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(zd), dv) {
                     if (k >= dn) break;
                     if (Z_TYPE_P(dv) == IS_LONG) {
-                        out->deps[k++] = (int)Z_LVAL_P(dv);
+                        /* Validate against the int range before
+                         * narrowing. 0..INT_MAX is the legal index
+                         * space; out-of-range values used to wrap
+                         * silently (e.g. 4294967296 -> 0) and look
+                         * like a valid "depends on task 0" entry.
+                         * Render-side checks final < n_tasks. */
+                        zend_long dep = Z_LVAL_P(dv);
+                        if (dep >= 0 && dep <= INT_MAX) {
+                            out->deps[k++] = (int)dep;
+                        }
                     }
                 } ZEND_HASH_FOREACH_END();
                 out->n_deps = k;
@@ -6789,6 +6798,7 @@ ZEND_METHOD(FastChart_ParetoChart, setBars)
     fastchart_pareto_obj *self = Z_FASTCHART_PARETO_OBJ_P(ZEND_THIS);
     HashTable *ht = Z_ARRVAL_P(bars);
     int n = zend_hash_num_elements(ht);
+    if (n > FASTCHART_MAX_PARETO_BARS) n = FASTCHART_MAX_PARETO_BARS;
     if (self->bars) {
         for (int i = 0; i < self->bar_count; i++) {
             if (self->bars[i].label) efree(self->bars[i].label);
@@ -6803,6 +6813,7 @@ ZEND_METHOD(FastChart_ParetoChart, setBars)
     int kept = 0;
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (kept >= n) break;
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
@@ -6870,7 +6881,20 @@ static long fastchart_parse_iso_date(const char *s, size_t len)
     int m = (s[5]-'0')*10 + (s[6]-'0');
     int d = (s[8]-'0')*10 + (s[9]-'0');
     if (m < 1 || m > 12) return -1;
-    if (d < 1 || d > 31) return -1;
+    if (d < 1) return -1;
+    /* Per-month day max with leap-year for February. Without this
+     * "2026-02-31" parses cleanly into days_from_civil, which
+     * normalizes it to "2026-03-03" — the user's typo silently
+     * becomes a different valid date. */
+    static const int days_in_month[12] = {
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+    };
+    int max_d = days_in_month[m - 1];
+    if (m == 2) {
+        bool leap = (y % 4 == 0) && (y % 100 != 0 || y % 400 == 0);
+        if (leap) max_d = 29;
+    }
+    if (d > max_d) return -1;
 
     /* Howard Hinnant's days_from_civil algorithm — exact for all
      * proleptic Gregorian dates within long range. */
@@ -6899,6 +6923,7 @@ ZEND_METHOD(FastChart_CalendarHeatmap, setData)
     fastchart_calendar_obj *self = Z_FASTCHART_CALENDAR_OBJ_P(ZEND_THIS);
     HashTable *ht = Z_ARRVAL_P(data);
     int n = zend_hash_num_elements(ht);
+    if (n > FASTCHART_MAX_CALENDAR_DAYS) n = FASTCHART_MAX_CALENDAR_DAYS;
     if (self->days) efree(self->days);
     self->days = NULL;
     self->day_count = 0;
@@ -6909,6 +6934,7 @@ ZEND_METHOD(FastChart_CalendarHeatmap, setData)
     zend_string *key;
     zval *val;
     ZEND_HASH_FOREACH_STR_KEY_VAL(ht, key, val) {
+        if (kept >= n) break;
         if (!key) continue;
         long day = fastchart_parse_iso_date(ZSTR_VAL(key), ZSTR_LEN(key));
         if (day < 0) continue;
@@ -6957,6 +6983,7 @@ static int fastchart_sunburst_build_rec(
     int parent, int depth, int *max_depth)
 {
     if (depth > FASTCHART_SUNBURST_MAX_DEPTH) return -1;
+    if (*n >= FASTCHART_MAX_SUNBURST_NODES) return -1;
     if (depth > *max_depth) *max_depth = depth;
     /* Grow array if needed. */
     if (*n >= *cap) {
@@ -7098,11 +7125,13 @@ ZEND_METHOD(FastChart_SankeyChart, setNodes)
 
     HashTable *ht = Z_ARRVAL_P(nodes);
     int n = zend_hash_num_elements(ht);
+    if (n > FASTCHART_MAX_SANKEY_NODES) n = FASTCHART_MAX_SANKEY_NODES;
     if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     fastchart_sankey_node *parsed = ecalloc(n, sizeof(*parsed));
     int kept = 0;
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (kept >= n) break;
         if (Z_TYPE_P(entry) != IS_ARRAY) {
             parsed[kept].label = NULL;
             parsed[kept].color_rgb = -1;
@@ -7140,11 +7169,13 @@ ZEND_METHOD(FastChart_SankeyChart, setLinks)
 
     HashTable *ht = Z_ARRVAL_P(links);
     int n = zend_hash_num_elements(ht);
+    if (n > FASTCHART_MAX_SANKEY_LINKS) n = FASTCHART_MAX_SANKEY_LINKS;
     if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     fastchart_sankey_link *parsed = ecalloc(n, sizeof(*parsed));
     int kept = 0;
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (kept >= n) break;
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         zval *zf = zend_hash_str_find(eht, "from",  sizeof("from")  - 1);
@@ -7201,24 +7232,28 @@ ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
 
     HashTable *ht = Z_ARRVAL_P(cols);
     int n = zend_hash_num_elements(ht);
+    if (n > FASTCHART_MAX_MARIMEKKO_COLS) n = FASTCHART_MAX_MARIMEKKO_COLS;
     if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     fastchart_marimekko_column *parsed = ecalloc(n, sizeof(*parsed));
     int kept = 0;
     double total_w = 0.0;
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (kept >= n) break;
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         zval *zsegs = zend_hash_str_find(eht, "segments", sizeof("segments") - 1);
         if (!zsegs || Z_TYPE_P(zsegs) != IS_ARRAY) continue;
         HashTable *sht = Z_ARRVAL_P(zsegs);
         int sn = zend_hash_num_elements(sht);
+        if (sn > FASTCHART_MAX_MARIMEKKO_SEGS) sn = FASTCHART_MAX_MARIMEKKO_SEGS;
         if (sn <= 0) continue;
         fastchart_marimekko_segment *segs = ecalloc(sn, sizeof(*segs));
         int skept = 0;
         double col_total = 0.0;
         zval *se;
         ZEND_HASH_FOREACH_VAL(sht, se) {
+            if (skept >= sn) break;
             if (Z_TYPE_P(se) != IS_ARRAY) continue;
             HashTable *seh = Z_ARRVAL_P(se);
             zval *zv = zend_hash_str_find(seh, "value", sizeof("value") - 1);
@@ -7275,6 +7310,7 @@ ZEND_METHOD(FastChart_VectorChart, setVectors)
 
     HashTable *ht = Z_ARRVAL_P(vecs);
     int n = zend_hash_num_elements(ht);
+    if (n > FASTCHART_MAX_VECTORS) n = FASTCHART_MAX_VECTORS;
     if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     fastchart_vector_datum *parsed = ecalloc(n, sizeof(*parsed));
     int kept = 0;
@@ -7282,6 +7318,7 @@ ZEND_METHOD(FastChart_VectorChart, setVectors)
     bool first = true;
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (kept >= n) break;
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         zval *zx = zend_hash_str_find(eht, "x",  sizeof("x")  - 1);

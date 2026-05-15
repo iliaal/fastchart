@@ -60,8 +60,8 @@ static inline time_t fc_timegm(struct tm *tm)
  * of setDpi(). So chart_dpi_scale() returns 1.0 for SVG-backed
  * targets; layout reservations match the 96-DPI baseline and the
  * SVG output for setDpi(200) is identical to setDpi(96). The DPI
- * knob still flows into PNG / JPEG / WebP / GIF / AVIF output where
- * a denser canvas is actually allocated. */
+ * knob still flows into PNG / JPEG / WebP output where a denser
+ * canvas is actually allocated. */
 #define MARGIN_RIGHT_PAD       12
 #define MARGIN_TOP_PAD          8
 #define MARGIN_BOTTOM_PAD      10

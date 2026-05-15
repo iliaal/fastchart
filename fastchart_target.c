@@ -20,6 +20,7 @@
 #include "ext/standard/base64.h"
 #include "main/php_streams.h"
 
+#include <limits.h>
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
@@ -440,8 +441,17 @@ static int fc_sniff_image_dims_mem(const unsigned char *b, size_t n,
 {
     if (n < 24) return -1;
     if (b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G') {
-        *out_w = (b[16] << 24) | (b[17] << 16) | (b[18] << 8) | b[19];
-        *out_h = (b[20] << 24) | (b[21] << 16) | (b[22] << 8) | b[23];
+        /* PNG IHDR width/height are big-endian uint32. b[i] integer-
+         * promotes to (signed) int before the shift; for b[16] >= 0x80,
+         * b[16] << 24 lands in the sign bit which is C11 UB. Parse via
+         * uint32_t, reject 0 or > INT_MAX, then narrow. */
+        uint32_t w = ((uint32_t)b[16] << 24) | ((uint32_t)b[17] << 16)
+                   | ((uint32_t)b[18] <<  8) |  (uint32_t)b[19];
+        uint32_t h = ((uint32_t)b[20] << 24) | ((uint32_t)b[21] << 16)
+                   | ((uint32_t)b[22] <<  8) |  (uint32_t)b[23];
+        if (w == 0 || h == 0 || w > INT_MAX || h > INT_MAX) return -1;
+        *out_w = (int)w;
+        *out_h = (int)h;
         return 0;
     }
     if (b[0] == 0xFF && b[1] == 0xD8) {
