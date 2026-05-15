@@ -564,11 +564,13 @@ abstract class Chart
      * and text measurement stay at the 96-DPI baseline regardless of
      * the configured DPI.
      *
-     * Text rendering uses native `<text>` elements with the font's
-     * family name resolved via FreeType. Viewers that don't have
-     * the requested font fall back to `sans-serif`. (Path-embedded
-     * glyphs for archival-perfect output are planned for a future
-     * release.)
+     * Text defaults to `SVG_TEXT_PATHS` mode: every `<text>` is
+     * flattened to a `<g><path d="…"/></g>` group via FreeType
+     * outline decomposition. The output is self-contained and
+     * renders identically in any rasterizer including plutovg.
+     * Call `setSvgTextMode(SVG_TEXT_NATIVE)` to switch to raw
+     * `<text>` elements with the font family resolved via FreeType
+     * — smaller files, but consumers need text rendering support.
      */
     public function renderSvg(): string {}
 

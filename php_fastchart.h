@@ -89,9 +89,8 @@ extern zend_class_entry *fastchart_contour_chart_ce;
 /* Symbol family (1D/2D codes). Parallel hierarchy to Chart: the slim
  * fastchart_symbol_obj base shares none of FASTCHART_BASE_FIELDS, since
  * axes / palettes / plot rect / font cache do not apply to symbologies.
- * Symbol classes never accept a caller-supplied \GdImage; render-only
- * surface (renderPng/Jpeg/Webp/Avif/Gif/toFile) avoids any ext/gd
- * class-entry coupling. */
+ * Symbol classes are render-only (renderSvg/Png/Jpeg/Webp/toFile);
+ * ext/gd is not a runtime dependency in v1.0+. */
 extern zend_class_entry *fastchart_symbol_ce;
 extern zend_class_entry *fastchart_barcode_ce;
 extern zend_class_entry *fastchart_code128_ce;
@@ -538,6 +537,14 @@ typedef struct {
 #define FASTCHART_MAX_FUNNEL_STAGES    32        /* per chart */
 #define FASTCHART_MAX_WATERFALL_BARS   128       /* per chart */
 #define FASTCHART_MAX_METER_ZONES      8         /* per chart */
+#define FASTCHART_MAX_PARETO_BARS      128       /* per chart */
+#define FASTCHART_MAX_CALENDAR_DAYS    16384     /* ~45 yrs of daily data */
+#define FASTCHART_MAX_SUNBURST_NODES   2048      /* per chart, all rings */
+#define FASTCHART_MAX_SANKEY_NODES     256       /* per chart */
+#define FASTCHART_MAX_SANKEY_LINKS     1024      /* per chart */
+#define FASTCHART_MAX_MARIMEKKO_COLS   128       /* per chart */
+#define FASTCHART_MAX_MARIMEKKO_SEGS   64        /* per column */
+#define FASTCHART_MAX_VECTORS          4096      /* per chart */
 
 typedef struct {
     char *label;          /* malloc'd, NUL-terminated; NULL = no label */
