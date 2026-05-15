@@ -1,0 +1,78 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  release:
+    types: [published]
+
+jobs:
+  windows-matrix:
+    name: Generate Windows build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - id: matrix
+        # Pinned to the commit SHA that v1 currently resolves to:
+        # mutable @v1 is a supply-chain risk for a workflow that has
+        # contents:write on the release job. Re-resolve on upstream
+        # bumps via: gh api repos/php/php-windows-builder/git/refs/tags/v1
+        uses: php/php-windows-builder/extension-matrix@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # v1
+        with:
+          extension-url: ${{ github.event.repository.html_url }}
+          php-version-list: '8.3, 8.4, 8.5'
+
+  windows-build:
+    name: Build ${{ matrix.php-version }} ${{ matrix.arch }} ${{ matrix.ts }}
+    needs: windows-matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.windows-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build extension
+        uses: php/php-windows-builder/extension@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # v1
+        with:
+          php-version: ${{ matrix.php-version }}
+          ts: ${{ matrix.ts }}
+          arch: ${{ matrix.arch }}
+          args: --enable-fastchart
+          # Four pkg-config deps fastchart's config.m4 probes for. The
+          # action wires these into the Windows build's vcpkg sysroot so
+          # config.m4's PKG_CHECK_MODULES calls resolve. plutovg /
+          # plutosvg / qrcodegen are vendored under vendor/ and don't
+          # need an entry here.
+          libs: freetype,libpng,libjpeg-turbo,libwebp
+
+  release:
+    name: Attach Windows DLLs to release
+    if: github.event_name == 'release'
+    needs: windows-build
+    runs-on: ubuntu-latest
+    # Explicit write scope for releases; default GITHUB_TOKEN is read-only
+    # for the contents permission on newly-created repos and the
+    # php-windows-builder/release@v1 action calls POST /releases.
+    permissions:
+      contents: write
+    steps:
+      # Pinned to the commit SHA that v6 resolves to; this job runs
+      # under contents:write, so a moved tag on a third-party action
+      # would inherit the release-write token. persist-credentials:
+      # false drops the GITHUB_TOKEN from the local git config so any
+      # shell step in the workflow cannot reuse it for an unrelated
+      # push.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Upload release artifacts
+        uses: php/php-windows-builder/release@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # v1
+        with:
+          release: ${{ github.event.release.tag_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
