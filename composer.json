@@ -1,8 +1,8 @@
 {
     "name": "iliaal/fastchart",
     "type": "php-ext",
-    "description": "Native C PHP extension for fast chart rendering: 19 chart families (line, bar, pie, scatter, bubble, stock with technical indicators, radar, polar, surface, contour, treemap, funnel, waterfall, heatmap, gauge, linear meter, gantt, box plot, area) plus a 2-class Symbol family (Code128, QrCode). SVG-canonical pipeline rasterized via vendored plutovg + plutosvg; PNG / JPEG / WebP encoders via libpng / libjpeg-turbo / libwebp.",
-    "keywords": ["chart", "graph", "svg", "visualization", "php-extension", "pie", "candlestick", "ohlcv", "technical-indicators", "treemap", "heatmap", "funnel", "waterfall", "gauge", "polar", "radar", "contour", "surface", "gantt", "boxplot", "barcode", "qrcode"],
+    "description": "Native C PHP extension for fast chart rendering: 26 chart families (line, bar, pie, scatter, bubble, stock with technical indicators, radar, polar, surface, contour, treemap, funnel, waterfall, heatmap, gauge, linear meter, gantt, box plot, area, bullet, pareto, calendar heatmap, sunburst, sankey, marimekko, vector) plus a 2-class Symbol family (Code128, QrCode). SVG-canonical pipeline rasterized via vendored plutovg + plutosvg; PNG / JPEG / WebP encoders via libpng / libjpeg-turbo / libwebp.",
+    "keywords": ["chart", "graph", "svg", "visualization", "php-extension", "pie", "candlestick", "ohlcv", "technical-indicators", "treemap", "heatmap", "funnel", "waterfall", "gauge", "polar", "radar", "contour", "surface", "gantt", "boxplot", "barcode", "qrcode", "bullet", "pareto", "sunburst", "sankey", "marimekko"],
     "license": "(BSD-3-Clause AND MIT)",
     "homepage": "https://github.com/iliaal/fastchart",
     "authors": [
