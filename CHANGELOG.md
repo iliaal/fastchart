@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [1.0.1] - 2026-05-15
+
+This is the first release with prebuilt binaries on GitHub Releases.
+No API changes — every change in this release is build / packaging /
+ZTS-correctness.
+
+### Added
 
 - **Prebuilt binaries on GitHub Releases.** `composer.json` now declares
   `download-url-method: ["pre-packaged-binary", "composer-default"]`,
@@ -17,7 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `.github/workflows/windows.yml` — Windows DLLs for PHP-8.3/8.4/8.5
     (NTS + TS, x64 + x86) via `php/php-windows-builder`. System
     deps (freetype, libpng, libjpeg-turbo, libwebp) come through the
-    action's `libs:` input and resolve via vcpkg.
+    action's `libs:` input and resolve via the PHP-on-Windows SDK
+    deps server.
   - `.github/workflows/release-linux.yml` — Linux x86_64
     (`ubuntu-24.04`), Linux arm64 (`ubuntu-24.04-arm`), and macOS arm64
     (`macos-14`) `.so` binaries for PHP-8.4 and 8.5 (NTS) via
@@ -25,7 +32,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     deps before the build.
 
   PHP-8.3 on Linux/macOS, macOS Intel, and Alpine musl users continue
-  to source-build via PIE's composer-default fallback. No API change.
+  to source-build via PIE's composer-default fallback.
+- **`config.w32`** — Windows build manifest mirroring `config.m4`.
+  All 29 wrapper sources + 12 vendor sources (qrcodegen + plutovg +
+  plutosvg), FreeType mandatory via `CHECK_LIB("freetype_a.lib;...")`
+  + `CHECK_HEADER_ADD_INCLUDE("ft2build.h", ..., ..\deps\include\
+  freetype2)`, libpng / libjpeg-turbo / libwebp optional with the
+  same `HAVE_LIBxxx` defines the Unix side uses.
+
+### Fixed
+
+- **ZTS module globals not zero-initialised.** Under NTS the globals
+  struct lives in BSS so the linker zero-fills it; under ZTS it is
+  heap-allocated per thread by TSRM and the contents are whatever the
+  heap had. On Linux ZTS that often happened to be zero (fresh page
+  from anonymous mmap) and the bug stayed latent; on Windows x64 ZTS
+  the random content looked like a live `FT_Library` handle, so
+  `FT_Done_Face` / `FT_New_Face` dereferenced garbage and every
+  `renderXxx()` call segfaulted at first use. Explicit
+  `memset(fastchart_globals, 0, sizeof(*fastchart_globals))` in the
+  new `PHP_GINIT_FUNCTION` closes both. Valgrind on Linux ZTS now
+  reports zero errors from zero contexts (was 14 from 7).
+- **TSRMLS cache uninitialised in dynamically-loaded ZTS modules.**
+  Added `ZEND_TSRMLS_CACHE_DEFINE()` at the `COMPILE_DL_FASTCHART`
+  level and `ZEND_TSRMLS_CACHE_UPDATE()` in `PHP_GINIT_FUNCTION`.
+  Without these, every `FASTCHART_G(...)` dereference from a loaded
+  DSO under ZTS reads an undefined `__declspec(thread)` slot —
+  silent on Linux ZTS (GCC `__thread` has weaker linkage), segfault
+  on Windows ZTS at first access. Mirrors what ext/intl, ext/mbstring,
+  ext/curl have always done.
+- **Default font path no longer a shared interned `zend_string`.**
+  The interned-permanent shared string was a v1.0 round-2 fix for a
+  refcount race under ZTS. After surfacing the deeper ZTS bug above
+  it adds nothing, so it is gone. Each chart now `zend_string_init`s
+  its own font_path from a `const char *` pointing into a static
+  string-literal table. ~32 extra bytes per chart, no cross-thread
+  refcount math.
+- **Windows font candidates** for the default-font probe. The probe
+  previously listed only `/usr/share`, `/Library`, and `/System/
+  Library` paths; on Windows the probe returned NULL, every chart
+  started with `font_path == NULL`, and every text-rendering call
+  silently no-op'd. Added `C:\Windows\Fonts\arial.ttf` and
+  `C:\Windows\Fonts\segoeui.ttf`.
+- **MSVC C2057 in `fastchart_stock.c`.** `const int baseT = 10`
+  followed by `int dq[baseT + 1]` is portable C99 (a VLA on GCC /
+  Clang but with a compile-time-constant bound) — MSVC's C front-end
+  rejects it as "expected constant expression". Converted `baseT` to
+  a `#define` (scoped `#undef` at function end). All 17 other uses
+  in arithmetic / bounds checks work unchanged with macro
+  substitution.
+
+### Changed
+
+- **`tests/089_font_cache_open_basedir.phpt`** — moved the
+  `/usr/share`-font probe into `--SKIPIF--`. The test was an early
+  `echo "skip: ..."` + `exit;` inside `--FILE--`, which run-tests.php
+  treated as a failed assertion (no `--SKIPIF--` block means "treat
+  output literally"). Windows runners now skip cleanly instead of
+  producing a confusing FAIL.
+- **30 SVG-validating phpts declare `simplexml`** in `--EXTENSIONS--`.
+  The tests parse SVG output with `simplexml_load_string()` to
+  verify well-formedness and element counts. SimpleXML is normally
+  compiled-in but on ZTS PHP builds where libxml2 / simplexml were
+  dropped (custom `--disable-all` setups, ASAN-PHP builds) the tests
+  fatal at the `simplexml_load_string` call. Adding it to
+  `--EXTENSIONS--` makes run-tests.php skip with a clear "Required
+  extension missing: simplexml" reason.
 
 ## [1.0.0] - 2026-05-15
 
@@ -473,7 +545,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.0.0...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.0.1...HEAD
+[1.0.1]: https://github.com/iliaal/fastchart/releases/tag/1.0.1
 [1.0.0]: https://github.com/iliaal/fastchart/releases/tag/1.0.0
 [0.2.0]: https://github.com/iliaal/fastchart/releases/tag/0.2.0
 [0.1.1]: https://github.com/iliaal/fastchart/releases/tag/0.1.1
