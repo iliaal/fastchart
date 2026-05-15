@@ -130,9 +130,10 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             llvm clang re2c bison autoconf pkg-config \
-            libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev libgd-dev
+            libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev libgd-dev \
+            libxml2-dev
 
-      - name: Build PHP with ASAN + ext/gd
+      - name: Build PHP with ASAN + ext/gd + ext/simplexml
         # Static libasan (default — no -shared-libasan flag) keeps
         # the configure-time C-program test happy on the ubuntu
         # runner. ASan symbols live in the php-cli binary; fastchart.so
@@ -140,8 +141,13 @@ jobs:
         # process. ext/gd is built directly into the ASAN PHP for the
         # PHP-side image validation that the tests use; libgd-dev is
         # only here to satisfy that build, fastchart itself no longer
-        # links libgd. The -g flag preserves symbols so LSan stack
-        # frames resolve against the suppressions file.
+        # links libgd. ext/simplexml (+ libxml dep) is built in so the
+        # SVG-structure tests can use simplexml_load_string /
+        # libxml_use_internal_errors to validate emitted XML —
+        # otherwise those 23 tests fatal with "undefined function"
+        # because --disable-all dropped them. The -g flag preserves
+        # symbols so LSan stack frames resolve against the
+        # suppressions file.
         run: |
           git clone --depth=1 --branch=PHP-${{ matrix.php }} https://github.com/php/php-src.git /tmp/php-src
           cd /tmp/php-src
@@ -156,6 +162,8 @@ jobs:
             --enable-cli \
             --enable-gd \
             --with-external-gd \
+            --with-libxml \
+            --enable-simplexml \
             --prefix=/tmp/php-asan
           make -j$(nproc)
           make install
