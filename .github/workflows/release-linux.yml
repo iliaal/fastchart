@@ -189,21 +189,50 @@ jobs:
             echo "PKG_CONFIG_PATH=$(brew --prefix jpeg-turbo)/lib/pkgconfig:$(brew --prefix freetype)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
           } >> "$GITHUB_ENV"
 
-      - name: Build and upload prebuilt binary (Linux, static codecs)
-        if: startsWith(matrix.os, 'ubuntu-')
+      # === release: published path ===
+      # On release events, build AND upload via pie-ext-binary-builder.
+      # The action's release-asset upload step requires a real release
+      # to exist, so it only fires on github.event_name == 'release'.
+      - name: Build and upload prebuilt binary (Linux, release)
+        if: github.event_name == 'release' && startsWith(matrix.os, 'ubuntu-')
         uses: php/pie-ext-binary-builder@e35d497ffaac8ded7f05c62597d4387d849644d7 # 0.0.3
         with:
-          release-tag: ${{ github.event.release.tag_name || github.ref_name }}
+          release-tag: ${{ github.event.release.tag_name }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           configure-flags: '--enable-fastchart --with-fastchart-static-codecs=${{ env.STATIC_DEPS_PREFIX }}'
 
-      - name: Build and upload prebuilt binary (macOS)
-        if: startsWith(matrix.os, 'macos-')
+      - name: Build and upload prebuilt binary (macOS, release)
+        if: github.event_name == 'release' && startsWith(matrix.os, 'macos-')
         uses: php/pie-ext-binary-builder@e35d497ffaac8ded7f05c62597d4387d849644d7 # 0.0.3
         with:
-          release-tag: ${{ github.event.release.tag_name || github.ref_name }}
+          release-tag: ${{ github.event.release.tag_name }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           configure-flags: '--enable-fastchart'
+
+      # === workflow_dispatch path ===
+      # Manual runs build the .so the same way but skip the upload —
+      # there's no release to upload to. Lets a maintainer validate
+      # release-linux.yml changes (e.g. the static-codec recipe) end
+      # to end without burning a fresh release tag. The Verify step
+      # below still asserts the same compatibility guarantees.
+      - name: Build prebuilt binary (Linux, dispatch validation)
+        if: github.event_name == 'workflow_dispatch' && startsWith(matrix.os, 'ubuntu-')
+        run: |
+          set -e
+          phpize
+          ./configure --enable-fastchart \
+            --with-fastchart-static-codecs="$STATIC_DEPS_PREFIX"
+          make -j$(nproc)
+          ls -la modules/
+
+      - name: Build prebuilt binary (macOS, dispatch validation)
+        if: github.event_name == 'workflow_dispatch' && startsWith(matrix.os, 'macos-')
+        run: |
+          set -e
+          phpize
+          ./configure --enable-fastchart
+          make -j$(sysctl -n hw.ncpu)
+          ls -la modules/
 
       - name: Verify codec libs are static (Linux)
         if: startsWith(matrix.os, 'ubuntu-')
