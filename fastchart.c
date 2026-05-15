@@ -1389,7 +1389,10 @@ static void fastchart_linear_meter_init_extras(fastchart_linear_meter_obj *o)
 }
 static void fastchart_linear_meter_release_extras(fastchart_linear_meter_obj *o)
 {
-    if (o->meter_value_format) zend_string_release(o->meter_value_format);
+    if (o->meter_value_format) {
+        zend_string_release(o->meter_value_format);
+        o->meter_value_format = NULL;
+    }
 }
 static void fastchart_linear_meter_addref_extras(fastchart_linear_meter_obj *o)
 {
@@ -1407,7 +1410,10 @@ static void fastchart_bullet_init_extras(fastchart_bullet_obj *o)
 }
 static void fastchart_bullet_release_extras(fastchart_bullet_obj *o)
 {
-    if (o->bullet_value_format) zend_string_release(o->bullet_value_format);
+    if (o->bullet_value_format) {
+        zend_string_release(o->bullet_value_format);
+        o->bullet_value_format = NULL;
+    }
 }
 static void fastchart_bullet_addref_extras(fastchart_bullet_obj *o)
 {
@@ -1431,7 +1437,10 @@ static void fastchart_pareto_release_extras(fastchart_pareto_obj *o)
         o->bars = NULL;
     }
     o->bar_count = 0;
-    if (o->value_label_format) zend_string_release(o->value_label_format);
+    if (o->value_label_format) {
+        zend_string_release(o->value_label_format);
+        o->value_label_format = NULL;
+    }
 }
 static void fastchart_pareto_addref_extras(fastchart_pareto_obj *o)
 {
