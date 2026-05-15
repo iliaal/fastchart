@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 29a3fd059df9cb7b785328dc4ff3faeb72177eb9 */
+ * Stub hash: eea03762348f8410d04d6885a143a6c8297339b6 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -7,6 +7,22 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_version, 0, 0, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_svgToPng, 0, 1, IS_STRING, 0)
+	ZEND_ARG_TYPE_INFO(0, svg, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_svgToJpeg, 0, 1, IS_STRING, 0)
+	ZEND_ARG_TYPE_INFO(0, svg, IS_STRING, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, quality, IS_LONG, 0, "88")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, bgRgb, IS_LONG, 0, "0xffffff")
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_svgToWebp, 0, 1, IS_STRING, 0)
+	ZEND_ARG_TYPE_INFO(0, svg, IS_STRING, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, quality, IS_LONG, 0, "90")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, mode, IS_LONG, 0, "FastChart\\Chart::WEBP_DRAWING")
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setSize, 0, 2, IS_STATIC, 0)
@@ -591,6 +607,9 @@ ZEND_END_ARG_INFO()
 
 ZEND_METHOD(FastChart_Chart, __construct);
 ZEND_METHOD(FastChart_Chart, version);
+ZEND_METHOD(FastChart_Chart, svgToPng);
+ZEND_METHOD(FastChart_Chart, svgToJpeg);
+ZEND_METHOD(FastChart_Chart, svgToWebp);
 ZEND_METHOD(FastChart_Chart, setSize);
 ZEND_METHOD(FastChart_Chart, setTitle);
 ZEND_METHOD(FastChart_Chart, setTheme);
@@ -774,6 +793,9 @@ ZEND_METHOD(FastChart_QrCode, setMaxVersion);
 static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, __construct, arginfo_class_FastChart_Chart___construct, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, version, arginfo_class_FastChart_Chart_version, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
+	ZEND_ME(FastChart_Chart, svgToPng, arginfo_class_FastChart_Chart_svgToPng, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
+	ZEND_ME(FastChart_Chart, svgToJpeg, arginfo_class_FastChart_Chart_svgToJpeg, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
+	ZEND_ME(FastChart_Chart, svgToWebp, arginfo_class_FastChart_Chart_svgToWebp, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
 	ZEND_ME(FastChart_Chart, setSize, arginfo_class_FastChart_Chart_setSize, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setTitle, arginfo_class_FastChart_Chart_setTitle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, setTheme, arginfo_class_FastChart_Chart_setTheme, ZEND_ACC_PUBLIC)

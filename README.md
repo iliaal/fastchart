@@ -167,6 +167,27 @@ Raster outputs (PNG/JPG/WebP) always use the PATHS mode internally;
 plutovg has no text support of its own, so glyph flattening is what
 makes labels appear in the rasterized output.
 
+Three static methods on `FastChart\Chart` rasterize caller-supplied
+SVG bytes through the same plutovg + libpng / libjpeg-turbo /
+libwebp pipeline. Useful for round-tripping `renderSvg()` output, or
+for stitching multiple `drawSvgFragment()` calls into one outer SVG
+and rasterizing the result, all in-process:
+
+```php
+$png  = FastChart\Chart::svgToPng($svg);
+$jpg  = FastChart\Chart::svgToJpeg($svg, 88, 0xFFFFFF);  // bg + quality
+$webp = FastChart\Chart::svgToWebp($svg, 90, FastChart\Chart::WEBP_LOSSLESS);
+```
+
+Output dimensions come from the SVG's `width` / `height` / `viewBox`.
+SVG `<text>` elements render blank — plutovg has no text engine, so
+text must be path-flattened first (fastchart's own SVG builder does
+this automatically). See
+[`docs/examples/51_svg_to_raster.php`](docs/examples/51_svg_to_raster.php)
+for a runnable demo and
+[`docs/specs/svg-to-raster.md`](docs/specs/svg-to-raster.md) for the
+full contract.
+
 ## 📊 Performance
 
 Median in-memory render time at 1920×1080 on a single core (Intel

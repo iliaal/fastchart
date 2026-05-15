@@ -31,14 +31,12 @@
 
 #include "fastchart_target.h"
 #include "fastchart_svg.h"
+#include "fastchart_rasterize.h"
 #include "php_fastchart.h"
 
-/* Source-image caps. Mirrors the values in fastchart_axis.c; kept
- * here so the target-level emitter can enforce them without a header
- * cycle. */
+/* Source-image bytes cap. FC_IMAGE_MAX_DIM / FC_IMAGE_MAX_PIXELS
+ * are shared with the SVG rasterizer via fastchart_rasterize.h. */
 #define FC_IMAGE_MAX_BYTES   (8 * 1024 * 1024)
-#define FC_IMAGE_MAX_DIM     4096
-#define FC_IMAGE_MAX_PIXELS  (16 * 1024 * 1024)
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

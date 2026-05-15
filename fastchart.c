@@ -33,6 +33,7 @@
 #include "fastchart_axis.h"
 #include "fastchart_encoder.h"
 #include "fastchart_rasterize.h"
+#include "fastchart_rasterize.h"
 
 #include "plutovg.h"
 #include "plutosvg.h"
@@ -3465,6 +3466,206 @@ ZEND_METHOD(FastChart_Chart, setWebpMode)
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     self->webp_mode = mode;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* --- Chart::svgToPng/Jpeg/Webp() ---------------------------------- */
+
+/* Shared front-half for the three static SVG-to-raster methods.
+ * Validates input bytes, extracts intrinsic dimensions, enforces
+ * dim caps, rasterizes via plutosvg + plutovg. On success the
+ * caller owns pix->rgba (efree via fastchart_pixels_release) and
+ * proceeds to encode + composite. On failure a PHP exception has
+ * been thrown and the caller should RETURN_THROWS. */
+static int fastchart_svg_to_pixels(
+    zend_string *svg, const char *method_name,
+    fastchart_pixels_t *pix)
+{
+    pix->rgba = NULL;
+    pix->w = 0;
+    pix->h = 0;
+
+    if (ZSTR_LEN(svg) == 0 || ZSTR_LEN(svg) > FC_SVG_MAX_BYTES) {
+        zend_value_error(
+            "%s() SVG input must be 1..%d bytes",
+            method_name, FC_SVG_MAX_BYTES);
+        return -1;
+    }
+
+    int w, h;
+    if (fastchart_svg_get_intrinsic_dims(
+            ZSTR_VAL(svg), ZSTR_LEN(svg), &w, &h) != 0) {
+        zend_value_error(
+            "%s() SVG has no resolvable intrinsic dimensions "
+            "(percentage widths and missing viewBox are not supported)",
+            method_name);
+        return -1;
+    }
+    if (w > FC_IMAGE_MAX_DIM || h > FC_IMAGE_MAX_DIM
+        || (long long)w * h > FC_IMAGE_MAX_PIXELS) {
+        zend_value_error(
+            "%s() output dimensions %dx%d exceed cap "
+            "(max %d per side, %d total pixels)",
+            method_name, w, h,
+            FC_IMAGE_MAX_DIM, FC_IMAGE_MAX_PIXELS);
+        return -1;
+    }
+
+    fastchart_pixels_init(pix, w, h);
+    pix->dpi = 96;
+    if (fastchart_rasterize_svg(
+            ZSTR_VAL(svg), ZSTR_LEN(svg), w, h, pix) != 0) {
+        fastchart_pixels_release(pix);
+        zend_throw_error(NULL,
+            "FastChart: plutovg rasterization failed for the supplied SVG");
+        return -1;
+    }
+    return 0;
+}
+
+/* Helper to drop an encoder error onto the right exception class.
+ * rc < 0 from fastchart_encode_*; -2 means "lib not compiled in",
+ * any other negative means "encode produced no output". */
+static void fastchart_throw_encode_error(int rc, const char *method_name,
+                                          const char *lib_name)
+{
+    if (rc == -2) {
+        zend_throw_error(NULL,
+            "%s(): %s is not compiled in", method_name, lib_name);
+    } else {
+        zend_throw_error(NULL,
+            "%s(): encoder produced no output", method_name);
+    }
+}
+
+ZEND_METHOD(FastChart_Chart, svgToPng)
+{
+    zend_string *svg;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_STR(svg)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_pixels_t pix;
+    if (fastchart_svg_to_pixels(svg, "FastChart\\Chart::svgToPng", &pix) != 0) {
+        RETURN_THROWS();
+    }
+
+    smart_str out = {0};
+    int rc = fastchart_encode_png(&out, &pix);
+    fastchart_pixels_release(&pix);
+    if (rc != 0) {
+        smart_str_free(&out);
+        fastchart_throw_encode_error(rc, "FastChart\\Chart::svgToPng", "libpng");
+        RETURN_THROWS();
+    }
+    smart_str_0(&out);
+    RETURN_STR(out.s);
+}
+
+ZEND_METHOD(FastChart_Chart, svgToJpeg)
+{
+    zend_string *svg;
+    zend_long quality = 88;
+    zend_long bg_rgb  = 0xFFFFFF;
+    ZEND_PARSE_PARAMETERS_START(1, 3)
+        Z_PARAM_STR(svg)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(quality)
+        Z_PARAM_LONG(bg_rgb)
+    ZEND_PARSE_PARAMETERS_END();
+    if (quality < 1 || quality > 100) {
+        zend_value_error(
+            "FastChart\\Chart::svgToJpeg() quality must be in [1, 100]");
+        RETURN_THROWS();
+    }
+    if (bg_rgb < 0 || bg_rgb > 0xFFFFFF) {
+        zend_value_error(
+            "FastChart\\Chart::svgToJpeg() bgRgb must be a 24-bit RGB int "
+            "(0..0xFFFFFF)");
+        RETURN_THROWS();
+    }
+
+    fastchart_pixels_t pix;
+    if (fastchart_svg_to_pixels(svg, "FastChart\\Chart::svgToJpeg", &pix) != 0) {
+        RETURN_THROWS();
+    }
+
+    /* Composite over the caller's bg color BEFORE encoding so JPEG's
+     * own opaque-pixel path runs on premultiplied-over-bg data. JPEG
+     * has no alpha; without this, transparent SVG regions would
+     * encode against the encoder's own fallback (white) rather than
+     * the user's chosen color. */
+    uint8_t br = (bg_rgb >> 16) & 0xFF;
+    uint8_t bg = (bg_rgb >>  8) & 0xFF;
+    uint8_t bb =  bg_rgb        & 0xFF;
+    uint8_t *p = pix.rgba;
+    size_t pixels = (size_t)pix.w * pix.h;
+    for (size_t i = 0; i < pixels; i++) {
+        uint8_t a = p[3];
+        if (a == 255) {
+            /* already opaque, leave RGB alone */
+        } else if (a == 0) {
+            p[0] = br; p[1] = bg; p[2] = bb;
+        } else {
+            int ia = 255 - a;
+            p[0] = (uint8_t)((p[0] * a + br * ia) / 255);
+            p[1] = (uint8_t)((p[1] * a + bg * ia) / 255);
+            p[2] = (uint8_t)((p[2] * a + bb * ia) / 255);
+        }
+        p[3] = 255;
+        p += 4;
+    }
+
+    smart_str out = {0};
+    int rc = fastchart_encode_jpeg(&out, &pix, (int)quality);
+    fastchart_pixels_release(&pix);
+    if (rc != 0) {
+        smart_str_free(&out);
+        fastchart_throw_encode_error(rc, "FastChart\\Chart::svgToJpeg", "libjpeg");
+        RETURN_THROWS();
+    }
+    smart_str_0(&out);
+    RETURN_STR(out.s);
+}
+
+ZEND_METHOD(FastChart_Chart, svgToWebp)
+{
+    zend_string *svg;
+    zend_long quality = 90;
+    zend_long mode    = FASTCHART_WEBP_DRAWING;
+    ZEND_PARSE_PARAMETERS_START(1, 3)
+        Z_PARAM_STR(svg)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(quality)
+        Z_PARAM_LONG(mode)
+    ZEND_PARSE_PARAMETERS_END();
+    if (quality < 1 || quality > 100) {
+        zend_value_error(
+            "FastChart\\Chart::svgToWebp() quality must be in [1, 100]");
+        RETURN_THROWS();
+    }
+    if (mode != FASTCHART_WEBP_DRAWING && mode != FASTCHART_WEBP_PHOTO
+        && mode != FASTCHART_WEBP_LOSSLESS && mode != FASTCHART_WEBP_FAST) {
+        zend_value_error(
+            "FastChart\\Chart::svgToWebp() mode must be one of WEBP_DRAWING, "
+            "WEBP_PHOTO, WEBP_LOSSLESS, WEBP_FAST");
+        RETURN_THROWS();
+    }
+
+    fastchart_pixels_t pix;
+    if (fastchart_svg_to_pixels(svg, "FastChart\\Chart::svgToWebp", &pix) != 0) {
+        RETURN_THROWS();
+    }
+
+    smart_str out = {0};
+    int rc = fastchart_encode_webp(&out, &pix, (int)quality, (int)mode);
+    fastchart_pixels_release(&pix);
+    if (rc != 0) {
+        smart_str_free(&out);
+        fastchart_throw_encode_error(rc, "FastChart\\Chart::svgToWebp", "libwebp");
+        RETURN_THROWS();
+    }
+    smart_str_0(&out);
+    RETURN_STR(out.s);
 }
 
 /* Emit a HTML <map> for the scatter chart's clickable points. Reads

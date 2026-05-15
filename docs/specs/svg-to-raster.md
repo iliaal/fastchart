@@ -1,9 +1,28 @@
 # Spec: `Chart::svgToPng/Jpeg/Webp()` static rasterizer methods
 
-**Status:** proposed (no code yet)
-**Tracking task:** #79
+**Status:** shipped
+**Tracking task:** #79 (spec), #80 (implementation)
 **Author:** ilia
 **Created:** 2026-05-15
+**Shipped:** 2026-05-15
+
+Implementation lives at `fastchart.c` `ZEND_METHOD(FastChart_Chart,
+svgToPng/svgToJpeg/svgToWebp)` plus the
+`fastchart_svg_get_intrinsic_dims()` helper in
+`fastchart_rasterize.c`. Tests: `tests/149_svg_to_raster.phpt`.
+Example: `docs/examples/51_svg_to_raster.php`.
+
+Decisions made before implementation (see open questions below for
+context):
+
+1. Methods live on `FastChart\Chart` (not a new utility class).
+2. SVG `<text>` elements render blank — silent + documented.
+3. `svgToWebp()` accepts the same `$mode` parameter as the
+   instance-side `setWebpMode()`.
+4. `svgToJpeg()` accepts an additional `$bgRgb` parameter (default
+   `0xFFFFFF`) and composites under the rasterized output before
+   JPEG encode. JPEG has no alpha channel; without this, transparent
+   SVG regions would render against a fixed white fallback.
 
 ## Motivation
 
