@@ -1,0 +1,12 @@
+# sammycage/plutosvg — SVG document parser, vendored under
+# vendor/plutosvg/ on top of plutovg. Parses the SVG document we
+# build in renderSvg() into draw calls that plutovg rasterizes.
+# BSD licensed.
+#
+# Vendored copy is hard-failing — if upstream ships a new tagged
+# release, refresh vendor/plutosvg/ and bump `pinned` here.
+
+resolver: github
+repo: sammycage/plutosvg
+pinned: 0.0.7
+vendored_at: vendor/plutosvg
