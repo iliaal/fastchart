@@ -6946,10 +6946,17 @@ ZEND_METHOD(FastChart_CalendarHeatmap, setColorRamp)
 /* Recursively flatten a tree into a depth-first node list. Each
  * call appends one node and (optionally) recurses into its children.
  * Returns 0 on success, -1 on a malformed node we want to abort on. */
+/* Bounds depth so adversarial input ({'children'=>['children'=>...]}
+ * nested arbitrarily) can't blow the C stack. 32 is comfortably
+ * deeper than any legible sunburst — at depth 32 each ring is ~3px
+ * wide on a 400px canvas. */
+#define FASTCHART_SUNBURST_MAX_DEPTH 32
+
 static int fastchart_sunburst_build_rec(
     HashTable *ht, fastchart_sunburst_node **nodes, int *n, int *cap,
     int parent, int depth, int *max_depth)
 {
+    if (depth > FASTCHART_SUNBURST_MAX_DEPTH) return -1;
     if (depth > *max_depth) *max_depth = depth;
     /* Grow array if needed. */
     if (*n >= *cap) {
@@ -7049,7 +7056,8 @@ ZEND_METHOD(FastChart_SunburstChart, setHierarchy)
             efree(nodes);
         }
         zend_value_error(
-            "FastChart\\SunburstChart::setHierarchy() received a malformed node");
+            "FastChart\\SunburstChart::setHierarchy() received a malformed "
+            "hierarchy (max nesting depth is 32)");
         RETURN_THROWS();
     }
     self->nodes = nodes;
@@ -7077,6 +7085,16 @@ ZEND_METHOD(FastChart_SankeyChart, setNodes)
         self->nodes = NULL;
     }
     self->node_count = 0;
+    /* Drop any pre-existing links: their from/to indices reference
+     * the OLD node array. Keeping them around would let setNodes
+     * shrink the node count below the largest link index and
+     * produce a heap OOB at render time in compute_layers. setLinks
+     * has to be called again after setNodes. */
+    if (self->links) {
+        efree(self->links);
+        self->links = NULL;
+    }
+    self->link_count = 0;
 
     HashTable *ht = Z_ARRVAL_P(nodes);
     int n = zend_hash_num_elements(ht);
@@ -7276,6 +7294,13 @@ ZEND_METHOD(FastChart_VectorChart, setVectors)
         if (fastchart_zval_to_double(zy,  &y)  != 0 || !isfinite(y))  continue;
         if (fastchart_zval_to_double(zdx, &dx) != 0 || !isfinite(dx)) continue;
         if (fastchart_zval_to_double(zdy, &dy) != 0 || !isfinite(dy)) continue;
+        /* Magnitude squared must also stay finite. dx and dy can
+         * each be finite while |dx| > sqrt(DBL_MAX) makes dx*dx
+         * overflow to +inf; sqrt(inf) = inf cascades through the
+         * scale / cap_px / int cast in render, hitting UB on the
+         * (int)(cos(...) * inf) cast. */
+        double m_sq = dx * dx + dy * dy;
+        if (!isfinite(m_sq)) continue;
         parsed[kept].x = x;
         parsed[kept].y = y;
         parsed[kept].dx = dx;
@@ -7286,7 +7311,7 @@ ZEND_METHOD(FastChart_VectorChart, setVectors)
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) parsed[kept].color_rgb = (int)c;
         }
-        double m = sqrt(dx * dx + dy * dy);
+        double m = sqrt(m_sq);
         if (first || m < mag_min) mag_min = m;
         if (first || m > mag_max) mag_max = m;
         first = false;
