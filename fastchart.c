@@ -112,6 +112,20 @@ zend_string *fastchart_default_font_path = NULL;
  * code covers both build flavours. */
 ZEND_DECLARE_MODULE_GLOBALS(fastchart)
 
+static PHP_GINIT_FUNCTION(fastchart)
+{
+    /* Populate the per-thread TSRMLS cache for ZTS-built dynamic
+     * loads. Without this every FASTCHART_G(...) dereference from
+     * this thread reads garbage; Windows TLS treats the resulting
+     * access as a segfault. NTS and statically-linked ZTS both
+     * skip this — STD doesn't apply. */
+#if defined(COMPILE_DL_FASTCHART) && defined(ZTS)
+    ZEND_TSRMLS_CACHE_UPDATE();
+#endif
+    /* Globals are zero-init'd by Zend; nothing else to do. */
+    (void)fastchart_globals;
+}
+
 static PHP_GSHUTDOWN_FUNCTION(fastchart)
 {
     fastchart_ft_library_shutdown();
@@ -8023,12 +8037,24 @@ zend_module_entry fastchart_module_entry = {
     PHP_MINFO(fastchart),
     PHP_FASTCHART_VERSION,
     PHP_MODULE_GLOBALS(fastchart),  /* globals descriptor */
-    NULL,                       /* globals ctor — Zend zero-inits */
+    PHP_GINIT(fastchart),       /* globals ctor — TSRMLS cache + zero-init */
     PHP_GSHUTDOWN(fastchart),   /* globals dtor — per-thread cleanup */
     NULL,                       /* post_deactivate */
     STANDARD_MODULE_PROPERTIES_EX
 };
 
 #ifdef COMPILE_DL_FASTCHART
+#ifdef ZTS
+/* Define the per-DSO TSRMLS cache slot. Without this, every
+ * FASTCHART_G(...) access from a dynamically-loaded extension under
+ * ZTS dereferences an undefined __declspec(thread) variable —
+ * harmless on glibc TLS, segfault on Windows TLS. PHP CLI under
+ * ZTS calls module init from a worker thread, so the very first
+ * lazy FT_Init_FreeType crashes with STATUS_ACCESS_VIOLATION on
+ * every renderXxx() path. ZEND_TSRMLS_CACHE_UPDATE() at the head
+ * of MINIT populates the slot for the current thread; further
+ * threads (if a SAPI spawns them) populate via their own init. */
+ZEND_TSRMLS_CACHE_DEFINE()
+#endif
 ZEND_GET_MODULE(fastchart)
 #endif
