@@ -278,6 +278,20 @@ const char *fastchart_libjpeg_version(void) { return NULL; }
 /* --------------------------- WebP ---------------------------------- */
 
 #ifdef HAVE_LIBWEBP
+/* Advanced API instead of WebPEncodeRGBA/WebPEncodeRGB. Three knobs
+ * matter for chart-shaped content (flat fills, sharp edges, small
+ * palette):
+ *   - WEBP_PRESET_DRAWING tunes the entropy analysis for line-art /
+ *     drawing content. WEBP_PRESET_DEFAULT (the simple API's choice)
+ *     spends analysis cycles on photographic detail charts don't have.
+ *   - method = 2 trades a few percent of file size for a 2-3x encode
+ *     speedup. The simple API defaults to method = 4 (moderate).
+ *   - thread_level = 1 enables parallel entropy encoding on libwebp
+ *     builds compiled with pthread support; the simple API never
+ *     opts in.
+ *
+ * The encoder still produces a baseline-compatible .webp stream that
+ * every conformant decoder accepts. */
 int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
                           int quality)
 {
@@ -285,12 +299,28 @@ int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
 	if (q < 1.0f)   q = 1.0f;
 	if (q > 100.0f) q = 100.0f;
 
-	uint8_t *buf = NULL;
-	size_t   sz;
+	WebPConfig config;
+	if (!WebPConfigPreset(&config, WEBP_PRESET_DRAWING, q)) {
+		return -1;
+	}
+	config.method = 2;
+	config.thread_level = 1;
+
+	WebPPicture picture;
+	if (!WebPPictureInit(&picture)) {
+		return -1;
+	}
+	picture.width  = pix->w;
+	picture.height = pix->h;
+	picture.use_argb = 0;
+
+	int import_ok;
 	if (pix->has_alpha) {
-		sz = WebPEncodeRGBA(pix->rgba, pix->w, pix->h, pix->w * 4, q, &buf);
+		import_ok = WebPPictureImportRGBA(
+			&picture, pix->rgba, pix->w * 4);
 	} else {
-		/* libwebp's RGB encoder wants RGB (3 bytes/pixel). Strip alpha. */
+		/* Pack down to RGB so the encoder doesn't carry an alpha
+		 * channel through entropy coding on opaque output. */
 		uint8_t *rgb = emalloc((size_t)pix->w * pix->h * 3);
 		const uint8_t *src = pix->rgba;
 		uint8_t       *dst = rgb;
@@ -299,15 +329,28 @@ int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
 			dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2];
 			src += 4; dst += 3;
 		}
-		sz = WebPEncodeRGB(rgb, pix->w, pix->h, pix->w * 3, q, &buf);
+		import_ok = WebPPictureImportRGB(&picture, rgb, pix->w * 3);
 		efree(rgb);
 	}
-	if (sz == 0 || buf == NULL) {
-		if (buf) WebPFree(buf);
+	if (!import_ok) {
+		WebPPictureFree(&picture);
 		return -1;
 	}
-	smart_str_appendl(out, (const char *)buf, sz);
-	WebPFree(buf);
+
+	WebPMemoryWriter writer;
+	WebPMemoryWriterInit(&writer);
+	picture.writer     = WebPMemoryWrite;
+	picture.custom_ptr = &writer;
+
+	int enc_ok = WebPEncode(&config, &picture);
+	WebPPictureFree(&picture);
+
+	if (!enc_ok || writer.size == 0) {
+		WebPMemoryWriterClear(&writer);
+		return -1;
+	}
+	smart_str_appendl(out, (const char *)writer.mem, writer.size);
+	WebPMemoryWriterClear(&writer);
 	return 0;
 }
 
