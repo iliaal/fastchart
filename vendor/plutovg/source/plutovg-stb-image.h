@@ -5077,7 +5077,17 @@ static void stbi__de_iphone(stbi__png *z)
 
 static int stbi__parse_png_file(stbi__png *z, int scan, int req_comp)
 {
-   stbi_uc palette[1024], pal_img_n=0;
+   /* fastchart-local: zero the palette buffer at entry. Upstream
+    * stb_image accepts paletted PNGs whose pixel data references
+    * indices >= pal_len (PNG spec says these are invalid, but stb
+    * decodes them anyway and reads palette[idx*4..idx*4+3]). Without
+    * this memset, those reads pull uninitialized stack content into
+    * the output raster, which a fastchart caller can subsequently
+    * download via renderPng()/renderJpeg()/renderWebp() — a stack
+    * info-leak primitive. Zero-init makes out-of-range indices read
+    * deterministic black. */
+   stbi_uc palette[1024] = {0};
+   stbi_uc pal_img_n=0;
    stbi_uc has_trans=0, tc[3]={0};
    stbi__uint16 tc16[3];
    stbi__uint32 ioff=0, idata_limit=0, i, pal_len=0;
