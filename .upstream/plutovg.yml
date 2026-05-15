@@ -1,0 +1,12 @@
+# sammycage/plutovg — 2D vector graphics rasterizer, vendored under
+# vendor/plutovg/ as the pixel backend for renderPng/Jpeg/Webp. BSD
+# licensed. Compiled with PLUTOVG_BUILD_STATIC + -fvisibility=hidden
+# so its symbols stay internal to fastchart.so.
+#
+# Vendored copy is hard-failing — if upstream ships a new tagged
+# release, refresh vendor/plutovg/ and bump `pinned` here.
+
+resolver: github
+repo: sammycage/plutovg
+pinned: 1.3.2
+vendored_at: vendor/plutovg
