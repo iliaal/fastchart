@@ -140,7 +140,40 @@ enforced by `setBackgroundImage()` apply: 16384 px on either axis,
 ~64M total pixels. A malformed or adversarial SVG that declares
 huge dimensions is rejected before allocation.
 
-### 5. Size limits on input SVG
+### 5. Embedded `data:image/` URIs are rejected
+
+plutosvg's `<image href="data:image/(png|jpg|jpeg);base64,...">`
+loader at `vendor/plutosvg/source/plutosvg.c:2426` decodes the
+embedded raster inline via libpng/libjpeg, bypassing the output
+dimension cap (constraint #4). A 10x10 root SVG carrying a
+4097x4097 embedded PNG would allocate ~67 MB inside plutosvg
+before our cap check sees the actual rasterized dims.
+
+The entry point rejects any SVG that contains the substring
+`data:image/` (case-insensitive). Callers who need to composite
+raster content with a chart fragment should decode their images
+separately. Added 2026-05-15 in commit f0c967a.
+
+### 6. `<use>` elements are rejected
+
+plutosvg's `<use href="#id">` renderer at
+`vendor/plutosvg/source/plutosvg.c:2121` walks the referenced
+subtree inline. Its cycle detector compares element pointers along
+the ancestor chain but does NOT count fan-out. A 1.4 KB SVG
+defining 8 nested `<g>` levels where each contains 10× `<use>`
+of the next triggers ~10^8 shape renders and ~14 s of render time
+on commodity hardware — a billion-laughs equivalent.
+
+A source-count cap was tried (commit bacedd1, 256-tag limit) and
+proved insufficient: nesting amplifies expansion independently of
+source count, so 71 source `<use>` tags can hit the worst case.
+The entry point now rejects ANY `<use>` occurrence (substring
+scan with tag-name boundary check, case-insensitive). fastchart's
+own SVG output never emits `<use>`; callers stitching multiple
+fragments position content inline via `<g transform="...">`
+instead. Added 2026-05-15 in commit (this round).
+
+### 7. Size limits on input SVG
 
 Hard cap at 16 MB SVG bytes to prevent DoS via plutosvg's parser.
 Rejected with `\ValueError`.
