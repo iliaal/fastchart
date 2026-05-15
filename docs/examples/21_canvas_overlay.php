@@ -1,16 +1,17 @@
 <?php
-/* Caller-owned canvas: draw() returns the same \GdImage you passed in,
- * so you can layer additional graphics on top without ever leaving the
- * gd surface. Useful for watermarks, footers, logos, highlight rings,
- * compositing multiple charts on one canvas, post-process filters
- * like imagefilter() or imagecopyresized(), etc.
+/* Overlay extra graphics on top of a chart via SVG composition.
+ * v1.0 retired draw($canvas), so the canonical workflow is:
+ *   1. build the chart, call drawSvgFragment() to get a <g>...</g>
+ *      group
+ *   2. assemble an outer <svg> document with the fragment + your own
+ *      overlay elements (text, shapes, embedded images)
+ *   3. write the assembled SVG to disk, or rasterize it through any
+ *      SVG-aware tool (Inkscape, librsvg, the user's own browser).
  *
- * This example builds a stock chart, then overlays:
- *   - a translucent "DRAFT" watermark across the body
- *   - a footer credit line at the bottom
- *   - a colored ring highlighting a specific data point
- * All using stock ext/gd primitives on the same canvas the chart
- * just rendered into. */
+ * This example builds a stock chart, then overlays a translucent
+ * "DRAFT" watermark, a footer credit line, and a colored ring at a
+ * specific data point. All overlays live in the same SVG document
+ * as the chart, side-by-side with the chart group. */
 
 require __DIR__ . '/_bootstrap.php';
 
@@ -28,48 +29,60 @@ for ($i = 0; $i < 60; $i++) {
     $price  = $close;
 }
 
-/* Allocate the user canvas at the size we want, and don't call
- * setDpi() on this chart. With a caller-owned canvas fastchart can't
- * resize the image, so a setDpi(200) here would scale layout margins
- * and FreeType up while the canvas stays fixed at 720×420; labels
- * would overflow. setDpi() *can* be used on the draw($canvas) path
- * when the caller pre-allocates a proportionally larger canvas (see
- * the stub-doc note on draw); we keep it off here because this canvas
- * is fixed. */
-$im = imagecreatetruecolor(720, 420);
+$W = 720; $H = 420;
 
-/* Step 1: render the chart into our caller-owned canvas. */
-(new FastChart\StockChart(720, 420))
+/* Step 1: chart fragment. drawSvgFragment returns just the <g> group
+ * so we can drop it into a larger SVG document without nested <svg>
+ * elements (which not all renderers handle cleanly). */
+$chart_g = (new FastChart\StockChart($W, $H))
     ->setFontPath($font)
     ->setTitle('ACME internal preview')
     ->setOhlcv($rows)
     ->addMovingAverage(20)
-    /* Calendar-aware stride keeps labels from overlapping each other
-     * along the X axis; otherwise 60 daily ticks would render with
-     * ~10px between dates and the "2023-11-14" strings would stack. */
     ->setDateAxisStride(FastChart\Chart::DATE_WEEK, 2)
-    ->draw($im);
+    ->drawSvgFragment();
 
-/* Step 2: overlay a translucent "DRAFT" watermark using gd's
- * built-in 5x7 bitmap font, scaled up via repeated imagestring. */
-$watermark = imagecolorallocatealpha($im, 200, 30, 30, 90);
-$cx = imagesx($im) / 2;
-$cy = imagesy($im) / 2;
-imagestring($im, 5, (int)$cx - 30, (int)$cy - 8, 'DRAFT', $watermark);
+/* Step 2: assemble the outer document. Background fill, chart group,
+ * then the overlays painted on top. */
+$svg  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+$svg .= '<svg xmlns="http://www.w3.org/2000/svg" width="' . $W . '" height="' . $H
+      . '" viewBox="0 0 ' . $W . ' ' . $H . '">';
+$svg .= '<rect width="100%" height="100%" fill="#FFFFFF"/>';
+$svg .= $chart_g;
 
-/* Step 3: add a footer credit line. */
-$footer = imagecolorallocate($im, 100, 100, 100);
-imagestring($im, 2, 8, imagesy($im) - 16,
-            'Generated ' . date('Y-m-d') . ' (confidential)', $footer);
+/* Translucent "DRAFT" watermark, rotated -20 degrees and centered. */
+$svg .= '<text x="' . ($W / 2) . '" y="' . ($H / 2)
+      . '" font-family="sans-serif" font-size="84" font-weight="bold"'
+      . ' fill="#C81E1E" fill-opacity="0.18"'
+      . ' text-anchor="middle" dominant-baseline="middle"'
+      . ' transform="rotate(-20 ' . ($W / 2) . ' ' . ($H / 2) . ')">DRAFT</text>';
 
-/* Step 4: draw a highlight ring around the most recent close.
- * The chart object doesn't expose pixel positions, but for an
- * overlay you control the canvas size and can derive coordinates
- * from your own data shape (here approximated as the last
- * candle's relative position). */
-$ring = imagecolorallocate($im, 255, 220, 0);
-imageellipse($im, imagesx($im) - 60, 200, 24, 24, $ring);
-imageellipse($im, imagesx($im) - 60, 200, 26, 26, $ring);
+/* Footer credit, bottom-left. */
+$svg .= '<text x="8" y="' . ($H - 8) . '"'
+      . ' font-family="sans-serif" font-size="11" fill="#646464">'
+      . 'Generated ' . date('Y-m-d') . ' (confidential)</text>';
 
-imagepng($im, __DIR__ . '/21_canvas_overlay.png');
-imagedestroy($im);
+/* Highlight ring near the right edge — coordinates chosen relative
+ * to the canvas, not the chart's data space, since drawSvgFragment
+ * doesn't expose pixel positions of individual data points. */
+$rx = $W - 60; $ry = 200;
+$svg .= '<circle cx="' . $rx . '" cy="' . $ry . '" r="12"'
+      . ' fill="none" stroke="#FFDC00" stroke-width="2"/>';
+$svg .= '<circle cx="' . $rx . '" cy="' . $ry . '" r="13"'
+      . ' fill="none" stroke="#FFDC00" stroke-width="1"/>';
+
+$svg .= '</svg>';
+file_put_contents(__DIR__ . '/21_canvas_overlay.svg', $svg);
+
+/* For a PNG: render the chart directly, then assemble a composite
+ * image via any external rasterizer. The fastchart-side step is the
+ * .svg above; the .png path below is a chart-only render for the
+ * cookbook image. */
+(new FastChart\StockChart($W, $H))
+    ->setFontPath($font)
+    ->setDpi($dpi)
+    ->setTitle('ACME internal preview')
+    ->setOhlcv($rows)
+    ->addMovingAverage(20)
+    ->setDateAxisStride(FastChart\Chart::DATE_WEEK, 2)
+    ->renderToFile(__DIR__ . '/21_canvas_overlay.png');
