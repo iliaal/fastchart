@@ -1,0 +1,122 @@
+// vim:ft=javascript
+// Windows build manifest for fastchart. Mirrors config.m4 — every
+// source listed there must appear here, every optional codec
+// (libpng / libjpeg-turbo / libwebp) is gated by the same
+// HAVE_LIBxxx define, and the plutovg / plutosvg / qrcodegen vendor
+// trees compile with the same -DPLUTOVG_BUILD_STATIC /
+// -DPLUTOSVG_BUILD_STATIC flags so their symbols stay internal.
+//
+// Library availability on the Windows builder comes from the
+// php-windows-builder action's `libs:` input
+// (freetype,libpng,libjpeg-turbo,libwebp). FreeType is mandatory;
+// the three codec libs are optional. The DLL/header layout the
+// action provides matches the standard PHP-on-Windows SDK shape
+// that ext/gd already consumes.
+
+ARG_ENABLE("fastchart", "Enable fastchart support", "no");
+ARG_ENABLE("fastchart-dev", "Upgrade wrapper warnings to /WX (development builds)", "no");
+
+if (PHP_FASTCHART != "no") {
+
+    // FreeType is mandatory (text rendering: glyph metrics, family
+    // name resolution, FT_Outline_Decompose for SVG_TEXT_PATHS).
+    if (CHECK_LIB("freetype.lib", "fastchart", PHP_FASTCHART) &&
+        CHECK_HEADER_ADD_INCLUDE("ft2build.h", "CFLAGS_FASTCHART",
+            PHP_FASTCHART + "\\..\\deps\\include\\freetype2;" +
+            PHP_FASTCHART + "\\..\\deps\\include")) {
+        AC_DEFINE("HAVE_FREETYPE", 1, "Have FreeType");
+    } else {
+        WARNING("fastchart not enabled — freetype is required.");
+        PHP_FASTCHART = "no";
+    }
+
+    if (PHP_FASTCHART != "no") {
+
+        // Optional codec libs. Each missing lib drops its
+        // corresponding renderXxx() — the encoder compiles to a
+        // stub that returns -2 and the PHP method throws a clear
+        // "format not compiled in" error at call time. Mirrors the
+        // config.m4 per-lib loop.
+        if (CHECK_LIB("libpng_a.lib;libpng.lib", "fastchart", PHP_FASTCHART) &&
+            CHECK_HEADER_ADD_INCLUDE("png.h", "CFLAGS_FASTCHART")) {
+            AC_DEFINE("HAVE_LIBPNG", 1, "Have libpng");
+            ADD_FLAG("CFLAGS_FASTCHART", "/DHAVE_LIBPNG=1");
+            STDOUT.WriteLine("fastchart: libpng found");
+        } else {
+            STDOUT.WriteLine("fastchart: libpng not found — PNG output disabled");
+        }
+
+        if (CHECK_LIB("libjpeg_a.lib;libjpeg.lib", "fastchart", PHP_FASTCHART) &&
+            CHECK_HEADER_ADD_INCLUDE("jpeglib.h", "CFLAGS_FASTCHART")) {
+            AC_DEFINE("HAVE_LIBJPEG", 1, "Have libjpeg-turbo");
+            ADD_FLAG("CFLAGS_FASTCHART", "/DHAVE_LIBJPEG=1");
+            STDOUT.WriteLine("fastchart: libjpeg-turbo found");
+        } else {
+            STDOUT.WriteLine("fastchart: libjpeg-turbo not found — JPEG output disabled");
+        }
+
+        if (CHECK_LIB("libwebp_a.lib;libwebp.lib", "fastchart", PHP_FASTCHART) &&
+            CHECK_HEADER_ADD_INCLUDE("webp/encode.h", "CFLAGS_FASTCHART")) {
+            AC_DEFINE("HAVE_LIBWEBP", 1, "Have libwebp");
+            ADD_FLAG("CFLAGS_FASTCHART", "/DHAVE_LIBWEBP=1");
+            STDOUT.WriteLine("fastchart: libwebp found");
+        } else {
+            STDOUT.WriteLine("fastchart: libwebp not found — WebP output disabled");
+        }
+
+        // Vendor include paths so #include "plutovg.h" /
+        // "plutosvg.h" / "qrcodegen.h" resolve.
+        ADD_FLAG("CFLAGS_FASTCHART",
+            "/I" + configure_module_dirname + "\\vendor\\qrcodegen " +
+            "/I" + configure_module_dirname + "\\vendor\\plutovg\\include " +
+            "/I" + configure_module_dirname + "\\vendor\\plutovg\\source " +
+            "/I" + configure_module_dirname + "\\vendor\\plutosvg\\source");
+
+        // PLUTOVG_BUILD_STATIC / PLUTOSVG_BUILD_STATIC make those
+        // libraries' API decorators stop applying dllexport, so the
+        // vendored symbols compile in as static. Mirrors the
+        // -DPLUTOVG_BUILD_STATIC -DPLUTOSVG_BUILD_STATIC flags on
+        // the Unix side.
+        ADD_FLAG("CFLAGS_FASTCHART",
+            "/DPLUTOVG_BUILD_STATIC /DPLUTOSVG_BUILD_STATIC");
+
+        // /WX (warnings as errors) only with --enable-fastchart-dev,
+        // matching the Unix side's --enable-fastchart-dev gate.
+        if (PHP_FASTCHART_DEV == "yes") {
+            ADD_FLAG("CFLAGS_FASTCHART", "/WX");
+        }
+
+        var wrapper_sources =
+            "fastchart.c fastchart_palette.c fastchart_text.c " +
+            "fastchart_target.c fastchart_svg.c fastchart_axis.c " +
+            "fastchart_line.c fastchart_area.c fastchart_bar.c " +
+            "fastchart_pie.c fastchart_scatter.c fastchart_stock.c " +
+            "fastchart_radar.c fastchart_bubble.c fastchart_surface.c " +
+            "fastchart_gauge.c fastchart_gantt.c fastchart_boxplot.c " +
+            "fastchart_polar.c fastchart_contour.c fastchart_treemap.c " +
+            "fastchart_funnel.c fastchart_waterfall.c fastchart_heatmap.c " +
+            "fastchart_linear_meter.c fastchart_bullet.c fastchart_pareto.c " +
+            "fastchart_calendar.c fastchart_sunburst.c fastchart_sankey.c " +
+            "fastchart_marimekko.c fastchart_vector.c fastchart_effects.c " +
+            "fastchart_encoder.c fastchart_rasterize.c fastchart_symbol.c " +
+            "fastchart_code128.c fastchart_qrcode.c";
+
+        var qrcode_sources = "qrcodegen.c";
+
+        var plutovg_sources =
+            "plutovg-blend.c plutovg-canvas.c plutovg-font.c " +
+            "plutovg-ft-math.c plutovg-ft-raster.c plutovg-ft-stroker.c " +
+            "plutovg-matrix.c plutovg-paint.c plutovg-path.c " +
+            "plutovg-rasterize.c plutovg-surface.c";
+
+        var plutosvg_sources = "plutosvg.c";
+
+        EXTENSION("fastchart", wrapper_sources, null, "$(CFLAGS_FASTCHART)");
+        ADD_SOURCES(configure_module_dirname + "\\vendor\\qrcodegen",
+            qrcode_sources, "fastchart");
+        ADD_SOURCES(configure_module_dirname + "\\vendor\\plutovg\\source",
+            plutovg_sources, "fastchart");
+        ADD_SOURCES(configure_module_dirname + "\\vendor\\plutosvg\\source",
+            plutosvg_sources, "fastchart");
+    }
+}
