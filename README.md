@@ -22,7 +22,7 @@ extension; `renderPng()` / `renderJpeg()` / `renderWebp()` /
 
 ![fastchart: 26 chart types in one PHP extension](images/fastchart-hero.jpg)
 
-**[Live gallery →](https://iliaal.github.io/fastchart/v1-gallery.html)** — side-by-side SVG / PNG / JPG / WebP renders for every chart family, with the source PHP shown above each row.
+**[Live gallery →](https://iliaal.github.io/fastchart/v1-gallery.html)**. Side-by-side SVG / PNG / JPG / WebP renders for every chart family, with the source PHP shown above each row.
 
 ## Status
 
@@ -78,7 +78,7 @@ php -d extension=./modules/fastchart.so \
 
 - PHP 8.3 or later (NTS or ZTS).
 - **FreeType** development headers (`libfreetype-dev` /
-  `freetype-devel`). Required — text rendering depends on FreeType.
+  `freetype-devel`). Required, since text rendering depends on FreeType.
 - **libpng / libjpeg-turbo / libwebp** development headers. Each is
   optional; config.m4 probes them independently via pkg-config and
   the corresponding `renderPng()` / `renderJpeg()` / `renderWebp()`
@@ -122,8 +122,8 @@ $chart->renderToFile('/tmp/out.webp');   // setJpegQuality only affects
 PNG is always lossless; there's no quality knob. The encoder is
 libpng with default filter selection.
 
-For vector output — dashboards, print, anywhere infinite-zoom matters
-— call `renderSvg()` on the same chart object:
+Call `renderSvg()` on the same chart object for vector output:
+dashboards, print, anywhere infinite-zoom matters.
 
 ```php
 $chart = (new FastChart\LineChart(640, 320))
@@ -140,8 +140,8 @@ $fragment = $chart->drawSvgFragment();   // <g class="fastchart">...</g>
 
 Construction is identical for every output format; only the final
 render call differs. By default, SVG text is flattened to glyph
-outline paths (`SVG_TEXT_PATHS` mode) — the resulting SVG is fully
-self-contained and renders identically in any viewer or rasterizer.
+outline paths (`SVG_TEXT_PATHS` mode). The resulting SVG is self-
+contained and renders identically in any viewer or rasterizer.
 For smaller files with selectable text, switch to native `<text>`
 mode:
 
@@ -150,7 +150,7 @@ $chart->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 $svg = $chart->renderSvg();  // ~30% smaller; needs consumer text support
 ```
 
-Raster outputs (PNG/JPG/WebP) always use the PATHS mode internally —
+Raster outputs (PNG/JPG/WebP) always use the PATHS mode internally;
 plutovg has no text support of its own, so glyph flattening is what
 makes labels appear in the rasterized output.
 
@@ -186,7 +186,7 @@ add the rasterize cost on top of the SVG-only number.
 | Waterfall    |    5.9 |   65.9 |   104.0 |   31.5 |
 
 SVG is in the single-digit-ms range across the board because there's
-no rasterization — the backend appends strings into a `smart_str`.
+no rasterization; the backend appends strings into a `smart_str`.
 PNG and JPG land in the 60–85 ms band; WebP is the slowest encoder
 (libwebp's encoder costs more than libpng / libjpeg-turbo for our
 typical chart-shaped images). All four formats stay under 125 ms
@@ -293,8 +293,8 @@ All under the `FastChart\` namespace:
 Every setter returns `static`, so a single fluent expression configures
 and emits a chart.
 
-The Symbol family lives parallel to `Chart` (no shared base — axes /
-palettes / plot rect have no meaning for a barcode):
+The Symbol family lives parallel to `Chart` (no shared base, since
+axes / palettes / plot rect have no meaning for a barcode):
 
 - `Symbol`: abstract base for all 1D + 2D codes. Carries shared
   setters: `setSize()`, `setData()`, `setQuietZone()`, `setForeground()`,
@@ -330,13 +330,13 @@ Companion native PHP extensions for high-throughput PHP workloads:
 BSD 3-Clause for the extension itself; see [`LICENSE`](LICENSE).
 Vendored third-party code (all MIT):
 
-- `vendor/plutovg/` — Samuel Ugochukwu's
+- `vendor/plutovg/`: Samuel Ugochukwu's
   [plutovg](https://github.com/sammycage/plutovg) 2D rasterizer.
   See [`vendor/plutovg/LICENSE`](vendor/plutovg/LICENSE).
-- `vendor/plutosvg/` — Samuel Ugochukwu's
+- `vendor/plutosvg/`: Samuel Ugochukwu's
   [plutosvg](https://github.com/sammycage/plutosvg) SVG document
   parser. See [`vendor/plutosvg/LICENSE`](vendor/plutosvg/LICENSE).
-- `vendor/qrcodegen/` — nayuki's
+- `vendor/qrcodegen/`: nayuki's
   [QR-Code-generator](https://github.com/nayuki/QR-Code-generator)
   (C variant). See [`vendor/qrcodegen/LICENSE`](vendor/qrcodegen/LICENSE).
 
