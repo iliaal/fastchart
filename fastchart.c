@@ -1269,6 +1269,7 @@ static void fastchart_funnel_init_extras(fastchart_funnel_obj *o)
 {
     o->stages = NULL;
     o->stage_count = 0;
+    o->funnel_style = FASTCHART_FUNNEL_STYLE_FUNNEL;
     /* Override the base default (false) — funnels typically want
      * the per-stage value rendered next to the label. */
     ((fastchart_obj *)o)->show_values = true;
@@ -6157,6 +6158,24 @@ ZEND_METHOD(FastChart_Funnel, setStages)
     }
     self->stages = parsed;
     self->stage_count = idx;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Funnel, setStyle)
+{
+    zend_long style;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(style)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (style != FASTCHART_FUNNEL_STYLE_FUNNEL
+        && style != FASTCHART_FUNNEL_STYLE_PYRAMID) {
+        zend_value_error(
+            "FastChart\\Funnel::setStyle() expects STYLE_FUNNEL or STYLE_PYRAMID");
+        RETURN_THROWS();
+    }
+    fastchart_funnel_obj *self = Z_FASTCHART_FUNNEL_OBJ_P(ZEND_THIS);
+    self->funnel_style = (int)style;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 

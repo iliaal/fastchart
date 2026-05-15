@@ -1114,6 +1114,16 @@ final class Treemap extends Chart
  */
 final class Funnel extends Chart
 {
+    /** setStyle(): default funnel layout — each stage is a trapezoid
+     *  whose top width is its own value and bottom width is the next
+     *  stage's value, both scaled to the largest stage. */
+    public const int STYLE_FUNNEL  = 0;
+    /** setStyle(): pyramid layout — a single triangle subdivided into
+     *  horizontal bands. Each band's height is proportional to its
+     *  stage value; bandwidths follow the triangle's natural taper
+     *  (apex at the top, widest band at the base). */
+    public const int STYLE_PYRAMID = 1;
+
     /**
      * Stages, top to bottom. Each entry is
      * `['label' => string?, 'value' => number, 'color' => int?]`.
@@ -1121,6 +1131,14 @@ final class Funnel extends Chart
      * silently dropped at setStages().
      */
     public function setStages(array $stages): static {}
+
+    /**
+     * Switch between `STYLE_FUNNEL` (default trapezoid stages, value
+     * scales the width) and `STYLE_PYRAMID` (single triangle with
+     * value-proportional band heights). Both render the same
+     * stages — only the layout shape changes.
+     */
+    public function setStyle(int $style): static {}
 
     /* setShowValues(bool, string $format = '%g') is inherited from
      * Chart and toggles the value labels rendered next to each
