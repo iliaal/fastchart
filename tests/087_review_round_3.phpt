@@ -72,21 +72,27 @@ $tiny = (new FastChart\LineChart(1, 1))
 $im = imagecreatefromstring($tiny);
 echo "dpi_tiny_clamp:  ", (imagesx($im) >= 1 && imagesy($im) >= 1 ? "ok" : "bad"), "\n";
 
-/* renderToFile JPEG quality 0 rejected; WebP / AVIF quality 0 accepted. */
+/* renderToFile quality 0 is a sentinel: "use per-format default".
+ * JPEG falls back to setJpegQuality() (default 88); WebP falls back
+ * to 90. Both calls succeed. Out-of-range quality (<0 or >100) is
+ * still rejected. */
 $tmp_jpg  = tempnam(sys_get_temp_dir(), 'fc_q0_jpg_')  . '.jpg';
 $tmp_webp = tempnam(sys_get_temp_dir(), 'fc_q0_webp_') . '.webp';
 $chart = (new FastChart\LineChart(80, 40))
     ->setSeries([['data' => [1, 2, 3]]]);
 
-try {
-    $chart->renderToFile($tmp_jpg, 0);
-    echo "renderToFile_jpg0:   no throw (unexpected)\n";
-} catch (\ValueError $e) {
-    echo "renderToFile_jpg0:   ValueError\n";
-}
+$ok_jpg = $chart->renderToFile($tmp_jpg, 0);
+echo "renderToFile_jpg0:   ", ($ok_jpg > 0 ? "ok" : "bad ($ok_jpg)"), "\n";
 
 $ok = $chart->renderToFile($tmp_webp, 0);
 echo "renderToFile_webp0:  ", ($ok > 0 ? "ok" : "bad ($ok)"), "\n";
+
+try {
+    $chart->renderToFile($tmp_jpg, 101);
+    echo "renderToFile_oob:    no throw (unexpected)\n";
+} catch (\ValueError $e) {
+    echo "renderToFile_oob:    ValueError\n";
+}
 
 @unlink($tmp_jpg);
 @unlink($tmp_webp);
@@ -140,8 +146,9 @@ dpi_canvas_cap:  ValueError
 dpi_cap_16384:   ok
 dpi_cap_16385:   ValueError
 dpi_tiny_clamp:  ok
-renderToFile_jpg0:   ValueError
+renderToFile_jpg0:   ok
 renderToFile_webp0:  ok
+renderToFile_oob:    ValueError
 scatter_err_high: yes
 fmt_999_width:    no throw
 fmt_1000_width:   ValueError

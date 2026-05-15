@@ -694,7 +694,7 @@ ZEND_METHOD(FastChart_Symbol, drawSvgFragment)
 ZEND_METHOD(FastChart_Symbol, renderToFile)
 {
     zend_string *path;
-    zend_long quality = 90;
+    zend_long quality = 0;
     ZEND_PARSE_PARAMETERS_START(1, 2)
         Z_PARAM_PATH_STR(path)
         Z_PARAM_OPTIONAL
@@ -735,18 +735,11 @@ ZEND_METHOD(FastChart_Symbol, renderToFile)
             "FastChart\\Symbol: AVIF output was dropped in v1.0. Use .png/.jpg/.webp/.svg.");
         RETURN_THROWS();
     }
-    if (format == 1) {
-        if (quality < 1 || quality > 100) {
-            zend_value_error(
-                "FastChart\\Symbol::renderToFile() JPEG quality must be in [1, 100]");
-            RETURN_THROWS();
-        }
-    } else {
-        if (quality < 0 || quality > 100) {
-            zend_value_error(
-                "FastChart\\Symbol::renderToFile() quality must be in [0, 100]");
-            RETURN_THROWS();
-        }
+    if (quality < 0 || quality > 100) {
+        zend_value_error(
+            "FastChart\\Symbol::renderToFile() quality must be 0 "
+            "(use per-format default) or in [1, 100]");
+        RETURN_THROWS();
     }
     if (php_check_open_basedir(ZSTR_VAL(path))) {
         if (!EG(exception)) {

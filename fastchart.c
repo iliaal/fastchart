@@ -380,7 +380,19 @@ static void fastchart_base_addref_owned(fastchart_obj *b)
         }
         b->icons = copy;
     }
-    Z_TRY_ADDREF(b->config);
+    /* config is a real PHP HashTable wrapped in a zval; the lifecycle
+     * macro's memcpy aliased the HashTable pointer between src and
+     * dst. Setters that mutate config (addTextAnnotation,
+     * addOverlaySeries, addHorizontalLine, addVerticalLine, etc.)
+     * call zend_hash_str_update on an array whose refcount > 1, which
+     * Zend rejects with E_CORE_ERROR (SIGABRT, exit 134). Deep-copy
+     * the HashTable so dst owns its own independent array. */
+    if (Z_TYPE(b->config) == IS_ARRAY) {
+        zend_array *dup = zend_array_dup(Z_ARRVAL(b->config));
+        ZVAL_ARR(&b->config, dup);
+    } else {
+        Z_TRY_ADDREF(b->config);  /* unreachable today; defensive */
+    }
 }
 
 /* Shared series array helpers. The Line / Area / Bar per-type
@@ -5119,7 +5131,13 @@ static void fastchart_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS, zend_stri
 ZEND_METHOD(FastChart_Chart, renderToFile)
 {
     zend_string *path;
-    zend_long quality = 90;
+    /* Sentinel 0 = "use per-format default". For JPEG that means
+     * self->jpeg_quality (defaults to 88, settable via
+     * setJpegQuality); for WebP that means 90. Explicit values must
+     * be in [1, 100]. Prior to fix the default of 90 made the
+     * sentinel-fallback path unreachable, so setJpegQuality() had
+     * no effect on file output. */
+    zend_long quality = 0;
     ZEND_PARSE_PARAMETERS_START(1, 2)
         Z_PARAM_PATH_STR(path)
         Z_PARAM_OPTIONAL
@@ -5158,19 +5176,14 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
             "FastChart: AVIF output was dropped in v1.0. Use .png/.jpg/.webp/.svg.");
         RETURN_THROWS();
     }
-    /* JPEG range 1..100. PNG and WebP have their own valid ranges;
-     * PNG ignores quality entirely (libpng's compression-level lives
-     * elsewhere and we don't expose it). */
-    if (format == 1) {
-        if (quality < 1 || quality > 100) {
-            zend_value_error("FastChart\\Chart::renderToFile() JPEG quality must be in [1, 100]");
-            RETURN_THROWS();
-        }
-    } else {
-        if (quality < 0 || quality > 100) {
-            zend_value_error("FastChart\\Chart::renderToFile() quality must be in [0, 100]");
-            RETURN_THROWS();
-        }
+    /* Quality validation. 0 is the documented "use per-format
+     * default" sentinel; explicit values must be 1..100. PNG and
+     * SVG ignore quality regardless. */
+    if (quality < 0 || quality > 100) {
+        zend_value_error(
+            "FastChart\\Chart::renderToFile() quality must be 0 "
+            "(use per-format default) or in [1, 100]");
+        RETURN_THROWS();
     }
     if (php_check_open_basedir(ZSTR_VAL(path))) {
         if (!EG(exception)) {

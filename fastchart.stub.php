@@ -645,11 +645,14 @@ abstract class Chart
      * Render and write directly to a file. Format is inferred from
      * the path extension: `.png` / `.jpg` / `.jpeg` / `.webp` /
      * `.svg`. `$quality` only applies to JPEG / WebP outputs; SVG
-     * and PNG ignore it. Returns the byte count written. Honors
+     * and PNG ignore it. Default `0` means "use the per-format
+     * default": JPEG uses the value set via `setJpegQuality()`
+     * (default 88), WebP uses 90. Explicit values must be in
+     * `1..100`. Returns the byte count written. Honors
      * `open_basedir`. `.gif` / `.avif` extensions raise a clear
      * "dropped in v1.0" Error.
      */
-    public function renderToFile(string $path, int $quality = 90): int {}
+    public function renderToFile(string $path, int $quality = 0): int {}
 
     /**
      * Render to an SVG document. Returns the full markup including
@@ -1628,11 +1631,14 @@ abstract class Symbol
     /**
      * Render and write to `$path`. Format inferred from extension;
      * supports .png / .jpg / .jpeg / .webp / .svg. `$quality`
-     * applies to JPEG / WebP and is ignored for PNG and SVG. Honours
-     * `open_basedir`. Returns bytes written. `.gif` / `.avif` raise a
-     * clear "dropped in v1.0" Error.
+     * applies to JPEG / WebP and is ignored for PNG and SVG. Default
+     * `0` means "use per-format default": JPEG uses the value set
+     * via `setJpegQuality()` (default 88), WebP uses 90. Explicit
+     * values must be in `1..100`. Honours `open_basedir`. Returns
+     * bytes written. `.gif` / `.avif` raise a clear "dropped in
+     * v1.0" Error.
      */
-    public function renderToFile(string $path, int $quality = 90): int {}
+    public function renderToFile(string $path, int $quality = 0): int {}
 }
 
 /**
