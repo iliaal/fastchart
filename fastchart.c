@@ -33,7 +33,6 @@
 #include "fastchart_axis.h"
 #include "fastchart_encoder.h"
 #include "fastchart_rasterize.h"
-#include "fastchart_rasterize.h"
 
 #include "plutovg.h"
 #include "plutosvg.h"

@@ -16,6 +16,7 @@
 #include <plutosvg.h>
 #include <plutovg.h>
 
+#include <limits.h>
 #include <math.h>
 #include <string.h>
 
@@ -36,6 +37,18 @@ int fastchart_svg_get_intrinsic_dims(const char *svg, size_t svg_len,
 	 * width/height nor viewBox. Either is "unresolvable" for our
 	 * purposes — fastchart doesn't carry an outer viewport. */
 	if (!isfinite(w) || !isfinite(h) || w <= 0 || h <= 0) return -1;
+
+	/* Bound the float BEFORE the cast — (int)f is UB per C11 6.3.1.4
+	 * when f is outside the representable int range. A pathological
+	 * SVG with width="1e10" would otherwise produce INT_MIN on x86
+	 * (happens to fail the iw <= 0 check) or a trap on other ABIs.
+	 *
+	 * We use INT_MAX (not FC_IMAGE_MAX_DIM) as the guard so the
+	 * downstream per-axis cap check at the caller still fires with
+	 * the user-friendly "exceed cap" message for normal-but-too-
+	 * large dimensions like width=50000. This bound is strictly for
+	 * UB avoidance on truly absurd inputs. */
+	if (w > (float)INT_MAX || h > (float)INT_MAX) return -1;
 
 	int iw = (int)(w + 0.5f);
 	int ih = (int)(h + 0.5f);
