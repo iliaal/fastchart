@@ -88,8 +88,18 @@ zend_class_entry *fastchart_qrcode_ce;
  * setFontPath() before any text-rendering chart method. Non-static
  * so the Symbol family (fastchart_code128.c) can share the same
  * fallback for show_text rendering without duplicating the probe
- * chain. */
-zend_string *fastchart_default_font_path = NULL;
+ * chain.
+ *
+ * Storage is a plain C-string pointer into FASTCHART_DEFAULT_FONT_
+ * CANDIDATES (a static array of string literals, lifetime = program
+ * lifetime). Per-chart construction calls zend_string_init() to
+ * allocate its own copy. The earlier interned-zend_string design
+ * (round 2, master 3a74634) raced on Windows x64 ZTS — symptoms
+ * varied but the common factor was refcount manipulation on the
+ * shared zend_string across worker processes' TSRM cache state.
+ * Each chart owning its own zend_string sidesteps the issue
+ * entirely; the per-chart alloc cost is ~32 bytes. */
+const char *fastchart_default_font_path = NULL;
 
 /* TSRM module globals — the FT_Library + face cache per-thread state
  * declared in php_fastchart.h. Under NTS this is a single globals
@@ -265,7 +275,9 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
     b->webp_mode    = FASTCHART_WEBP_DRAWING;
 
     b->font_path = fastchart_default_font_path
-        ? zend_string_copy(fastchart_default_font_path) : NULL;
+        ? zend_string_init(fastchart_default_font_path,
+                           strlen(fastchart_default_font_path), 0)
+        : NULL;
 
     b->category_labels = NULL;
     b->n_category_labels = 0;
@@ -1792,21 +1804,14 @@ static const char *FASTCHART_DEFAULT_FONT_CANDIDATES[] = {
     NULL,
 };
 
-static zend_string *fastchart_probe_default_font(void)
+static const char *fastchart_probe_default_font(void)
 {
     struct stat st;
     for (int i = 0; FASTCHART_DEFAULT_FONT_CANDIDATES[i]; i++) {
         if (stat(FASTCHART_DEFAULT_FONT_CANDIDATES[i], &st) == 0 && S_ISREG(st.st_mode)) {
-            /* Intern the path so per-chart `zend_string_copy()` is a
-             * no-op (no refcount touch). A plain persistent string
-             * shared across threads would race in zend_string_copy
-             * under ZTS — the refcount increment isn't atomic.
-             * Interned strings sidestep the issue entirely; the
-             * interned-string table owns the lifetime. */
-            return zend_string_init_interned(
-                FASTCHART_DEFAULT_FONT_CANDIDATES[i],
-                strlen(FASTCHART_DEFAULT_FONT_CANDIDATES[i]),
-                1 /* permanent — survives across requests */);
+            /* The candidate is a string literal; the pointer is
+             * valid for the program lifetime. No allocation needed. */
+            return FASTCHART_DEFAULT_FONT_CANDIDATES[i];
         }
     }
     return NULL;
@@ -7974,9 +7979,10 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
 
 PHP_MSHUTDOWN_FUNCTION(fastchart)
 {
-    /* fastchart_default_font_path is owned by the interned-string
-     * table (zend_string_init_interned, permanent=1); Zend frees it
-     * during interned-table teardown. Nothing for us to release.
+    /* fastchart_default_font_path points at one of the string
+     * literals in FASTCHART_DEFAULT_FONT_CANDIDATES. Nothing to
+     * release; clear the pointer so a misordered RSHUTDOWN can't
+     * see stale state.
      *
      * Per-thread FT state (FT_Library + face cache) is released by
      * PHP_GSHUTDOWN(fastchart) — once per thread under ZTS, once at
@@ -8021,7 +8027,7 @@ PHP_MINFO_FUNCTION(fastchart)
 
     php_info_print_table_row(2, "Default font",
         fastchart_default_font_path
-            ? ZSTR_VAL(fastchart_default_font_path)
+            ? fastchart_default_font_path
             : "(not auto-detected, setFontPath() required)");
     php_info_print_table_end();
 }

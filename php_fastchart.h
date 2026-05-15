@@ -1185,10 +1185,12 @@ extern zend_object *fastchart_qrcode_clone_object(zend_object *src_obj);
 extern zend_object *fastchart_symbol_abstract_create_object(zend_class_entry *ce);
 
 /* Auto-detected sans-serif TTF path probed at MINIT in fastchart.c.
- * Owned (zend_string with persistent=1). NULL when no candidate
- * existed on the system. Shared between the Chart family
- * (fastchart_resolve_font) and the Symbol family
+ * Stored as a plain const char* pointing into a static string-
+ * literal table (lifetime = program lifetime); each chart calls
+ * zend_string_init() at construction to own its own copy. NULL
+ * when no candidate existed on the system. Shared between the
+ * Chart family (fastchart_resolve_font) and the Symbol family
  * (fastchart_code128.c, for show_text). */
-extern zend_string *fastchart_default_font_path;
+extern const char *fastchart_default_font_path;
 
 #endif /* PHP_FASTCHART_H */
