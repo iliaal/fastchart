@@ -78,6 +78,12 @@ int fastchart_bullet_render_to_target(fastchart_bullet_obj *self, fastchart_targ
     int margin_x = 60;
     int bar_x0 = margin_x;
     int bar_x1 = W - margin_x;
+    if (bar_x1 <= bar_x0) {
+        zend_throw_error(NULL,
+            "FastChart\\BulletChart::draw() canvas is too narrow "
+            "for label margins (need at least 121 px wide)");
+        return -1;
+    }
     int band_h = 36;
     if (H - top_pad < band_h * 2 + 40) band_h = (H - top_pad - 40) / 2;
     if (band_h < 12) band_h = 12;
