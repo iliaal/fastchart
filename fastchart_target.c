@@ -431,6 +431,40 @@ static const char *fc_sniff_image_mime(const unsigned char *data, size_t n)
     return NULL;
 }
 
+/* Walk a PNG's chunk list and verify every declared chunk length
+ * fits within the buffer. The vendored stb_image accepts IDAT chunk
+ * lengths up to ~1 GB before attempting the read, so a 30-byte PNG
+ * declaring length=0x3FFFFFFF triggers a ~1 GB realloc — single-
+ * request OOM-kill on memory-constrained workers. stb's threat
+ * model treats resource validation as the caller's responsibility,
+ * so the check lives here. Returns 0 on PNGs with self-consistent
+ * chunk framing (or any non-PNG input), -1 if any chunk declares a
+ * length that overruns the remaining buffer. */
+static int fc_validate_png_chunks(const unsigned char *b, size_t n)
+{
+    if (n < 16 || b[0] != 0x89 || b[1] != 'P'
+        || b[2] != 'N' || b[3] != 'G') {
+        return 0;
+    }
+    size_t off = 8; /* past PNG signature */
+    /* Cap iterations: a legal PNG has well under this many chunks. */
+    for (int iter = 0; iter < 1024; iter++) {
+        if (off + 12 > n) return 0; /* truncated tail; stb handles it */
+        uint32_t len = ((uint32_t)b[off]     << 24)
+                     | ((uint32_t)b[off + 1] << 16)
+                     | ((uint32_t)b[off + 2] <<  8)
+                     |  (uint32_t)b[off + 3];
+        if (len > (uint32_t)INT32_MAX) return -1;
+        if ((size_t)len > n - off - 12) return -1;
+        if (b[off + 4] == 'I' && b[off + 5] == 'E'
+            && b[off + 6] == 'N' && b[off + 7] == 'D') {
+            return 0;
+        }
+        off += 12 + (size_t)len;
+    }
+    return -1;
+}
+
 /* Sniff width/height for a PNG or JPEG buffer. Returns 0 on success,
  * -1 if the header layout doesn't yield dimensions. Mirrors the
  * fastchart_axis.c routine but operates on an in-memory buffer. */
@@ -548,6 +582,11 @@ int fastchart_target_load_source_image(const char *path,
         || src_h > FC_IMAGE_MAX_DIM
         || (long long)src_w * (long long)src_h
             > (long long)FC_IMAGE_MAX_PIXELS) {
+        zend_string_release(raw);
+        return -1;
+    }
+
+    if (fc_validate_png_chunks(bytes, n) != 0) {
         zend_string_release(raw);
         return -1;
     }
