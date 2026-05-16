@@ -1,5 +1,5 @@
 /* This is a generated file, edit fastchart.stub.php instead.
- * Stub hash: 4614f2c850760904ef928ae66bc35f1f8cbd60f3 */
+ * Stub hash: 31d34161cf4f236d62f98d226820432450a3346e */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -467,6 +467,12 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_PolarChart_setStyle arginfo_class_FastChart_Chart_setLineStyle
 
+#define arginfo_class_FastChart_PolarChart_setInterpolation arginfo_class_FastChart_Chart_setLineInterpolation
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_PolarChart_addVectors, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, vectors, IS_ARRAY, 0)
+ZEND_END_ARG_INFO()
+
 #define arginfo_class_FastChart_ContourChart_setGrid arginfo_class_FastChart_SurfaceChart_setGrid
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_ContourChart_setLevels, 0, 1, IS_STATIC, 0)
@@ -553,9 +559,7 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_MarimekkoChart_s
 	ZEND_ARG_TYPE_INFO(0, columns, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_VectorChart_setVectors, 0, 1, IS_STATIC, 0)
-	ZEND_ARG_TYPE_INFO(0, vectors, IS_ARRAY, 0)
-ZEND_END_ARG_INFO()
+#define arginfo_class_FastChart_VectorChart_setVectors arginfo_class_FastChart_PolarChart_addVectors
 
 #define arginfo_class_FastChart_VectorChart_setColorRamp arginfo_class_FastChart_Chart_setColorRamp
 
@@ -738,6 +742,8 @@ ZEND_METHOD(FastChart_PolarChart, setSeries);
 ZEND_METHOD(FastChart_PolarChart, setMaxRadius);
 ZEND_METHOD(FastChart_PolarChart, setFilled);
 ZEND_METHOD(FastChart_PolarChart, setStyle);
+ZEND_METHOD(FastChart_PolarChart, setInterpolation);
+ZEND_METHOD(FastChart_PolarChart, addVectors);
 ZEND_METHOD(FastChart_ContourChart, setGrid);
 ZEND_METHOD(FastChart_ContourChart, setLevels);
 ZEND_METHOD(FastChart_ContourChart, setFilled);
@@ -977,6 +983,8 @@ static const zend_function_entry class_FastChart_PolarChart_methods[] = {
 	ZEND_ME(FastChart_PolarChart, setMaxRadius, arginfo_class_FastChart_PolarChart_setMaxRadius, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PolarChart, setFilled, arginfo_class_FastChart_PolarChart_setFilled, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PolarChart, setStyle, arginfo_class_FastChart_PolarChart_setStyle, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_PolarChart, setInterpolation, arginfo_class_FastChart_PolarChart_setInterpolation, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_PolarChart, addVectors, arginfo_class_FastChart_PolarChart_addVectors, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
