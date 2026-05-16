@@ -1237,6 +1237,11 @@ final class Funnel extends Chart
      *  stage value; bandwidths follow the triangle's natural taper
      *  (apex at the top, widest band at the base). */
     public const int STYLE_PYRAMID = 1;
+    /** setStyle(): cone layout — pyramid bands with front-facing
+     *  ellipse arcs at each band's top and bottom edges, suggesting
+     *  a 3D cone seen from the side. Layout is identical to
+     *  STYLE_PYRAMID; only the silhouette changes. */
+    public const int STYLE_CONE = 2;
 
     /**
      * Stages, top to bottom. Each entry is
@@ -1248,9 +1253,11 @@ final class Funnel extends Chart
 
     /**
      * Switch between `STYLE_FUNNEL` (default trapezoid stages, value
-     * scales the width) and `STYLE_PYRAMID` (single triangle with
-     * value-proportional band heights). Both render the same
-     * stages — only the layout shape changes.
+     * scales the width), `STYLE_PYRAMID` (single triangle with
+     * value-proportional band heights), and `STYLE_CONE` (pyramid
+     * layout with ellipse-arc band edges that suggest a 3D cone).
+     * All three render the same stages — only the silhouette
+     * changes.
      */
     public function setStyle(int $style): static {}
 

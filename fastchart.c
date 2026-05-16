@@ -6888,9 +6888,10 @@ ZEND_METHOD(FastChart_Funnel, setStyle)
     ZEND_PARSE_PARAMETERS_END();
 
     if (style != FASTCHART_FUNNEL_STYLE_FUNNEL
-        && style != FASTCHART_FUNNEL_STYLE_PYRAMID) {
+        && style != FASTCHART_FUNNEL_STYLE_PYRAMID
+        && style != FASTCHART_FUNNEL_STYLE_CONE) {
         zend_value_error(
-            "FastChart\\Funnel::setStyle() expects STYLE_FUNNEL or STYLE_PYRAMID");
+            "FastChart\\Funnel::setStyle() expects STYLE_FUNNEL, STYLE_PYRAMID, or STYLE_CONE");
         RETURN_THROWS();
     }
     fastchart_funnel_obj *self = Z_FASTCHART_FUNNEL_OBJ_P(ZEND_THIS);
