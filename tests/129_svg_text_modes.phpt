@@ -12,6 +12,7 @@ $candidates = [
     '/usr/share/fonts/truetype/lato/Lato-Regular.ttf',
     '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
     '/usr/share/fonts/dejavu/DejaVuSans.ttf',
+    '/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf',
 ];
 $font = '';
 foreach ($candidates as $p) { if (is_readable($p)) { $font = $p; break; } }

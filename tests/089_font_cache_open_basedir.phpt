@@ -12,6 +12,7 @@ $cands = [
     '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
     '/usr/share/fonts/dejavu/DejaVuSans.ttf',
     '/usr/share/fonts/TTF/DejaVuSans.ttf',
+    '/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf',
 ];
 $ok = false;
 foreach ($cands as $c) { if (file_exists($c)) { $ok = true; break; } }
@@ -34,6 +35,7 @@ $font_candidates = [
     '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
     '/usr/share/fonts/dejavu/DejaVuSans.ttf',
     '/usr/share/fonts/TTF/DejaVuSans.ttf',
+    '/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf',
 ];
 $font = null;
 foreach ($font_candidates as $cand) {
