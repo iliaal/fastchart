@@ -728,6 +728,7 @@ static void fastchart_area_init_extras(fastchart_area_obj *o)
 {
     o->area_alpha = 64;
     o->stacked = false;
+    o->band_mode = false;
     fastchart_series_array_init(o->series, FASTCHART_MAX_SERIES);
     o->n_series = 0;
     o->max_len = 0;
@@ -4705,6 +4706,17 @@ ZEND_METHOD(FastChart_AreaChart, setStacked)
     ZEND_PARSE_PARAMETERS_END();
     fastchart_area_obj *self = Z_FASTCHART_AREA_OBJ_P(ZEND_THIS);
     self->stacked = stacked;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_AreaChart, setBandMode)
+{
+    bool band;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(band)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_area_obj *self = Z_FASTCHART_AREA_OBJ_P(ZEND_THIS);
+    self->band_mode = band;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
