@@ -12,10 +12,9 @@ gd
  * instance of every chart family and asserts the four output
  * formats each produce magic-byte-correct bytes at non-trivial size. */
 
-$lato = '/usr/share/fonts/truetype/lato/Lato-Regular.ttf';
-$font = is_readable($lato) ? $lato
-        : '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
-if (!is_readable($font)) die("skip no system font available\n");
+require __DIR__ . '/_font_candidates.inc.php';
+$font = fc_pick_font();
+if ($font === '') die("skip no system font available\n");
 
 $ohlcv = [];
 for ($i = 0; $i < 8; $i++) {
