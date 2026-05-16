@@ -21,12 +21,44 @@ $tot_svg = $tot_png = $tot_jpg = $tot_webp = 0;
 
 foreach ($cases as $idx => $case) {
     $c = $case['build']();
+    $label = htmlspecialchars($case['label'], ENT_QUOTES, 'UTF-8');
+    $ref   = htmlspecialchars($case['ref'],   ENT_QUOTES, 'UTF-8');
+    $n = $idx + 1;
+    $toc .= "<li><a href=\"#row-{$n}\">{$label}</a></li>\n";
+
+    /* Image-map probe: chart families that populate area data after a
+     * render expose it through getImageMap(). When non-empty, emit a
+     * single working PNG + <map> instead of the four-format quad —
+     * the point of the case is the clickable hot-spots, not codec
+     * comparison. Mostly catches BarChart / PieChart / ScatterChart. */
+    $png = $c->renderPng();
+    $tot_png += strlen($png);
+    $map_name = "chart-{$n}";
+    $img_map = method_exists($c, 'getImageMap') ? $c->getImageMap($map_name) : '';
+
+    if ($img_map !== '') {
+        $sz_png = number_format(strlen($png) / 1024, 1);
+        $png_uri = 'data:image/png;base64,' . base64_encode($png);
+        $rows .= <<<HTML
+<section class="row" id="row-{$n}">
+  <h2>{$label}</h2>
+  <p class="ref">Source: <a href="https://github.com/iliaal/fastchart/blob/master/{$ref}"><code>{$ref}</code></a></p>
+  <p class="ref">Hover or click a bar — hot-spots come from <code>getImageMap()</code>.</p>
+  <div class="single">
+    <figure>
+      <figcaption>PNG + HTML <code>&lt;map&gt;</code> <span class="size">{$sz_png} KB</span></figcaption>
+      <div class="frame"><img src="{$png_uri}" usemap="#{$map_name}" alt="Chart with hot-spots">{$img_map}</div>
+    </figure>
+  </div>
+</section>
+HTML;
+        continue;
+    }
+
     $svg  = $c->renderSvg();
-    $png  = $c->renderPng();
     $jpg  = $c->renderJpeg();
     $webp = $c->renderWebp();
     $tot_svg  += strlen($svg);
-    $tot_png  += strlen($png);
     $tot_jpg  += strlen($jpg);
     $tot_webp += strlen($webp);
 
@@ -38,12 +70,6 @@ foreach ($cases as $idx => $case) {
     $png_uri  = 'data:image/png;base64,'  . base64_encode($png);
     $jpg_uri  = 'data:image/jpeg;base64,' . base64_encode($jpg);
     $webp_uri = 'data:image/webp;base64,' . base64_encode($webp);
-
-    $label = htmlspecialchars($case['label'], ENT_QUOTES, 'UTF-8');
-    $ref   = htmlspecialchars($case['ref'],   ENT_QUOTES, 'UTF-8');
-
-    $n = $idx + 1;
-    $toc .= "<li><a href=\"#row-{$n}\">{$label}</a></li>\n";
 
     $rows .= <<<HTML
 <section class="row" id="row-{$n}">
@@ -124,6 +150,8 @@ section.row .ref a { color: var(--accent); text-decoration: none; }
 .quad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 @media (max-width: 1400px) { .quad { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width:  720px) { .quad { grid-template-columns: 1fr; } }
+.single { display: flex; justify-content: center; }
+.single figure { max-width: 720px; }
 figure { margin: 0; }
 figcaption { font-size: 0.82rem; color: var(--muted); margin-bottom: 6px;
              display: flex; justify-content: space-between; align-items: baseline; }

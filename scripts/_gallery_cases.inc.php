@@ -1296,7 +1296,8 @@ for ($i = 0; $i < 30; $i++) {
         ['label' => 'lower bound', 'data' => $lower],
     ])
     ->setBandMode(true)
-    ->setFillOpacity(96);
+    ->setFillOpacity(96)
+    ->setLegendPosition(FastChart\Chart::LEGEND_TOP_LEFT);
 PHP,
     'build' => function () use ($font, $dpi) {
         $upper = []; $lower = [];
@@ -1314,7 +1315,8 @@ PHP,
                 ['label' => 'lower bound', 'data' => $lower],
             ])
             ->setBandMode(true)
-            ->setFillOpacity(96);
+            ->setFillOpacity(96)
+            ->setLegendPosition(FastChart\Chart::LEGEND_TOP_LEFT);
     },
 ];
 

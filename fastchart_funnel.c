@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <limits.h>
 
 #include "php.h"
 #include "Zend/zend_exceptions.h"
@@ -116,6 +117,14 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
     const char *label_font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double label_size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base_size);
 
+    /* Pyramid/cone tail stages can collapse to a few pixels of height
+     * (Paid=310 of 18.7k -> ~5 px band), so adjacent label centroids
+     * stack within one line-height of each other. Track the last
+     * drawn label Y and enforce >= 1.05 * label_size separation by
+     * pushing the current label down. */
+    int last_label_y = INT_MIN;
+    int min_label_gap = (int)(label_size * 2.2 + 0.5);
+
     /* PYRAMID: cumulative-value scan top-down to position each band
      * within the triangle. Width at any y is linear in (y - y0). */
     double cum_v = 0.0;
@@ -195,13 +204,20 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
         }
 
         /* Label: stage name on the left, optional value on the right.
-         * Anchor at the trapezoid centroid Y. */
+         * Anchor at the trapezoid centroid Y, then push down to keep
+         * at least min_label_gap from the previous label (pyramid/cone
+         * tail stages share the same few pixels of band height). */
         int yc = (yt + yb) / 2 + (int)(label_size * 0.4);
+        if (pyramid && last_label_y != INT_MIN
+            && yc - last_label_y < min_label_gap) {
+            yc = last_label_y + min_label_gap;
+        }
         if (label_font && self->stages[i].label) {
             fastchart_text_draw(t, label_font, label_size, pal.text,
                                 x_left - 8, yc, FASTCHART_ALIGN_RIGHT,
                                 self->stages[i].label, NULL, 0);
         }
+        last_label_y = yc;
         if (label_font && ((fastchart_obj *)self)->show_values) {
             /* Honour the inherited setShowValues($flag, $format)
              * format string when present; fall back to "%.0f" for

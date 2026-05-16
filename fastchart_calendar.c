@@ -157,7 +157,6 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
     /* Cells: walk every day from grid_start to last; index into
      * self->days via binary search (data is sorted). */
     int data_idx = 0;
-    int prev_month = 0;
     for (int w = 0; w < n_weeks; w++) {
         for (int r = 0; r < 7; r++) {
             long day = grid_start + (long)w * 7 + r;
@@ -186,14 +185,24 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
                                   cell_size - 2 * cell_pad,
                                   color, 1, 0);
         }
-        /* Month label when the first cell of the week starts a new
-         * month. */
-        long week_first_day = grid_start + (long)w * 7;
-        int y, m, d;
-        fastchart_civil_from_days(week_first_day, &y, &m, &d);
-        if (m != prev_month) {
-            prev_month = m;
-            if (font) {
+        /* Month label only when day-1 of a month falls inside this
+         * week (GitHub-style placement). Avoids stub labels on
+         * partial leading columns — when grid_start lands mid-month,
+         * week 0 spans two months but only the canonical "new month
+         * starts here" label should appear, one cell to the right. */
+        if (font) {
+            int label_month = 0;
+            for (int dr = 0; dr < 7; dr++) {
+                long check_day = grid_start + (long)w * 7 + dr;
+                if (check_day < first || check_day > last) continue;
+                int yy, mm, dd;
+                fastchart_civil_from_days(check_day, &yy, &mm, &dd);
+                if (dd == 1) {
+                    label_month = mm;
+                    break;
+                }
+            }
+            if (label_month) {
                 static const char *month_labels[12] = {
                     "Jan","Feb","Mar","Apr","May","Jun",
                     "Jul","Aug","Sep","Oct","Nov","Dec"
@@ -201,7 +210,7 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
                 int cx = grid_x0 + w * cell_size;
                 fastchart_text_draw(t, font, size, pal.text,
                                     cx, grid_y0 - 4, FASTCHART_ALIGN_LEFT,
-                                    month_labels[m - 1], NULL, 0);
+                                    month_labels[label_month - 1], NULL, 0);
             }
         }
     }
