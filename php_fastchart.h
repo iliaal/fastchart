@@ -321,7 +321,10 @@ typedef struct {
 #define FASTCHART_IMAGE_MAP_CIRCLE 0
 #define FASTCHART_IMAGE_MAP_RECT   1
 #define FASTCHART_IMAGE_MAP_POLY   2
-#define FASTCHART_IMAGE_MAP_MAX_COORDS 16
+/* Pie poly hot-spots use 14 ints (center + 6 arc samples); 32 leaves
+ * headroom for denser sampling or richer poly shapes without bumping
+ * the struct's fixed-size coord buffer at the call sites. */
+#define FASTCHART_IMAGE_MAP_MAX_COORDS 32
 typedef struct fastchart_image_map_area {
     int shape;
     int n_coords;
@@ -1228,6 +1231,17 @@ extern zend_object *fastchart_qrcode_clone_object(zend_object *src_obj);
  * Z_FASTCHART_SYMBOL_OBJ_P expects — every inherited method would
  * read out-of-bounds. This handler throws on any such instantiation. */
 extern zend_object *fastchart_symbol_abstract_create_object(zend_class_entry *ce);
+
+/* Same sentinel for the Chart family. FastChart\Chart is abstract;
+ * `class MyChart extends FastChart\Chart {}` would otherwise inherit
+ * no create_object and the engine would allocate a vanilla
+ * zend_object lacking the FASTCHART_BASE_FIELDS prefix our methods
+ * expect. Z_FASTCHART_OBJ_P then casts into memory we don't own and
+ * the next setter or destructor scribbles past the object. Wired in
+ * at MINIT for both the abstract class entry and any future abstract
+ * intermediates so userland subclassing is rejected at instantiation
+ * time rather than corrupting heap. */
+extern zend_object *fastchart_chart_abstract_create_object(zend_class_entry *ce);
 
 /* Auto-detected sans-serif TTF path probed at MINIT in fastchart.c.
  * Stored as a plain const char* pointing into a static string-
