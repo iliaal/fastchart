@@ -16,6 +16,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "php.h"
 #include "Zend/zend_exceptions.h"
@@ -95,6 +96,14 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
     int max_half = (x_right - x_left) / 2;
 
     bool pyramid = (self->funnel_style == FASTCHART_FUNNEL_STYLE_PYRAMID);
+    bool cone    = (self->funnel_style == FASTCHART_FUNNEL_STYLE_CONE);
+    /* CONE shares PYRAMID's triangular layout (cumulative-value y
+     * positions, value-proportional band heights, linear width
+     * taper) but renders each band's top and bottom edges as front-
+     * facing ellipse arcs to suggest a 3D cone seen from the side.
+     * Treat cone like pyramid for layout decisions, then swap the
+     * polygon shape at draw time. */
+    if (cone) pyramid = true;
 
     const char *label_font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double label_size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base_size);
@@ -133,14 +142,49 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
             color = pal.series[i % FASTCHART_PALETTE_SERIES_N];
         }
 
-        gdPoint trap[4] = {
-            { cx - half_top, yt },
-            { cx + half_top, yt },
-            { cx + half_bot, yb },
-            { cx - half_bot, yb },
-        };
-        fastchart_target_polygon(t, trap, 4, color, 1, 0);
-        fastchart_target_polygon(t, trap, 4, pal.border, 0, 1);
+        if (cone) {
+            /* Trace: top arc (left→right, dipping below yt), down
+             * right wall, bottom arc (right→left, dipping below yb),
+             * up left wall. ring_h sets the apparent perspective
+             * tilt — 25% of the band's average half-width gives a
+             * moderate camera angle. ARC_N=14 samples per arc keeps
+             * the silhouette smooth without blowing the polygon
+             * point budget. */
+            enum { ARC_N = 14, CONE_PTS = (ARC_N + 1) * 2 };
+            double avg_half = (half_top + half_bot) * 0.5;
+            int ring_h_top = (int)(avg_half * 0.22 + 0.5);
+            int ring_h_bot = (int)(avg_half * 0.22 + 0.5);
+            if (ring_h_top < 1) ring_h_top = 1;
+            if (ring_h_bot < 1) ring_h_bot = 1;
+            gdPoint band[CONE_PTS];
+            int k = 0;
+            /* Top arc: θ from π (left) → 0 (right), front-facing
+             * (sin >= 0 dips below yt). */
+            for (int s = 0; s <= ARC_N; s++) {
+                double th = M_PI - (double)s * M_PI / ARC_N;
+                band[k].x = cx + (int)(half_top * cos(th) + 0.5);
+                band[k].y = yt + (int)(ring_h_top * sin(th) + 0.5);
+                k++;
+            }
+            /* Bottom arc: θ from 0 (right) → π (left). */
+            for (int s = 0; s <= ARC_N; s++) {
+                double th = (double)s * M_PI / ARC_N;
+                band[k].x = cx + (int)(half_bot * cos(th) + 0.5);
+                band[k].y = yb + (int)(ring_h_bot * sin(th) + 0.5);
+                k++;
+            }
+            fastchart_target_polygon(t, band, k, color, 1, 0);
+            fastchart_target_polygon(t, band, k, pal.border, 0, 1);
+        } else {
+            gdPoint trap[4] = {
+                { cx - half_top, yt },
+                { cx + half_top, yt },
+                { cx + half_bot, yb },
+                { cx - half_bot, yb },
+            };
+            fastchart_target_polygon(t, trap, 4, color, 1, 0);
+            fastchart_target_polygon(t, trap, 4, pal.border, 0, 1);
+        }
 
         /* Label: stage name on the left, optional value on the right.
          * Anchor at the trapezoid centroid Y. */

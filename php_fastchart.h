@@ -729,6 +729,7 @@ typedef struct {
 
 #define FASTCHART_FUNNEL_STYLE_FUNNEL   0
 #define FASTCHART_FUNNEL_STYLE_PYRAMID  1
+#define FASTCHART_FUNNEL_STYLE_CONE     2
 
 typedef struct {
     FASTCHART_BASE_FIELDS
