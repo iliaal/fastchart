@@ -31,4 +31,5 @@ for ($i = 0; $i < $days; $i++) {
     ])
     ->setBandMode(true)
     ->setFillOpacity(96)
+    ->setLegendPosition(FastChart\Chart::LEGEND_TOP_LEFT)
     ->renderToFile(__DIR__ . '/53_area_band.png');

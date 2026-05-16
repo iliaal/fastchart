@@ -59,12 +59,32 @@ int fastchart_bubble_render_to_target(fastchart_bubble_obj *self, fastchart_targ
     }
     if (ymax > ymin) {
         double ypad = (ymax - ymin) * 0.10;
-        /* Log axis: padding via subtraction can push ymin <= 0; let
-         * fastchart_value_range_compute_log nice the bounds instead. */
-        if (self->y_axis_scale != FASTCHART_SCALE_LOG) {
+        if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
+            /* Log axis: subtractive ymin pad could push ymin <= 0
+             * and trip the log validator. Multiplicative pad keeps
+             * ymin strictly positive while still giving the
+             * smallest-data bubble vertical room — without it, the
+             * bottom-most bubble's radius spills below the X axis.
+             *
+             * Clamp the padded ymin to *just above* its decade floor
+             * so the log nicer doesn't add a spurious lower-decade
+             * tick (e.g. data starting at 1.48 padded to 0.988 would
+             * otherwise extend the range from [1, 10000] down to
+             * [0.1, 10000], adding an empty decade at the bottom).
+             * Same trick on the upper side keeps ymax within its
+             * current decade. */
+            double decade_lo = pow(10.0, floor(log10(ymin)));
+            double decade_hi = pow(10.0, ceil(log10(ymax)));
+            double padded_lo = ymin / 1.5;
+            double padded_hi = ymax * 1.5;
+            if (padded_lo < decade_lo * 1.01) padded_lo = decade_lo * 1.01;
+            if (padded_hi > decade_hi * 0.99) padded_hi = decade_hi * 0.99;
+            ymin = padded_lo;
+            ymax = padded_hi;
+        } else {
             ymin -= ypad;
+            ymax += ypad;
         }
-        ymax += ypad;
     }
 
     fastchart_value_range yrange;
