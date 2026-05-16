@@ -89,14 +89,22 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
         return -1;
     }
 
-    int total_h = y1 - y0;
-    int stage_h = total_h / n;
-    if (stage_h < 4) stage_h = 4;
     int cx = (x_left + x_right) / 2;
     int max_half = (x_right - x_left) / 2;
 
     bool pyramid = (self->funnel_style == FASTCHART_FUNNEL_STYLE_PYRAMID);
     bool cone    = (self->funnel_style == FASTCHART_FUNNEL_STYLE_CONE);
+    /* CONE bands draw front-facing ellipse arcs at the top and
+     * bottom of every band. The bottom arc dips below the band's
+     * geometric y by ring_h ≈ 22% of the band's average half-width.
+     * For the bottom-most band that half is max_half (the widest
+     * point), so reserve max_half * 0.22 pixels at the bottom of
+     * the plot region — otherwise the bottom band's arc spills
+     * past the canvas edge. */
+    int cone_bottom_reserve = cone ? (int)(max_half * 0.22 + 0.5) : 0;
+    int total_h = (y1 - y0) - cone_bottom_reserve;
+    int stage_h = total_h / n;
+    if (stage_h < 4) stage_h = 4;
     /* CONE shares PYRAMID's triangular layout (cumulative-value y
      * positions, value-proportional band heights, linear width
      * taper) but renders each band's top and bottom edges as front-
