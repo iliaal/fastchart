@@ -39,11 +39,16 @@ foreach ($cases as $idx => $case) {
     if ($img_map !== '') {
         $sz_png = number_format(strlen($png) / 1024, 1);
         $png_uri = 'data:image/png;base64,' . base64_encode($png);
+        /* Rewrite area hrefs to a same-page anchor. The case data sets
+         * realistic-looking URLs (/reports/2026qN) to model production
+         * usage, but those paths don't resolve from the static gallery
+         * page — leave the tooltips intact, defuse the navigation. */
+        $img_map = preg_replace('/href="[^"]*"/', 'href="#row-' . $n . '"', $img_map);
         $rows .= <<<HTML
 <section class="row" id="row-{$n}">
   <h2>{$label}</h2>
   <p class="ref">Source: <a href="https://github.com/iliaal/fastchart/blob/master/{$ref}"><code>{$ref}</code></a></p>
-  <p class="ref">Hover or click a bar — hot-spots come from <code>getImageMap()</code>.</p>
+  <p class="ref">Hover a bar to see the tooltip — hot-spots come from <code>getImageMap()</code>. Hrefs are defused to <code>#</code> in this demo.</p>
   <div class="single">
     <figure>
       <figcaption>PNG + HTML <code>&lt;map&gt;</code> <span class="size">{$sz_png} KB</span></figcaption>
