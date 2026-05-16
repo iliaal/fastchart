@@ -59,13 +59,28 @@ int fastchart_bubble_render_to_target(fastchart_bubble_obj *self, fastchart_targ
     }
     if (ymax > ymin) {
         double ypad = (ymax - ymin) * 0.10;
-        ymin -= ypad;
+        /* Log axis: padding via subtraction can push ymin <= 0; let
+         * fastchart_value_range_compute_log nice the bounds instead. */
+        if (self->y_axis_scale != FASTCHART_SCALE_LOG) {
+            ymin -= ypad;
+        }
         ymax += ypad;
     }
 
     fastchart_value_range yrange;
-    fastchart_value_range_compute(ymin, ymax, 6, &yrange);
-    fastchart_value_range_apply_override((fastchart_obj *)self, &yrange);
+    if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
+        if (ymin <= 0) {
+            zend_value_error("FastChart\\BubbleChart::draw(): log Y-axis requires strictly-positive Y values");
+            return -1;
+        }
+        if (fastchart_value_range_compute_log(ymin, ymax, &yrange) != 0) {
+            zend_value_error("FastChart\\BubbleChart::draw(): log Y-axis requires strictly-positive Y values");
+            return -1;
+        }
+    } else {
+        fastchart_value_range_compute(ymin, ymax, 6, &yrange);
+        fastchart_value_range_apply_override((fastchart_obj *)self, &yrange);
+    }
 
     fastchart_value_range xrange;
     fastchart_value_range_compute(xmin, xmax, 6, &xrange);
