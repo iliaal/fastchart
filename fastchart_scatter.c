@@ -353,9 +353,11 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
                 : 0.5;
             int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
             int py = fastchart_y_to_pixel(points[i].y, &yrange, &plot);
-            self->image_map_areas[k].x = px;
-            self->image_map_areas[k].y = py;
-            self->image_map_areas[k].r = marker_size;
+            self->image_map_areas[k].shape = FASTCHART_IMAGE_MAP_CIRCLE;
+            self->image_map_areas[k].n_coords = 3;
+            self->image_map_areas[k].coords[0] = px;
+            self->image_map_areas[k].coords[1] = py;
+            self->image_map_areas[k].coords[2] = marker_size;
             self->image_map_areas[k].href = points[i].href;
             self->image_map_areas[k].tooltip = points[i].tooltip;
             k++;

@@ -117,6 +117,8 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
         ? fastchart_target_color_rgb(t, (int)self->edge_color)
         : pal.border;
 
+    fastchart_reset_image_map_areas((fastchart_obj *)self);
+
     int radius = diameter / 2;
     double start_deg = -90.0;  /* 12 o'clock */
     for (int i = 0; i < n_slices; i++) {
@@ -124,6 +126,22 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
         int color = slice_colors[i];
         double s_deg = floor(start_deg);
         double e_deg = ceil(start_deg + sweep);
+
+        /* Image-map poly per slice: center + 5 sample points along
+         * the arc gives a 6-vertex wedge approximation that captures
+         * the slice's clickable area well enough for HTML imagemaps. */
+        int poly_xy[FASTCHART_IMAGE_MAP_MAX_COORDS];
+        int poly_n = 0;
+        poly_xy[poly_n++] = cx;
+        poly_xy[poly_n++] = cy;
+        for (int k = 0; k < 6 && poly_n + 1 < FASTCHART_IMAGE_MAP_MAX_COORDS; k++) {
+            double t_frac = (double)k / 5.0;
+            double th = (s_deg + (e_deg - s_deg) * t_frac) * M_PI / 180.0;
+            poly_xy[poly_n++] = cx + (int)((double)radius * cos(th));
+            poly_xy[poly_n++] = cy + (int)((double)radius * sin(th));
+        }
+        fastchart_push_image_map_poly((fastchart_obj *)self, i,
+                                       poly_xy, poly_n);
 
         /* Explode this slice radially outward by `offset` pixels
          * along its mid-angle. Slices not mentioned stay at center. */

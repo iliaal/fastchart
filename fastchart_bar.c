@@ -180,6 +180,8 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
 
     fastchart_draw_axis_titles(t, (fastchart_obj *)self, &plot, &pal);
 
+    fastchart_reset_image_map_areas((fastchart_obj *)self);
+
     int zero_y = fastchart_y_to_pixel(0.0, &range, &plot);
 
     int slot_w = (plot.x1 - plot.x0) / (n_categories > 0 ? n_categories : 1);
@@ -225,6 +227,13 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
 
     for (int i = 0; i < n_categories; i++) {
         int slot_left = plot.x0 + i * slot_w + slot_pad;
+
+        /* One hot-spot per category column. Covers the full plot
+         * height so any click in the column registers on the bar's
+         * data point — more usable than a tight bar-bounding-box,
+         * especially for very short bars. */
+        fastchart_push_image_map_rect((fastchart_obj *)self, i,
+            slot_left, plot.y0, slot_inner, plot.y1 - plot.y0);
 
         if (floating) {
             /* Floating bar: each series carries [min, max] per slot;

@@ -694,6 +694,32 @@ abstract class Chart
      * `renderSvg()`.
      */
     public function drawSvgFragment(): string {}
+
+    /**
+     * Attach per-data-point href / tooltip metadata. The array is
+     * index-aligned with setSeries() / setSlices() / setPoints() —
+     * entry $i becomes the hot-spot for data point $i. Each entry
+     * is `['href' => string, 'tooltip' => string?]`. ScatterChart
+     * already takes per-point href/tooltip on setPoints() directly;
+     * other chart types use setImageMap() to attach them.
+     *
+     * After a render, call `getImageMap()` to retrieve the matching
+     * HTML `<map>` markup with `<area>` elements positioned over
+     * each bar / slice / point.
+     */
+    public function setImageMap(array $entries): static {}
+
+    /**
+     * Return an HTML imagemap describing the clickable hot-spots for
+     * each rendered data point. The chart must have been rendered at
+     * least once (renderSvg/renderPng/renderJpeg/renderWebp/renderToFile)
+     * for this to return non-empty output. Hot-spot shape depends on
+     * the chart type: circle for ScatterChart/BubbleChart, rect for
+     * BarChart, poly for PieChart, small rect for LineChart/AreaChart.
+     * Map name defaults to 'fastchart'; sanitized to alphanumeric +
+     * '-' + '_' so it's safe to inline into an `<img usemap="#...">`.
+     */
+    public function getImageMap(string $name = 'fastchart'): string {}
 }
 
 final class LineChart extends Chart
@@ -842,16 +868,6 @@ final class ScatterChart extends Chart
      * or `[lo, hi]` (asymmetric). Pass `[]` to clear.
      */
     public function setErrorBars(array $errors): static {}
-
-    /**
-     * After a render, return an HTML imagemap describing the
-     * clickable region for each scatter point. Each entry has a
-     * `'url'` and `'title'` taken from the matching `'href'` /
-     * `'tooltip'` keys on the source data. Empty string when no
-     * points carry URLs. The map's `name` attribute is the supplied
-     * `$name`, sanitized to alphanumeric + dash + underscore.
-     */
-    public function getImageMap(string $name = 'fastchart'): string {}
 
 }
 
