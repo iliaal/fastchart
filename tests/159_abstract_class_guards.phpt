@@ -14,6 +14,23 @@ class FCSubB extends FastChart\Chart {
 class FCSubS extends FastChart\Symbol {
     public function __construct() { echo "BUG: sym ctor ran\n"; }
 }
+/* Subclasses with __destruct: the sentinel handlers' dtor_obj is a
+ * no-op so the userland destructor never runs on the prefix-less
+ * vanilla zend_object that create_object returns. If __destruct
+ * ran, the $this->setSize() call would cast via Z_FASTCHART_OBJ_P
+ * and corrupt heap. */
+class FCDtorChart extends FastChart\Chart {
+    public function __destruct() {
+        echo "BUG: Chart dtor ran\n";
+        $this->setSize(10, 10);
+    }
+}
+class FCDtorSym extends FastChart\Symbol {
+    public function __destruct() {
+        echo "BUG: Symbol dtor ran\n";
+        $this->setSize(10, 10);
+    }
+}
 
 /* Direct instantiation of abstract Chart: caught by the engine's
  * own ZEND_ACC_EXPLICIT_ABSTRACT_CLASS check. */
@@ -66,6 +83,23 @@ try {
     echo "userland Symbol+ctor: ", strpos($e->getMessage(), 'internal') !== false ? 'ok' : 'BAD', "\n";
 }
 
+/* Subclass with __destruct: throwing from create_object would
+ * otherwise let the inherited userland destructor run when the
+ * vanilla object falls out of scope. The dtor_obj override skips
+ * it. We can only observe the negative (no "BUG: dtor ran" line). */
+try {
+    new FCDtorChart();
+    echo "BUG: FCDtorChart accepted\n";
+} catch (\Error $e) {
+    echo "Chart subclass with dtor: ", strpos($e->getMessage(), 'internal') !== false ? 'ok' : 'BAD', "\n";
+}
+try {
+    new FCDtorSym();
+    echo "BUG: FCDtorSym accepted\n";
+} catch (\Error $e) {
+    echo "Symbol subclass with dtor: ", strpos($e->getMessage(), 'internal') !== false ? 'ok' : 'BAD', "\n";
+}
+
 /* Concrete classes still work. */
 echo "concrete LineChart: ", (new FastChart\LineChart(100, 100))->setSeries([1,2,3])->renderSvg() ? 'ok' : 'BAD', "\n";
 echo "concrete Code128: ", strlen((new FastChart\Code128())->setData('HELLO')->renderSvg()) > 100 ? 'ok' : 'BAD', "\n";
@@ -77,5 +111,7 @@ subclass with own ctor: ok
 direct Symbol: ok
 direct Barcode: ok
 userland Symbol+ctor: ok
+Chart subclass with dtor: ok
+Symbol subclass with dtor: ok
 concrete LineChart: ok
 concrete Code128: ok
