@@ -26,11 +26,14 @@ extension; `renderPng()` / `renderJpeg()` / `renderWebp()` /
 
 ## Status
 
-v1.0: rebuilt around plutovg, libgd dropped as a runtime dependency,
-`draw($canvas)` replaced by SVG + raster shortcuts. 26 chart types,
-2-class Symbol family, 127 phpt tests passing, raster and SVG output
-for every type. See [`CHANGELOG.md`](CHANGELOG.md) for the full
-breaking-change list.
+v1.1: confidence-band area charts, cone-style funnels, smooth polar
+curves with overlay vectors, log-scale bubble plots, HTML image-map
+hot-spots on Bar / Pie / Scatter (`setImageMap` + `getImageMap`).
+v1.0 dropped libgd as a runtime dependency, rebuilt rasterization
+around vendored plutovg, and replaced `draw($canvas)` with
+`renderSvg/Png/Jpeg/Webp` + `renderToFile`. 26 chart types, 2-class
+Symbol family, 127 phpt tests. See [`CHANGELOG.md`](CHANGELOG.md)
+for the full breaking-change list.
 
 ## Install
 
