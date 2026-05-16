@@ -7,6 +7,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`Funnel::setStyle(STYLE_CONE)`** — pyramid layout with
+  front-facing ellipse-arc edges at each band's top and bottom,
+  suggesting a 3D cone seen from the side. Layout is identical to
+  `STYLE_PYRAMID` (apex at top, base at bottom, band heights
+  proportional to value); only the silhouette changes. See
+  `docs/examples/52_funnel_cone.php`.
+
+- **`AreaChart::setBandMode(bool)`** — with exactly two series the
+  chart fills the envelope between them instead of filling each
+  series down to the baseline. `series[0]` is the upper bound,
+  `series[1]` is the lower. Useful for confidence intervals,
+  forecast ranges, min/max envelopes. Silently falls back to the
+  per-series fill when `n_series != 2` or `setStacked(true)` is
+  also active. See `docs/examples/53_area_band.php`.
+
+- **`PolarChart::setInterpolation(int $mode)`** — `INTERP_LINEAR`
+  (default) connects points with straight segments; `INTERP_SMOOTH`
+  runs Catmull-Rom subdivision through each segment for a curved
+  fit. Markers anchor to the original data points. Ignored in
+  `STYLE_ROSE`.
+
+- **`PolarChart::addVectors(array $vectors)`** — overlay arrow
+  vectors anchored in the same `(angle, radius)` data space as the
+  series. Each entry is `['angle' => float, 'radius' => float,
+  'angle_to' => float, 'radius_to' => float, 'color' => int?]`.
+  Useful for wind / flow / phase plots. Atomic commit: a malformed
+  entry mid-list aborts the entire call without partial state. See
+  `docs/examples/54_polar_smooth_vectors.php`.
+
+- **`BubbleChart::setYAxisScale(SCALE_LOG)`** — log-10 Y axis for
+  exponential-shaped data. Matches the existing Line / Bar / Area /
+  Scatter / Stock log-axis API. Y values must be strictly positive.
+  See `docs/examples/55_bubble_log_axis.php`.
+
+- **`Chart::setImageMap(array $entries)` + `Chart::getImageMap(string
+  $name = 'fastchart')`** — per-data-point HTML image-map hot-spots
+  on the Chart base class. Entries are index-aligned with
+  `setSeries() / setSlices() / setPoints()`. The renderer captures
+  hot-spot geometry during draw; `getImageMap()` emits the matching
+  `<map>` markup. Currently wired up for **BarChart** (rect per
+  category) and **PieChart** (poly per slice); ScatterChart's
+  existing per-point `setPoints` `'href' / 'tooltip'` keys are
+  preserved. AreaChart, BubbleChart, LineChart, and StockChart use
+  the same infrastructure but their renderers don't push hot-spots
+  yet (planned for v1.2). URL scheme is allowlisted (http / https /
+  mailto / relative `/` or `#` only). Tooltip text is HTML-escaped.
+  Embedded NUL bytes in href / tooltip are rejected. See
+  `docs/examples/56_image_map_bar_pie.php`.
+
+### Fixed
+
+- **stb_image PNG palette OOB-read** that leaked uninitialized stack
+  bytes into the rendered raster on paletted PNGs whose pixel data
+  references indices `>= pal_len`. Vendored
+  `vendor/plutovg/source/plutovg-stb-image.h` patched to zero-init
+  the 1024-byte stack `palette[]` at function entry. Local patch
+  marked with a `fastchart-local` comment so the next vendor refresh
+  re-applies.
+
+- **PNG IDAT chunk-length amplifier** that allowed a 30-byte malicious
+  PNG to drive stb_image into a ~1 GB realloc before reading any
+  payload, OOM-killing the worker. Added `fc_validate_png_chunks` in
+  `fastchart_target.c` that walks the chunk list before handoff and
+  rejects declared lengths that would overrun the buffer.
+
+- **`Chart::setImageMap()` use-after-free** when the caller did
+  `setImageMap → render → setImageMap → getImageMap` without an
+  intervening render. The cached `image_map_areas` array held
+  borrowed `href / tooltip` pointers into `image_map_entries[]`; the
+  second `setImageMap` freed those entries while areas still
+  pointed at them. setImageMap now resets areas before freeing
+  entries.
+
+- **`PolarChart::addVectors()` partial commit on mid-loop throw.**
+  A malformed entry in the middle of the input array would advance
+  `n_vectors` for the prefix that already wrote, leaving the object
+  in a half-populated state that a retry would duplicate on top of.
+  The setter now stages entries into a temporary buffer and only
+  commits to `self->vectors` after every entry validates.
+
+- **Userland-subclass instantiation no longer corrupts heap.** Both
+  `FastChart\Chart` and `FastChart\Symbol` (and `FastChart\Barcode`)
+  abstract bases now install a sentinel `create_object` handler.
+  `class MyChart extends FastChart\Chart {}` (with or without a
+  userland `__construct`) was previously triggering either a debug
+  assertion or a Z_FASTCHART_OBJ_P heap scribble; it now throws a
+  clean `Error` with a clear message at instantiation time.
+
+### Changed
+
+- **Vendored stb_image attack surface narrowed.** `STBI_ONLY_PNG` +
+  `STBI_ONLY_JPEG` defined before `STB_IMAGE_IMPLEMENTATION` in
+  `vendor/plutovg/source/plutovg-surface.c`, eliminating the BMP /
+  GIF / PSD / TGA / HDR / PIC / PNM decoders from the linked
+  binary. fastchart's MIME sniff already gated these formats at the
+  caller; this closes the defense-in-depth gap.
+
+- **`FASTCHART_IMAGE_MAP_MAX_COORDS`** raised from 16 to 32. PieChart
+  poly hot-spots use 14 ints (center + 6 arc samples); the cap bump
+  leaves headroom for denser sampling without bumping the per-area
+  fixed-size coord buffer at the call sites.
+
+- Test suite: 118 → 127 phpts. Six v1.1 feature tests
+  (153 – 158), three review-fix regression tests (159 – 161).
+
 ## [1.0.2] - 2026-05-15
 
 A build/packaging patch: the 1.0.1 Linux prebuilt binaries linked

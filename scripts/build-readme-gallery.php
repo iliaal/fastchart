@@ -1269,6 +1269,185 @@ PHP,
     },
 ];
 
+$cases[] = [
+    'label' => '29. Funnel — STYLE_CONE (3D-look band edges)',
+    'ref'   => 'docs/examples/52_funnel_cone.php',
+    'code'  => <<<'PHP'
+(new FastChart\Funnel(560, 360))
+    ->setTitle('Signup → paid conversion (cone)')
+    ->setStages([
+        ['label' => 'Visit',   'value' => 12_400],
+        ['label' => 'Sign up', 'value' =>  3_200],
+        ['label' => 'Active',  'value' =>  1_950],
+        ['label' => 'Trial',   'value' =>    820],
+        ['label' => 'Paid',    'value' =>    310],
+    ])
+    ->setStyle(FastChart\Funnel::STYLE_CONE);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\Funnel(560, 360))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Signup → paid conversion (cone)')
+            ->setStages([
+                ['label' => 'Visit',   'value' => 12_400],
+                ['label' => 'Sign up', 'value' =>  3_200],
+                ['label' => 'Active',  'value' =>  1_950],
+                ['label' => 'Trial',   'value' =>    820],
+                ['label' => 'Paid',    'value' =>    310],
+            ])
+            ->setStyle(FastChart\Funnel::STYLE_CONE);
+    },
+];
+
+$cases[] = [
+    'label' => '30. AreaChart — setBandMode (confidence envelope)',
+    'ref'   => 'docs/examples/53_area_band.php',
+    'code'  => <<<'PHP'
+$mean  = []; $upper = []; $lower = [];
+for ($i = 0; $i < 30; $i++) {
+    $m = 100 + 4 * $i + 8 * sin($i / 3.0);
+    $s = 6 + $i * 0.35;
+    $mean[]  = $m; $upper[] = $m + $s; $lower[] = $m - $s;
+}
+(new FastChart\AreaChart(640, 320))
+    ->setTitle('30-day forecast with confidence band')
+    ->setSeries([
+        ['label' => 'upper bound', 'data' => $upper],
+        ['label' => 'lower bound', 'data' => $lower],
+    ])
+    ->setBandMode(true)
+    ->setFillOpacity(96);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        $upper = []; $lower = [];
+        for ($i = 0; $i < 30; $i++) {
+            $m = 100 + 4 * $i + 8 * sin($i / 3.0);
+            $s = 6 + $i * 0.35;
+            $upper[] = round($m + $s, 1);
+            $lower[] = round($m - $s, 1);
+        }
+        return (new FastChart\AreaChart(640, 320))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('30-day forecast with confidence band')
+            ->setSeries([
+                ['label' => 'upper bound', 'data' => $upper],
+                ['label' => 'lower bound', 'data' => $lower],
+            ])
+            ->setBandMode(true)
+            ->setFillOpacity(96);
+    },
+];
+
+$cases[] = [
+    'label' => '31. PolarChart — INTERP_SMOOTH + addVectors',
+    'ref'   => 'docs/examples/54_polar_smooth_vectors.php',
+    'code'  => <<<'PHP'
+$points = [];
+for ($i = 0; $i < 12; $i++) {
+    $a = $i * 30;
+    $points[] = [$a, 6 + 3 * sin($a * M_PI / 180 * 3)];
+}
+(new FastChart\PolarChart(480, 480))
+    ->setTitle('Smooth polar curve + wind vectors')
+    ->setSeries([['label' => 'envelope', 'data' => $points]])
+    ->setMaxRadius(12)
+    ->setFilled(true)
+    ->setInterpolation(FastChart\Chart::INTERP_SMOOTH)
+    ->addVectors([
+        ['angle' =>   0, 'radius' => 0, 'angle_to' =>   0, 'radius_to' => 4.5],
+        ['angle' =>  90, 'radius' => 0, 'angle_to' =>  90, 'radius_to' => 5.8],
+        ['angle' => 180, 'radius' => 0, 'angle_to' => 180, 'radius_to' => 6.1],
+        ['angle' => 270, 'radius' => 0, 'angle_to' => 270, 'radius_to' => 4.2],
+    ]);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        $points = [];
+        for ($i = 0; $i < 12; $i++) {
+            $a = $i * 30;
+            $points[] = [$a, 6 + 3 * sin($a * M_PI / 180 * 3)];
+        }
+        return (new FastChart\PolarChart(480, 480))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Smooth polar curve + wind vectors')
+            ->setSeries([['label' => 'envelope', 'data' => $points]])
+            ->setMaxRadius(12)
+            ->setFilled(true)
+            ->setInterpolation(FastChart\Chart::INTERP_SMOOTH)
+            ->addVectors([
+                ['angle' =>   0, 'radius' => 0, 'angle_to' =>   0, 'radius_to' => 4.5],
+                ['angle' =>  45, 'radius' => 0, 'angle_to' =>  45, 'radius_to' => 3.2],
+                ['angle' =>  90, 'radius' => 0, 'angle_to' =>  90, 'radius_to' => 5.8],
+                ['angle' => 135, 'radius' => 0, 'angle_to' => 135, 'radius_to' => 2.4],
+                ['angle' => 180, 'radius' => 0, 'angle_to' => 180, 'radius_to' => 6.1],
+                ['angle' => 225, 'radius' => 0, 'angle_to' => 225, 'radius_to' => 2.9],
+                ['angle' => 270, 'radius' => 0, 'angle_to' => 270, 'radius_to' => 4.2],
+                ['angle' => 315, 'radius' => 0, 'angle_to' => 315, 'radius_to' => 3.7],
+            ]);
+    },
+];
+
+$cases[] = [
+    'label' => '32. BubbleChart — log Y axis',
+    'ref'   => 'docs/examples/55_bubble_log_axis.php',
+    'code'  => <<<'PHP'
+$points = [];
+for ($i = 1; $i <= 18; $i++) {
+    $points[] = [$i, pow(2.2, $i / 2.0), 8 + $i * 1.3];
+}
+(new FastChart\BubbleChart(640, 320))
+    ->setTitle('Cost vs throughput (log Y)')
+    ->setXAxisTitle('Tier')
+    ->setYAxisTitle('Monthly cost ($)')
+    ->setPoints($points)
+    ->setYAxisScale(FastChart\Chart::SCALE_LOG);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        $points = [];
+        for ($i = 1; $i <= 18; $i++) {
+            $points[] = [$i, pow(2.2, $i / 2.0), 8 + $i * 1.3];
+        }
+        return (new FastChart\BubbleChart(640, 320))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Cost vs throughput (log Y)')
+            ->setXAxisTitle('Tier')
+            ->setYAxisTitle('Monthly cost ($)')
+            ->setPoints($points)
+            ->setYAxisScale(FastChart\Chart::SCALE_LOG);
+    },
+];
+
+$cases[] = [
+    'label' => '33. BarChart — setImageMap (HTML hot-spots)',
+    'ref'   => 'docs/examples/56_image_map_bar_pie.php',
+    'code'  => <<<'PHP'
+$bar = (new FastChart\BarChart(640, 320))
+    ->setTitle('Quarterly revenue')
+    ->setSeries([['label' => 'revenue ($M)', 'data' => [12.4, 18.1, 21.7, 25.3]]])
+    ->setCategoryLabels(['Q1', 'Q2', 'Q3', 'Q4'])
+    ->setImageMap([
+        ['href' => '/reports/2026q1', 'tooltip' => 'Q1: $12.4M'],
+        ['href' => '/reports/2026q2', 'tooltip' => 'Q2: $18.1M'],
+        ['href' => '/reports/2026q3', 'tooltip' => 'Q3: $21.7M'],
+        ['href' => '/reports/2026q4', 'tooltip' => 'Q4: $25.3M'],
+    ]);
+$bar->renderPng();
+$html_map = $bar->getImageMap('quarterly');
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\BarChart(640, 320))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Quarterly revenue')
+            ->setSeries([['label' => 'revenue ($M)', 'data' => [12.4, 18.1, 21.7, 25.3]]])
+            ->setCategoryLabels(['Q1', 'Q2', 'Q3', 'Q4'])
+            ->setImageMap([
+                ['href' => '/reports/2026q1', 'tooltip' => 'Q1: $12.4M'],
+                ['href' => '/reports/2026q2', 'tooltip' => 'Q2: $18.1M'],
+                ['href' => '/reports/2026q3', 'tooltip' => 'Q3: $21.7M'],
+                ['href' => '/reports/2026q4', 'tooltip' => 'Q4: $25.3M'],
+            ]);
+    },
+];
+
 /* ----------- Build the HTML ----------- */
 
 $rows = '';

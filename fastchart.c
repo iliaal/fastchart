@@ -347,21 +347,44 @@ static void fastchart_category_labels_free(fastchart_obj *b)
 }
 
 /* Custom handlers table for objects that escaped from the abstract
- * sentinel create_object handlers. `get_constructor` returns NULL
- * so ZEND_NEW takes the no-constructor branch, which checks
- * EG(exception) and unwinds the pending throw cleanly. Without
- * this, a userland subclass with its own __construct trips the
- * "constructor entered with pending exception" assertion in debug
- * PHP builds, and on non-debug builds the inherited fastchart
- * methods cast a vanilla zend_object via Z_FASTCHART_OBJ_P and
- * scribble heap. Initialized at MINIT, shared by Chart and Symbol
- * abstract sentinels. */
+ * sentinel create_object handlers. Two overrides on top of
+ * std_object_handlers:
+ *
+ *   - get_constructor returns NULL so ZEND_NEW takes the
+ *     no-constructor branch, which checks EG(exception) and
+ *     unwinds the pending throw cleanly. Without this, a userland
+ *     subclass with its own __construct trips a debug assertion
+ *     and on non-debug builds the inherited fastchart methods cast
+ *     via Z_FASTCHART_OBJ_P and scribble heap.
+ *
+ *   - dtor_obj is a no-op that bypasses zend_objects_destroy_object's
+ *     default behaviour of running userland __destruct. A
+ *     `class MyChart extends FastChart\Chart {
+ *       function __destruct() { $this->setSize(10, 10); }
+ *     }` would otherwise see __destruct run on the vanilla
+ *     zend_object that escaped from create_object — inherited
+ *     native methods inside __destruct then cast via
+ *     Z_FASTCHART_OBJ_P and corrupt heap.
+ *
+ * free_obj (zend_object_std_dtor from std_object_handlers) still
+ * runs to clean up the zend_object's slot, so the engine destroys
+ * the sentinel object cleanly. Initialized at MINIT, shared by
+ * Chart and Symbol abstract sentinels. */
 zend_object_handlers fastchart_abstract_object_handlers;
 
 static zend_function *fastchart_abstract_get_constructor(zend_object *obj)
 {
     (void)obj;
     return NULL;
+}
+
+static void fastchart_abstract_dtor_obj(zend_object *obj)
+{
+    (void)obj;
+    /* Intentionally empty — skipping userland __destruct prevents
+     * inherited native methods from casting a prefix-less vanilla
+     * zend_object via Z_FASTCHART_OBJ_P. The engine still calls
+     * free_obj (std) afterwards to reclaim the slot. */
 }
 
 zend_object *fastchart_chart_abstract_create_object(zend_class_entry *ce)
@@ -8232,6 +8255,8 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
            sizeof(zend_object_handlers));
     fastchart_abstract_object_handlers.get_constructor =
         fastchart_abstract_get_constructor;
+    fastchart_abstract_object_handlers.dtor_obj =
+        fastchart_abstract_dtor_obj;
 
     /* Abstract base class. Without a create_object, a userland
      * `class MyChart extends FastChart\Chart {}` inherits no handler
