@@ -734,6 +734,16 @@ final class AreaChart extends Chart
      */
     public function setFillOpacity(int $alpha): static {}
 
+    /**
+     * Band mode: with exactly two series, fill the envelope between
+     * them instead of filling each series down to the baseline.
+     * series[0] is the upper bound, series[1] is the lower. Useful
+     * for confidence intervals, min/max ranges, forecast bands.
+     * Silently no-op when n_series != 2 or setStacked(true) is also
+     * active; falls back to the per-series fill in that case.
+     */
+    public function setBandMode(bool $enabled): static {}
+
 }
 
 final class BarChart extends Chart

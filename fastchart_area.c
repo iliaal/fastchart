@@ -45,6 +45,12 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
 
     bool stacked = self->stacked;
     if (n_series < 2) stacked = false;
+    /* Band mode requires exactly two series — the polygon is the
+     * envelope between series[0] (upper) and series[1] (lower).
+     * Falls back to the regular fill-to-baseline path if the caller
+     * set band_mode without two series. */
+    bool band = self->band_mode && n_series == 2 && !stacked;
+    if (band) stacked = false;
 
     double dmin = 0, dmax = 0;
     int seen = 0;
@@ -124,7 +130,72 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
      * [0, v] with translucent fill so layered shapes show through. */
     gdPoint poly[2 * FASTCHART_MAX_POINTS_PER_SERIES];
 
-    if (stacked) {
+    if (band) {
+        /* Build one closed polygon: series[0] left→right along the
+         * top, then series[1] right→left along the bottom. The fill
+         * is opaque (no per-series alpha layering here, the band
+         * IS one shape). */
+        int n_pts = 0;
+        for (int i = 0; i < max_len && n_pts < 2048; i++) {
+            double v = area_read_value(&series[0], i);
+            if (isnan(v)) v = 0;
+            int x = fastchart_x_categorical_center(&plot, i, max_len);
+            int y = fastchart_y_to_pixel(v, &range, &plot);
+            poly[n_pts].x = x; poly[n_pts].y = y;
+            n_pts++;
+        }
+        for (int i = max_len - 1; i >= 0 && n_pts < 2 * 2048; i--) {
+            double v = area_read_value(&series[1], i);
+            if (isnan(v)) v = 0;
+            int x = fastchart_x_categorical_center(&plot, i, max_len);
+            int y = fastchart_y_to_pixel(v, &range, &plot);
+            poly[n_pts].x = x; poly[n_pts].y = y;
+            n_pts++;
+        }
+        int fill_handle = pal.series[0];
+        uint32_t rgba = fastchart_target_color_to_rgba(t, fill_handle);
+        int r = (rgba >> 16) & 0xFF;
+        int g = (rgba >>  8) & 0xFF;
+        int b =  rgba        & 0xFF;
+        int alpha_byte = 255 - alpha * 2;
+        if (alpha_byte < 0) alpha_byte = 0;
+        int alpha_handle = fastchart_target_color(t, r, g, b, alpha_byte);
+        if (n_pts >= 3) {
+            fastchart_obj *base = (fastchart_obj *)self;
+            if (base->gradient_from >= 0 && base->gradient_to >= 0) {
+                uint32_t a = (uint32_t)alpha_byte & 0xFFu;
+                uint32_t grad_from =
+                    (a << 24) | ((uint32_t)base->gradient_from & 0xFFFFFFu);
+                uint32_t grad_to =
+                    (a << 24) | ((uint32_t)base->gradient_to   & 0xFFFFFFu);
+                fastchart_target_gradient_polygon(t, poly, n_pts,
+                    grad_from, grad_to, (int)base->gradient_dir);
+            } else {
+                fastchart_target_polygon(t, poly, n_pts, alpha_handle, 1, 0);
+            }
+            if (edge_handle >= 0) {
+                fastchart_target_polygon(t, poly, n_pts, edge_handle, 0, 1);
+            }
+        }
+        /* Stroke the two boundary curves so the band has crisp
+         * upper and lower edges regardless of fill alpha. */
+        for (int s = 0; s < 2; s++) {
+            int stroke_handle = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+            int prev_x = 0, prev_y = 0;
+            bool prev_valid = false;
+            for (int i = 0; i < max_len; i++) {
+                double v = area_read_value(&series[s], i);
+                if (isnan(v)) { prev_valid = false; continue; }
+                int x = fastchart_x_categorical_center(&plot, i, max_len);
+                int y = fastchart_y_to_pixel(v, &range, &plot);
+                if (prev_valid) {
+                    fastchart_target_line(t, prev_x, prev_y, x, y,
+                                          stroke_handle, 2, FASTCHART_DASH_SOLID);
+                }
+                prev_x = x; prev_y = y; prev_valid = true;
+            }
+        }
+    } else if (stacked) {
         double *cum = ecalloc((size_t)max_len, sizeof(double));
         for (int s = 0; s < n_series; s++) {
             int series_handle = pal.series[s % FASTCHART_PALETTE_SERIES_N];
