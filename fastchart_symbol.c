@@ -231,34 +231,48 @@ static int dispatch_symbol_svg_render(fastchart_symbol_obj *self,
  * mostly render as pure geometry (paths + rects) so PATHS mode adds
  * no overhead vs NATIVE — only Code128's human-readable line uses
  * text. format: 0 PNG, 1 JPEG, 2 WebP. */
-static void fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAMETERS,
-                                              int format, zend_long quality)
+/* Shared rasterize-and-encode pipeline. Used by renderPng/Jpeg/Webp
+ * (which return bytes) and renderToFile (which writes bytes to a
+ * stream). The two call sites previously duplicated 60+ lines each.
+ *
+ * On error: sets a PHP exception and returns -1. On success: returns
+ * 0 and leaves the encoded bytes in *enc_buf_out (caller owns; must
+ * release enc_buf_out->s with zend_string_release).
+ *
+ * `where` tags the codec-missing message (the only error string that
+ * varies across call sites): "FastChart\\Symbol" for the in-memory
+ * renderers, "FastChart\\Symbol::renderToFile()" for the file path.
+ *
+ * Quality is the caller's already-validated effective value. PNG
+ * ignores it; JPEG falls back to self->jpeg_quality if 0; WebP falls
+ * back to 90 if 0.
+ */
+static int fastchart_symbol_render_to_buf(fastchart_symbol_obj *self,
+                                          zend_class_entry *ce,
+                                          int format, int quality,
+                                          const char *where,
+                                          smart_str *enc_buf_out)
 {
-    fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
-    zend_class_entry *ce = Z_OBJCE_P(ZEND_THIS);
-
     if (!self->data || ZSTR_LEN(self->data) == 0) {
         zend_throw_error(NULL,
             "FastChart\\Symbol: setData() is required before render");
-        RETURN_THROWS();
+        return -1;
     }
 
     /* Codec-availability guard — reject before SVG build + rasterize
      * when the requested format's lib isn't compiled in. */
-    {
-        const char *missing = NULL;
-        switch (format) {
-        case 0: if (!fastchart_have_libpng())  missing = "libpng";        break;
-        case 1: if (!fastchart_have_libjpeg()) missing = "libjpeg-turbo"; break;
-        case 2: if (!fastchart_have_libwebp()) missing = "libwebp";       break;
-        }
-        if (missing) {
-            zend_throw_error(NULL,
-                "FastChart\\Symbol: %s support not compiled in "
-                "(configure could not find the library at build time)",
-                missing);
-            RETURN_THROWS();
-        }
+    const char *missing = NULL;
+    switch (format) {
+    case 0: if (!fastchart_have_libpng())  missing = "libpng";        break;
+    case 1: if (!fastchart_have_libjpeg()) missing = "libjpeg-turbo"; break;
+    case 2: if (!fastchart_have_libwebp()) missing = "libwebp";       break;
+    }
+    if (missing) {
+        zend_throw_error(NULL,
+            "%s: %s support not compiled in "
+            "(configure could not find the library at build time)",
+            where, missing);
+        return -1;
     }
 
     zend_long lw, lh;
@@ -266,7 +280,7 @@ static void fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAMETERS,
 
     int alloc_w, alloc_h;
     if (fastchart_resolve_canvas_dims(lw, lh, self->dpi, &alloc_w, &alloc_h) != 0) {
-        RETURN_THROWS();
+        return -1;
     }
 
     smart_str svg_buf = {0};
@@ -279,7 +293,7 @@ static void fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAMETERS,
 
     if (dispatch_symbol_svg_render(self, ce, &t) != 0 || EG(exception)) {
         smart_str_free(&svg_buf);
-        RETURN_THROWS();
+        return -1;
     }
     fc_svg_emit_g_close(&svg_buf);
     fc_svg_emit_doc_close(&svg_buf);
@@ -292,32 +306,44 @@ static void fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAMETERS,
                                  alloc_w, alloc_h, &pix) != 0) {
         smart_str_free(&svg_buf);
         zend_throw_error(NULL, "FastChart\\Symbol: plutovg rasterization failed");
-        RETURN_THROWS();
+        return -1;
     }
     zend_string_release(svg_buf.s);
 
-    smart_str enc_buf = {0};
     int rc = -1;
     switch (format) {
     case 0:
-        rc = fastchart_encode_png(&enc_buf, &pix);
+        rc = fastchart_encode_png(enc_buf_out, &pix);
         break;
     case 1:
-        rc = fastchart_encode_jpeg(&enc_buf, &pix,
-            (quality > 0) ? (int)quality : (int)self->jpeg_quality);
+        rc = fastchart_encode_jpeg(enc_buf_out, &pix,
+            (quality > 0) ? quality : (int)self->jpeg_quality);
         break;
     case 2:
-        rc = fastchart_encode_webp(&enc_buf, &pix, (int)quality,
-            (int)self->webp_mode);
+        rc = fastchart_encode_webp(enc_buf_out, &pix,
+            (quality > 0) ? quality : 90, (int)self->webp_mode);
         break;
     }
     fastchart_pixels_release(&pix);
-    if (rc != 0 || !enc_buf.s) {
-        smart_str_free(&enc_buf);
+    if (rc != 0 || !enc_buf_out->s) {
+        smart_str_free(enc_buf_out);
         zend_throw_error(NULL, "FastChart\\Symbol: encoder produced no output");
+        return -1;
+    }
+    smart_str_0(enc_buf_out);
+    return 0;
+}
+
+static void fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAMETERS,
+                                              int format, zend_long quality)
+{
+    fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
+    zend_class_entry *ce = Z_OBJCE_P(ZEND_THIS);
+    smart_str enc_buf = {0};
+    if (fastchart_symbol_render_to_buf(self, ce, format, (int)quality,
+                                       "FastChart\\Symbol", &enc_buf) != 0) {
         RETURN_THROWS();
     }
-    smart_str_0(&enc_buf);
     RETURN_STR(enc_buf.s);
 }
 
@@ -757,83 +783,13 @@ ZEND_METHOD(FastChart_Symbol, renderToFile)
 
     fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
     zend_class_entry *ce = Z_OBJCE_P(ZEND_THIS);
-    if (!self->data || ZSTR_LEN(self->data) == 0) {
-        zend_throw_error(NULL,
-            "FastChart\\Symbol: setData() is required before render");
-        RETURN_THROWS();
-    }
-
-    /* Same codec-availability guard as the in-memory renderers. GIF
-     * and AVIF were already rejected above; SVG is on a separate
-     * branch. */
-    {
-        const char *missing = NULL;
-        switch (format) {
-        case 0: if (!fastchart_have_libpng())  missing = "libpng";        break;
-        case 1: if (!fastchart_have_libjpeg()) missing = "libjpeg-turbo"; break;
-        case 2: if (!fastchart_have_libwebp()) missing = "libwebp";       break;
-        }
-        if (missing) {
-            zend_throw_error(NULL,
-                "FastChart\\Symbol::renderToFile(): %s support not "
-                "compiled in (configure could not find the library "
-                "at build time)", missing);
-            RETURN_THROWS();
-        }
-    }
-
-    zend_long lw, lh;
-    fastchart_symbol_logical_dims(self, ce, &lw, &lh);
-
-    int alloc_w, alloc_h;
-    if (fastchart_resolve_canvas_dims(lw, lh, self->dpi, &alloc_w, &alloc_h) != 0) {
-        RETURN_THROWS();
-    }
-
-    smart_str svg_buf = {0};
-    fc_svg_emit_doc_open(&svg_buf, (int)lw, (int)lh);
-    fc_svg_emit_g_open(&svg_buf, "fastchart-symbol");
-
-    fastchart_target_t t;
-    fastchart_target_from_svg(&t, &svg_buf, (int)lw, (int)lh,
-                               (int)self->dpi, FASTCHART_SVG_TEXT_PATHS);
-
-    if (dispatch_symbol_svg_render(self, ce, &t) != 0 || EG(exception)) {
-        smart_str_free(&svg_buf);
-        RETURN_THROWS();
-    }
-    fc_svg_emit_g_close(&svg_buf);
-    fc_svg_emit_doc_close(&svg_buf);
-    smart_str_0(&svg_buf);
-
-    fastchart_pixels_t pix;
-    fastchart_pixels_init(&pix, alloc_w, alloc_h);
-    pix.dpi = (int)self->dpi;
-    if (fastchart_rasterize_svg(ZSTR_VAL(svg_buf.s), ZSTR_LEN(svg_buf.s),
-                                 alloc_w, alloc_h, &pix) != 0) {
-        smart_str_free(&svg_buf);
-        zend_throw_error(NULL, "FastChart\\Symbol: plutovg rasterization failed");
-        RETURN_THROWS();
-    }
-    zend_string_release(svg_buf.s);
 
     smart_str enc_buf = {0};
-    int rc = -1;
-    int q_eff = (int)quality;
-    if (format == 1 && q_eff == 0) q_eff = (int)self->jpeg_quality;
-    switch (format) {
-    case 0: rc = fastchart_encode_png(&enc_buf, &pix); break;
-    case 1: rc = fastchart_encode_jpeg(&enc_buf, &pix, q_eff); break;
-    case 2: rc = fastchart_encode_webp(&enc_buf, &pix,
-                q_eff > 0 ? q_eff : 90, (int)self->webp_mode); break;
-    }
-    fastchart_pixels_release(&pix);
-    if (rc != 0 || !enc_buf.s) {
-        smart_str_free(&enc_buf);
-        zend_throw_error(NULL, "FastChart\\Symbol: encoder produced no output");
+    if (fastchart_symbol_render_to_buf(self, ce, format, (int)quality,
+                                       "FastChart\\Symbol::renderToFile()",
+                                       &enc_buf) != 0) {
         RETURN_THROWS();
     }
-    smart_str_0(&enc_buf);
 
     php_stream *stream = php_stream_open_wrapper(ZSTR_VAL(path), "wb",
         REPORT_ERRORS, NULL);
