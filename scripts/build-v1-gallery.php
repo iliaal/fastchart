@@ -12,19 +12,8 @@ if (!class_exists('FastChart\\Chart')) {
     exit(1);
 }
 
-/* Reuse the case list from build-readme-gallery.php — read its
- * source and eval the prefix that builds $cases, stopping before
- * its own render loop. */
-$src = file_get_contents(__DIR__ . '/build-readme-gallery.php');
-$cut = strpos($src, '/* ----------- Build the HTML ----------- */');
-if ($cut === false) { fwrite(STDERR, "case marker missing\n"); exit(1); }
-$prefix = substr($src, 0, $cut);
-$prefix = preg_replace('/^<\?php/', '', $prefix, 1);
-$prefix = preg_replace('/^if \(!class_exists.*?\}/s', '', $prefix, 1);
-eval($prefix);
-if (!isset($cases) || !is_array($cases)) {
-    fwrite(STDERR, "case array empty\n"); exit(1);
-}
+$bundle = require __DIR__ . '/_gallery_cases.inc.php';
+$cases  = $bundle['cases'];
 
 $rows = '';
 $toc  = '';

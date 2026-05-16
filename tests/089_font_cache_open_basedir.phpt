@@ -8,14 +8,8 @@ fastchart
  * step needs a path that's reachable before the narrow and outside
  * the narrowed dir afterwards. Windows / macOS hosts don't have
  * /usr/share, so skip cleanly there. */
-$cands = [
-    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-    '/usr/share/fonts/dejavu/DejaVuSans.ttf',
-    '/usr/share/fonts/TTF/DejaVuSans.ttf',
-];
-$ok = false;
-foreach ($cands as $c) { if (file_exists($c)) { $ok = true; break; } }
-if (!$ok) { echo "skip: no /usr/share font present\n"; }
+require __DIR__ . '/_font_candidates.inc.php';
+if (fc_pick_font() === '') echo "skip: no system font present\n";
 ?>
 --FILE--
 <?php
@@ -30,16 +24,9 @@ if (!$ok) { echo "skip: no /usr/share font present\n"; }
  * default-permissive runtime; if it isn't present, skip — the test
  * is about cache invalidation, not font availability.
  */
-$font_candidates = [
-    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-    '/usr/share/fonts/dejavu/DejaVuSans.ttf',
-    '/usr/share/fonts/TTF/DejaVuSans.ttf',
-];
-$font = null;
-foreach ($font_candidates as $cand) {
-    if (file_exists($cand)) { $font = $cand; break; }
-}
-if ($font === null) { echo "skip: no system font under /usr/share\n"; exit; }
+require __DIR__ . '/_font_candidates.inc.php';
+$font = fc_pick_font();
+if ($font === '') { echo "skip: no system font under /usr/share\n"; exit; }
 
 /* Run the same probe across each non-layout family. Each function:
  *   1. constructs a chart with $font (outside the to-be-narrowed

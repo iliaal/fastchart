@@ -7,14 +7,8 @@ gd
 asan.detect_leaks=0
 --FILE--
 <?php
-// Pick a system font; fall back across distros.
-$candidates = [
-    '/usr/share/fonts/truetype/lato/Lato-Regular.ttf',
-    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-    '/usr/share/fonts/dejavu/DejaVuSans.ttf',
-];
-$font = '';
-foreach ($candidates as $p) { if (is_readable($p)) { $font = $p; break; } }
+require __DIR__ . '/_font_candidates.inc.php';
+$font = fc_pick_font();
 if ($font === '') die("skip no system font found\n");
 
 function build_chart(string $font, int $mode): FastChart\LineChart {
