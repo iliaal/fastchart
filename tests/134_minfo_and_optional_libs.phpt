@@ -22,7 +22,7 @@ ob_start();
 phpinfo(INFO_MODULES);
 $info = ob_get_clean();
 
-$section_start = strpos($info, 'fastchart');
+$section_start = strpos($info, 'fastchart support');
 $section = substr($info, $section_start, 800);
 
 echo "has_version_row: ",
