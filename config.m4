@@ -193,6 +193,11 @@ if test "$PHP_FASTCHART" != "no"; then
     FASTCHART_CFLAGS="$FASTCHART_CFLAGS -Werror -Wstrict-prototypes"
   fi
 
+  PHP_NEW_EXTENSION(fastchart,
+    $WRAPPER_SOURCES,
+    $ext_shared,,
+    $FASTCHART_CFLAGS)
+
   PHP_ADD_INCLUDE([$ext_srcdir])
   dnl Vendor include paths. Uses $abs_srcdir (autoconf-standard, always
   dnl populated before this macro fires) so VPATH / out-of-tree builds
@@ -208,9 +213,4 @@ if test "$PHP_FASTCHART" != "no"; then
   PHP_ADD_BUILD_DIR([$ext_builddir/vendor/qrcodegen])
   PHP_ADD_BUILD_DIR([$ext_builddir/vendor/plutovg/source])
   PHP_ADD_BUILD_DIR([$ext_builddir/vendor/plutosvg/source])
-
-  PHP_NEW_EXTENSION(fastchart,
-    $WRAPPER_SOURCES,
-    $ext_shared,,
-    $FASTCHART_CFLAGS)
 fi
