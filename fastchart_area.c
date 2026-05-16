@@ -48,9 +48,9 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
     /* Band mode requires exactly two series — the polygon is the
      * envelope between series[0] (upper) and series[1] (lower).
      * Falls back to the regular fill-to-baseline path if the caller
-     * set band_mode without two series. */
+     * set band_mode without two series, or stacked is also set
+     * (stacked wins, band is silently ignored). */
     bool band = self->band_mode && n_series == 2 && !stacked;
-    if (band) stacked = false;
 
     double dmin = 0, dmax = 0;
     int seen = 0;

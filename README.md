@@ -28,7 +28,7 @@ extension; `renderPng()` / `renderJpeg()` / `renderWebp()` /
 
 v1.0: rebuilt around plutovg, libgd dropped as a runtime dependency,
 `draw($canvas)` replaced by SVG + raster shortcuts. 26 chart types,
-2-class Symbol family, 84 phpt tests passing, raster and SVG output
+2-class Symbol family, 127 phpt tests passing, raster and SVG output
 for every type. See [`CHANGELOG.md`](CHANGELOG.md) for the full
 breaking-change list.
 

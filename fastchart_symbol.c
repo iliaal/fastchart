@@ -152,12 +152,17 @@ zend_object *fastchart_symbol_abstract_create_object(zend_class_entry *ce)
         "FastChart\\%s is internal and cannot be instantiated or subclassed; "
         "use a concrete class such as FastChart\\Code128 or FastChart\\QrCode.",
         ZSTR_VAL(ce->name));
-    /* Returning NULL from create_object isn't a recognised contract, so
-     * fall back to allocating a minimal zend_object the engine can
-     * destroy normally. The thrown error short-circuits any caller
-     * that would try to use the object before destruction. */
+    /* fastchart_abstract_object_handlers (set up at MINIT, in
+     * fastchart.c) overrides get_constructor to return NULL — that
+     * makes ZEND_NEW skip any userland __construct inherited via
+     * `class MySym extends FastChart\Symbol { function __construct()
+     * {} }`. Without this, the inherited userland constructor runs
+     * on a vanilla zend_object lacking the FASTCHART_SYMBOL_BASE_FIELDS
+     * prefix and inherited native methods scribble heap via
+     * Z_FASTCHART_SYMBOL_OBJ_P. */
+    extern zend_object_handlers fastchart_abstract_object_handlers;
     zend_object *obj = zend_objects_new(ce);
-    obj->handlers = &std_object_handlers;
+    obj->handlers = &fastchart_abstract_object_handlers;
     return obj;
 }
 

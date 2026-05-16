@@ -346,6 +346,38 @@ static void fastchart_category_labels_free(fastchart_obj *b)
     b->n_category_labels = 0;
 }
 
+/* Custom handlers table for objects that escaped from the abstract
+ * sentinel create_object handlers. `get_constructor` returns NULL
+ * so ZEND_NEW takes the no-constructor branch, which checks
+ * EG(exception) and unwinds the pending throw cleanly. Without
+ * this, a userland subclass with its own __construct trips the
+ * "constructor entered with pending exception" assertion in debug
+ * PHP builds, and on non-debug builds the inherited fastchart
+ * methods cast a vanilla zend_object via Z_FASTCHART_OBJ_P and
+ * scribble heap. Initialized at MINIT, shared by Chart and Symbol
+ * abstract sentinels. */
+zend_object_handlers fastchart_abstract_object_handlers;
+
+static zend_function *fastchart_abstract_get_constructor(zend_object *obj)
+{
+    (void)obj;
+    return NULL;
+}
+
+zend_object *fastchart_chart_abstract_create_object(zend_class_entry *ce)
+{
+    zend_throw_error(NULL,
+        "FastChart\\%s is internal and cannot be instantiated or subclassed; "
+        "use a concrete class such as FastChart\\LineChart.",
+        ZSTR_VAL(ce->name));
+    /* Return a vanilla zend_object whose get_constructor returns
+     * NULL — the engine will see the pending exception and unwind
+     * without trying to call any inherited userland constructor. */
+    zend_object *obj = zend_objects_new(ce);
+    obj->handlers = &fastchart_abstract_object_handlers;
+    return obj;
+}
+
 static void fastchart_image_map_entries_free(fastchart_obj *b)
 {
     if (!b->image_map_entries) return;
@@ -941,8 +973,6 @@ static void fastchart_scatter_init_extras(fastchart_scatter_obj *o)
     o->err_lo = NULL;
     o->err_hi = NULL;
     o->err_n  = 0;
-    o->image_map_areas = NULL;
-    o->n_image_map_areas = 0;
 }
 static void fastchart_scatter_release_extras(fastchart_scatter_obj *o)
 {
@@ -967,11 +997,9 @@ static void fastchart_scatter_release_extras(fastchart_scatter_obj *o)
     o->err_lo = NULL;
     o->err_hi = NULL;
     o->err_n  = 0;
-    /* Image-map areas borrow href/tooltip from points[i]; only the
-     * areas array itself is owned. */
-    if (o->image_map_areas) efree(o->image_map_areas);
-    o->image_map_areas = NULL;
-    o->n_image_map_areas = 0;
+    /* image_map_areas is owned by the Chart base lifecycle now; the
+     * base release handler frees it before this _extras handler
+     * runs. Nothing to do here. */
 }
 static void fastchart_scatter_addref_extras(fastchart_scatter_obj *o)
 {
@@ -995,13 +1023,10 @@ static void fastchart_scatter_addref_extras(fastchart_scatter_obj *o)
         double *l = emalloc(bytes); memcpy(l, o->err_lo, bytes); o->err_lo = l;
         double *h = emalloc(bytes); memcpy(h, o->err_hi, bytes); o->err_hi = h;
     }
-    /* Image-map areas are a render artifact — clear on the clone so
-     * the cloned chart starts with no cached areas. The next draw on
-     * the clone will repopulate them with fresh href/tooltip pointers
-     * borrowed from the cloned points[]. Carrying over the original
-     * areas would leave stale pointers into the original points array
-     * (which is no longer reachable after this addref). */
-    o->image_map_areas = NULL;
+    /* image_map_areas is owned by the Chart base lifecycle. The base
+     * addref handler already NULL-inits the field on the clone (it
+     * is a render artifact, regenerated on the next draw); nothing
+     * to do here. */
     o->n_image_map_areas = 0;
 }
 
@@ -3960,7 +3985,9 @@ ZEND_METHOD(FastChart_Chart, svgToWebp)
  * field each renderer set. */
 ZEND_METHOD(FastChart_Chart, getImageMap)
 {
-    zend_string *name;
+    /* Initialize so the ZEND_NUM_ARGS() == 0 path doesn't read uninit
+     * memory under the `name &&` guard below. */
+    zend_string *name = NULL;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
         Z_PARAM_STR(name)
@@ -3986,7 +4013,9 @@ ZEND_METHOD(FastChart_Chart, getImageMap)
         map_name = ZSTR_VAL(name);
         map_name_len = ZSTR_LEN(name);
     }
-    size_t before = ZSTR_LEN(out.s ? out.s : ZSTR_EMPTY_ALLOC());
+    /* out.s is non-NULL here because the smart_str_appends above
+     * already allocated the buffer for the opening "<map name=\"". */
+    size_t before = ZSTR_LEN(out.s);
     for (size_t i = 0; i < map_name_len; i++) {
         char c = map_name[i];
         if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
@@ -4043,16 +4072,32 @@ ZEND_METHOD(FastChart_Chart, getImageMap)
                 a->coords[1] + a->coords[3]);
             break;
         case FASTCHART_IMAGE_MAP_POLY: {
+            /* snprintf returns the would-have-been-written length, not
+             * actually-written. Without bounding the return value, a
+             * truncated call pushes `written` past sizeof(buf) and the
+             * next iteration computes buf + written (OOB) and
+             * sizeof(buf) - written (size_t underflow). The truncation
+             * is unreachable today (MAX_COORDS=32, 7-digit ints) but
+             * the pattern is wrong shape — clamp every step. */
             int written = snprintf(buf, sizeof(buf), "<area shape=\"poly\" coords=\"");
-            for (int j = 0; j < a->n_coords && written < (int)sizeof(buf); j++) {
-                written += snprintf(buf + written, sizeof(buf) - written,
+            if (written < 0 || (size_t)written >= sizeof(buf)) {
+                continue;
+            }
+            int broke = 0;
+            for (int j = 0; j < a->n_coords; j++) {
+                int r = snprintf(buf + written, sizeof(buf) - written,
                     j + 1 < a->n_coords ? "%d," : "%d",
                     a->coords[j]);
+                if (r < 0 || (size_t)r >= sizeof(buf) - written) {
+                    broke = 1;
+                    break;
+                }
+                written += r;
             }
-            if (written < (int)sizeof(buf)) {
-                written += snprintf(buf + written, sizeof(buf) - written,
-                    "\" href=\"");
-            }
+            if (broke) continue;
+            int r = snprintf(buf + written, sizeof(buf) - written, "\" href=\"");
+            if (r < 0 || (size_t)r >= sizeof(buf) - written) continue;
+            written += r;
             n_chars = written;
             break;
         }
@@ -4186,7 +4231,8 @@ ZEND_METHOD(FastChart_PolarChart, setInterpolation)
     ZEND_PARSE_PARAMETERS_END();
     if (mode != FASTCHART_INTERP_LINEAR && mode != FASTCHART_INTERP_SMOOTH) {
         zend_value_error(
-            "FastChart\\PolarChart::setInterpolation() expects INTERP_LINEAR or INTERP_SMOOTH");
+            "FastChart\\PolarChart::setInterpolation() expects INTERP_LINEAR or INTERP_SMOOTH; "
+            "INTERP_STEP_AFTER and INTERP_STEP_BEFORE are LineChart-only and don't map to polar coords");
         RETURN_THROWS();
     }
     fastchart_polar_obj *self = Z_FASTCHART_POLAR_OBJ_P(ZEND_THIS);
@@ -4205,18 +4251,20 @@ ZEND_METHOD(FastChart_PolarChart, addVectors)
     int incoming = (int)zend_hash_num_elements(ht);
     if (incoming <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
-    int new_n = self->n_vectors + incoming;
-    if (new_n > self->cap_vectors) {
-        int new_cap = self->cap_vectors > 0 ? self->cap_vectors * 2 : 8;
-        while (new_cap < new_n) new_cap *= 2;
-        self->vectors = erealloc(self->vectors,
-            (size_t)new_cap * sizeof(fastchart_polar_vector));
-        self->cap_vectors = new_cap;
-    }
-
+    /* Two-pass parse: validate shape + types on the first pass into a
+     * temporary buffer; only commit to self->vectors after every
+     * entry passes. Without this split, a malformed entry mid-loop
+     * leaves self->n_vectors advanced for the partial prefix —
+     * subsequent renders draw bogus arrows and a retry duplicates
+     * the prefix on top of the partial state. Matches the atomic
+     * shape of addMovingAverage / addIndicatorPane. */
+    fastchart_polar_vector *staging = emalloc(
+        (size_t)incoming * sizeof(fastchart_polar_vector));
+    int staged = 0;
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (Z_TYPE_P(entry) != IS_ARRAY) {
+            efree(staging);
             zend_type_error("FastChart\\PolarChart::addVectors() expects each entry to be an array");
             RETURN_THROWS();
         }
@@ -4227,21 +4275,40 @@ ZEND_METHOD(FastChart_PolarChart, addVectors)
         zval *zrt = zend_hash_str_find(eh, "radius_to", sizeof("radius_to") - 1);
         zval *zc = zend_hash_str_find(eh, "color", sizeof("color") - 1);
         if (!za || !zr || !zat || !zrt) {
+            efree(staging);
             zend_value_error("FastChart\\PolarChart::addVectors() requires keys 'angle', 'radius', 'angle_to', 'radius_to' per entry");
             RETURN_THROWS();
         }
-        fastchart_polar_vector *v = &self->vectors[self->n_vectors++];
-        v->angle     = zval_get_double(za);
-        v->radius    = zval_get_double(zr);
-        v->angle_to  = zval_get_double(zat);
-        v->radius_to = zval_get_double(zrt);
-        v->color_rgb = -1;
+        int color_rgb = -1;
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             long c = (long)Z_LVAL_P(zc);
-            FASTCHART_VALIDATE_RGB(c, "FastChart\\PolarChart::addVectors");
-            v->color_rgb = (int)c;
+            if (c < -1 || c > 0xFFFFFF) {
+                efree(staging);
+                zend_value_error("FastChart\\PolarChart::addVectors() color must be a 24-bit RGB int (-1 = palette default)");
+                RETURN_THROWS();
+            }
+            color_rgb = (int)c;
         }
+        staging[staged].angle     = zval_get_double(za);
+        staging[staged].radius    = zval_get_double(zr);
+        staging[staged].angle_to  = zval_get_double(zat);
+        staging[staged].radius_to = zval_get_double(zrt);
+        staging[staged].color_rgb = color_rgb;
+        staged++;
     } ZEND_HASH_FOREACH_END();
+
+    int new_n = self->n_vectors + staged;
+    if (new_n > self->cap_vectors) {
+        int new_cap = self->cap_vectors > 0 ? self->cap_vectors * 2 : 8;
+        while (new_cap < new_n) new_cap *= 2;
+        self->vectors = erealloc(self->vectors,
+            (size_t)new_cap * sizeof(fastchart_polar_vector));
+        self->cap_vectors = new_cap;
+    }
+    memcpy(self->vectors + self->n_vectors, staging,
+           (size_t)staged * sizeof(fastchart_polar_vector));
+    self->n_vectors = new_n;
+    efree(staging);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -5316,7 +5383,11 @@ ZEND_METHOD(FastChart_Chart, setImageMap)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    /* Free any previous image_map_entries. */
+    /* image_map_areas (populated by the last render) holds borrowed
+     * pointers into image_map_entries[].href/tooltip. Reset them
+     * first so a subsequent getImageMap() can't read into the
+     * freed entries below. The next render repopulates areas. */
+    fastchart_reset_image_map_areas(self);
     if (self->image_map_entries) {
         for (int i = 0; i < self->n_image_map_entries; i++) {
             fc_efree_opt(self->image_map_entries[i].href);
@@ -5343,10 +5414,17 @@ ZEND_METHOD(FastChart_Chart, setImageMap)
         HashTable *eh = Z_ARRVAL_P(entry);
         zval *zh = zend_hash_str_find(eh, "href",    sizeof("href")    - 1);
         zval *zt = zend_hash_str_find(eh, "tooltip", sizeof("tooltip") - 1);
-        if (zh && Z_TYPE_P(zh) == IS_STRING && Z_STRLEN_P(zh) > 0) {
+        /* Reject embedded NUL — `/safe\0javascript:alert(1)` would
+         * pass the scheme allowlist on the visible prefix while the
+         * downstream consumer (or copy-buffer) sees the full PHP
+         * string. Mirrors the policy ScatterChart::setPoints applies
+         * to per-point href/tooltip. */
+        if (zh && Z_TYPE_P(zh) == IS_STRING && Z_STRLEN_P(zh) > 0
+            && memchr(Z_STRVAL_P(zh), 0, Z_STRLEN_P(zh)) == NULL) {
             self->image_map_entries[idx].href = fc_strdup_opt(Z_STRVAL_P(zh));
         }
-        if (zt && Z_TYPE_P(zt) == IS_STRING && Z_STRLEN_P(zt) > 0) {
+        if (zt && Z_TYPE_P(zt) == IS_STRING && Z_STRLEN_P(zt) > 0
+            && memchr(Z_STRVAL_P(zt), 0, Z_STRLEN_P(zt)) == NULL) {
             self->image_map_entries[idx].tooltip = fc_strdup_opt(Z_STRVAL_P(zt));
         }
         idx++;
@@ -8144,10 +8222,26 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
     FASTCHART_INIT_HANDLERS(qrcode,  fastchart_qrcode_obj);
 #undef FASTCHART_INIT_HANDLERS
 
-    /* Abstract base class: never instantiated directly, so it does
-     * not need its own create_object. The per-class create handlers
-     * below take over for every concrete subclass. */
+    /* Custom handlers table used by both Chart and Symbol abstract
+     * sentinels for the vanilla-zend_object they hand back after
+     * throwing. get_constructor returns NULL so ZEND_NEW's
+     * "constructor present" branch is bypassed entirely, the
+     * pending exception unwinds, and no inherited __construct
+     * runs on the prefix-less object. */
+    memcpy(&fastchart_abstract_object_handlers, &std_object_handlers,
+           sizeof(zend_object_handlers));
+    fastchart_abstract_object_handlers.get_constructor =
+        fastchart_abstract_get_constructor;
+
+    /* Abstract base class. Without a create_object, a userland
+     * `class MyChart extends FastChart\Chart {}` inherits no handler
+     * and the engine allocates a vanilla zend_object that lacks the
+     * FASTCHART_BASE_FIELDS prefix Z_FASTCHART_OBJ_P expects. Set
+     * the sentinel handler that throws on any direct or inherited
+     * instantiation. The per-class create handlers below override
+     * the sentinel for every concrete subclass. */
     fastchart_chart_ce = register_class_FastChart_Chart();
+    fastchart_chart_ce->create_object = fastchart_chart_abstract_create_object;
 
     fastchart_line_chart_ce    = register_class_FastChart_LineChart(fastchart_chart_ce);
     fastchart_line_chart_ce->create_object = fastchart_line_create_object;
