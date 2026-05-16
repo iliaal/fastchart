@@ -213,6 +213,17 @@ extern zend_class_entry *fastchart_qrcode_ce;
     /* WebP encode mode (FASTCHART_WEBP_*). Default DRAWING, tuned for \
      * chart-shaped content. Affects renderWebp() and renderToFile('*.webp'). */ \
     zend_long webp_mode; \
+    /* Optional per-data-point href/tooltip supplied via setImageMap(). \
+     * Each chart's renderer reads this in index order and emits hot- \
+     * spots into image_map_areas during draw. NULL when unset. */ \
+    struct fastchart_image_map_entry *image_map_entries; \
+    int n_image_map_entries; \
+    /* Hot-spot geometry produced by the most recent render. Shared \
+     * by every Chart subclass; ScatterChart and BubbleChart populate \
+     * circles, BarChart and StockChart rects, PieChart and SunburstChart \
+     * polys, LineChart and AreaChart rects centered on each data point. */ \
+    struct fastchart_image_map_area *image_map_areas; \
+    int n_image_map_areas; \
     zval config;
 
 /* Base view type. fastchart_obj* is what base setters and shared
@@ -293,16 +304,39 @@ typedef struct {
 #define FASTCHART_MAX_SLICES 32
 
 /* Pre-computed clickable area for getImageMap. The renderer fills
- * this from the typed scatter points after pixel-mapping; getImageMap
- * walks the array to emit <area> tags without re-running the
- * coordinate math. href is owned; tooltip is owned, may be NULL. */
-typedef struct {
-    int x;
-    int y;
-    int r;
+ * this after pixel-mapping; getImageMap walks the array to emit
+ * <area> tags without re-running the coordinate math.
+ *
+ *   shape == FASTCHART_IMAGE_MAP_CIRCLE: coords[0..2] = x, y, r.
+ *   shape == FASTCHART_IMAGE_MAP_RECT:   coords[0..3] = x, y, w, h
+ *                                        (emitted as x,y,x+w,y+h).
+ *   shape == FASTCHART_IMAGE_MAP_POLY:   coords holds n_coords pairs
+ *                                        of (x, y); n_coords = 2 * verts.
+ *
+ * href is owned and may borrow from the chart's image_map_entries.
+ * For circle hotspots from ScatterChart, href/tooltip borrow the
+ * per-point fastchart_scatter_point fields (same lifetime). For
+ * rect/poly hotspots from Bar/Pie/Line, href/tooltip borrow
+ * fastchart_image_map_entry slots populated by setImageMap(). */
+#define FASTCHART_IMAGE_MAP_CIRCLE 0
+#define FASTCHART_IMAGE_MAP_RECT   1
+#define FASTCHART_IMAGE_MAP_POLY   2
+#define FASTCHART_IMAGE_MAP_MAX_COORDS 16
+typedef struct fastchart_image_map_area {
+    int shape;
+    int n_coords;
+    int coords[FASTCHART_IMAGE_MAP_MAX_COORDS];
+    const char *href;
+    const char *tooltip;
+} fastchart_image_map_area;
+
+/* Per-data-point href/tooltip supplied via Chart::setImageMap(),
+ * stored on Chart base. Each entry is indexed by its position in
+ * setSeries() / setSlices() / setPoints(). Both pointers are owned. */
+typedef struct fastchart_image_map_entry {
     char *href;
     char *tooltip;
-} fastchart_image_map_area;
+} fastchart_image_map_entry;
 
 /* ScatterChart point. series_idx selects the per-series palette
  * color when color_rgb is -1; href and tooltip are owned strings used
@@ -456,13 +490,6 @@ typedef struct {
     double *err_lo;
     double *err_hi;
     int     err_n;
-    /* Pre-computed image-map areas, populated at the end of each
-     * scatter render and consumed by getImageMap(). The href/tooltip
-     * strings borrow from the points[i].href/tooltip slots — same
-     * lifetime, no separate ownership needed. NULL when no points
-     * had a clickable href. */
-    fastchart_image_map_area *image_map_areas;
-    int n_image_map_areas;
     zend_object std;
 } fastchart_scatter_obj;
 

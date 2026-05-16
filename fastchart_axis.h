@@ -215,6 +215,24 @@ void fastchart_format_tick_label_user(double value, const zend_string *fmt,
  * Returns NULL when no labels are set or n <= 0. */
 const char **fastchart_borrow_category_labels(fastchart_obj *b, int n);
 
+/* Push a hot-spot into chart->image_map_areas. Called from chart
+ * renderers as they draw each data-point geometry. `idx` selects
+ * the matching entry in chart->image_map_entries; the helper is a
+ * no-op when no setImageMap() data covers that index (so renderers
+ * can call it unconditionally without branching). The rect form
+ * stores (x, y, w, h); getImageMap() converts to <area> coords at
+ * emit time. The poly form takes pairs of (x, y) — n_xy is the
+ * total int count (2 * vertex_count) and must not exceed
+ * FASTCHART_IMAGE_MAP_MAX_COORDS. */
+void fastchart_push_image_map_rect(fastchart_obj *b, int idx,
+                                    int x, int y, int w, int h);
+void fastchart_push_image_map_poly(fastchart_obj *b, int idx,
+                                    const int *xy, int n_xy);
+/* Clear the previous render's hot-spots. Renderers call this once
+ * at the top of draw() so image_map_areas only reflects the most
+ * recent render. */
+void fastchart_reset_image_map_areas(fastchart_obj *b);
+
 /* Numeric X axis (ticks + gridlines + labels) for charts that put the
  * value axis on X — currently only horizontal-bar. Mirror of the
  * existing fastchart_draw_y_axis. */

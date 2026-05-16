@@ -295,6 +295,11 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
     b->icons = NULL;
     b->n_icons = 0;
 
+    b->image_map_entries = NULL;
+    b->n_image_map_entries = 0;
+    b->image_map_areas = NULL;
+    b->n_image_map_areas = 0;
+
     for (int i = 0; i < 4; i++) b->font_cache_path[i] = NULL;
     b->font_cache_valid = false;
     b->shadow_color_handle = -1;
@@ -302,6 +307,11 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
 
     array_init(&b->config);
 }
+
+/* Forward declaration: image-map lifecycle helpers below the base
+ * release/addref blocks call fc_strdup_opt, which is defined later
+ * in the file alongside the other typed-storage dup helpers. */
+static char *fc_strdup_opt(const char *src);
 
 static void fastchart_icons_free(fastchart_obj *b)
 {
@@ -336,6 +346,28 @@ static void fastchart_category_labels_free(fastchart_obj *b)
     b->n_category_labels = 0;
 }
 
+static void fastchart_image_map_entries_free(fastchart_obj *b)
+{
+    if (!b->image_map_entries) return;
+    for (int i = 0; i < b->n_image_map_entries; i++) {
+        if (b->image_map_entries[i].href)    efree(b->image_map_entries[i].href);
+        if (b->image_map_entries[i].tooltip) efree(b->image_map_entries[i].tooltip);
+    }
+    efree(b->image_map_entries);
+    b->image_map_entries = NULL;
+    b->n_image_map_entries = 0;
+}
+
+static void fastchart_image_map_areas_free(fastchart_obj *b)
+{
+    /* Areas only own the struct array; href/tooltip pointers borrow
+     * from image_map_entries or per-chart-type data points. */
+    if (!b->image_map_areas) return;
+    efree(b->image_map_areas);
+    b->image_map_areas = NULL;
+    b->n_image_map_areas = 0;
+}
+
 /* Renderer helper: borrow the category-label slots into a freshly
  * allocated const char ** sized to `n` slots so callers can pass it
  * straight to the categorical-axis drawer. Out-of-range slots are
@@ -348,6 +380,56 @@ const char **fastchart_borrow_category_labels(fastchart_obj *b, int n)
         out[i] = (i < b->n_category_labels) ? b->category_labels[i] : NULL;
     }
     return out;
+}
+
+void fastchart_reset_image_map_areas(fastchart_obj *b)
+{
+    if (b->image_map_areas) {
+        efree(b->image_map_areas);
+        b->image_map_areas = NULL;
+    }
+    b->n_image_map_areas = 0;
+}
+
+static fastchart_image_map_area *fc_image_map_push(fastchart_obj *b, int idx)
+{
+    if (idx < 0 || idx >= b->n_image_map_entries) return NULL;
+    if (!b->image_map_entries[idx].href) return NULL;
+    /* Grow the areas array; legitimate charts have well under 1000
+     * data points so doubling growth is fine. */
+    int cap = b->n_image_map_areas + 1;
+    b->image_map_areas = erealloc(b->image_map_areas,
+        (size_t)cap * sizeof(fastchart_image_map_area));
+    fastchart_image_map_area *a = &b->image_map_areas[b->n_image_map_areas];
+    b->n_image_map_areas = cap;
+    memset(a, 0, sizeof(*a));
+    a->href    = b->image_map_entries[idx].href;
+    a->tooltip = b->image_map_entries[idx].tooltip;
+    return a;
+}
+
+void fastchart_push_image_map_rect(fastchart_obj *b, int idx,
+                                    int x, int y, int w, int h)
+{
+    fastchart_image_map_area *a = fc_image_map_push(b, idx);
+    if (!a) return;
+    a->shape = FASTCHART_IMAGE_MAP_RECT;
+    a->n_coords = 4;
+    a->coords[0] = x;
+    a->coords[1] = y;
+    a->coords[2] = w;
+    a->coords[3] = h;
+}
+
+void fastchart_push_image_map_poly(fastchart_obj *b, int idx,
+                                    const int *xy, int n_xy)
+{
+    if (n_xy <= 0 || n_xy > FASTCHART_IMAGE_MAP_MAX_COORDS) return;
+    fastchart_image_map_area *a = fc_image_map_push(b, idx);
+    if (!a) return;
+    a->shape = FASTCHART_IMAGE_MAP_POLY;
+    a->n_coords = n_xy;
+    for (int i = 0; i < n_xy; i++) a->coords[i] = xy[i];
 }
 
 #define FASTCHART_BASE_OWNED_STR(F) \
@@ -394,6 +476,8 @@ static void fastchart_base_release_owned(fastchart_obj *b)
     fastchart_category_labels_free(b);
     fastchart_plot_bands_free(b);
     fastchart_icons_free(b);
+    fastchart_image_map_entries_free(b);
+    fastchart_image_map_areas_free(b);
     zval_ptr_dtor(&b->config);
 }
 
@@ -443,6 +527,20 @@ static void fastchart_base_addref_owned(fastchart_obj *b)
         }
         b->icons = copy;
     }
+    if (b->image_map_entries && b->n_image_map_entries > 0) {
+        size_t bytes = (size_t)b->n_image_map_entries
+                       * sizeof(fastchart_image_map_entry);
+        fastchart_image_map_entry *copy = emalloc(bytes);
+        for (int i = 0; i < b->n_image_map_entries; i++) {
+            copy[i].href    = fc_strdup_opt(b->image_map_entries[i].href);
+            copy[i].tooltip = fc_strdup_opt(b->image_map_entries[i].tooltip);
+        }
+        b->image_map_entries = copy;
+    }
+    /* image_map_areas is a render artifact; clones start empty. The
+     * next draw on the clone repopulates with fresh hot-spots. */
+    b->image_map_areas = NULL;
+    b->n_image_map_areas = 0;
     /* config is a real PHP HashTable wrapped in a zval; the lifecycle
      * macro's memcpy aliased the HashTable pointer between src and
      * dst. Setters that mutate config (addTextAnnotation,
@@ -3854,11 +3952,13 @@ ZEND_METHOD(FastChart_Chart, svgToWebp)
     RETURN_STR(out.s);
 }
 
-/* Emit a HTML <map> for the scatter chart's clickable points. Reads
- * the typed image_map_areas array populated by the renderer; chart
+/* Emit a HTML <map> for any chart's clickable hot-spots. Reads the
+ * typed image_map_areas array populated by the renderer; the chart
  * must have been rendered at least once (via renderPng/Jpeg/Webp/Svg
- * or renderToFile) for any output. */
-ZEND_METHOD(FastChart_ScatterChart, getImageMap)
+ * or renderToFile) for any output. Shape-aware: emits the appropriate
+ * <area shape="circle|rect|poly" coords="..."> based on the shape
+ * field each renderer set. */
+ZEND_METHOD(FastChart_Chart, getImageMap)
 {
     zend_string *name;
     ZEND_PARSE_PARAMETERS_START(0, 1)
@@ -3866,7 +3966,7 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
         Z_PARAM_STR(name)
     ZEND_PARSE_PARAMETERS_END();
 
-    fastchart_scatter_obj *self = Z_FASTCHART_SCATTER_OBJ_P(ZEND_THIS);
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (!self->image_map_areas || self->n_image_map_areas == 0) {
         RETURN_EMPTY_STRING();
     }
@@ -3924,10 +4024,41 @@ ZEND_METHOD(FastChart_ScatterChart, getImageMap)
         }
         if (!href_ok) continue;
 
-        char buf[256];
-        int n_chars = snprintf(buf, sizeof(buf),
-            "<area shape=\"circle\" coords=\"%d,%d,%d\" href=\"",
-            a->x, a->y, a->r);
+        char buf[512];
+        int n_chars = 0;
+        switch (a->shape) {
+        case FASTCHART_IMAGE_MAP_CIRCLE:
+            n_chars = snprintf(buf, sizeof(buf),
+                "<area shape=\"circle\" coords=\"%d,%d,%d\" href=\"",
+                a->coords[0], a->coords[1], a->coords[2]);
+            break;
+        case FASTCHART_IMAGE_MAP_RECT:
+            /* HTML5 rect coords are (left, top, right, bottom). The
+             * renderer stores (x, y, w, h) so we add to get the far
+             * corner here. */
+            n_chars = snprintf(buf, sizeof(buf),
+                "<area shape=\"rect\" coords=\"%d,%d,%d,%d\" href=\"",
+                a->coords[0], a->coords[1],
+                a->coords[0] + a->coords[2],
+                a->coords[1] + a->coords[3]);
+            break;
+        case FASTCHART_IMAGE_MAP_POLY: {
+            int written = snprintf(buf, sizeof(buf), "<area shape=\"poly\" coords=\"");
+            for (int j = 0; j < a->n_coords && written < (int)sizeof(buf); j++) {
+                written += snprintf(buf + written, sizeof(buf) - written,
+                    j + 1 < a->n_coords ? "%d," : "%d",
+                    a->coords[j]);
+            }
+            if (written < (int)sizeof(buf)) {
+                written += snprintf(buf + written, sizeof(buf) - written,
+                    "\" href=\"");
+            }
+            n_chars = written;
+            break;
+        }
+        default:
+            continue;
+        }
         if (n_chars < 0) n_chars = 0;
         if ((size_t)n_chars > sizeof(buf)) n_chars = (int)sizeof(buf);
         smart_str_appendl(&out, buf, (size_t)n_chars);
@@ -5175,6 +5306,52 @@ ZEND_METHOD(FastChart_Chart, drawSvgFragment)
 {
     ZEND_PARSE_PARAMETERS_NONE();
     fastchart_render_to_svg(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+}
+
+ZEND_METHOD(FastChart_Chart, setImageMap)
+{
+    zval *list;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(list)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    /* Free any previous image_map_entries. */
+    if (self->image_map_entries) {
+        for (int i = 0; i < self->n_image_map_entries; i++) {
+            fc_efree_opt(self->image_map_entries[i].href);
+            fc_efree_opt(self->image_map_entries[i].tooltip);
+        }
+        efree(self->image_map_entries);
+        self->image_map_entries = NULL;
+    }
+    self->n_image_map_entries = 0;
+
+    HashTable *ht = Z_ARRVAL_P(list);
+    int n = (int)zend_hash_num_elements(ht);
+    if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+
+    self->image_map_entries = ecalloc((size_t)n, sizeof(fastchart_image_map_entry));
+    self->n_image_map_entries = n;
+    int idx = 0;
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (Z_TYPE_P(entry) != IS_ARRAY) {
+            idx++;
+            continue;
+        }
+        HashTable *eh = Z_ARRVAL_P(entry);
+        zval *zh = zend_hash_str_find(eh, "href",    sizeof("href")    - 1);
+        zval *zt = zend_hash_str_find(eh, "tooltip", sizeof("tooltip") - 1);
+        if (zh && Z_TYPE_P(zh) == IS_STRING && Z_STRLEN_P(zh) > 0) {
+            self->image_map_entries[idx].href = fc_strdup_opt(Z_STRVAL_P(zh));
+        }
+        if (zt && Z_TYPE_P(zt) == IS_STRING && Z_STRLEN_P(zt) > 0) {
+            self->image_map_entries[idx].tooltip = fc_strdup_opt(Z_STRVAL_P(zt));
+        }
+        idx++;
+    } ZEND_HASH_FOREACH_END();
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
 /* --------------------- renderToFile -------------------------------

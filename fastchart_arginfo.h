@@ -1,5 +1,5 @@
 /* This is a generated file, edit fastchart.stub.php instead.
- * Stub hash: 31d34161cf4f236d62f98d226820432450a3346e */
+ * Stub hash: 0ea8f8a113592e049c1457cf61642a0acca7e289 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -271,6 +271,14 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_Chart_drawSvgFragment arginfo_class_FastChart_Chart_version
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setImageMap, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, entries, IS_ARRAY, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_getImageMap, 0, 0, IS_STRING, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, name, IS_STRING, 0, "\'fastchart\'")
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_LineChart_setSeries, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, series, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
@@ -343,10 +351,6 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_ScatterChart_set
 ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_ScatterChart_setErrorBars arginfo_class_FastChart_LineChart_setErrorBars
-
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_ScatterChart_getImageMap, 0, 0, IS_STRING, 0)
-	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, name, IS_STRING, 0, "\'fastchart\'")
-ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_StockChart_setOhlcv, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, ohlcv, IS_ARRAY, 0)
@@ -683,6 +687,8 @@ ZEND_METHOD(FastChart_Chart, renderWebp);
 ZEND_METHOD(FastChart_Chart, renderToFile);
 ZEND_METHOD(FastChart_Chart, renderSvg);
 ZEND_METHOD(FastChart_Chart, drawSvgFragment);
+ZEND_METHOD(FastChart_Chart, setImageMap);
+ZEND_METHOD(FastChart_Chart, getImageMap);
 ZEND_METHOD(FastChart_LineChart, setSeries);
 ZEND_METHOD(FastChart_LineChart, setMarkerStyle);
 ZEND_METHOD(FastChart_LineChart, setMarkerSize);
@@ -707,7 +713,6 @@ ZEND_METHOD(FastChart_ScatterChart, setMarkerStyle);
 ZEND_METHOD(FastChart_ScatterChart, setMarkerSize);
 ZEND_METHOD(FastChart_ScatterChart, setTrendLine);
 ZEND_METHOD(FastChart_ScatterChart, setErrorBars);
-ZEND_METHOD(FastChart_ScatterChart, getImageMap);
 ZEND_METHOD(FastChart_StockChart, setOhlcv);
 ZEND_METHOD(FastChart_StockChart, addMovingAverage);
 ZEND_METHOD(FastChart_StockChart, setMovingAverages);
@@ -872,6 +877,8 @@ static const zend_function_entry class_FastChart_Chart_methods[] = {
 	ZEND_ME(FastChart_Chart, renderToFile, arginfo_class_FastChart_Chart_renderToFile, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, renderSvg, arginfo_class_FastChart_Chart_renderSvg, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Chart, drawSvgFragment, arginfo_class_FastChart_Chart_drawSvgFragment, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, setImageMap, arginfo_class_FastChart_Chart_setImageMap, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Chart, getImageMap, arginfo_class_FastChart_Chart_getImageMap, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -916,7 +923,6 @@ static const zend_function_entry class_FastChart_ScatterChart_methods[] = {
 	ZEND_ME(FastChart_ScatterChart, setMarkerSize, arginfo_class_FastChart_ScatterChart_setMarkerSize, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ScatterChart, setTrendLine, arginfo_class_FastChart_ScatterChart_setTrendLine, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ScatterChart, setErrorBars, arginfo_class_FastChart_ScatterChart_setErrorBars, ZEND_ACC_PUBLIC)
-	ZEND_ME(FastChart_ScatterChart, getImageMap, arginfo_class_FastChart_ScatterChart_getImageMap, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
