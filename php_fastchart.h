@@ -715,13 +715,29 @@ typedef struct {
     zend_object std;
 } fastchart_boxplot_obj;
 
+/* fastchart_polar_vector: optional overlay drawn on top of the
+ * polar plot. Each vector is anchored at (angle, radius) in data
+ * space and points to (angle_to, radius_to). The arrow is drawn
+ * tip-first with a chevron head; magnitude is the radial extent. */
+typedef struct {
+    double angle;        /* base angle, degrees CCW */
+    double radius;       /* base radius, data units */
+    double angle_to;     /* tip angle */
+    double radius_to;    /* tip radius */
+    int color_rgb;       /* -1 = use series palette colour */
+} fastchart_polar_vector;
+
 typedef struct {
     FASTCHART_BASE_FIELDS
     double polar_max_radius;
     bool polar_filled;
     int polar_style;     /* 0 = line/area (default), 1 = rose (angular bars) */
+    int polar_interp;    /* FASTCHART_INTERP_LINEAR | FASTCHART_INTERP_SMOOTH */
     fastchart_polar_series series[FASTCHART_MAX_POLAR_SERIES];
     int n_series;
+    fastchart_polar_vector *vectors;   /* owned, n_vectors entries */
+    int n_vectors;
+    int cap_vectors;
     zend_object std;
 } fastchart_polar_obj;
 

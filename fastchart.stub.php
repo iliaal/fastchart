@@ -1175,6 +1175,24 @@ final class PolarChart extends Chart
      */
     public function setStyle(int $style): static {}
 
+    /**
+     * Polygon edge interpolation in STYLE_LINE. `INTERP_LINEAR`
+     * (default) connects consecutive points with straight segments.
+     * `INTERP_SMOOTH` runs Catmull-Rom subdivision through each
+     * segment for a curved fit. Ignored in STYLE_ROSE.
+     */
+    public function setInterpolation(int $mode): static {}
+
+    /**
+     * Overlay arrow vectors on the polar plot. Each entry is
+     * `['angle' => float, 'radius' => float, 'angle_to' => float,
+     *   'radius_to' => float, 'color' => int?]`. The arrow runs
+     * from (angle, radius) to (angle_to, radius_to) in the same
+     * data space as the series; the radial scale follows the chart's
+     * setMaxRadius() / auto-fit. Useful for wind / flow / phase plots.
+     */
+    public function addVectors(array $vectors): static {}
+
 }
 
 /**

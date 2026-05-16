@@ -1251,6 +1251,7 @@ static void fastchart_polar_init_extras(fastchart_polar_obj *o)
     o->polar_max_radius = 0.0;
     o->polar_filled = true;
     o->polar_style = FASTCHART_POLAR_STYLE_LINE;
+    o->polar_interp = FASTCHART_INTERP_LINEAR;
     o->n_series = 0;
     for (int i = 0; i < FASTCHART_MAX_POLAR_SERIES; i++) {
         o->series[i].angles = NULL;
@@ -1259,6 +1260,9 @@ static void fastchart_polar_init_extras(fastchart_polar_obj *o)
         o->series[i].label = NULL;
         o->series[i].color_rgb = -1;
     }
+    o->vectors = NULL;
+    o->n_vectors = 0;
+    o->cap_vectors = 0;
 }
 static void fastchart_polar_release_extras(fastchart_polar_obj *o)
 {
@@ -1272,6 +1276,9 @@ static void fastchart_polar_release_extras(fastchart_polar_obj *o)
         o->series[i].len = 0;
     }
     o->n_series = 0;
+    if (o->vectors) { efree(o->vectors); o->vectors = NULL; }
+    o->n_vectors = 0;
+    o->cap_vectors = 0;
 }
 static void fastchart_polar_addref_extras(fastchart_polar_obj *o)
 {
@@ -1290,6 +1297,13 @@ static void fastchart_polar_addref_extras(fastchart_polar_obj *o)
             o->series[i].radii = copy;
         }
         o->series[i].label = fc_strdup_opt(o->series[i].label);
+    }
+    if (o->vectors && o->n_vectors > 0) {
+        size_t bytes = (size_t)o->n_vectors * sizeof(fastchart_polar_vector);
+        fastchart_polar_vector *copy = emalloc(bytes);
+        memcpy(copy, o->vectors, bytes);
+        o->vectors = copy;
+        o->cap_vectors = o->n_vectors;
     }
 }
 
@@ -4030,6 +4044,73 @@ ZEND_METHOD(FastChart_PolarChart, setStyle)
     }
     fastchart_polar_obj *self = Z_FASTCHART_POLAR_OBJ_P(ZEND_THIS);
     self->polar_style = (int)style;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_PolarChart, setInterpolation)
+{
+    zend_long mode;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(mode)
+    ZEND_PARSE_PARAMETERS_END();
+    if (mode != FASTCHART_INTERP_LINEAR && mode != FASTCHART_INTERP_SMOOTH) {
+        zend_value_error(
+            "FastChart\\PolarChart::setInterpolation() expects INTERP_LINEAR or INTERP_SMOOTH");
+        RETURN_THROWS();
+    }
+    fastchart_polar_obj *self = Z_FASTCHART_POLAR_OBJ_P(ZEND_THIS);
+    self->polar_interp = (int)mode;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_PolarChart, addVectors)
+{
+    zval *list;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(list)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_polar_obj *self = Z_FASTCHART_POLAR_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(list);
+    int incoming = (int)zend_hash_num_elements(ht);
+    if (incoming <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+
+    int new_n = self->n_vectors + incoming;
+    if (new_n > self->cap_vectors) {
+        int new_cap = self->cap_vectors > 0 ? self->cap_vectors * 2 : 8;
+        while (new_cap < new_n) new_cap *= 2;
+        self->vectors = erealloc(self->vectors,
+            (size_t)new_cap * sizeof(fastchart_polar_vector));
+        self->cap_vectors = new_cap;
+    }
+
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (Z_TYPE_P(entry) != IS_ARRAY) {
+            zend_type_error("FastChart\\PolarChart::addVectors() expects each entry to be an array");
+            RETURN_THROWS();
+        }
+        HashTable *eh = Z_ARRVAL_P(entry);
+        zval *za = zend_hash_str_find(eh, "angle", sizeof("angle") - 1);
+        zval *zr = zend_hash_str_find(eh, "radius", sizeof("radius") - 1);
+        zval *zat = zend_hash_str_find(eh, "angle_to", sizeof("angle_to") - 1);
+        zval *zrt = zend_hash_str_find(eh, "radius_to", sizeof("radius_to") - 1);
+        zval *zc = zend_hash_str_find(eh, "color", sizeof("color") - 1);
+        if (!za || !zr || !zat || !zrt) {
+            zend_value_error("FastChart\\PolarChart::addVectors() requires keys 'angle', 'radius', 'angle_to', 'radius_to' per entry");
+            RETURN_THROWS();
+        }
+        fastchart_polar_vector *v = &self->vectors[self->n_vectors++];
+        v->angle     = zval_get_double(za);
+        v->radius    = zval_get_double(zr);
+        v->angle_to  = zval_get_double(zat);
+        v->radius_to = zval_get_double(zrt);
+        v->color_rgb = -1;
+        if (zc && Z_TYPE_P(zc) == IS_LONG) {
+            long c = (long)Z_LVAL_P(zc);
+            FASTCHART_VALIDATE_RGB(c, "FastChart\\PolarChart::addVectors");
+            v->color_rgb = (int)c;
+        }
+    } ZEND_HASH_FOREACH_END();
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
