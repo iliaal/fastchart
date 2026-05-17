@@ -19,6 +19,15 @@
 
 #define FASTCHART_MAX_TICKS 16
 
+/* (double)ZEND_LONG_MAX rounds UP to 2^63 — LONG_MAX (2^63 - 1) is not
+ * representable in IEEE-754 binary64. Casting that double back to
+ * zend_long is undefined behaviour per Annex F.4. Use this constant —
+ * the largest double <= LONG_MAX, exactly 2^63 - 1024 — whenever a
+ * double is being clamped or range-checked before a (zend_long) cast.
+ * (double)ZEND_LONG_MIN = -2^63 IS exactly representable and round-
+ * trips cleanly, so the lower bound stays (double)ZEND_LONG_MIN. */
+#define FASTCHART_LONG_MAX_AS_DOUBLE 9223372036854774784.0
+
 typedef struct {
     int x0, y0;     /* top-left of plot area, inclusive */
     int x1, y1;     /* bottom-right of plot area, inclusive */

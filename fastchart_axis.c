@@ -112,7 +112,7 @@ int fastchart_zval_to_long(zval *zv, zend_long *out)
         case IS_DOUBLE: {
             double d = Z_DVAL_P(zv);
             if (!isfinite(d) ||
-                d < (double)ZEND_LONG_MIN || d > (double)ZEND_LONG_MAX) {
+                d < (double)ZEND_LONG_MIN || d > FASTCHART_LONG_MAX_AS_DOUBLE) {
                 return -1;
             }
             *out = (zend_long)d;
@@ -990,9 +990,9 @@ void fastchart_draw_v_plot_bands_time(fastchart_target_t *t, fastchart_obj *char
         double lo = b->low;
         double hi = b->high;
         if (lo < (double)ZEND_LONG_MIN) lo = (double)ZEND_LONG_MIN;
-        else if (lo > (double)ZEND_LONG_MAX) lo = (double)ZEND_LONG_MAX;
+        else if (lo > FASTCHART_LONG_MAX_AS_DOUBLE) lo = FASTCHART_LONG_MAX_AS_DOUBLE;
         if (hi < (double)ZEND_LONG_MIN) hi = (double)ZEND_LONG_MIN;
-        else if (hi > (double)ZEND_LONG_MAX) hi = (double)ZEND_LONG_MAX;
+        else if (hi > FASTCHART_LONG_MAX_AS_DOUBLE) hi = FASTCHART_LONG_MAX_AS_DOUBLE;
         int x_left  = fastchart_x_time_to_pixel(plot, (zend_long)lo, t_min, t_max);
         int x_right = fastchart_x_time_to_pixel(plot, (zend_long)hi, t_min, t_max);
         fastchart_draw_v_band_at(t, b, plot, x_left, x_right);
@@ -2001,7 +2001,7 @@ static int v_pos_time(const fastchart_rect *plot, double position, void *ctx)
 {
     v_time_ctx *c = (v_time_ctx *)ctx;
     if (!isfinite(position) ||
-        position < (double)ZEND_LONG_MIN || position > (double)ZEND_LONG_MAX) {
+        position < (double)ZEND_LONG_MIN || position > FASTCHART_LONG_MAX_AS_DOUBLE) {
         return -1;
     }
     zend_long ts = (zend_long)position;
@@ -2339,7 +2339,7 @@ void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
         double dt = (double)t_max - (double)t_min;
         double ts_d = (double)t_min + dt * (double)i / (double)(N - 1);
         if (ts_d < (double)ZEND_LONG_MIN) ts_d = (double)ZEND_LONG_MIN;
-        else if (ts_d > (double)ZEND_LONG_MAX) ts_d = (double)ZEND_LONG_MAX;
+        else if (ts_d > FASTCHART_LONG_MAX_AS_DOUBLE) ts_d = FASTCHART_LONG_MAX_AS_DOUBLE;
         zend_long ts = (zend_long)ts_d;
         int x = fastchart_x_time_to_pixel(plot, ts, t_min, t_max);
         if (draw_points) {
