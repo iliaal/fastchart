@@ -983,8 +983,18 @@ void fastchart_draw_v_plot_bands_time(fastchart_target_t *t, fastchart_obj *char
     for (int i = 0; i < chart->n_plot_bands; i++) {
         const fastchart_plot_band *b = &chart->plot_bands[i];
         if (!b->is_vertical) continue;
-        int x_left  = fastchart_x_time_to_pixel(plot, (zend_long)b->low,  t_min, t_max);
-        int x_right = fastchart_x_time_to_pixel(plot, (zend_long)b->high, t_min, t_max);
+        /* addVerticalBand screens b->low / b->high for NaN/Inf only —
+         * a finite-but-out-of-range double (e.g. 1e30) flowing into
+         * (zend_long) is UB per C / Annex F. Clamp to the destination
+         * range before the cast. */
+        double lo = b->low;
+        double hi = b->high;
+        if (lo < (double)ZEND_LONG_MIN) lo = (double)ZEND_LONG_MIN;
+        else if (lo > (double)ZEND_LONG_MAX) lo = (double)ZEND_LONG_MAX;
+        if (hi < (double)ZEND_LONG_MIN) hi = (double)ZEND_LONG_MIN;
+        else if (hi > (double)ZEND_LONG_MAX) hi = (double)ZEND_LONG_MAX;
+        int x_left  = fastchart_x_time_to_pixel(plot, (zend_long)lo, t_min, t_max);
+        int x_right = fastchart_x_time_to_pixel(plot, (zend_long)hi, t_min, t_max);
         fastchart_draw_v_band_at(t, b, plot, x_left, x_right);
     }
 }
@@ -1538,9 +1548,14 @@ void fastchart_draw_x_axis_categorical(fastchart_target_t *t, fastchart_obj *cha
 int fastchart_x_time_to_pixel(const fastchart_rect *plot,
                               zend_long ts, zend_long t_min, zend_long t_max)
 {
-    zend_long span = t_max - t_min;
-    if (span <= 0) return plot->x0;
-    double frac = (double)(ts - t_min) / (double)span;
+    /* Promote to double before subtracting — setOhlcv accepts the
+     * full zend_long range, so t_max - t_min as zend_long arithmetic
+     * is signed overflow UB on adversarial timestamps (e.g. LLONG_MIN
+     * .. LLONG_MAX). Double has 53 bits of mantissa, enough to lose a
+     * few seconds of precision at the extremes but never to overflow. */
+    double span = (double)t_max - (double)t_min;
+    if (!(span > 0)) return plot->x0;
+    double frac = ((double)ts - (double)t_min) / span;
     if (frac < 0) frac = 0;
     if (frac > 1) frac = 1;
     int w = plot->x1 - plot->x0;
@@ -2317,7 +2332,15 @@ void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
     /* Rotated labels are narrower so they can pack more densely. */
     const int N = (angle == 0) ? 5 : 8;
     for (int i = 0; i < N; i++) {
-        zend_long ts = t_min + (zend_long)((double)(t_max - t_min) * i / (N - 1));
+        /* Cast each side to double before subtracting — see comment
+         * in fastchart_x_time_to_pixel. The intermediate is clamped
+         * to zend_long range before the final cast so an extreme
+         * span doesn't UB the double->zend_long conversion either. */
+        double dt = (double)t_max - (double)t_min;
+        double ts_d = (double)t_min + dt * (double)i / (double)(N - 1);
+        if (ts_d < (double)ZEND_LONG_MIN) ts_d = (double)ZEND_LONG_MIN;
+        else if (ts_d > (double)ZEND_LONG_MAX) ts_d = (double)ZEND_LONG_MAX;
+        zend_long ts = (zend_long)ts_d;
         int x = fastchart_x_time_to_pixel(plot, ts, t_min, t_max);
         if (draw_points) {
             fastchart_target_line(t, x, plot->y1 + 1,

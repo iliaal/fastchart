@@ -95,12 +95,18 @@ void fastchart_filled_wedge_aa(fastchart_target_t *t, int cx, int cy,
 
 /* Translate the chart's libgd-convention shadow alpha (0..127,
  * 0 = fully opaque, 127 = fully transparent) into the 0..255
- * (255 = fully opaque) alpha used by fastchart_target_color. */
+ * (255 = fully opaque) alpha used by fastchart_target_color.
+ *
+ * The old `255 - a * 2` formula left a one-unit floor: input 127
+ * mapped to 1/255, not 0, so a user requesting an invisible drop
+ * shadow still got a faint rgba(0,0,0,0.004) trace in the SVG.
+ * Proportional scaling rounds 127 cleanly to 0 while preserving
+ * the same opaque endpoint at input 0. */
 static int shadow_alpha_to_255(const fastchart_obj *chart)
 {
     int a = (int)chart->shadow_alpha;
     if (a < 0) a = 0; else if (a > 127) a = 127;
-    return 255 - a * 2;
+    return 255 - (a * 255 + 63) / 127;
 }
 
 static int shadow_color_handle(fastchart_target_t *t,

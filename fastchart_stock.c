@@ -254,6 +254,19 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
             if (i >= baseT + 1 && candles[i - 1 - baseT].has_volume) {
                 win_sum -= candles[i - 1 - baseT].volume; win_cnt--;
             }
+            /* Drop stale front BEFORE the push below — the ring has
+             * DQ_CAP slots and head==tail means empty, so unambiguous
+             * capacity is DQ_CAP-1 = baseT items. The window holds at
+             * most baseT entries, so the deque must be at most baseT-1
+             * BEFORE pushing i-1 (the push brings it to baseT, equal
+             * to DQ_CAP-1: full but still unambiguous). Pushing first
+             * would let baseT+1 items land in the ring, wrapping
+             * dq_tail back to dq_head and silently corrupting the
+             * deque (head==tail then misreads as empty, climax_max
+             * collapses to 0 and bars get misclassified as climaxes). */
+            while (dq_head != dq_tail && dq[dq_head] < i - baseT) {
+                dq_head = (dq_head + 1) % DQ_CAP;
+            }
             /* Push (i-1) into climax-max deque: drop tail entries
              * whose value is <= the new one (they can never be the
              * max of any future window that includes i-1). Skip bars
@@ -271,10 +284,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                 }
                 dq[dq_tail] = i - 1;
                 dq_tail = (dq_tail + 1) % DQ_CAP;
-            }
-            /* Drop stale front: indices < i - baseT have aged out. */
-            while (dq_head != dq_tail && dq[dq_head] < i - baseT) {
-                dq_head = (dq_head + 1) % DQ_CAP;
             }
             if (!candles[i].has_volume) { va[i] = 0; continue; }
             double avg = win_cnt > 0 ? win_sum / win_cnt : candles[i].volume;
