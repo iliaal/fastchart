@@ -48,12 +48,23 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
      * first and last candles sit inside the plot rect instead of
      * straddling the Y-axis line (left) or running past the right
      * edge. Matches the half-step behaviour of categorical X axes
-     * (fastchart_x_categorical_center adds 0.5 inside cells). */
+     * (fastchart_x_categorical_center adds 0.5 inside cells).
+     *
+     * Compute step in double so an adversarial t_min == LONG_MIN /
+     * t_max == LONG_MAX span doesn't UB on the subtract. Skip
+     * padding when t_min/t_max sit close enough to the zend_long
+     * extremes that the pad itself would overflow — at that scale
+     * the half-step offset is invisible relative to the domain. */
     if (n > 1) {
-        zend_long step = (t_max - t_min) / (n - 1);
-        if (step > 0) {
-            t_min -= step / 2;
-            t_max += step / 2;
+        double step_d = ((double)t_max - (double)t_min) / (double)(n - 1);
+        if (step_d > 0 && step_d <= FASTCHART_LONG_MAX_AS_DOUBLE) {
+            zend_long step = (zend_long)step_d;
+            if (step > 0
+                && t_min >= ZEND_LONG_MIN + step / 2
+                && t_max <= ZEND_LONG_MAX - step / 2) {
+                t_min -= step / 2;
+                t_max += step / 2;
+            }
         }
     }
 
