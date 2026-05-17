@@ -24,7 +24,7 @@ function fc_pick_font(): string
         /* Lato preferred: UI-grade sans, hints cleanly at axis-label
          * sizes. Layered by distro packaging path. */
         '/usr/share/fonts/truetype/lato/Lato-Regular.ttf',   // Debian / Ubuntu (fonts-lato)
-        '/usr/share/fonts/lato/Lato-Regular.ttf',            // Fedora / RHEL
+        '/usr/share/fonts/lato-fonts/Lato-Regular.ttf',      // Fedora / RHEL (lato-fonts)
         '/usr/share/fonts/TTF/Lato-Regular.ttf',             // Arch
         /* DejaVu fallback: present on most Linux base installs. */
         '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',   // Debian / Ubuntu (fonts-dejavu)
