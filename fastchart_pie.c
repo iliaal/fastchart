@@ -149,6 +149,12 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
         if (explode && i < explode_count) {
             zend_long off = explode[i];
             if (off > 0) {
+                /* Cap to the slice diameter — beyond that the slice
+                 * center is off-canvas anyway, and an unclamped large
+                 * `off` overflows the int cast on `off * cos()` (UB
+                 * per C11 6.3.1.4p1). setExplode accepts any positive
+                 * zend_long, so PHP_INT_MAX flows here untouched. */
+                if (off > diameter) off = diameter;
                 double mid_rad = (start_deg + sweep / 2.0) * M_PI / 180.0;
                 slice_cx = cx + (int)((double)off * cos(mid_rad));
                 slice_cy = cy + (int)((double)off * sin(mid_rad));

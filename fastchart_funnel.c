@@ -104,6 +104,18 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
      * past the canvas edge. */
     int cone_bottom_reserve = cone ? (int)(max_half * 0.22 + 0.5) : 0;
     int total_h = (y1 - y0) - cone_bottom_reserve;
+    if (cone && total_h <= 0) {
+        /* CONE reserves max_half * 0.22 px for the bottom arc. On a
+         * wide-and-short canvas (e.g. 1890×210 with max_half ≈ 845,
+         * reserve ≈ 186, y1-y0 ≈ 186) total_h collapses to 0, then
+         * the per-stage `cum_v / total_v * total_h` math feeds NaN
+         * into the int cast (UB per C11 6.3.1.4p1). Throw rather
+         * than silently emitting garbage geometry. */
+        zend_throw_error(NULL,
+            "FastChart\\Funnel::draw() canvas is too short for STYLE_CONE "
+            "(width-relative bottom-arc reserve consumed the entire plot height)");
+        return -1;
+    }
     int stage_h = total_h / n;
     if (stage_h < 4) stage_h = 4;
     /* CONE shares PYRAMID's triangular layout (cumulative-value y

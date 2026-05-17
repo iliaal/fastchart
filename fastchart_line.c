@@ -225,6 +225,12 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
             double frac_x = max_len > 1
                 ? (ic->x + 0.5) / (double)max_len
                 : 0.5;
+            /* Clamp before the int cast — addIconAt only rejects NaN/Inf,
+             * so a finite-but-large user x overflows the multiplication
+             * past INT_MAX and the cast is UB (C11 6.3.1.4p1). Mirrors
+             * fastchart_y_to_pixel's clamp pattern. */
+            if (frac_x < 0.0) frac_x = 0.0;
+            if (frac_x > 1.0) frac_x = 1.0;
             int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
             int py = fastchart_y_to_pixel(ic->y, &range_l, &plot);
             fastchart_blit_icon(t, ic, px, py);

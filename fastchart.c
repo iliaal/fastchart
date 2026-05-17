@@ -4312,10 +4312,22 @@ ZEND_METHOD(FastChart_PolarChart, addVectors)
             }
             color_rgb = (int)c;
         }
-        staging[staged].angle     = zval_get_double(za);
-        staging[staged].radius    = zval_get_double(zr);
-        staging[staged].angle_to  = zval_get_double(zat);
-        staging[staged].radius_to = zval_get_double(zrt);
+        double angle, radius, angle_to, radius_to;
+        if (fastchart_zval_to_double(za,  &angle)     != 0 ||
+            fastchart_zval_to_double(zr,  &radius)    != 0 ||
+            fastchart_zval_to_double(zat, &angle_to)  != 0 ||
+            fastchart_zval_to_double(zrt, &radius_to) != 0) {
+            efree(staging);
+            zend_type_error(
+                "FastChart\\PolarChart::addVectors() requires finite numeric "
+                "values for 'angle', 'radius', 'angle_to', 'radius_to' "
+                "(NaN and Inf are rejected — render-time float-to-int cast is undefined)");
+            RETURN_THROWS();
+        }
+        staging[staged].angle     = angle;
+        staging[staged].radius    = radius;
+        staging[staged].angle_to  = angle_to;
+        staging[staged].radius_to = radius_to;
         staging[staged].color_rgb = color_rgb;
         staged++;
     } ZEND_HASH_FOREACH_END();
@@ -8094,6 +8106,20 @@ ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
             skept++;
         } ZEND_HASH_FOREACH_END();
         if (skept == 0) { efree(segs); continue; }
+        /* Per-segment values are isfinite-guarded, but the running
+         * sum can still overflow to +Inf. Drop the column rather
+         * than let inf reach the renderer, where col_frac =
+         * col->total / total_width = inf/inf = NaN, then (int)(NaN)
+         * is undefined per C / Annex F (the (int)(cx_acc + 0.5)
+         * casts at fastchart_marimekko.c:89/91/105/107). Mirrors the
+         * isfinite(m_sq) guard in VectorChart::setVectors below. */
+        if (!isfinite(col_total) || !isfinite(total_w + col_total)) {
+            for (int j = 0; j < skept; j++) {
+                if (segs[j].label) efree(segs[j].label);
+            }
+            efree(segs);
+            continue;
+        }
         const char *lbl = fastchart_label_or_null(
             zend_hash_str_find(eht, "label", sizeof("label") - 1));
         parsed[kept].label = lbl ? estrdup(lbl) : NULL;

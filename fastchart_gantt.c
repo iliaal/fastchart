@@ -45,7 +45,16 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
         t_min = self->gantt_range_start;
         t_max = self->gantt_range_end;
     }
-    if (t_max <= t_min) t_max = t_min + 86400;
+    if (t_max <= t_min) {
+        /* Tasks accept any zend_long timestamp; t_min == ZEND_LONG_MAX
+         * makes `t_min + 86400` signed overflow UB. Saturate to keep
+         * the arithmetic safe. */
+        if (t_min > ZEND_LONG_MAX - 86400) {
+            t_max = ZEND_LONG_MAX;
+        } else {
+            t_max = t_min + 86400;
+        }
+    }
 
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);

@@ -172,9 +172,17 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 	cinfo.err = jpeg_std_error(&err.base);
 	err.base.error_exit = fc_jpeg_error_exit;
 
-	unsigned char *jpeg_buf = NULL;
-	unsigned long  jpeg_sz  = 0;
-	uint8_t       *rgb_row  = NULL;
+	/* `volatile` keeps the pointer's live value in memory across the
+	 * setjmp boundary. Per C99 §7.13.2.1, automatic-storage locals
+	 * modified after setjmp() and read in the longjmp() recovery branch
+	 * have indeterminate values unless declared volatile. Without it,
+	 * the optimizer may keep jpeg_buf / rgb_row in a register that
+	 * libjpeg's longjmp() clobbers — the cleanup branch would then read
+	 * a stale NULL or garbage and either leak the allocation or
+	 * double-free. */
+	unsigned char * volatile jpeg_buf = NULL;
+	unsigned long            jpeg_sz  = 0;
+	uint8_t       * volatile rgb_row  = NULL;
 
 	if (setjmp(err.jmp)) {
 		jpeg_destroy_compress(&cinfo);
@@ -184,7 +192,11 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 	}
 
 	jpeg_create_compress(&cinfo);
-	jpeg_mem_dest(&cinfo, &jpeg_buf, &jpeg_sz);
+	/* The cast strips the `volatile` qualifier on jpeg_buf for the
+	 * libjpeg API (which takes a plain `unsigned char **`). volatile
+	 * here governs how the compiler optimizes our own access across
+	 * setjmp/longjmp; it doesn't change the underlying storage. */
+	jpeg_mem_dest(&cinfo, (unsigned char **)(uintptr_t)&jpeg_buf, &jpeg_sz);
 
 	cinfo.image_width      = pix->w;
 	cinfo.image_height     = pix->h;

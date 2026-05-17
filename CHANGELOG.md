@@ -7,6 +7,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`PolarChart::addVectors()` accepted NaN/Inf doubles**, which
+  cascaded through to a render-time float-to-int cast that is
+  undefined per C11 §6.3.1.4p1. Every other polar setter rejects
+  non-finite doubles at the boundary; `addVectors` was the only one
+  using `zval_get_double` and is now switched to
+  `fastchart_zval_to_double` with a `TypeError` on failure.
+  Atomic-commit semantics preserved.
+
+- **`MarimekkoChart::setColumns()` overflow in running totals.** Each
+  individual segment value is `isfinite`-guarded, but the per-column
+  sum `col_total` and the cross-column `total_w` could overflow to
+  `+Inf` (e.g. two segments at `1e308` each). The non-finite total
+  reached the renderer where `col_frac = col->total / total_width =
+  inf/inf = NaN` fed the int cast at `fastchart_marimekko.c`. Columns
+  whose running sum is non-finite are now silently dropped, matching
+  the existing `val <= 0` skip pattern and the sibling
+  `VectorChart::setVectors` guard.
+
+- **`LineChart` icon x-coordinate cast was unguarded.** `addIconAt`
+  only rejects NaN/Inf, so a finite-but-large user x overflowed the
+  multiplication past `INT_MAX` and the cast became UB; on x86-64 the
+  pixel landed in `INT_MIN` territory. Now clamps the fractional
+  coordinate to `[0, 1]` before the int cast, matching
+  `fastchart_y_to_pixel`'s pattern.
+
+- **`PieChart::setExplode()` accepted unbounded `zend_long` offsets.**
+  A value near `PHP_INT_MAX` overflowed `(int)(off * cos(mid_rad))`
+  in the renderer. Offset is now capped to the slice diameter — beyond
+  that the slice center is off-canvas anyway.
+
+- **`StockChart` STYLE_VECTOR climax-deque ring-buffer overflow.**
+  After 11 successful pushes without tail-domination (a strictly
+  decreasing `cv` sequence), `dq_tail` wrapped to `dq_head` and the
+  deque was silently corrupted — every subsequent bar trivially
+  satisfied `climax >= climax_max=0` and got misclassified as a
+  climax. The stale-front drop now runs **before** the push, keeping
+  the deque within its unambiguous capacity.
+
+- **`fc_ft_measure()` dropped 4-byte UTF-8 sequences.** The UTF-8
+  decoder only recognised 1-, 2-, and 3-byte leads, so non-BMP
+  codepoints (emoji, CJK extensions, mathematical alphanumeric
+  symbols) contributed 0 to the measured width and chart layout
+  reservations came up systematically narrow on labels containing
+  emoji. 4-byte branch added; `fc_ft_measure` refactored to take a
+  byte length so callers no longer need NUL-terminated copies.
+
+- **`fastchart_text_draw_rotated` did not split multi-line strings
+  on `\n`.** It emitted a single `<text>` with the raw newline in the
+  body — SVG `<text>` collapses newlines to whitespace, so the label
+  rendered as one squashed line while the companion `_measure`
+  function reported a multi-line height. Now mirrors the
+  unrotated-draw line loop with per-line baseline offsets computed
+  perpendicular to the rotation direction.
+
+- **`fastchart_text_draw` / `_measure` byte-truncated lines at 1023
+  bytes.** The fixed `char buf[1024]` silently capped any line at
+  `sizeof(buf) - 1` bytes; the cap was in bytes (not codepoints) so
+  it could split a multi-byte UTF-8 sequence and produce malformed
+  XML, and long single-line annotations lost their tail without
+  signal. Fixed buffer dropped — both functions now operate directly
+  on the source pointer + byte length (`fc_svg_emit_text` already
+  takes a length).
+
+- **`Funnel::STYLE_CONE` divided by zero on a wide-and-short
+  canvas.** `total_h = (y1 - y0) - cone_bottom_reserve` collapses to
+  0 when `max_half * 0.22` consumes the entire plot height (e.g.
+  1890×210). The first iteration then computed `0.0 / total_v * 0`
+  feeding NaN into the int cast (UB per C11 §6.3.1.4p1). A clean
+  `zend_throw_error` now fires before the divide, mirroring the
+  canvas-too-narrow guard above it.
+
+- **`shadow_alpha_to_255()` left a one-unit floor at full
+  transparency.** Mapping libgd 0..127 (127 = fully transparent) to
+  SVG 0..255 (0 = fully transparent) via the linear `255 - a * 2`
+  produced output `1/255` at input 127, so a user requesting an
+  invisible drop shadow still got a faint `rgba(0,0,0,0.004)` trace.
+  Switched to proportional scaling `255 - (a * 255 + 63) / 127`
+  which maps 127 → 0 cleanly while preserving the opaque endpoint
+  at input 0.
+
+- **JPEG encoder local pointers were not `volatile` across
+  `setjmp()`.** Per C99 §7.13.2.1, automatic-storage locals modified
+  after `setjmp` and read in the `longjmp` recovery branch have
+  indeterminate values unless declared `volatile`. Without it, an
+  optimizer could keep `jpeg_buf` / `rgb_row` in a register that
+  libjpeg's `longjmp` clobbers, and the cleanup branch would leak
+  the allocation or double-free. Both pointers now carry `volatile`;
+  the libjpeg API cast strips the qualifier at the call site.
+
+- **Time-axis arithmetic overflowed signed `zend_long` on extreme
+  timestamps.** `setOhlcv` accepts the full `zend_long` range so
+  callers can supply `LLONG_MIN .. LLONG_MAX` candle timestamps. Four
+  call sites computed `t_max - t_min` (or `t_min + 86400` in the
+  Gantt renderer) in signed arithmetic — UB per C, and the wrapped
+  value defeated the subsequent `<= 0` early-return, collapsing all
+  candles to `plot.x0`. Promoted to double arithmetic at
+  `fastchart_x_time_to_pixel` and the time-axis fallback tick
+  generator; out-of-range double-to-`zend_long` casts in
+  `fastchart_draw_v_plot_bands_time` are clamped to the destination
+  range; Gantt's `t_min + 86400` saturates near `ZEND_LONG_MAX`.
+
 ## [1.1.0] - 2026-05-16
 
 ### Added
