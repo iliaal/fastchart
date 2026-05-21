@@ -8,5 +8,5 @@
 
 resolver: github
 repo: sammycage/plutovg
-pinned: 1.3.2
+pinned: 1.3.3
 vendored_at: vendor/plutovg

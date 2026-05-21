@@ -77,7 +77,8 @@ typedef ptrdiff_t  PVG_FT_PtrDist;
 #include <stdlib.h>
 #include <limits.h>
 
-#define PVG_FT_MINIMUM_POOL_SIZE 8192
+#define PVG_FT_MINIMUM_POOL_SIZE (1024 * 8)
+#define PVG_FT_MAXIMUM_POOL_SIZE (1024 * 1024 * 8)
 
 #define RAS_ARG   PWorker  worker
 #define RAS_ARG_  PWorker  worker,
@@ -1876,11 +1877,15 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
       int rendered_spans = 0;
       int error = gray_raster_render(&worker, stack, length, params);
       while(error == ErrRaster_OutOfMemory) {
+          length *= 2;
+          if(length > PVG_FT_MAXIMUM_POOL_SIZE)
+              break;
+          void* heap = malloc(length);
+          if(heap == NULL)
+              break;
           if(worker.skip_spans < 0)
               rendered_spans += -worker.skip_spans;
           worker.skip_spans = rendered_spans;
-          length *= 2;
-          void* heap = malloc(length);
           error = gray_raster_render(&worker, heap, length, params);
           free(heap);
       }
