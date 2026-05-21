@@ -32,7 +32,7 @@ hot-spots on Bar / Pie / Scatter (`setImageMap` + `getImageMap`).
 v1.0 dropped libgd as a runtime dependency, rebuilt rasterization
 around vendored plutovg, and replaced `draw($canvas)` with
 `renderSvg/Png/Jpeg/Webp` + `renderToFile`. 26 chart types, 2-class
-Symbol family, 127 phpt tests. See [`CHANGELOG.md`](CHANGELOG.md)
+Symbol family, 138 phpt tests. See [`CHANGELOG.md`](CHANGELOG.md)
 for the full breaking-change list.
 
 ## Install

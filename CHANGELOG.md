@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-05-21
+
 ### Fixed
 
 - **`PolarChart::addVectors()` accepted NaN/Inf doubles**, which
@@ -109,6 +111,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   generator; out-of-range double-to-`zend_long` casts in
   `fastchart_draw_v_plot_bands_time` are clamped to the destination
   range; Gantt's `t_min + 86400` saturates near `ZEND_LONG_MAX`.
+
+- **`(double)ZEND_LONG_MAX` round-up bit the time-axis clamps added
+  above.** IEEE-754 binary64 can't represent `2^63 - 1`, so
+  `(double)ZEND_LONG_MAX` rounds up to `2^63`; casting that back to
+  `zend_long` is UB per Annex F.4 (CI ASAN caught it on test 178).
+  Introduces `FASTCHART_LONG_MAX_AS_DOUBLE = 9223372036854774784.0`
+  (the largest double ≤ `LONG_MAX`, exactly `2^63 - 1024`) and uses
+  it for the upper-bound clamp at four call sites in
+  `fastchart_axis.c`. Lower bound stays `(double)ZEND_LONG_MIN` —
+  `-2^63` is exactly representable.
+
+- **`StockChart` half-step time padding overflowed signed
+  `zend_long`.** The `(t_max - t_min) / (n - 1) / 2` half-step pad
+  was computed in `zend_long` and overflowed when timestamps
+  straddled `LONG_MIN..LONG_MAX`. Step now runs in `double`; padding
+  is skipped when `t_min` / `t_max` sit close enough to the
+  `zend_long` extremes that the pad itself would overflow.
+
+### Changed
+
+- **Vendor refresh: plutosvg `0.0.7 → 0.0.8`, plutovg `1.3.2 →
+  1.3.3`.** Most fastchart-local patches (UTF-8 BOM handling,
+  closing-tag whitespace fix, `FT_FREETYPE_H` include,
+  `sprintf → snprintf`, plutovg `INTERPOLATE_PIXEL_255` rename,
+  bilinear tile sampling) are now upstream. Picks up a missing
+  `size_t width / height` overflow fix in
+  `plutovg_surface_create_uninitialized`. Preserved fastchart-only:
+  `STBI_ONLY_PNG / STBI_ONLY_JPEG` cut (~70% off
+  `plutovg-stb-image.h` compiled size) and the `palette[1024] = {0}`
+  init that defangs the paletted-PNG out-of-range-index stack
+  info-leak primitive.
 
 ## [1.1.0] - 2026-05-16
 
@@ -811,7 +844,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.1.0...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.1.1...HEAD
+[1.1.1]: https://github.com/iliaal/fastchart/releases/tag/1.1.1
 [1.1.0]: https://github.com/iliaal/fastchart/releases/tag/1.1.0
 [1.0.2]: https://github.com/iliaal/fastchart/releases/tag/1.0.2
 [1.0.1]: https://github.com/iliaal/fastchart/releases/tag/1.0.1
