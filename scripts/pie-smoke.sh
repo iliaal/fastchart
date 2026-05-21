@@ -29,12 +29,18 @@ echo "---- 1. System build tools + pkg-config deps ----"
 apt-get update -qq >/dev/null
 # Build tools: PIE needs git (clones source via git clone), bison +
 # libtoolize (PIE's build-tools check requires both even though phpize
-# itself does not), and ca-certificates for HTTPS clones.
+# itself does not), and ca-certificates for HTTPS clones. `unzip` is
+# load-bearing — composer shells out to /usr/bin/unzip when extracting
+# the prebuilt-binary zip PIE sets via setDistUrl(); if missing,
+# composer silently falls back to PHP's ZipArchive which lays out the
+# file at a path PIE's prePackagedBinary check doesn't look at, and the
+# install fails with ExtensionBinaryNotFound even though the zip
+# downloaded fine. `php:8.x-cli` Debian images do not ship unzip.
 # Library deps: pkg-config + freetype / libpng / libjpeg / libwebp
 # headers cover everything config.m4 probes. libgd-dev is here only
 # for the ext/gd build below.
 apt-get install -y -qq \
-    git ca-certificates bison libtool-bin pkg-config \
+    git ca-certificates bison libtool-bin pkg-config unzip \
     libfreetype6-dev libpng-dev libjpeg-dev libwebp-dev libgd-dev >/dev/null
 git --version
 bison --version | head -1
@@ -73,48 +79,24 @@ ls -la /usr/local/bin/pie
 pie --version 2>&1 | head -3
 echo
 
-echo "---- 6. pie install ----"
+echo "---- 6. pie install (against Packagist, real-user path) ----"
+# Smoke runs from /release-ext after the tag is published, so Packagist
+# already serves the new version. This is the canonical user install:
+# `pie install iliaal/fastchart` resolves to the freshly-tagged release,
+# picks up the prebuilt zip when a matching <php-ver, arch, libc> lane
+# exists on the release, and falls back to source-build otherwise. The
+# manual phpize+make+install fallback in Step 7 below covers the
+# source-build path that PIE's composer-default lane exercises.
 PIE_OK=0
-
-# Path repository so PIE installs from the mounted clone, not Packagist.
-# The version range is pinned to the mounted HEAD's tag; otherwise PIE
-# refuses unstable refs without --prefer-source-stability=dev.
-mkdir -p /tmp/piework
-cat > /tmp/piework/composer.json <<'JSON'
-{
-    "name": "iliaal/pie-smoke",
-    "repositories": [
-        { "type": "path", "url": "/tmp/src", "options": { "symlink": false } }
-    ],
-    "minimum-stability": "dev",
-    "prefer-stable": true
-}
-JSON
-
-echo "   [A] pie install -d /tmp/piework iliaal/fastchart"
+echo "   pie install iliaal/fastchart"
 pie install \
-    -d /tmp/piework \
     --with-php-config=/usr/local/bin/php-config \
     --auto-install-build-tools \
-    iliaal/fastchart 2>&1 \
-    | tee /tmp/pie-A.out | tail -40 || true
+    iliaal/fastchart 2>&1 | tee /tmp/pie.out | tail -25 || true
 
 if php -m | grep -qi fastchart; then
     PIE_OK=1
-    echo "   [A] RESULT: success"
-fi
-
-# Path B: plain Packagist lookup, in case the path-repo route fails.
-if [ "$PIE_OK" = "0" ]; then
-    echo
-    echo "   [B] pie install iliaal/fastchart  (plain Packagist lookup)"
-    pie install \
-        --with-php-config=/usr/local/bin/php-config \
-        iliaal/fastchart 2>&1 | tee /tmp/pie-B.out | tail -20 || true
-    if php -m | grep -qi fastchart; then
-        PIE_OK=1
-        echo "   [B] RESULT: success"
-    fi
+    echo "   PIE install: success"
 fi
 
 echo "   overall PIE result: PIE_OK=$PIE_OK"
