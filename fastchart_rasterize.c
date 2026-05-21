@@ -30,7 +30,12 @@ extern void fastchart_apply_text_overlays(void *plutovg_surface,
                                            const fastchart_text_overlay_t *overlays,
                                            int n_overlays);
 
-#if defined(__x86_64__) || defined(_M_X64)
+/* SSSE3 fast path uses __attribute__((target("ssse3"))) +
+ * __builtin_cpu_supports — both GCC/Clang extensions. MSVC builds
+ * (and any compiler that doesn't define __GNUC__) fall through to
+ * the scalar path, which is correct, just modestly slower on
+ * opaque-row un-premultiply. */
+#if (defined(__x86_64__) || defined(_M_X64)) && defined(__GNUC__)
 #  define FC_HAVE_X86_SIMD 1
 #  include <immintrin.h>
 #endif
