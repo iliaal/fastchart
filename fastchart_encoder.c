@@ -347,25 +347,14 @@ int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
 	picture.height = pix->h;
 	picture.use_argb = 0;
 
-	int import_ok;
-	if (pix->has_alpha) {
-		import_ok = WebPPictureImportRGBA(
-			&picture, pix->rgba, pix->w * 4);
-	} else {
-		/* Pack down to RGB so the encoder doesn't carry an alpha
-		 * channel through entropy coding on opaque output. */
-		uint8_t *rgb = emalloc((size_t)pix->w * pix->h * 3);
-		const uint8_t *src = pix->rgba;
-		uint8_t       *dst = rgb;
-		size_t pixels = (size_t)pix->w * pix->h;
-		for (size_t i = 0; i < pixels; i++) {
-			dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2];
-			src += 4; dst += 3;
-		}
-		import_ok = WebPPictureImportRGB(&picture, rgb, pix->w * 3);
-		efree(rgb);
-	}
-	if (!import_ok) {
+	/* Always import RGBA — no manual RGB pack. When the input is
+	 * opaque (pix->has_alpha == 0, set by fastchart_rasterize_doc's
+	 * opaque-detect), libwebp's internal WebPPictureHasTransparency
+	 * sees all-FF alphas and skips the alpha plane during YUV
+	 * conversion. Saves a w*h*3 emalloc and a per-pixel scalar
+	 * copy that previously dominated the encoder's CPU on opaque
+	 * charts. */
+	if (!WebPPictureImportRGBA(&picture, pix->rgba, pix->w * 4)) {
 		WebPPictureFree(&picture);
 		return -1;
 	}

@@ -34,15 +34,37 @@ typedef struct {
     FT_Face  face;
 } fc_ft_face_slot;
 
+/* Glyph outline cache. Decomposed (face, pix_size, codepoint) ->
+ * advance + path command stream at pen_x=0. The path stream is replayed
+ * with the running pen offset at emit time, avoiding the second
+ * FT_Load_Glyph + FT_Outline_Decompose pass and the third measurement
+ * pass that fc_ft_measure does for layout. Per-thread under ZTS for
+ * the same isolation as the face cache. */
+#define FC_GLYPH_CACHE_N 64
+typedef struct fc_glyph_cache_entry {
+    void     *face;          /* FT_Face* used as opaque cache key; NULL = empty */
+    uint16_t  pix_size;      /* cache key */
+    uint32_t  codepoint;     /* cache key */
+    int32_t   advance_x_64;  /* glyph advance in FT 26.6 fixed-point */
+    /* Decomposed path stream at pen_x=0. ops[] holds 'M'/'L'/'Q'/'C'.
+     * pts[] holds 2 floats per M/L, 4 per Q, 6 per C, in SVG-oriented
+     * coordinates (y-down, already scaled to pixels). */
+    char     *ops;           /* malloc'd, n_ops bytes; NULL when n_ops == 0 */
+    float    *pts;           /* malloc'd, n_pts floats */
+    uint16_t  n_ops;
+    uint16_t  n_pts;
+} fc_glyph_cache_entry;
+
 /* Per-thread FT state. Under NTS this is a single struct shared across
  * the (only) thread; under ZTS each thread gets its own copy. The
  * shared-library / shared-face cache that lives here means no
  * cross-thread contention on FT operations, and each thread pays its
  * own FT_Init_FreeType once per first text emit. */
 ZEND_BEGIN_MODULE_GLOBALS(fastchart)
-    FT_Library      ft_lib;
-    int             ft_lib_init_failed;
-    fc_ft_face_slot ft_face_cache[FC_FT_FACE_CACHE_N];
+    FT_Library           ft_lib;
+    int                  ft_lib_init_failed;
+    fc_ft_face_slot      ft_face_cache[FC_FT_FACE_CACHE_N];
+    fc_glyph_cache_entry glyph_cache[FC_GLYPH_CACHE_N];
 ZEND_END_MODULE_GLOBALS(fastchart)
 
 ZEND_EXTERN_MODULE_GLOBALS(fastchart)

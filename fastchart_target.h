@@ -52,6 +52,58 @@ void fastchart_ft_library_shutdown(void);
  * an OOM on the path-key strdup. */
 FT_Face fastchart_ft_face(const char *font_path);
 
+/* Glyph outline cache. Process-shared LRU keyed by (face, pix_size,
+ * codepoint). Each entry holds the glyph's advance + a decomposed
+ * path command stream at pen_x=0, so subsequent renders of the same
+ * codepoint at the same size skip both FT_Load_Glyph and
+ * FT_Outline_Decompose. The cache automatically invalidates entries
+ * whose owning face is evicted from the FT_Face cache, so dangling
+ * face pointers cannot leak through.
+ *
+ * The forward struct decl is in php_fastchart.h (fc_glyph_cache_entry)
+ * because the globals array is sized by FC_GLYPH_CACHE_N there. */
+struct fc_glyph_cache_entry;
+const struct fc_glyph_cache_entry *fastchart_glyph_cache_get(
+    FT_Face face, uint16_t pix_size, uint32_t codepoint);
+
+/* Inserts a new cache entry. Takes ownership of `ops_buf` and `pts_buf`
+ * (they must be `malloc`'d or NULL). `n_ops == 0` is a valid entry —
+ * whitespace glyphs have no contours but still cache an advance. */
+void fastchart_glyph_cache_insert(FT_Face face, uint16_t pix_size,
+                                   uint32_t codepoint, int32_t advance_x_64,
+                                   char *ops_buf, uint16_t n_ops,
+                                   float *pts_buf, uint16_t n_pts);
+
+/* Resolve one codepoint via the glyph cache. On miss, runs the FT
+ * load + outline-decompose + cache-insert pipeline and returns the
+ * just-inserted entry. Returns NULL on FT failure. Caller MUST have
+ * already pinned the face to pix_size via FT_Set_Pixel_Sizes. */
+const struct fc_glyph_cache_entry *fastchart_resolve_glyph(
+    FT_Face face, uint16_t pix_size, uint32_t codepoint);
+
+/* Deferred text overlay (opt #7). When defer_text_paths is set on the
+ * target, fastchart_target_text records PATHS-mode text here instead
+ * of emitting glyph paths into the SVG smart_str. After plutosvg has
+ * rasterised the (text-free) SVG, fastchart_apply_text_overlays draws
+ * the recorded text directly onto the plutovg surface via cached
+ * glyph paths — plutosvg sees a much smaller document with fewer
+ * elements and no glyph d-strings to parse.
+ *
+ * font_path is borrowed (lives on the chart object); text is owned
+ * (copied at record time because chart-side label buffers may not
+ * survive to apply time). */
+typedef struct fastchart_text_overlay {
+    double      x_logical;
+    double      y_logical;
+    const char *font_path;
+    double      size_px;
+    uint32_t    rgba;          /* 0xAARRGGBB */
+    double      angle_deg;
+    int         align;
+    char       *text;          /* malloc'd copy */
+    size_t      text_len;
+} fastchart_text_overlay_t;
+
 /* Retained for source-compat with chart bodies that reference the
  * enum even though only SVG is now valid. */
 #define FASTCHART_TARGET_SVG  1
@@ -121,6 +173,14 @@ typedef struct fastchart_target {
      * call but adds up over a render with many text emits. */
     fastchart_target_font_cache_entry font_cache[FASTCHART_TARGET_FONT_CACHE];
     int font_cache_n;
+
+    /* Deferred text overlays (opt #7). Populated by
+     * fastchart_target_text when defer_text_paths is set; consumed by
+     * fastchart_apply_text_overlays() at rasterize time. */
+    fastchart_text_overlay_t *text_overlays;
+    int n_text_overlays;
+    int cap_text_overlays;
+    int defer_text_paths;     /* 1 = record overlay; 0 = emit inline (default) */
 } fastchart_target_t;
 
 /* Initialise as an SVG-backed target writing into `buf`. width/height
@@ -129,6 +189,29 @@ typedef struct fastchart_target {
 void fastchart_target_from_svg(fastchart_target_t *t, smart_str *buf,
                                 int width, int height, int dpi,
                                 int text_mode);
+
+/* Enable deferred text overlay recording (opt #7). When set, PATHS-mode
+ * text emits go to t->text_overlays instead of the SVG buffer. Must
+ * be called before any text primitive runs. Only meaningful when
+ * text_mode == FASTCHART_SVG_TEXT_PATHS; NATIVE-mode text still emits
+ * inline. */
+void fastchart_target_enable_text_defer(fastchart_target_t *t);
+
+/* Frees heap state attached to the target (currently: text_overlays).
+ * Safe to call on a target with no heap state. Resets the array
+ * counters so the target is ready for reuse. */
+void fastchart_target_release(fastchart_target_t *t);
+
+/* Apply deferred text overlays to a plutovg surface that was just
+ * rendered from the SVG. Takes the surface as void* so this header
+ * doesn't have to include plutovg.h. logical_w/logical_h are the
+ * SVG document's viewport dims (chart coords); the function derives
+ * the logical->physical scale from the surface dims. Idempotent
+ * no-op when n_text_overlays == 0. */
+void fastchart_apply_text_overlays(void *plutovg_surface,
+                                    int logical_w, int logical_h,
+                                    const fastchart_text_overlay_t *overlays,
+                                    int n_overlays);
 
 /* Allocate a color handle for (r,g,b,a). 0..255 each; a=255 is opaque.
  * Returns handle index, or -1 if the per-target color table is full. */

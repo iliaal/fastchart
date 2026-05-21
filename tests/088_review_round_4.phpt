@@ -3,6 +3,10 @@ Review-round 4: physical-pixel product cap + rotated label perf with TICK_POINTS
 --EXTENSIONS--
 fastchart
 gd
+--INI--
+; 4096x4096 RGBA = 67 MB; SVG buffer + raster surface + encoded PNG +
+; GD round-trip all live concurrently. 128 MB default isn't enough.
+memory_limit=256M
 --FILE--
 <?php
 

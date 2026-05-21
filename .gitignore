@@ -78,3 +78,10 @@ tests/**/*.php.out
 # Local SVG vs PNG comparison HTML produced by scripts/build-svg-compare.php
 # Generated per-developer for visual review; not for commit.
 /compare-svg-png.html
+
+# perf-harness intermediate results (the harness lives in bench/, runs
+# emit timestamped JSON that's developer-local — not checked in)
+/bench/results/
+
+# codesage MCP server runtime (sock/pid/log)
+/codesage/

@@ -290,8 +290,11 @@ static int fastchart_symbol_render_to_buf(fastchart_symbol_obj *self,
     fastchart_target_t t;
     fastchart_target_from_svg(&t, &svg_buf, (int)lw, (int)lh,
                                (int)self->dpi, FASTCHART_SVG_TEXT_PATHS);
+    /* Opt #7: defer text overlays for the raster path. */
+    fastchart_target_enable_text_defer(&t);
 
     if (dispatch_symbol_svg_render(self, ce, &t) != 0 || EG(exception)) {
+        fastchart_target_release(&t);
         smart_str_free(&svg_buf);
         return -1;
     }
@@ -302,13 +305,17 @@ static int fastchart_symbol_render_to_buf(fastchart_symbol_obj *self,
     fastchart_pixels_t pix;
     fastchart_pixels_init(&pix, alloc_w, alloc_h);
     pix.dpi = (int)self->dpi;
-    if (fastchart_rasterize_svg(ZSTR_VAL(svg_buf.s), ZSTR_LEN(svg_buf.s),
-                                 alloc_w, alloc_h, &pix) != 0) {
+    if (fastchart_rasterize_svg_with_text(
+            ZSTR_VAL(svg_buf.s), ZSTR_LEN(svg_buf.s),
+            alloc_w, alloc_h, (int)lw, (int)lh,
+            t.text_overlays, t.n_text_overlays, &pix) != 0) {
+        fastchart_target_release(&t);
         smart_str_free(&svg_buf);
         zend_throw_error(NULL, "FastChart\\Symbol: plutovg rasterization failed");
         return -1;
     }
     zend_string_release(svg_buf.s);
+    fastchart_target_release(&t);
 
     int rc = -1;
     switch (format) {
