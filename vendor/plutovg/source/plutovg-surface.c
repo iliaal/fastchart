@@ -17,9 +17,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "plutovg-stb-image.h"
 
-static plutovg_surface_t* plutovg_surface_create_uninitialized(int width, int height)
+static plutovg_surface_t* plutovg_surface_create_uninitialized(size_t width, size_t height)
 {
-    static const int kMaxSize = 1 << 15;
+    static const size_t kMaxSize = 1 << 15;
     if(width <= 0 || height <= 0 || width >= kMaxSize || height >= kMaxSize)
         return NULL;
     const size_t size = width * height * 4;

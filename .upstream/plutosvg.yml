@@ -8,5 +8,5 @@
 
 resolver: github
 repo: sammycage/plutosvg
-pinned: 0.0.7
+pinned: 0.0.8
 vendored_at: vendor/plutosvg

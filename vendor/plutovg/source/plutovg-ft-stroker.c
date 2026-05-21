@@ -247,17 +247,28 @@ static PVG_FT_Error ft_stroke_border_grow(PVG_FT_StrokeBorder border,
 
     if (new_max > old_max) {
         PVG_FT_UInt cur_max = old_max;
+        PVG_FT_Vector* new_pts;
+        PVG_FT_Byte*   new_tags;
 
         while (cur_max < new_max) cur_max += (cur_max >> 1) + 16;
 
-        border->points = (PVG_FT_Vector*)realloc(border->points,
-                                                cur_max * sizeof(PVG_FT_Vector));
-        border->tags =
-            (PVG_FT_Byte*)realloc(border->tags, cur_max * sizeof(PVG_FT_Byte));
+        new_pts = (PVG_FT_Vector*)realloc(border->points,
+                                          cur_max * sizeof(PVG_FT_Vector));
+        if (!new_pts) {
+            error = -3;  // PVG_FT_THROW( Out_Of_Memory );
+            goto Exit;
+        }
 
-        if (!border->points || !border->tags) goto Exit;
+        new_tags = (PVG_FT_Byte*)realloc(border->tags,
+                                         cur_max * sizeof(PVG_FT_Byte));
+        if (!new_tags) {
+            error = -3;  // PVG_FT_THROW( Out_Of_Memory );
+            goto Exit;
+        }
 
         border->max_points = cur_max;
+        border->points = new_pts;
+        border->tags = new_tags;
     }
 
 Exit:
