@@ -177,6 +177,32 @@ function scenario_basic_chart(): callable {
     };
 }
 
+/* ----- Scenario 6: JPEG encode (exercises opt#8) ------------------- */
+function scenario_label_chart_jpeg(): callable {
+    mt_srand(424242);
+    $rows = [];
+    $base_ts = 1700000000;
+    $price = 100.0;
+    for ($i = 0; $i < 200; $i++) {
+        $o = $price;
+        $c = $price + sin($i * 0.3) * 4 + (mt_rand(-500, 500) / 250.0);
+        $h = max($o, $c) + 1.5;
+        $l = min($o, $c) - 1.5;
+        $v = 1000 + mt_rand(0, 500);
+        $rows[] = [$base_ts + $i * 86400, $o, $h, $l, $c, $v];
+        $price = $c;
+    }
+    return function() use ($rows) {
+        return (new FastChart\StockChart())
+            ->setSize(1200, 700)
+            ->setTitle('Daily prices with 30-day moving average and volume')
+            ->setOhlcv($rows)
+            ->addMovingAverage(30)
+            ->setVolumePane(true)
+            ->renderJpeg(88);
+    };
+}
+
 /* ----- Scenario 5: WebP encode (exercises opt#5) ------------------- */
 function scenario_label_chart_webp(): callable {
     mt_srand(424242);
@@ -211,6 +237,7 @@ $scenarios = [
     'svg_to_png'  => scenario_svg_to_png(),
     'basic_chart' => scenario_basic_chart(),
     'label_webp'  => scenario_label_chart_webp(),
+    'label_jpeg'  => scenario_label_chart_jpeg(),
 ];
 
 $results = [];
