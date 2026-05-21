@@ -1,9 +1,19 @@
 #include "plutovg-private.h"
 #include "plutovg-utils.h"
 
+/* LOCAL-PATCH (fastchart opt #12): the plutovg_surface_write_to_*
+ * file/stream functions are the only consumers of stb_image_write.
+ * fastchart routes every raster output through libpng / libjpeg-turbo
+ * / libwebp directly and never calls these, so we compile them out
+ * under -DPLUTOVG_DISABLE_IMAGE_WRITE. Drops ~70 KB of compiled code
+ * from fastchart.so and skips the stb_image_write.h translation unit
+ * (~1700 lines) on every build. Re-evaluate on the next plutovg
+ * vendor refresh. */
+#ifndef PLUTOVG_DISABLE_IMAGE_WRITE
 #define STB_IMAGE_WRITE_STATIC
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "plutovg-stb-image-write.h"
+#endif
 
 /* fastchart only feeds PNG and JPEG bytes into plutosvg's data URI
  * loader (gated by fc_sniff_image_mime in fastchart_target.c). The
@@ -203,6 +213,7 @@ void plutovg_surface_clear(plutovg_surface_t* surface, const plutovg_color_t* co
     }
 }
 
+#ifndef PLUTOVG_DISABLE_IMAGE_WRITE
 static void plutovg_surface_write_begin(const plutovg_surface_t* surface)
 {
     plutovg_convert_argb_to_rgba(surface->data, surface->data, surface->width, surface->height, surface->stride);
@@ -244,6 +255,7 @@ bool plutovg_surface_write_to_jpg_stream(const plutovg_surface_t* surface, pluto
     plutovg_surface_write_end(surface);
     return success;
 }
+#endif  /* !PLUTOVG_DISABLE_IMAGE_WRITE */
 
 void plutovg_convert_argb_to_rgba(unsigned char* dst, const unsigned char* src, int width, int height, int stride)
 {
