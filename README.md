@@ -183,9 +183,9 @@ $webp = FastChart\Chart::svgToWebp($svg, 90, FastChart\Chart::WEBP_LOSSLESS);
 ```
 
 Output dimensions come from the SVG's `width` / `height` / `viewBox`.
-SVG `<text>` elements render blank — plutovg has no text engine, so
-text must be path-flattened first (fastchart's own SVG builder does
-this automatically). See
+SVG `<text>` elements render blank because plutovg has no text
+engine, so text must be path-flattened first (fastchart's own SVG
+builder does this automatically). See
 [`docs/examples/51_svg_to_raster.php`](docs/examples/51_svg_to_raster.php)
 for a runnable demo and
 [`docs/specs/svg-to-raster.md`](docs/specs/svg-to-raster.md) for the
@@ -194,41 +194,46 @@ full contract.
 ## 📊 Performance
 
 Median in-memory render time at 1920×1080 on a single core (Intel
-i9-13950HX, PHP 8.4 debug build, default font + DPI). SVG is the
-canonical output; PNG / WebP / JPG go through the same SVG build,
-then plutosvg + plutovg rasterize, then the format encoder
-(libpng / libwebp / libjpeg-turbo). The raster columns therefore
-add the rasterize cost on top of the SVG-only number.
+i9-13950HX, PHP 8.4 release build NTS -O2, default font + DPI).
+SVG is the canonical output; PNG / WebP / JPG go through the same
+SVG build, then plutosvg + plutovg rasterize, then the format
+encoder (libpng / libwebp / libjpeg-turbo). The raster columns
+therefore add the rasterize cost on top of the SVG-only number.
 
 | Chart        | SVG ms | PNG ms | WebP ms | JPG ms |
 |--------------|-------:|-------:|--------:|-------:|
-| AreaChart    |    5.7 |   71.7 |    54.4 |   34.5 |
-| BarChart     |   11.0 |   75.8 |    57.0 |   38.8 |
-| BoxPlot      |    4.4 |   65.0 |    47.5 |   31.6 |
-| BubbleChart  |    2.6 |   90.9 |    62.7 |   38.6 |
-| ContourChart |    3.0 |   79.1 |    60.0 |   35.3 |
-| Funnel       |    4.2 |   62.6 |    47.4 |   30.9 |
-| GanttChart   |    5.7 |   65.9 |    48.8 |   30.8 |
-| GaugeChart   |    1.2 |   69.4 |    49.7 |   29.1 |
-| Heatmap      |    1.7 |   69.3 |    52.1 |   34.5 |
-| LineChart    |    5.4 |   74.2 |    55.5 |   34.3 |
-| LinearMeter  |    1.4 |   62.7 |    40.7 |   25.2 |
-| PieChart     |    2.8 |   71.6 |    51.9 |   33.0 |
-| PolarChart   |    1.2 |   73.7 |    51.7 |   31.8 |
-| RadarChart   |    3.7 |   75.3 |    56.2 |   36.5 |
-| ScatterChart |    5.0 |   72.6 |    51.1 |   34.6 |
-| StockChart   |    8.4 |   80.8 |    63.3 |   41.0 |
-| SurfaceChart |    2.3 |   64.7 |    46.4 |   28.3 |
-| Treemap      |    4.8 |   65.0 |    48.5 |   31.5 |
-| Waterfall    |    5.2 |   65.2 |    48.3 |   31.1 |
+| AreaChart    |   0.85 |  45.19 |   34.04 |  11.45 |
+| BarChart     |   1.55 |  43.54 |   35.18 |  12.35 |
+| BoxPlot      |   0.62 |  40.26 |   30.74 |   9.95 |
+| BubbleChart  |   0.32 |  52.84 |   44.18 |  14.84 |
+| ContourChart |   0.39 |  48.46 |   41.14 |  12.97 |
+| Funnel       |   0.60 |  40.15 |   31.59 |   9.53 |
+| GanttChart   |   0.82 |  40.08 |   30.98 |  10.22 |
+| GaugeChart   |   0.16 |  44.75 |   33.78 |  10.19 |
+| Heatmap      |   0.21 |  43.28 |   35.62 |  11.85 |
+| LineChart    |   0.69 |  45.45 |   37.23 |  11.81 |
+| LinearMeter  |   0.16 |  38.64 |   29.10 |   8.98 |
+| PieChart     |   0.40 |  44.42 |   33.84 |  11.75 |
+| PolarChart   |   0.17 |  47.60 |   37.10 |  11.48 |
+| RadarChart   |   0.48 |  47.89 |   36.48 |  13.39 |
+| ScatterChart |   0.67 |  43.05 |   32.48 |  10.38 |
+| StockChart   |   1.22 |  46.00 |   40.86 |  14.19 |
+| SurfaceChart |   0.29 |  40.09 |   34.50 |  10.35 |
+| Treemap      |   0.73 |  39.76 |   31.74 |   9.74 |
+| Waterfall    |   0.68 |  39.21 |   32.05 |  10.08 |
 
-SVG is in the single-digit-ms range across the board because there's
+SVG is sub-millisecond to ~1.5 ms across the board because there's
 no rasterization; the backend appends strings into a `smart_str`.
-The raster encoders split into three bands: JPG fastest (25-41 ms,
-libjpeg-turbo with 4:2:0 subsampling), WebP middle (40-63 ms,
-libwebp with `WEBP_PRESET_DRAWING` + method=2 + multi-thread), PNG
-slowest (62-91 ms, libpng's deflate dominates). All four formats
-stay under 95 ms at 1080p on one thread.
+The raster encoders split into three bands: JPG fastest (9-15 ms,
+libjpeg-turbo with 4:2:0 subsampling + SSSE3 RGBA-pack), WebP
+middle (29-44 ms, libwebp with `WEBP_PRESET_DRAWING` + method=2 +
+multi-thread), PNG slowest (38-53 ms, libpng's deflate dominates).
+All four formats stay under 55 ms at 1080p on one thread.
+
+These numbers reflect the optimization series in v1.1.x (glyph
+outline cache, opaque-detect un-premultiply with SSSE3 shuffle,
+deferred text overlays, larger FT raster pool); see
+[`optimization.md`](optimization.md) for the per-finding breakdown.
 
 Repro the numbers locally:
 
