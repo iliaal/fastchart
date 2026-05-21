@@ -44,7 +44,10 @@
 #include <string.h>
 #include <stdlib.h>
 
-#if defined(__x86_64__) || defined(_M_X64)
+/* Same GCC/Clang gate as fastchart_rasterize.c — the JPEG opaque-row
+ * pack uses __attribute__((target("ssse3"))) + __builtin_cpu_supports.
+ * MSVC builds fall through to the scalar path. */
+#if (defined(__x86_64__) || defined(_M_X64)) && defined(__GNUC__)
 #  define FC_ENC_HAVE_X86_SIMD 1
 #  include <immintrin.h>
 #endif
