@@ -400,16 +400,31 @@ testable void reedSolomonComputeRemainder(const uint8_t data[], int dataLen,
 #undef qrcodegen_REED_SOLOMON_DEGREE_MAX
 
 
-// Returns the product of the two given field elements modulo GF(2^8/0x11D).
-// All inputs are valid. This could be implemented as a 256*256 lookup table.
-testable uint8_t reedSolomonMultiply(uint8_t x, uint8_t y) {
-	// Russian peasant multiplication
-	uint8_t z = 0;
-	for (int i = 7; i >= 0; i--) {
-		z = (uint8_t)((z << 1) ^ ((z >> 7) * 0x11D));
-		z ^= ((y >> i) & 1) * x;
+// Log/antilog tables for GF(2^8/0x11D), generator alpha=0x02.
+// log[0] is unused (log of zero is undefined). antilog is duplicated to
+// length 510 so antilog[log[x] + log[y]] never needs a modulo.
+static uint8_t gf_log[256];
+static uint8_t gf_antilog[512];
+static int     gf_tables_ready = 0;
+
+static void initReedSolomonTables(void) {
+	uint8_t v = 1;
+	for (int i = 0; i < 255; i++) {
+		gf_antilog[i] = v;
+		gf_antilog[i + 255] = v;
+		gf_log[v] = (uint8_t)i;
+		// Multiply by alpha (0x02) in GF(2^8/0x11D).
+		v = (uint8_t)((v << 1) ^ ((v >> 7) * 0x11D));
 	}
-	return z;
+	gf_tables_ready = 1;
+}
+
+// Returns the product of the two given field elements modulo GF(2^8/0x11D).
+// All inputs are valid.
+testable uint8_t reedSolomonMultiply(uint8_t x, uint8_t y) {
+	if (!gf_tables_ready) initReedSolomonTables();
+	if (x == 0 || y == 0) return 0;
+	return gf_antilog[gf_log[x] + gf_log[y]];
 }
 
 

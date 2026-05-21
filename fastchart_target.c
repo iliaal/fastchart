@@ -29,6 +29,8 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+#include <plutovg.h>
+
 #include "fastchart_target.h"
 #include "fastchart_svg.h"
 #include "fastchart_rasterize.h"
@@ -218,6 +220,21 @@ FT_Library fastchart_ft_library(void)
     return lib;
 }
 
+/* Invalidate any glyph cache entries that point at `victim`. Called
+ * just before FT_Done_Face on the evicted face so the cache never
+ * carries dangling face pointers. */
+static void fastchart_glyph_cache_drop_face(FT_Face victim)
+{
+    fc_glyph_cache_entry *g = FASTCHART_G(glyph_cache);
+    for (int i = 0; i < FC_GLYPH_CACHE_N; i++) {
+        if (g[i].face == victim) {
+            free(g[i].ops);
+            free(g[i].pts);
+            memset(&g[i], 0, sizeof(g[i]));
+        }
+    }
+}
+
 FT_Face fastchart_ft_face(const char *font_path)
 {
     if (!font_path) return NULL;
@@ -254,7 +271,10 @@ FT_Face fastchart_ft_face(const char *font_path)
 
     /* Evict the tail slot, shift right, install at slot 0. */
     int tail = FC_FT_FACE_CACHE_N - 1;
-    if (cache[tail].face) FT_Done_Face(cache[tail].face);
+    if (cache[tail].face) {
+        fastchart_glyph_cache_drop_face(cache[tail].face);
+        FT_Done_Face(cache[tail].face);
+    }
     if (cache[tail].path) free(cache[tail].path);
     for (int i = tail; i > 0; i--) {
         cache[i] = cache[i - 1];
@@ -266,6 +286,14 @@ FT_Face fastchart_ft_face(const char *font_path)
 
 void fastchart_ft_library_shutdown(void)
 {
+    /* Free cached glyph paths first — they reference cached faces. */
+    fc_glyph_cache_entry *gcache = FASTCHART_G(glyph_cache);
+    for (int i = 0; i < FC_GLYPH_CACHE_N; i++) {
+        free(gcache[i].ops);
+        free(gcache[i].pts);
+        memset(&gcache[i], 0, sizeof(gcache[i]));
+    }
+
     /* Free cached faces explicitly. FT_Done_FreeType would walk and
      * free them anyway, but doing it ourselves keeps the cache state
      * machine deterministic and the path-string ownership tidy.
@@ -287,6 +315,61 @@ void fastchart_ft_library_shutdown(void)
         FASTCHART_G(ft_lib) = NULL;
     }
     FASTCHART_G(ft_lib_init_failed) = 0;
+}
+
+/* Glyph cache lookup. Linear scan + swap-to-front. Returns NULL on
+ * miss (caller must FT_Load_Glyph + FT_Outline_Decompose itself, then
+ * insert via fastchart_glyph_cache_insert).
+ *
+ * Caller MUST have already called FT_Set_Pixel_Sizes(face, 0, pix_size)
+ * to position the face at the requested size — the cache uses
+ * (face, pix_size, codepoint) as the key but does not touch FT state.
+ */
+const fc_glyph_cache_entry *fastchart_glyph_cache_get(
+    FT_Face face, uint16_t pix_size, uint32_t codepoint)
+{
+    fc_glyph_cache_entry *g = FASTCHART_G(glyph_cache);
+    for (int i = 0; i < FC_GLYPH_CACHE_N; i++) {
+        if (g[i].face == face
+            && g[i].pix_size == pix_size
+            && g[i].codepoint == codepoint) {
+            if (i != 0) {
+                fc_glyph_cache_entry tmp = g[0];
+                g[0] = g[i];
+                g[i] = tmp;
+            }
+            return &g[0];
+        }
+    }
+    return NULL;
+}
+
+/* Glyph cache insert. Evicts the tail slot. ops_buf and pts_buf are
+ * owned by the cache after this call (do not free in the caller).
+ * Pass NULL for both with n_ops == 0 for whitespace glyphs (advance
+ * is still cached). */
+void fastchart_glyph_cache_insert(FT_Face face, uint16_t pix_size,
+                                   uint32_t codepoint, int32_t advance_x_64,
+                                   char *ops_buf, uint16_t n_ops,
+                                   float *pts_buf, uint16_t n_pts)
+{
+    fc_glyph_cache_entry *g = FASTCHART_G(glyph_cache);
+    int tail = FC_GLYPH_CACHE_N - 1;
+    /* Evict tail. */
+    free(g[tail].ops);
+    free(g[tail].pts);
+    /* Shift right. */
+    for (int i = tail; i > 0; i--) {
+        g[i] = g[i - 1];
+    }
+    g[0].face = face;
+    g[0].pix_size = pix_size;
+    g[0].codepoint = codepoint;
+    g[0].advance_x_64 = advance_x_64;
+    g[0].ops = ops_buf;
+    g[0].n_ops = n_ops;
+    g[0].pts = pts_buf;
+    g[0].n_pts = n_pts;
 }
 
 static void copy_family_name(char *out, size_t out_n, const char *src)
@@ -376,16 +459,69 @@ void fastchart_target_text(fastchart_target_t *t,
     fastchart_target_resolve_font_family(t, font_path, family, sizeof(family));
 
     if (t->u.svg.text_mode == FASTCHART_SVG_TEXT_PATHS) {
-        /* Flatten each glyph to <path> via FreeType outline
-         * decomposition. Self-contained — renders in plutovg / any
-         * SVG rasterizer without text infrastructure. */
-        fc_svg_emit_text_as_path(t->u.svg.buf, x, y, font_path, size_px,
-                                  rgba, angle_deg, align, text, strlen(text));
+        if (t->defer_text_paths) {
+            /* Opt #7: record the text op; SKIP the SVG byte emission
+             * entirely. Plutosvg never sees text. The overlay list is
+             * replayed onto the rasterized surface via plutovg after
+             * the SVG is rasterized. */
+            size_t text_len = strlen(text);
+            if (t->n_text_overlays >= t->cap_text_overlays) {
+                int new_cap = t->cap_text_overlays ? t->cap_text_overlays * 2 : 16;
+                fastchart_text_overlay_t *nb = erealloc(
+                    t->text_overlays,
+                    (size_t)new_cap * sizeof(*nb));
+                if (!nb) return;  /* OOM: silently drop, render continues */
+                t->text_overlays = nb;
+                t->cap_text_overlays = new_cap;
+            }
+            fastchart_text_overlay_t *o =
+                &t->text_overlays[t->n_text_overlays++];
+            o->x_logical = x;
+            o->y_logical = y;
+            o->font_path = font_path;  /* borrowed */
+            o->size_px   = size_px;
+            o->rgba      = rgba;
+            o->angle_deg = angle_deg;
+            o->align     = align;
+            o->text_len  = text_len;
+            o->text = emalloc(text_len + 1);
+            memcpy(o->text, text, text_len + 1);
+        } else {
+            /* Flatten each glyph to <path> via FreeType outline
+             * decomposition. Self-contained — renders in plutovg / any
+             * SVG rasterizer without text infrastructure. */
+            fc_svg_emit_text_as_path(t->u.svg.buf, x, y, font_path, size_px,
+                                      rgba, angle_deg, align, text, strlen(text));
+        }
     } else {
         /* Native <text>: smaller files; needs consumer text support. */
         fc_svg_emit_text(t->u.svg.buf, x, y, family, size_px,
                           rgba, angle_deg, align, text, strlen(text));
     }
+}
+
+/* ============================================================ *
+ * Defer flag + release                                          *
+ * ============================================================ */
+
+void fastchart_target_enable_text_defer(fastchart_target_t *t)
+{
+    t->defer_text_paths = 1;
+}
+
+void fastchart_target_release(fastchart_target_t *t)
+{
+    if (t->text_overlays) {
+        for (int i = 0; i < t->n_text_overlays; i++) {
+            if (t->text_overlays[i].text) {
+                efree(t->text_overlays[i].text);
+            }
+        }
+        efree(t->text_overlays);
+        t->text_overlays = NULL;
+    }
+    t->n_text_overlays = 0;
+    t->cap_text_overlays = 0;
 }
 
 /* ============================================================ *
@@ -665,4 +801,178 @@ void fastchart_target_gradient_polygon(fastchart_target_t *t,
     fc_svg_emit_gradient_polygon(t->u.svg.buf, id, xs, ys, n,
                                   from_rgb, to_rgb, dir);
     if (n > 256) { efree(xs); efree(ys); }
+}
+
+/* ============================================================ *
+ * Deferred text overlay rendering (opt #7)                      *
+ * ============================================================ */
+
+/* Inline UTF-8 next-codepoint walker, mirrors fc_utf8_next in
+ * fastchart_svg.c. Returns next cursor or NULL on truncation. */
+static const unsigned char *fc_overlay_utf8_next(const unsigned char *p,
+                                                  const unsigned char *end,
+                                                  uint32_t *out_cp)
+{
+    if (p >= end) return NULL;
+    if (*p < 0x80) { *out_cp = *p; return p + 1; }
+    if ((*p & 0xE0) == 0xC0 && p + 1 < end) {
+        *out_cp = ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+        return p + 2;
+    }
+    if ((*p & 0xF0) == 0xE0 && p + 2 < end) {
+        *out_cp = ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+        return p + 3;
+    }
+    if ((*p & 0xF8) == 0xF0 && p + 3 < end) {
+        *out_cp = ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12)
+               | ((p[2] & 0x3F) << 6)  |  (p[3] & 0x3F);
+        return p + 4;
+    }
+    *out_cp = 0xFFFD;
+    return p + 1;
+}
+
+/* Replay one cached glyph as plutovg path commands. ops/pts are in
+ * pixel-at-glyph-origin coords (matching what fc_cap_funcs captured).
+ * The canvas already has the chart-anchor translation + rotation
+ * applied; this only needs to add pen_x and emit the path. */
+static void fc_overlay_replay_glyph(plutovg_canvas_t *canvas,
+                                     const struct fc_glyph_cache_entry *g,
+                                     double pen_x)
+{
+    int pi = 0;
+    for (int oi = 0; oi < g->n_ops; oi++) {
+        char op = g->ops[oi];
+        switch (op) {
+        case 'M':
+            plutovg_canvas_move_to(canvas,
+                pen_x + g->pts[pi], g->pts[pi + 1]);
+            pi += 2;
+            break;
+        case 'L':
+            plutovg_canvas_line_to(canvas,
+                pen_x + g->pts[pi], g->pts[pi + 1]);
+            pi += 2;
+            break;
+        case 'Q':
+            plutovg_canvas_quad_to(canvas,
+                pen_x + g->pts[pi],     g->pts[pi + 1],
+                pen_x + g->pts[pi + 2], g->pts[pi + 3]);
+            pi += 4;
+            break;
+        case 'C':
+            plutovg_canvas_cubic_to(canvas,
+                pen_x + g->pts[pi],     g->pts[pi + 1],
+                pen_x + g->pts[pi + 2], g->pts[pi + 3],
+                pen_x + g->pts[pi + 4], g->pts[pi + 5]);
+            pi += 6;
+            break;
+        default:
+            /* Unreachable — capture only emits M/L/Q/C. */
+            return;
+        }
+    }
+}
+
+/* Walk the overlay list, draw each text string onto the plutovg
+ * surface using cached glyph paths. surface is the all-rendered
+ * non-text SVG; we add text on top.
+ *
+ * Coordinate model: overlays carry logical (96-DPI viewport) coords;
+ * the surface is at physical (logical * dpi/96) pixels. We scale the
+ * canvas CTM by (physical/logical) so subsequent draws use logical
+ * units, matching what plutosvg produced for the non-text content. */
+void fastchart_apply_text_overlays(void *plutovg_surface,
+                                    int logical_w, int logical_h,
+                                    const fastchart_text_overlay_t *overlays,
+                                    int n_overlays)
+{
+    if (n_overlays == 0 || !overlays) return;
+
+    plutovg_surface_t *surf = (plutovg_surface_t *)plutovg_surface;
+    int phys_w = plutovg_surface_get_width(surf);
+    (void)logical_h;  /* uniform scale; phys_h/logical_h matches phys_w/logical_w */
+
+    double scale = (logical_w > 0) ? (double)phys_w / (double)logical_w : 1.0;
+
+    plutovg_canvas_t *canvas = plutovg_canvas_create(surf);
+    if (!canvas) return;
+
+    /* Premultiplied-alpha surface: plutovg's color setters take
+     * straight RGBA in 0..1 floats and premultiply internally. */
+
+    /* Apply logical→physical scale once; per-text transforms layer on
+     * top via save/restore. */
+    plutovg_canvas_scale(canvas, scale, scale);
+
+    for (int i = 0; i < n_overlays; i++) {
+        const fastchart_text_overlay_t *o = &overlays[i];
+        if (!o->text || o->text_len == 0 || !o->font_path) continue;
+
+        FT_Face face = fastchart_ft_face(o->font_path);
+        if (!face) continue;
+
+        FT_UInt pix = (FT_UInt)(o->size_px + 0.5);
+        if (pix < 1) pix = 1;
+        if (FT_Set_Pixel_Sizes(face, 0, pix)) continue;
+
+        /* Pass 1: sum advance for alignment. Cache is primed on first
+         * miss; subsequent renders of the same glyph at the same size
+         * hit. */
+        double total_w = 0.0;
+        const unsigned char *p   = (const unsigned char *)o->text;
+        const unsigned char *end = p + o->text_len;
+        uint32_t cp;
+        while ((p = fc_overlay_utf8_next(p, end, &cp))) {
+            const struct fc_glyph_cache_entry *g =
+                fastchart_resolve_glyph(face, (uint16_t)pix, cp);
+            if (!g) continue;
+            total_w += g->advance_x_64 / 64.0;
+        }
+
+        double shift = 0.0;
+        if (o->align == FASTCHART_TARGET_ALIGN_CENTER) shift = -total_w / 2.0;
+        else if (o->align == FASTCHART_TARGET_ALIGN_RIGHT) shift = -total_w;
+
+        plutovg_canvas_save(canvas);
+        plutovg_canvas_translate(canvas, o->x_logical + shift, o->y_logical);
+        if (o->angle_deg != 0.0) {
+            /* SVG rotate() is CW; fastchart's chart-side convention is
+             * CCW. Match fc_svg_emit_text_as_path which negates the
+             * angle when emitting <g rotate(...)>. plutovg's rotate
+             * takes radians, CW positive. */
+            plutovg_canvas_rotate(canvas, -o->angle_deg * (M_PI / 180.0));
+        }
+
+        /* Pass 2: emit path commands per glyph. Cache mutation invalidates
+         * entry pointers across resolves (LRU swap-to-front), so we read
+         * each entry's fields BEFORE the next resolve. */
+        double pen_x = 0.0;
+        p   = (const unsigned char *)o->text;
+        end = p + o->text_len;
+        plutovg_canvas_new_path(canvas);
+        while ((p = fc_overlay_utf8_next(p, end, &cp))) {
+            const struct fc_glyph_cache_entry *g =
+                fastchart_resolve_glyph(face, (uint16_t)pix, cp);
+            if (!g) continue;
+            double adv = g->advance_x_64 / 64.0;
+            if (g->n_ops > 0) {
+                fc_overlay_replay_glyph(canvas, g, pen_x);
+            }
+            pen_x += adv;
+        }
+
+        int a = (int)((o->rgba >> 24) & 0xFF);
+        int r = (int)((o->rgba >> 16) & 0xFF);
+        int gc = (int)((o->rgba >>  8) & 0xFF);
+        int b = (int)( o->rgba        & 0xFF);
+        plutovg_canvas_set_rgba(canvas,
+            r / 255.0, gc / 255.0, b / 255.0, a / 255.0);
+        plutovg_canvas_set_fill_rule(canvas, PLUTOVG_FILL_RULE_NON_ZERO);
+        plutovg_canvas_fill(canvas);
+
+        plutovg_canvas_restore(canvas);
+    }
+
+    plutovg_canvas_destroy(canvas);
 }

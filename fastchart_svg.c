@@ -27,6 +27,7 @@
 
 #include "fastchart_target.h"
 #include "fastchart_svg.h"
+#include "php_fastchart.h"  /* fc_glyph_cache_entry layout for cache replay */
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -520,14 +521,18 @@ void fc_svg_emit_text(smart_str *buf,
  * The chart still renders; the text is simply absent. Loud errors
  * here would break otherwise-fine raster output.                       */
 
+/* Capture ctx for the cache-build pass: records ops + pts at pen_x=0
+ * into growing buffers, then hands ownership to the glyph cache. */
 typedef struct {
-	smart_str *buf;     /* destination */
-	int        emitted; /* >0 once any contour wrote a Move */
-	double     pen_x;   /* current pen advance in pixels (FT 26.6 / 64) */
-	double     scale;   /* outline unit -> pixel; (1/64) for FT loaded at px */
-	double     last_x;  /* last emitted point — used to skip degenerate */
-	double     last_y;
-} fc_path_emit_ctx;
+	char  *ops;
+	float *pts;
+	int    n_ops;
+	int    n_pts;
+	int    cap_ops;
+	int    cap_pts;
+	int    ok;        /* 0 on allocation failure */
+	double scale;     /* outline unit -> pixel; (1/64) for FT loaded at px */
+} fc_path_cap_ctx;
 
 static void fc_emit_num(smart_str *buf, double v)
 {
@@ -543,73 +548,104 @@ static void fc_emit_num(smart_str *buf, double v)
 	smart_str_appendl(buf, tmp, n);
 }
 
-static int fc_path_move(const FT_Vector *to, void *u)
+/* Capture-pass callbacks: record FT outline at pen_x=0 into ops/pts.
+ * Y is flipped here so the cached stream is in SVG-oriented coords
+ * (matching what the emit pass produces). */
+static int fc_cap_grow(fc_path_cap_ctx *c, int extra_ops, int extra_pts)
 {
-	fc_path_emit_ctx *c = u;
-	double xx = c->pen_x + to->x * c->scale;
-	double yy = -to->y * c->scale;
-	smart_str_appendc(c->buf, 'M');
-	fc_emit_num(c->buf, xx);
-	smart_str_appendc(c->buf, ' ');
-	fc_emit_num(c->buf, yy);
-	c->last_x = xx; c->last_y = yy;
-	c->emitted = 1;
-	return 0;
-}
-static int fc_path_line(const FT_Vector *to, void *u)
-{
-	fc_path_emit_ctx *c = u;
-	double xx = c->pen_x + to->x * c->scale;
-	double yy = -to->y * c->scale;
-	smart_str_appendc(c->buf, 'L');
-	fc_emit_num(c->buf, xx);
-	smart_str_appendc(c->buf, ' ');
-	fc_emit_num(c->buf, yy);
-	c->last_x = xx; c->last_y = yy;
-	return 0;
-}
-static int fc_path_conic(const FT_Vector *ctrl, const FT_Vector *to, void *u)
-{
-	fc_path_emit_ctx *c = u;
-	double cx = c->pen_x + ctrl->x * c->scale;
-	double cy = -ctrl->y * c->scale;
-	double xx = c->pen_x + to->x * c->scale;
-	double yy = -to->y * c->scale;
-	smart_str_appendc(c->buf, 'Q');
-	fc_emit_num(c->buf, cx);
-	smart_str_appendc(c->buf, ' ');
-	fc_emit_num(c->buf, cy);
-	smart_str_appendc(c->buf, ' ');
-	fc_emit_num(c->buf, xx);
-	smart_str_appendc(c->buf, ' ');
-	fc_emit_num(c->buf, yy);
-	c->last_x = xx; c->last_y = yy;
-	return 0;
-}
-static int fc_path_cubic(const FT_Vector *c1, const FT_Vector *c2,
-                          const FT_Vector *to, void *u)
-{
-	fc_path_emit_ctx *c = u;
-	double x1 = c->pen_x + c1->x * c->scale;
-	double y1 = -c1->y * c->scale;
-	double x2 = c->pen_x + c2->x * c->scale;
-	double y2 = -c2->y * c->scale;
-	double xx = c->pen_x + to->x * c->scale;
-	double yy = -to->y * c->scale;
-	smart_str_appendc(c->buf, 'C');
-	fc_emit_num(c->buf, x1); smart_str_appendc(c->buf, ' ');
-	fc_emit_num(c->buf, y1); smart_str_appendc(c->buf, ' ');
-	fc_emit_num(c->buf, x2); smart_str_appendc(c->buf, ' ');
-	fc_emit_num(c->buf, y2); smart_str_appendc(c->buf, ' ');
-	fc_emit_num(c->buf, xx); smart_str_appendc(c->buf, ' ');
-	fc_emit_num(c->buf, yy);
-	c->last_x = xx; c->last_y = yy;
+	if (c->n_ops + extra_ops > c->cap_ops) {
+		int n = c->cap_ops ? c->cap_ops * 2 : 16;
+		while (n < c->n_ops + extra_ops) n *= 2;
+		char *nb = realloc(c->ops, (size_t)n);
+		if (!nb) { c->ok = 0; return 1; }
+		c->ops = nb;
+		c->cap_ops = n;
+	}
+	if (c->n_pts + extra_pts > c->cap_pts) {
+		int n = c->cap_pts ? c->cap_pts * 2 : 32;
+		while (n < c->n_pts + extra_pts) n *= 2;
+		float *nb = realloc(c->pts, (size_t)n * sizeof(float));
+		if (!nb) { c->ok = 0; return 1; }
+		c->pts = nb;
+		c->cap_pts = n;
+	}
 	return 0;
 }
 
-static const FT_Outline_Funcs fc_path_funcs = {
-	fc_path_move, fc_path_line, fc_path_conic, fc_path_cubic, 0, 0
+static int fc_cap_move(const FT_Vector *to, void *u)
+{
+	fc_path_cap_ctx *c = u;
+	if (!c->ok) return 0;
+	if (fc_cap_grow(c, 1, 2)) return 0;
+	c->ops[c->n_ops++] = 'M';
+	c->pts[c->n_pts++] = (float)(to->x * c->scale);
+	c->pts[c->n_pts++] = (float)(-to->y * c->scale);
+	return 0;
+}
+static int fc_cap_line(const FT_Vector *to, void *u)
+{
+	fc_path_cap_ctx *c = u;
+	if (!c->ok) return 0;
+	if (fc_cap_grow(c, 1, 2)) return 0;
+	c->ops[c->n_ops++] = 'L';
+	c->pts[c->n_pts++] = (float)(to->x * c->scale);
+	c->pts[c->n_pts++] = (float)(-to->y * c->scale);
+	return 0;
+}
+static int fc_cap_conic(const FT_Vector *ctrl, const FT_Vector *to, void *u)
+{
+	fc_path_cap_ctx *c = u;
+	if (!c->ok) return 0;
+	if (fc_cap_grow(c, 1, 4)) return 0;
+	c->ops[c->n_ops++] = 'Q';
+	c->pts[c->n_pts++] = (float)(ctrl->x * c->scale);
+	c->pts[c->n_pts++] = (float)(-ctrl->y * c->scale);
+	c->pts[c->n_pts++] = (float)(to->x * c->scale);
+	c->pts[c->n_pts++] = (float)(-to->y * c->scale);
+	return 0;
+}
+static int fc_cap_cubic(const FT_Vector *c1, const FT_Vector *c2,
+                         const FT_Vector *to, void *u)
+{
+	fc_path_cap_ctx *c = u;
+	if (!c->ok) return 0;
+	if (fc_cap_grow(c, 1, 6)) return 0;
+	c->ops[c->n_ops++] = 'C';
+	c->pts[c->n_pts++] = (float)(c1->x * c->scale);
+	c->pts[c->n_pts++] = (float)(-c1->y * c->scale);
+	c->pts[c->n_pts++] = (float)(c2->x * c->scale);
+	c->pts[c->n_pts++] = (float)(-c2->y * c->scale);
+	c->pts[c->n_pts++] = (float)(to->x * c->scale);
+	c->pts[c->n_pts++] = (float)(-to->y * c->scale);
+	return 0;
+}
+
+static const FT_Outline_Funcs fc_cap_funcs = {
+	fc_cap_move, fc_cap_line, fc_cap_conic, fc_cap_cubic, 0, 0
 };
+
+/* Replay a cached glyph command stream into `out` with pen_x applied
+ * to each X coordinate. Same %.2f / trim-trailing-zero format as
+ * fc_emit_num. */
+static void fc_replay_cached_glyph(smart_str *out, const fc_glyph_cache_entry *e,
+                                    double pen_x)
+{
+	int pi = 0;
+	for (int oi = 0; oi < e->n_ops; oi++) {
+		char op = e->ops[oi];
+		int n = (op == 'M' || op == 'L') ? 1
+		      : (op == 'Q') ? 2
+		      : 3;
+		smart_str_appendc(out, op);
+		for (int k = 0; k < n; k++) {
+			fc_emit_num(out, pen_x + e->pts[pi]);
+			smart_str_appendc(out, ' ');
+			fc_emit_num(out, e->pts[pi + 1]);
+			if (k + 1 < n) smart_str_appendc(out, ' ');
+			pi += 2;
+		}
+	}
+}
 
 /* Minimal inline UTF-8 -> codepoint walk. Returns next cursor or NULL
  * on truncation. *out_cp is set to the codepoint (replacement char on
@@ -642,6 +678,52 @@ static const unsigned char *fc_utf8_next(const unsigned char *p,
  * parses the entire file once. The size mutation (FT_Set_Pixel_Sizes)
  * still happens every call because callers want different sizes for
  * title vs axis labels; that's microseconds. */
+/* Resolve one codepoint via the glyph cache. On miss: FT_Load_Glyph
+ * + FT_Outline_Decompose with the capture callbacks, insert into the
+ * cache. Returns the (possibly-just-inserted) entry, or NULL on FT
+ * failure.
+ *
+ * Exposed (non-static) so fastchart_apply_text_overlays in
+ * fastchart_target.c can resolve glyphs without duplicating the
+ * FT load + decompose plumbing. */
+const fc_glyph_cache_entry *fastchart_resolve_glyph(FT_Face face,
+                                                     uint16_t pix_size,
+                                                     uint32_t codepoint)
+{
+	const fc_glyph_cache_entry *hit =
+	    fastchart_glyph_cache_get(face, pix_size, codepoint);
+	if (hit) return hit;
+
+	FT_UInt gi = FT_Get_Char_Index(face, codepoint);
+	if (FT_Load_Glyph(face, gi,
+	                   FT_LOAD_NO_BITMAP | FT_LOAD_NO_HINTING)) {
+		return NULL;
+	}
+
+	int32_t advance_x_64 = (int32_t)face->glyph->advance.x;
+
+	fc_path_cap_ctx cap = {0};
+	cap.scale = 1.0 / 64.0;
+	cap.ok = 1;
+	FT_Outline_Decompose(&face->glyph->outline, &fc_cap_funcs, &cap);
+
+	if (!cap.ok) {
+		free(cap.ops);
+		free(cap.pts);
+		/* Insert advance-only entry so the next lookup still hits.
+		 * Whitespace glyphs and capture-OOM both land here. */
+		fastchart_glyph_cache_insert(face, pix_size, codepoint,
+		                              advance_x_64, NULL, 0, NULL, 0);
+		return fastchart_glyph_cache_get(face, pix_size, codepoint);
+	}
+
+	fastchart_glyph_cache_insert(face, pix_size, codepoint,
+	                              advance_x_64,
+	                              cap.ops, (uint16_t)cap.n_ops,
+	                              cap.pts, (uint16_t)cap.n_pts);
+	return fastchart_glyph_cache_get(face, pix_size, codepoint);
+}
+
 void fc_svg_emit_text_as_path(smart_str *buf,
                                double x, double y,
                                const char *font_path, double size_px,
@@ -659,17 +741,24 @@ void fc_svg_emit_text_as_path(smart_str *buf,
 		return;
 	}
 
-	/* Pass 1: measure total advance for alignment. */
+	/* Two passes — but because the cache mutates (swap-to-front + LRU
+	 * evict) on every miss, we cannot hold cache entry pointers
+	 * across multiple resolves. Pass 1 sums advances (the resolver
+	 * primes the cache for any unseen glyph); pass 2 re-resolves +
+	 * emits in lockstep so each entry is read before the next resolve
+	 * potentially shuffles the cache. After pass 1, pass 2 is all
+	 * cache hits — FC_GLYPH_CACHE_N pointer compares per codepoint
+	 * (no FT work). */
 	double total_w = 0.0;
 	{
 		const unsigned char *p = (const unsigned char *)text;
 		const unsigned char *e = p + text_len;
 		uint32_t cp;
 		while ((p = fc_utf8_next(p, e, &cp))) {
-			FT_UInt gi = FT_Get_Char_Index(face, cp);
-			if (FT_Load_Glyph(face, gi,
-			                   FT_LOAD_NO_BITMAP | FT_LOAD_NO_HINTING)) continue;
-			total_w += face->glyph->advance.x / 64.0;
+			const fc_glyph_cache_entry *g =
+			    fastchart_resolve_glyph(face, (uint16_t)pix, cp);
+			if (!g) continue;
+			total_w += g->advance_x_64 / 64.0;
 		}
 	}
 
@@ -677,24 +766,23 @@ void fc_svg_emit_text_as_path(smart_str *buf,
 	if (align == FASTCHART_TARGET_ALIGN_CENTER) shift = -total_w / 2.0;
 	else if (align == FASTCHART_TARGET_ALIGN_RIGHT) shift = -total_w;
 
-	/* Build a single combined path 'd' for all glyphs. Pen translates
-	 * each glyph's outline by the cumulative advance. */
 	smart_str d = {0};
-	fc_path_emit_ctx ctx = {0};
-	ctx.buf = &d;
-	ctx.scale = 1.0 / 64.0;
-	ctx.pen_x = 0.0;
-
+	double pen_x = 0.0;
 	{
 		const unsigned char *p = (const unsigned char *)text;
 		const unsigned char *e = p + text_len;
 		uint32_t cp;
 		while ((p = fc_utf8_next(p, e, &cp))) {
-			FT_UInt gi = FT_Get_Char_Index(face, cp);
-			if (FT_Load_Glyph(face, gi,
-			                   FT_LOAD_NO_BITMAP | FT_LOAD_NO_HINTING)) continue;
-			FT_Outline_Decompose(&face->glyph->outline, &fc_path_funcs, &ctx);
-			ctx.pen_x += face->glyph->advance.x / 64.0;
+			const fc_glyph_cache_entry *g =
+			    fastchart_resolve_glyph(face, (uint16_t)pix, cp);
+			if (!g) continue;
+			/* Read everything we need BEFORE any other resolve call
+			 * can rearrange the cache. */
+			double adv = g->advance_x_64 / 64.0;
+			if (g->n_ops > 0) {
+				fc_replay_cached_glyph(&d, g, pen_x);
+			}
+			pen_x += adv;
 		}
 	}
 

@@ -3823,17 +3823,19 @@ static int fastchart_svg_to_pixels(
         return -1;
     }
 
-    int w, h;
-    if (fastchart_svg_get_intrinsic_dims(
-            ZSTR_VAL(svg), ZSTR_LEN(svg), &w, &h) != 0) {
+    int w = 0, h = 0;
+    int rc = fastchart_rasterize_svg_with_dims(
+        ZSTR_VAL(svg), ZSTR_LEN(svg),
+        FC_IMAGE_MAX_DIM, FC_IMAGE_MAX_PIXELS,
+        pix, &w, &h);
+    if (rc == -1 || rc == -2) {
         zend_value_error(
             "%s() SVG has no resolvable intrinsic dimensions "
             "(percentage widths and missing viewBox are not supported)",
             method_name);
         return -1;
     }
-    if (w > FC_IMAGE_MAX_DIM || h > FC_IMAGE_MAX_DIM
-        || (long long)w * h > FC_IMAGE_MAX_PIXELS) {
+    if (rc == -3) {
         zend_value_error(
             "%s() output dimensions %dx%d exceed cap "
             "(max %d per side, %d total pixels)",
@@ -3841,16 +3843,13 @@ static int fastchart_svg_to_pixels(
             FC_IMAGE_MAX_DIM, FC_IMAGE_MAX_PIXELS);
         return -1;
     }
-
-    fastchart_pixels_init(pix, w, h);
-    pix->dpi = 96;
-    if (fastchart_rasterize_svg(
-            ZSTR_VAL(svg), ZSTR_LEN(svg), w, h, pix) != 0) {
+    if (rc != 0) {
         fastchart_pixels_release(pix);
         zend_throw_error(NULL,
             "FastChart: plutovg rasterization failed for the supplied SVG");
         return -1;
     }
+    pix->dpi = 96;
     return 0;
 }
 
@@ -5251,8 +5250,13 @@ static void fastchart_render_to_string(INTERNAL_FUNCTION_PARAMETERS, int format,
                                (int)self->width, (int)self->height,
                                (int)self->dpi,
                                FASTCHART_SVG_TEXT_PATHS);
+    /* Opt #7: defer text emission. PATHS-mode text is recorded on the
+     * target and applied to the rasterized surface via plutovg after
+     * plutosvg parses + renders the (now much smaller) non-text SVG. */
+    fastchart_target_enable_text_defer(&t);
 
     if (dispatch_svg_render(self, Z_OBJCE_P(ZEND_THIS), &t) != 0 || EG(exception)) {
+        fastchart_target_release(&t);
         smart_str_free(&svg_buf);
         RETURN_THROWS();
     }
@@ -5261,21 +5265,27 @@ static void fastchart_render_to_string(INTERNAL_FUNCTION_PARAMETERS, int format,
     smart_str_0(&svg_buf);
 
     if (!svg_buf.s) {
+        fastchart_target_release(&t);
         zend_throw_error(NULL, "FastChart: SVG renderer produced no output");
         RETURN_THROWS();
     }
 
-    /* Rasterize at physical dims. */
+    /* Rasterize at physical dims, apply deferred text overlays. */
     fastchart_pixels_t pix;
     fastchart_pixels_init(&pix, alloc_w, alloc_h);
     pix.dpi = (int)self->dpi;
-    if (fastchart_rasterize_svg(ZSTR_VAL(svg_buf.s), ZSTR_LEN(svg_buf.s),
-                                 alloc_w, alloc_h, &pix) != 0) {
+    if (fastchart_rasterize_svg_with_text(
+            ZSTR_VAL(svg_buf.s), ZSTR_LEN(svg_buf.s),
+            alloc_w, alloc_h,
+            (int)self->width, (int)self->height,
+            t.text_overlays, t.n_text_overlays, &pix) != 0) {
+        fastchart_target_release(&t);
         smart_str_free(&svg_buf);
         zend_throw_error(NULL, "FastChart: plutovg rasterization failed");
         RETURN_THROWS();
     }
     zend_string_release(svg_buf.s);  /* SVG source no longer needed */
+    fastchart_target_release(&t);   /* overlay strings copied; can free now */
 
     smart_str out_buf = {0};
     int rc = -1;
@@ -5687,8 +5697,12 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
                                (int)self->width, (int)self->height,
                                (int)self->dpi,
                                FASTCHART_SVG_TEXT_PATHS);
+    /* Opt #7: defer text — see the parallel comment in
+     * fastchart_render_to_string. */
+    fastchart_target_enable_text_defer(&t);
 
     if (dispatch_svg_render(self, Z_OBJCE_P(ZEND_THIS), &t) != 0 || EG(exception)) {
+        fastchart_target_release(&t);
         smart_str_free(&svg_buf);
         RETURN_THROWS();
     }
@@ -5699,13 +5713,18 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
     fastchart_pixels_t pix;
     fastchart_pixels_init(&pix, alloc_w, alloc_h);
     pix.dpi = (int)self->dpi;
-    if (fastchart_rasterize_svg(ZSTR_VAL(svg_buf.s), ZSTR_LEN(svg_buf.s),
-                                 alloc_w, alloc_h, &pix) != 0) {
+    if (fastchart_rasterize_svg_with_text(
+            ZSTR_VAL(svg_buf.s), ZSTR_LEN(svg_buf.s),
+            alloc_w, alloc_h,
+            (int)self->width, (int)self->height,
+            t.text_overlays, t.n_text_overlays, &pix) != 0) {
+        fastchart_target_release(&t);
         smart_str_free(&svg_buf);
         zend_throw_error(NULL, "FastChart: plutovg rasterization failed");
         RETURN_THROWS();
     }
     zend_string_release(svg_buf.s);
+    fastchart_target_release(&t);
 
     smart_str enc_buf = {0};
     int rc = -1;

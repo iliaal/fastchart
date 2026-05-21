@@ -55,4 +55,43 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
 int fastchart_svg_get_intrinsic_dims(const char *svg, size_t svg_len,
                                       int *out_w, int *out_h);
 
+/* Single-pass: parse the SVG once, read intrinsic dims, validate
+ * against (max_dim, max_pixels), rasterize. Used by the
+ * Chart::svgToPng/Jpeg/Webp() static methods where the caller has
+ * no a-priori knowledge of the input dimensions and would otherwise
+ * parse twice (once for dims, once for render).
+ *
+ * Return codes:
+ *    0: success. pix filled; *out_w / *out_h reflect actual dims.
+ *   -1: SVG could not be parsed.
+ *   -2: SVG has no resolvable intrinsic dimensions.
+ *   -3: dims exceed the supplied caps (dims still filled into out_w/h
+ *       so the caller can build a meaningful error message).
+ *   -4: rasterize failed after a successful parse + dim check.
+ */
+int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
+                                       int max_dim, long long max_pixels,
+                                       fastchart_pixels_t *pix,
+                                       int *out_w, int *out_h);
+
+/* Same as fastchart_rasterize_svg, but applies a list of deferred
+ * text overlays (opt #7) to the plutovg surface between render and
+ * un-premultiply. `overlays` / `n_overlays` may be NULL/0, in which
+ * case this is identical to fastchart_rasterize_svg.
+ *
+ * `logical_w` is the SVG document's intrinsic viewport width (chart
+ * logical coords); used to derive the logical->physical scale for
+ * text positioning. Pass the value fastchart used when emitting the
+ * SVG document.
+ *
+ * `overlays` is borrowed; the function does not free it. The struct
+ * type is declared in fastchart_target.h. */
+struct fastchart_text_overlay;
+int fastchart_rasterize_svg_with_text(const char *svg, size_t svg_len,
+                                       int target_w, int target_h,
+                                       int logical_w, int logical_h,
+                                       const struct fastchart_text_overlay *overlays,
+                                       int n_overlays,
+                                       fastchart_pixels_t *pix);
+
 #endif /* FASTCHART_RASTERIZE_H */
