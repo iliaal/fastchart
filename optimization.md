@@ -363,24 +363,44 @@ What I would *not* do:
 
 ## Implementation status (this branch)
 
-**Six optimizations shipped** — three Tier 1 (#1, #2, #3) plus three Tier 2
-(#4, #5, #7). Combined wall-time reduction is **45–55% vs vanilla** across
-all bench scenarios. PNG output sizes drop 8–10% as a side effect of the
-opaque-detect in #4 (alpha plane stripped from fully opaque charts). All
-138 phpt tests pass.
+**Eight optimizations shipped** — three Tier 1 (#1, #2, #3), three Tier 2
+(#4, #5, #7), and two Tier 3 (#8, #10). Combined wall-time reduction is
+**42–53% vs vanilla** across all bench scenarios. PNG output sizes drop
+8–10% as a side effect of the opaque-detect in #4 (alpha plane stripped
+from fully opaque charts). All 138 phpt tests pass.
 
-### Cumulative benchmark (vanilla → opt#1+2+3+4+5+7)
+### Cumulative benchmark (vanilla → opt#1+2+3+4+5+7+8+10)
 
-Release build, `-O2 -g`, 200 iterations, post-#7. Lower is better.
+Release build, `-O2 -g`, 200 iterations, post-#8/#10. Lower is better.
 
 | Scenario      | base p50 | cand p50 | base min | cand min | Δ p50    | Δ min    | PNG size |
 |---------------|---------:|---------:|---------:|---------:|---------:|---------:|----------|
-| label_chart   |   41.93  |   21.55  |   38.56  |   19.05  | **−48.6%** | **−50.6%** | −10.4% |
-| qr_v10        |   39.90  |   17.48  |   35.80  |   16.14  | **−56.2%** | **−54.9%** |  −7.8% |
-| svg_to_png    |   62.11  |   34.00  |   56.01  |   31.93  | **−45.3%** | **−43.0%** |  −9.3% |
-| basic_chart   |   13.63  |    7.40  |   12.44  |    6.89  | **−45.7%** | **−44.6%** |  −9.9% |
+| label_chart   |   41.93  |   22.31  |   38.56  |   20.49  | **−46.8%** | **−46.9%** | −10.4% |
+| qr_v10        |   39.90  |   18.67  |   35.80  |   16.89  | **−53.2%** | **−52.8%** |  −7.8% |
+| svg_to_png    |   62.11  |   32.18  |   56.01  |   29.05  | **−48.2%** | **−48.1%** |  −9.3% |
+| basic_chart   |   13.63  |    7.93  |   12.44  |    6.66  | **−41.8%** | **−46.4%** |  −9.9% |
 
-A chart that took 25 ms now takes 12 ms.
+A chart that took 25 ms now takes 12–13 ms.
+
+### Δ from #8 + #10 alone (post-#7 baseline)
+
+Measures the marginal effect of #8 (JPEG SSSE3) and #10 (FT raster pool
+bump) on top of the first six opts:
+
+| Scenario      | base min | cand min | Δ min  |
+|---------------|---------:|---------:|-------:|
+| label_chart   |   19.68  |   20.49  | +4.1%  (noise) |
+| qr_v10        |   17.02  |   16.89  | −0.8%  |
+| svg_to_png    |   32.59  |   29.05  | **−10.8%** |
+| basic_chart   |    6.61  |    6.66  | +0.7%  (noise) |
+| label_webp    |   20.77  |   20.03  | −3.5%  |
+| label_jpeg    |    8.64  |    7.78  | **−9.9%** |
+
+The wins concentrate where they should: JPEG output (label_jpeg, from #8's
+SSSE3 pack) and primitive-heavy renders (svg_to_png with 500 elements, from
+#10's larger raster pool eliminating the malloc-on-overflow path). Charts
+with sparse primitives (label_chart, basic_chart) see no benefit because
+their per-primitive sizes already fit the original 8 KB pool.
 
 Output bytes are byte-identical to baseline through opts #1–3. Opts #4
 (opaque detect) and #7 (deferred text via plutovg vs SVG path) change the
@@ -414,6 +434,8 @@ even at 200 iterations.
 | 4 | ✓ | ✓ | **−11% to −23%** across all raster scenarios | The single biggest individual win. Combines SSSE3 BGRA→RGBA shuffle for opaque rows + inv_alpha LUT for translucent + all-opaque detection that flips `pix->has_alpha=0` so PNG strips alpha entirely. Smaller PNG files (−8 to −10%) and faster encode for every chart. |
 | 5 | ✓ | ✓ | WebP/JPEG path code shrink, +0.5 ms saved on WebP | Removed the dead RGB-pack scalar loop (was unreachable until #4 made `has_alpha=0` possible, then was redundant because libwebp drops the alpha plane internally on opaque inputs). |
 | 7 | ✓ | ✓ | label_chart additional −9% on top of #4 | Defers PATHS-mode text to a plutovg post-pass. plutosvg sees a much smaller document (no glyph d-strings) and the rasterizer skips text-related element traversal. Win is concentrated on text-heavy charts; svg_to_png and qr_v10 (no fastchart text emit) see no benefit. |
+| 8 | ✓ | ✓ | label_jpeg min −9.9% | SSSE3 `_mm_shuffle_epi8` packs 4 opaque RGBA pixels → 12 RGB bytes per instruction. Helper sits behind `__builtin_cpu_supports("ssse3")` runtime check + `target("ssse3")` attribute so the generic build picks it up automatically when the host supports it. |
+| 10 | ✓ | ✓ | svg_to_png min −10.8% | Bumped `PVG_FT_MINIMUM_POOL_SIZE` from 8 KB to 32 KB in the vendored plutovg FT raster. Eliminates the malloc-on-overflow + re-render path for nearly every primitive fastchart emits. The outline-pool half of the original #10 proposal (per-canvas reusable `PVG_FT_Outline`) was skipped — it would have required pointer fixup on grow and risked reentrancy bugs through plutovg's clip-via-rasterize path, for a likely sub-noise gain on top of the pool bump. |
 
 ### Correctness verification
 
@@ -446,23 +468,23 @@ trivially maintainable, and the savings compound on cold-cache /
 debug-build / high-text-count workloads where the targeted code paths
 are a larger fraction of the total.
 
-### What would move the needle further (post-#4/5/7)
+### What would move the needle further (post-#8/#10)
 
-Tier 2 / Tier 3 candidates that are still on the table:
+Tier 2 / Tier 3 candidates still on the table:
 
-- **#6 drop-shadow grouping** — only helps shadowed charts; structural change
-  to the effects emitter.
-- **#8 JPEG opaque-row SSE shuffle** — small win for JPEG output; mirrors #4
-  on the JPEG encoder's RGBA→RGB pack.
-- **#10 plutovg rasterizer scratch pool** — touches the per-primitive
-  allocator hotpath in the vendored library. Estimated 5–8% on
-  primitive-heavy charts.
+- **#6 drop-shadow grouping** — only helps shadowed charts; structural
+  change to the effects emitter.
+- **#9 configurable Bézier flatten tolerance** — would expose a plutovg
+  API for fastchart to ease tolerance from 0.25 px at higher DPI. 2–4% on
+  label-heavy raster renders.
 - **#11 `composition_source_over` SIMD** — 10–15% on the blend phase,
   ≈0.4–0.6 ms total per render. Lower priority now that #4 already cut
   the un-premultiply cost.
-- **#12 strip `plutovg-stb-image-write.h`** — build-time only, no runtime
-  impact.
+- **#12 strip `plutovg-stb-image-write.h`** — build-time only, no
+  runtime impact (~70 KB compiled code saved).
 
-The dominant remaining cost on the chart-render hot path is now plutovg's
-own primitive rasterization (filled rects, lines, polygons). Further wins
-would target the vendored plutovg internals directly.
+The dominant remaining cost on the chart-render hot path is plutovg's
+own primitive rasterization (band scanning in plutovg-ft-raster.c, span
+composition in plutovg-blend.c). #11 is the next structurally interesting
+intervention if more wall-time is wanted; everything else is either
+narrow (#6, #9) or trivial cleanup (#12).

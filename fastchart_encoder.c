@@ -44,6 +44,51 @@
 #include <string.h>
 #include <stdlib.h>
 
+#if defined(__x86_64__) || defined(_M_X64)
+#  define FC_ENC_HAVE_X86_SIMD 1
+#  include <immintrin.h>
+#endif
+
+#ifdef FC_ENC_HAVE_X86_SIMD
+static int fc_enc_cpu_has_ssse3(void)
+{
+    static int cached = -1;
+    if (cached < 0) {
+        __builtin_cpu_init();
+        cached = __builtin_cpu_supports("ssse3") ? 1 : 0;
+    }
+    return cached;
+}
+
+/* Pack `n_pixels` opaque RGBA pixels at src into RGB at dst via SSSE3
+ * _mm_shuffle_epi8 (4 pixels per instruction). Returns the count of
+ * pixels processed (always a multiple of 4); the caller handles the
+ * remainder with scalar copies. dst must have at least 16 bytes of
+ * trailing slack so the 16-byte store on the final chunk can overrun
+ * its 12 valid bytes without touching unowned memory. */
+__attribute__((target("ssse3")))
+static int fc_enc_pack_rgba_to_rgb_ssse3(const uint8_t *src, uint8_t *dst,
+                                          int n_pixels)
+{
+    static const int8_t shuf_bytes[16] = {
+         0,  1,  2,
+         4,  5,  6,
+         8,  9, 10,
+        12, 13, 14,
+        -1, -1, -1, -1  /* upper 4 lanes are don't-care */
+    };
+    __m128i shuf = _mm_loadu_si128((const __m128i *)shuf_bytes);
+    int simd_end = n_pixels & ~3;
+    for (int x = 0; x < simd_end; x += 4) {
+        __m128i rgba = _mm_loadu_si128(
+            (const __m128i *)(src + (size_t)x * 4));
+        __m128i rgb = _mm_shuffle_epi8(rgba, shuf);
+        _mm_storeu_si128((__m128i *)(dst + (size_t)x * 3), rgb);
+    }
+    return simd_end;
+}
+#endif
+
 void fastchart_pixels_init(fastchart_pixels_t *pix, int w, int h)
 {
 	pix->rgba = NULL;
@@ -223,31 +268,49 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 
 	jpeg_start_compress(&cinfo, TRUE);
 
-	/* Per-row RGBA → RGB strip; alpha is flattened over white because
-	 * JPEG has no alpha channel. Most fastchart raster output is
-	 * already opaque, but we handle the alpha path defensively. */
-	rgb_row = emalloc((size_t)pix->w * 3);
+	/* Per-row RGBA -> RGB strip. Two paths:
+	 *   - opaque (pix->has_alpha == 0, set by fastchart_rasterize_doc's
+	 *     opaque-detect): SSSE3 _mm_shuffle_epi8 on x86_64 packs 4
+	 *     pixels per instruction; scalar straight copy on the rest.
+	 *   - translucent: scalar alpha-flatten over white. JPEG has no
+	 *     alpha channel, so transparent regions show through as the
+	 *     composited background. */
+	rgb_row = emalloc((size_t)pix->w * 3 + 16);  /* +16 trailing slack for SSE store overrun */
 	for (int y = 0; y < pix->h; y++) {
 		const uint8_t *src = pix->rgba + (size_t)y * pix->w * 4;
 		uint8_t       *dst = rgb_row;
-		for (int x = 0; x < pix->w; x++) {
-			uint8_t r = src[0], g = src[1], b = src[2], a = src[3];
-			if (a == 255) {
-				dst[0] = r; dst[1] = g; dst[2] = b;
-			} else if (a == 0) {
-				dst[0] = 255; dst[1] = 255; dst[2] = 255;
-			} else {
-				/* over white: out = src*a + 255*(255-a)/255 */
-				int ia = 255 - a;
-				dst[0] = (uint8_t)((r * a + 255 * ia) / 255);
-				dst[1] = (uint8_t)((g * a + 255 * ia) / 255);
-				dst[2] = (uint8_t)((b * a + 255 * ia) / 255);
+		int x = 0;
+		if (!pix->has_alpha) {
+#ifdef FC_ENC_HAVE_X86_SIMD
+			if (fc_enc_cpu_has_ssse3()) {
+				x = fc_enc_pack_rgba_to_rgb_ssse3(src, dst, pix->w);
 			}
-			src += 4;
-			dst += 3;
+#endif
+			for (; x < pix->w; x++) {
+				dst[(size_t)x * 3 + 0] = src[(size_t)x * 4 + 0];
+				dst[(size_t)x * 3 + 1] = src[(size_t)x * 4 + 1];
+				dst[(size_t)x * 3 + 2] = src[(size_t)x * 4 + 2];
+			}
+		} else {
+			for (x = 0; x < pix->w; x++) {
+				const uint8_t *p = src + (size_t)x * 4;
+				uint8_t       *q = dst + (size_t)x * 3;
+				uint8_t r = p[0], g = p[1], b = p[2], a = p[3];
+				if (a == 255) {
+					q[0] = r; q[1] = g; q[2] = b;
+				} else if (a == 0) {
+					q[0] = 255; q[1] = 255; q[2] = 255;
+				} else {
+					/* over white: out = src*a + 255*(255-a)/255 */
+					int ia = 255 - a;
+					q[0] = (uint8_t)((r * a + 255 * ia) / 255);
+					q[1] = (uint8_t)((g * a + 255 * ia) / 255);
+					q[2] = (uint8_t)((b * a + 255 * ia) / 255);
+				}
+			}
 		}
-		JSAMPROW r = rgb_row;
-		jpeg_write_scanlines(&cinfo, &r, 1);
+		JSAMPROW row = rgb_row;
+		jpeg_write_scanlines(&cinfo, &row, 1);
 	}
 	efree(rgb_row);
 	rgb_row = NULL;

@@ -77,7 +77,24 @@ typedef ptrdiff_t  PVG_FT_PtrDist;
 #include <stdlib.h>
 #include <limits.h>
 
-#define PVG_FT_MINIMUM_POOL_SIZE (1024 * 8)
+/* Stack-allocated working pool for the FT raster cell table.
+ *
+ * Upstream default is 8 KB; on overflow PVG_FT_Raster_Render falls back
+ * to a doubling heap malloc + re-render pass. fastchart's chart workload
+ * exercises that overflow path often (large filled rects for chart
+ * backgrounds, big bars, big plot rectangles), each one costing a malloc/
+ * free pair plus a re-render with skip_spans accounting.
+ *
+ * Bumping to 32 KB fits a few hundred extra cells per band, which
+ * eliminates the overflow path for almost all primitives fastchart
+ * emits. 32 KB on the stack is fine on Linux (8 MB default per thread),
+ * and the array is only live during PVG_FT_Raster_Render's frame —
+ * not held across calls.
+ *
+ * Local patch (LOCAL-PATCH: opt #10) — diverges from upstream plutovg
+ * to win back the malloc-on-overflow cost. Re-evaluate on the next
+ * plutovg vendor refresh. */
+#define PVG_FT_MINIMUM_POOL_SIZE (1024 * 32)
 #define PVG_FT_MAXIMUM_POOL_SIZE (1024 * 1024 * 8)
 
 #define RAS_ARG   PWorker  worker
