@@ -181,12 +181,22 @@ if test "$PHP_FASTCHART" != "no"; then
   dnl arms). PHP_NEW_EXTENSION applies one CFLAGS to every TU, so we
   dnl silence globally rather than per-file. Fastchart's own code is
   dnl warning-clean under the unsuppressed set.
+  dnl PLUTOVG_DISABLE_IMAGE_WRITE (opt #12): drops the plutovg_surface_-
+  dnl write_to_* (PNG/JPEG file + stream) functions and their stb_image_
+  dnl write.h backing. fastchart routes every raster output through
+  dnl libpng / libjpeg-turbo / libwebp directly; nothing in fastchart,
+  dnl plutosvg, or the phpt suite calls plutovg's write functions, and
+  dnl -fvisibility=hidden plus PLUTOVG_BUILD_STATIC already keep them
+  dnl out of the dynamic symbol table. Disabling the entire translation
+  dnl unit shrinks fastchart.so by ~70 KB and saves ~1 s of incremental
+  dnl build time.
   FASTCHART_CFLAGS="-Wall -Wextra \
     -Wno-unused-parameter -Wno-unused-function -Wno-sign-compare \
     -Wno-implicit-fallthrough -Wno-unused-but-set-variable \
     -Wno-misleading-indentation -Wno-missing-field-initializers \
     -fvisibility=hidden \
     -DPLUTOVG_BUILD_STATIC -DPLUTOSVG_BUILD_STATIC \
+    -DPLUTOVG_DISABLE_IMAGE_WRITE \
     $FC_OPT_DEFS"
 
   if test "$PHP_FASTCHART_DEV" = "yes"; then

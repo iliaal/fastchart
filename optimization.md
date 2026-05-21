@@ -363,11 +363,12 @@ What I would *not* do:
 
 ## Implementation status (this branch)
 
-**Eight optimizations shipped** — three Tier 1 (#1, #2, #3), three Tier 2
-(#4, #5, #7), and two Tier 3 (#8, #10). Combined wall-time reduction is
-**42–53% vs vanilla** across all bench scenarios. PNG output sizes drop
-8–10% as a side effect of the opaque-detect in #4 (alpha plane stripped
-from fully opaque charts). All 138 phpt tests pass.
+**Nine optimizations shipped** — three Tier 1 (#1, #2, #3), three Tier 2
+(#4, #5, #7), and three Tier 3 (#8, #10, #12). Combined wall-time
+reduction is **42–53% vs vanilla** across all bench scenarios. PNG
+output sizes drop 8–10% as a side effect of the opaque-detect in #4
+(alpha plane stripped from fully opaque charts). `modules/fastchart.so`
+is ~62 KB smaller from #12's dead-code strip. All 138 phpt tests pass.
 
 ### Cumulative benchmark (vanilla → opt#1+2+3+4+5+7+8+10)
 
@@ -437,6 +438,7 @@ even at 200 iterations.
 | 8 | ✓ | ✓ | label_jpeg min −9.9% | SSSE3 `_mm_shuffle_epi8` packs 4 opaque RGBA pixels → 12 RGB bytes per instruction. Helper sits behind `__builtin_cpu_supports("ssse3")` runtime check + `target("ssse3")` attribute so the generic build picks it up automatically when the host supports it. |
 | 10 | ✓ | ✓ | svg_to_png min −10.8% | Bumped `PVG_FT_MINIMUM_POOL_SIZE` from 8 KB to 32 KB in the vendored plutovg FT raster. Eliminates the malloc-on-overflow + re-render path for nearly every primitive fastchart emits. The outline-pool half of the original #10 proposal (per-canvas reusable `PVG_FT_Outline`) was skipped — it would have required pointer fixup on grow and risked reentrancy bugs through plutovg's clip-via-rasterize path, for a likely sub-noise gain on top of the pool bump. |
 | 11 | attempted, reverted | ✓ correctness | within noise floor | Wrote SSE2 `composition_source_over` in `vendor/plutovg/source/plutovg-blend.c`: 4 pixels per iteration via unpack/mullo/pack 16-bit lane math, alpha-broadcast via 4 shifts + 3 ORs, byte-wise add for the final src + scaled_dst. Output bytes byte-identical to scalar, 138/138 tests pass. **Perf neutral-to-slightly-worse on every bench scenario** (min Δ −2.1% to +7.0%, p50 Δ −0.7% to +4.2%). Reverted. Diagnosis: fastchart's chart workload is dominated by short spans (axis ticks 1–3 px, gridlines 1 px, labels 10–20 px). The SIMD setup cost per chunk (alpha broadcast + two unpack/pack pairs) overwhelms the parallelism gain on spans this short. The scalar opaque-src short-circuit `if(s >= 0xff000000) dest[i] = s` is also a tight predictable branch that GCC already optimizes well. The agent's 0.4–0.6 ms estimate extrapolated from long opaque spans (large gradient fills) that fastchart doesn't emit in chart workloads. |
+| 12 | ✓ | ✓ | build-time only, .so −62 KB | Wrapped the four `plutovg_surface_write_to_*` functions and the `#include "plutovg-stb-image-write.h"` in `#ifndef PLUTOVG_DISABLE_IMAGE_WRITE` (`vendor/plutovg/source/plutovg-surface.c`), added `-DPLUTOVG_DISABLE_IMAGE_WRITE` to `FASTCHART_CFLAGS` (`config.m4`). Verified nothing in fastchart, plutosvg, or the phpt suite calls these functions, and `-fvisibility=hidden` already kept them out of the dynamic symbol table. Exact saving measured at 63 664 bytes off `modules/fastchart.so` (1.5%); ~1 s shaved off incremental builds because stb_image_write.h's 1700-line translation unit no longer compiles. The 4 prototypes stay declared in `plutovg.h` for source-compat; only definitions disappear. |
 
 ### Correctness verification
 
@@ -479,9 +481,6 @@ Tier 2 / Tier 3 candidates still on the table:
   API for fastchart to ease tolerance from 0.25 px at higher DPI. 2–4% on
   label-heavy raster renders. The practical gain after #7's text bypass
   is probably sub-noise.
-- **#12 strip `plutovg-stb-image-write.h`** — build-time only, no
-  runtime impact (~70 KB compiled code saved).
-
 **Closed without merging:**
 
 - **#11 SSE2 source-over** — implemented, tested (138/138 pass, output
