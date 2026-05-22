@@ -209,13 +209,10 @@ if test "$PHP_FASTCHART" != "no"; then
     $FASTCHART_CFLAGS)
 
   PHP_ADD_INCLUDE([$ext_srcdir])
-  dnl Vendor include paths. Uses $abs_srcdir (autoconf-standard, always
-  dnl populated before this macro fires) so VPATH / out-of-tree builds
-  dnl resolve correctly. Mirrors ext/fileinfo's libmagic wiring.
-  PHP_ADD_INCLUDE([$abs_srcdir/vendor/qrcodegen])
-  PHP_ADD_INCLUDE([$abs_srcdir/vendor/plutovg/include])
-  PHP_ADD_INCLUDE([$abs_srcdir/vendor/plutovg/source])
-  PHP_ADD_INCLUDE([$abs_srcdir/vendor/plutosvg/source])
+  PHP_ADD_INCLUDE([$ext_srcdir/vendor/qrcodegen])
+  PHP_ADD_INCLUDE([$ext_srcdir/vendor/plutovg/include])
+  PHP_ADD_INCLUDE([$ext_srcdir/vendor/plutovg/source])
+  PHP_ADD_INCLUDE([$ext_srcdir/vendor/plutosvg/source])
 
   dnl PHP_NEW_EXTENSION compiles vendor/*/qrcodegen.c, plutovg-*.c, and
   dnl plutosvg.c into matching .lo files — for VPATH builds the directory
