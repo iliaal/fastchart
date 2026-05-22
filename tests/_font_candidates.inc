@@ -6,14 +6,22 @@
  * also covers macOS; phpts skip on non-Linux so this stays
  * Linux-only.
  *
+ * EXTENSION NOTE — this file is `.inc`, not `.inc.php`, deliberately:
+ * `phpize --clean` shells out `rm -f tests/*.php` to wipe the per-test
+ * generated PHP files (run-tests.php drops one .php sibling per .phpt
+ * during a test run, and phpize clean is meant to wipe those). Any
+ * tracked fixture in tests/ that ends in .php gets clobbered along
+ * with them. The .inc extension keeps this file outside that glob;
+ * PHP doesn't care about the suffix when require()'d by full path.
+ *
  * Usage in --SKIPIF--:
  *
- *     require __DIR__ . '/_font_candidates.inc.php';
+ *     require __DIR__ . '/_font_candidates.inc';
  *     if (fc_pick_font() === '') echo "skip: no system font present\n";
  *
  * Usage in --FILE--:
  *
- *     require __DIR__ . '/_font_candidates.inc.php';
+ *     require __DIR__ . '/_font_candidates.inc';
  *     $font = fc_pick_font();
  *     if ($font === '') die("skip: no system font found\n");
  */

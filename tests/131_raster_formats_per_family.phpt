@@ -12,7 +12,7 @@ gd
  * instance of every chart family and asserts the four output
  * formats each produce magic-byte-correct bytes at non-trivial size. */
 
-require __DIR__ . '/_font_candidates.inc.php';
+require __DIR__ . '/_font_candidates.inc';
 $font = fc_pick_font();
 if ($font === '') die("skip no system font available\n");
 
