@@ -7,7 +7,7 @@ gd
 asan.detect_leaks=0
 --FILE--
 <?php
-require __DIR__ . '/_font_candidates.inc.php';
+require __DIR__ . '/_font_candidates.inc';
 $font = fc_pick_font();
 if ($font === '') die("skip no system font found\n");
 

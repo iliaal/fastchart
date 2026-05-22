@@ -8,7 +8,7 @@ fastchart
  * step needs a path that's reachable before the narrow and outside
  * the narrowed dir afterwards. Windows / macOS hosts don't have
  * /usr/share, so skip cleanly there. */
-require __DIR__ . '/_font_candidates.inc.php';
+require __DIR__ . '/_font_candidates.inc';
 if (fc_pick_font() === '') echo "skip: no system font present\n";
 ?>
 --FILE--
@@ -24,7 +24,7 @@ if (fc_pick_font() === '') echo "skip: no system font present\n";
  * default-permissive runtime; if it isn't present, skip — the test
  * is about cache invalidation, not font availability.
  */
-require __DIR__ . '/_font_candidates.inc.php';
+require __DIR__ . '/_font_candidates.inc';
 $font = fc_pick_font();
 if ($font === '') { echo "skip: no system font under /usr/share\n"; exit; }
 
