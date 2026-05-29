@@ -4273,6 +4273,14 @@ ZEND_METHOD(FastChart_PolarChart, addVectors)
     int incoming = (int)zend_hash_num_elements(ht);
     if (incoming <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
+    /* Bound the cumulative vector count like VectorChart::setVectors does.
+     * Without this, one huge array (emalloc(incoming * sizeof)) or repeated
+     * calls (self->n_vectors grows without limit) is a memory-exhaustion
+     * DoS. Drop the overflow silently, matching setVectors' cap style. */
+    int room = FASTCHART_MAX_VECTORS - self->n_vectors;
+    if (room <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    if (incoming > room) incoming = room;
+
     /* Two-pass parse: validate shape + types on the first pass into a
      * temporary buffer; only commit to self->vectors after every
      * entry passes. Without this split, a malformed entry mid-loop
@@ -4285,6 +4293,7 @@ ZEND_METHOD(FastChart_PolarChart, addVectors)
     int staged = 0;
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (staged >= incoming) break;   /* cap reached — drop the rest */
         if (Z_TYPE_P(entry) != IS_ARRAY) {
             efree(staging);
             zend_type_error("FastChart\\PolarChart::addVectors() expects each entry to be an array");
@@ -8242,6 +8251,10 @@ ZEND_METHOD(FastChart_VectorChart, setColorRamp)
 
 PHP_MINIT_FUNCTION(fastchart)
 {
+    /* Pre-warm the rasterizer's un-premultiply LUT now, while we are
+     * single-threaded, so the lazy first-call init can't race under ZTS. */
+    fastchart_rasterize_init();
+
     /* Per-class handlers init. Each handlers struct gets its own
      * std offset matching its per-type struct layout, plus the
      * class's free / clone hooks. */

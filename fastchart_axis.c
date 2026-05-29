@@ -718,6 +718,11 @@ int fastchart_y_to_pixel(double y,
                          const fastchart_value_range *range,
                          const fastchart_rect *plot)
 {
+    /* Self-guard against NaN/Inf: the frac clamps below don't catch NaN
+     * (every NaN comparison is false), so a non-finite y would reach the
+     * (int) cast — UB. Callers should reject non-finite upstream; this is
+     * the chokepoint 60+ callers funnel through, so make it robust. */
+    if (!isfinite(y)) return plot->y1;
     double frac;
     if (range->log_scale) {
         /* Clamp y to the positive range before taking the log so a
@@ -745,6 +750,8 @@ int fastchart_x_to_pixel(double x,
                          const fastchart_value_range *range,
                          const fastchart_rect *plot)
 {
+    /* Self-guard against NaN/Inf (see fastchart_y_to_pixel). */
+    if (!isfinite(x)) return plot->x0;
     double frac;
     if (range->log_scale) {
         if (x <= 0.0) return plot->x0;

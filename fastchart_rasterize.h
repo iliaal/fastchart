@@ -94,4 +94,8 @@ int fastchart_rasterize_svg_with_text(const char *svg, size_t svg_len,
                                        int n_overlays,
                                        fastchart_pixels_t *pix);
 
+/* Pre-warm the un-premultiply LUT at MINIT so the lazy first-call init
+ * never races under ZTS. */
+void fastchart_rasterize_init(void);
+
 #endif /* FASTCHART_RASTERIZE_H */

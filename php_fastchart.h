@@ -595,6 +595,11 @@ typedef struct {
 #define FASTCHART_MAX_METER_ZONES      8         /* per chart */
 #define FASTCHART_MAX_PARETO_BARS      128       /* per chart */
 #define FASTCHART_MAX_CALENDAR_DAYS    16384     /* ~45 yrs of daily data */
+#define FASTCHART_MAX_CALENDAR_WEEKS   2400      /* render cost is keyed on
+                                                  * date span, not entry count;
+                                                  * cap the grid (~46 yrs) so two
+                                                  * far-apart dates can't force a
+                                                  * multi-million-cell render */
 #define FASTCHART_MAX_SUNBURST_NODES   2048      /* per chart, all rings */
 #define FASTCHART_MAX_SANKEY_NODES     256       /* per chart */
 #define FASTCHART_MAX_SANKEY_LINKS     1024      /* per chart */

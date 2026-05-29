@@ -84,8 +84,21 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
     long last  = self->days[self->day_count - 1].day;
     int first_dow = fastchart_dow_from_days(first);
     long grid_start = first - first_dow;
-    int total_days = (int)(last - grid_start + 1);
-    int n_weeks = (total_days + 6) / 7;
+    /* Render cost (cells emitted, civil_from_days calls, SVG size) scales
+     * with the date SPAN, not the entry count — setData's 16384-entry cap
+     * does not bound it. Two entries a millennium apart pass setData yet
+     * force millions of cells. Compute the span in long to avoid an int
+     * overflow on the cast, then reject an unrenderably wide grid. */
+    long total_days_l = last - grid_start + 1;
+    long n_weeks_l = (total_days_l + 6) / 7;
+    if (n_weeks_l > FASTCHART_MAX_CALENDAR_WEEKS) {
+        zend_throw_error(NULL,
+            "FastChart\\CalendarHeatmap: the data spans %ld weeks, exceeding "
+            "the maximum of %d — the date range is too large to render",
+            n_weeks_l, FASTCHART_MAX_CALENDAR_WEEKS);
+        return -1;
+    }
+    int n_weeks = (int)n_weeks_l;
     if (n_weeks < 1) n_weeks = 1;
 
     /* Value range for color ramp. */
