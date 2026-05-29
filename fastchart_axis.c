@@ -699,6 +699,10 @@ int fastchart_value_range_compute_log(double dmin, double dmax,
     out->max = pow(10.0, hi);
     out->tick_step = 1.0;        /* one decade per tick */
     out->log_scale = 1;
+    /* Cache the log-domain bounds so the per-point y/x_to_pixel doesn't
+     * recompute log10(min)/log10(max) on every call. */
+    out->log_min = log10(out->min);
+    out->log_span = log10(out->max) - out->log_min;
     out->n_ticks = 0;
 
     for (double e = lo;
@@ -730,11 +734,9 @@ int fastchart_y_to_pixel(double y,
          * strict-mode check happens upstream in each chart's
          * extraction; here we just keep the math defined. */
         if (y <= 0.0) return plot->y1;
-        double l_min = log10(range->min);
-        double l_max = log10(range->max);
-        double l_span = l_max - l_min;
+        double l_span = range->log_span;
         if (l_span < 1e-12) return plot->y1;
-        frac = (log10(y) - l_min) / l_span;
+        frac = (log10(y) - range->log_min) / l_span;
     } else {
         double span = range->max - range->min;
         if (span < 1e-12) return plot->y1;
@@ -755,11 +757,9 @@ int fastchart_x_to_pixel(double x,
     double frac;
     if (range->log_scale) {
         if (x <= 0.0) return plot->x0;
-        double l_min = log10(range->min);
-        double l_max = log10(range->max);
-        double l_span = l_max - l_min;
+        double l_span = range->log_span;
         if (l_span < 1e-12) return plot->x0;
-        frac = (log10(x) - l_min) / l_span;
+        frac = (log10(x) - range->log_min) / l_span;
     } else {
         double span = range->max - range->min;
         if (span < 1e-12) return plot->x0;
