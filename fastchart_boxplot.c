@@ -142,7 +142,7 @@ int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_ta
         for (int i = 0; i < self->n_icons; i++) {
             const fastchart_icon *ic = &self->icons[i];
             double frac_x = n > 1 ? (ic->x + 0.5) / (double)n : 0.5;
-            int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
+            int px = fastchart_frac_to_px(frac_x, plot.x0, plot.x1);
             int py = fastchart_y_to_pixel(ic->y, &range, &plot);
             fastchart_blit_icon(t, ic, px, py);
         }

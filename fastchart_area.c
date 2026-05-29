@@ -348,12 +348,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             double frac_x = max_len > 1
                 ? (ic->x + 0.5) / (double)max_len
                 : 0.5;
-            /* Clamp before the int cast: addIconAt rejects only NaN/Inf,
-             * so a finite-but-large user x overflows the multiplication
-             * past INT_MAX and the cast is UB. Mirrors fastchart_line.c. */
-            if (frac_x < 0.0) frac_x = 0.0;
-            if (frac_x > 1.0) frac_x = 1.0;
-            int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
+            int px = fastchart_frac_to_px(frac_x, plot.x0, plot.x1);
             int py = fastchart_y_to_pixel(ic->y, &range, &plot);
             fastchart_blit_icon(t, ic, px, py);
         }

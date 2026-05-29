@@ -1,5 +1,5 @@
 --TEST--
-Area/Bar/Scatter icon coords clamped before float-to-int cast (regression: render UB)
+Area/Bar/Scatter/BoxPlot icon coords clamped before float-to-int cast (regression: render UB)
 --EXTENSIONS--
 fastchart
 --FILE--
@@ -9,8 +9,9 @@ fastchart
  * finite-but-huge coordinate left frac * plot_width past INT_MAX and the
  * subsequent (int) cast was undefined per C11 6.3.1.4p1 (on x86-64
  * cvttsd2si yields INT_MIN → <image x="-2147483648">). fastchart_line.c
- * clamped frac to [0,1]; area / bar (both orientations) / scatter skipped
- * that step. Uses the checked-in PNG fixture so the test needs no gd. */
+ * clamped frac to [0,1]; area / bar (both orientations) / scatter / boxplot
+ * skipped that step. All icon sites now route through the shared
+ * fastchart_frac_to_px() helper. Uses the checked-in PNG fixture, no gd. */
 
 $png = __DIR__ . '/__icon.png';
 
@@ -36,6 +37,11 @@ $scatter = (new FastChart\ScatterChart(300, 200))
     ->setPoints([[1, 1], [2, 2], [3, 3]])->addIconAt(1e15, 1.0, $png)->renderSvg();
 echo "scatter: ", on_canvas(ix($scatter)), "\n";
 
+$box = (new FastChart\BoxPlot(300, 200))
+    ->setBoxes([[10, 25, 35, 45, 60], [15, 28, 38, 48, 65]])
+    ->addIconAt(1e15, 30.0, $png)->renderSvg();
+echo "boxplot: ", on_canvas(ix($box)), "\n";
+
 /* Sanity: an in-range icon still lands on-canvas. */
 $ok = (new FastChart\AreaChart(300, 200))
     ->setSeries([['data' => [1, 2, 3]]])->addIconAt(1.0, 1.0, $png)->renderSvg();
@@ -47,5 +53,6 @@ area: ok
 bar_vertical: ok
 bar_horizontal: ok
 scatter: ok
+boxplot: ok
 in_range: ok
 done
