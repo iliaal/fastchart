@@ -22,13 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   always machine-formatted; human-readable label text continues to honour
   the locale.
 
-- **`AreaChart` / `BarChart` / `ScatterChart` icon coordinate casts were
-  unguarded** — the same UB fixed for `LineChart` in 1.1.1, not yet
+- **`AreaChart` / `BarChart` / `ScatterChart` / `BoxPlot` icon coordinate
+  casts were unguarded** — the same UB fixed for `LineChart` in 1.1.1, not
   propagated to its siblings. `addIconAt` rejects only NaN/Inf, so a
   finite-but-large coordinate overflowed `frac * plot_width` past
   `INT_MAX` and the float-to-int cast was undefined (C11 §6.3.1.4p1).
-  All three now clamp the fractional coordinate to `[0, 1]` before the
-  cast (vertical and horizontal bars covered).
+  Every icon site (including `LineChart`) now routes through a shared
+  `fastchart_frac_to_px()` helper that clamps to `[0, 1]` before the cast,
+  so the guard can no longer drift between chart types.
 
 - **`CalendarHeatmap` render cost was bounded by entry count, not date
   span.** `setData`'s 16384-entry cap did not constrain the rendered

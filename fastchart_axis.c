@@ -771,6 +771,17 @@ int fastchart_x_to_pixel(double x,
     return plot->x0 + (int)(frac * (double)w + 0.5);
 }
 
+int fastchart_frac_to_px(double frac, int lo, int hi)
+{
+    /* Clamp before the int cast: callers derive frac from user
+     * coordinates that addIconAt rejects only for NaN/Inf, so a
+     * finite-but-large value would overflow frac*(hi-lo) past INT_MAX
+     * and make the cast UB (C11 6.3.1.4p1). */
+    if (frac < 0.0) frac = 0.0;
+    if (frac > 1.0) frac = 1.0;
+    return lo + (int)(frac * (hi - lo) + 0.5);
+}
+
 int fastchart_y_categorical_center(const fastchart_rect *plot, int idx, int n)
 {
     if (n <= 0) return plot->y0;

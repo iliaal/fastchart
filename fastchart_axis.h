@@ -213,6 +213,11 @@ int fastchart_x_to_pixel(double x,
                          const fastchart_value_range *range,
                          const fastchart_rect *plot);
 
+/* Map a [0,1] fraction onto the pixel span [lo, hi]. Clamps an
+ * out-of-range fraction before the int cast — used for icon/overlay
+ * positions whose source coordinate is unbounded user input. */
+int fastchart_frac_to_px(double frac, int lo, int hi);
+
 /* User-format tick label (printf-style format string already
  * validated by the setter). Caller-supplied buffer; truncates on
  * overrun rather than overflowing. */

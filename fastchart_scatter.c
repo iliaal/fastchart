@@ -325,12 +325,7 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
             double frac_x = (xrange.max - xrange.min) > 0
                 ? (ic->x - xrange.min) / (xrange.max - xrange.min)
                 : 0.5;
-            /* Clamp before the int cast: ic->x is decoupled from the data
-             * range, so a finite-but-large user x overflows the multiply
-             * past INT_MAX and the cast is UB. Mirrors fastchart_line.c. */
-            if (frac_x < 0.0) frac_x = 0.0;
-            if (frac_x > 1.0) frac_x = 1.0;
-            int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
+            int px = fastchart_frac_to_px(frac_x, plot.x0, plot.x1);
             int py = fastchart_y_to_pixel(ic->y, &yrange, &plot);
             fastchart_blit_icon(t, ic, px, py);
         }
