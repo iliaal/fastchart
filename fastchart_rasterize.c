@@ -67,6 +67,15 @@ static void fc_init_inv_alpha(void)
 	fc_inv_alpha_ready = 1;
 }
 
+/* Fill the LUT once at module load. After this, fc_inv_alpha_ready is
+ * already 1 before any request thread runs, so the lazy first-call branch
+ * in fastchart_rasterize_doc is never taken concurrently — closing the
+ * ZTS data race on the unsynchronised ready flag. */
+void fastchart_rasterize_init(void)
+{
+	fc_init_inv_alpha();
+}
+
 #ifdef FC_HAVE_X86_SIMD
 /* SSSE3 shuffle table: BGRA -> RGBA per 32-bit lane. Each pixel's
  * bytes 0 and 2 swap; byte 1 (green) and byte 3 (alpha) stay put. */

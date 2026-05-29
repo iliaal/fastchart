@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **SVG geometry was corrupted under comma-decimal locales.** Every
+  coordinate, dimension, and rgba alpha was formatted with
+  `snprintf("%f", …)`, which honours `LC_NUMERIC`. Under a locale such
+  as `de_DE`/`fr_FR` this emitted `width="307,0"`, `x="69,5"` — and a
+  comma is SVG's own coordinate separator, so the output was silently
+  mangled for every consumer (browser and the plutovg rasterizer), with
+  no error. A single userland `setlocale(LC_NUMERIC, 'de_DE')` anywhere
+  in the process was enough to trigger it. `fc_svg_fmt_num`,
+  `fc_emit_num`, and `fc_svg_fmt_color` now normalise the decimal
+  separator to `.` regardless of locale (`fastchart_svg.c`). Geometry is
+  always machine-formatted; human-readable label text continues to honour
+  the locale.
+
+- **`AreaChart` / `BarChart` / `ScatterChart` icon coordinate casts were
+  unguarded** — the same UB fixed for `LineChart` in 1.1.1, not yet
+  propagated to its siblings. `addIconAt` rejects only NaN/Inf, so a
+  finite-but-large coordinate overflowed `frac * plot_width` past
+  `INT_MAX` and the float-to-int cast was undefined (C11 §6.3.1.4p1).
+  All three now clamp the fractional coordinate to `[0, 1]` before the
+  cast (vertical and horizontal bars covered).
+
+- **`CalendarHeatmap` render cost was bounded by entry count, not date
+  span.** `setData`'s 16384-entry cap did not constrain the rendered
+  grid, whose size is keyed on `last − first` days. Two entries a few
+  decades apart (2 entries, well under the cap) forced a multi-million
+  `<rect>` render — a memory/CPU denial of service. The grid is now
+  capped at `FASTCHART_MAX_CALENDAR_WEEKS` (2400, ≈46 years) with a
+  clean `Error` for wider spans (`fastchart_calendar.c`).
+
+- **`PolarChart::addVectors()` had no upper bound on vector count** — the
+  one additive array setter missing the `FASTCHART_MAX_VECTORS` (4096)
+  ceiling its siblings enforce. One large array, or repeated calls,
+  grew the backing buffer without limit (memory-exhaustion DoS). The
+  cumulative count is now capped like `VectorChart::setVectors`
+  (`fastchart.c`).
+
+- **Hardening.** The un-premultiply lookup table is now pre-warmed at
+  `MINIT` rather than lazily on first rasterize, closing a ZTS data race
+  on its unsynchronised ready flag (`fastchart_rasterize.c`).
+  `fastchart_y_to_pixel` / `fastchart_x_to_pixel` self-guard against a
+  non-finite argument (the frac clamps never caught NaN), making the
+  coordinate chokepoint robust regardless of caller discipline
+  (`fastchart_axis.c`).
+
 ## [1.1.1] - 2026-05-21
 
 ### Fixed

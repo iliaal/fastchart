@@ -37,6 +37,31 @@
  * per call vs smart_str_appends. */
 #define FC_APPENDS(buf, s) smart_str_appendl((buf), (s), sizeof(s) - 1)
 
+/* snprintf("%f", ...) honours LC_NUMERIC, so under a comma-decimal
+ * locale (de_DE, fr_FR, ...) it emits "12,5". A comma is SVG's own
+ * coordinate separator, so an unfixed "x=\"12,5\"" or "points=\"12,5 ...\""
+ * silently corrupts geometry for every consumer. Normalise whatever
+ * separator the current locale produced back to a literal '.': a "%f"
+ * result is [-]digits<sep>digits with no exponent, so the separator is
+ * the lone run of non-[-0-9] bytes — collapse it to one '.' (handles the
+ * rare multi-byte separator too). Rounding stays snprintf's, so C-locale
+ * output is byte-identical to before. Returns the new length. */
+static int fc_fix_decimal_sep(char *s, int n)
+{
+    int w = 0, i = 0, seen = 0;
+    while (i < n) {
+        char c = s[i];
+        if (c == '-' || (c >= '0' && c <= '9')) {
+            s[w++] = c;
+            i++;
+        } else {
+            if (!seen) { s[w++] = '.'; seen = 1; }
+            i++;
+        }
+    }
+    return w;
+}
+
 void fc_svg_fmt_num(smart_str *buf, double v)
 {
     /* %.1f covers chart geometry with no visible loss; trim "12.0"
@@ -48,6 +73,7 @@ void fc_svg_fmt_num(smart_str *buf, double v)
         smart_str_appends(buf, "0");
         return;
     }
+    n = fc_fix_decimal_sep(tmp, n);
     if (n >= 2 && tmp[n - 1] == '0' && tmp[n - 2] == '.') {
         n -= 2;
     }
@@ -71,10 +97,22 @@ void fc_svg_fmt_color(smart_str *buf, uint32_t rgba)
         if (n > 0) smart_str_appendl(buf, tmp, (size_t)n);
         return;
     }
-    char tmp[40];
-    int n = snprintf(tmp, sizeof(tmp), "rgba(%d,%d,%d,%.3f)",
-                     r, g, b, (double)a / 255.0);
-    if (n > 0) smart_str_appendl(buf, tmp, (size_t)n);
+    /* Emit the channels via locale-immune integer appends; the alpha
+     * is formatted on its own so fc_fix_decimal_sep only sees the
+     * fraction's separator, never the rgba() argument commas. */
+    FC_APPENDS(buf, "rgba(");
+    smart_str_append_long(buf, (zend_long)r); smart_str_appendc(buf, ',');
+    smart_str_append_long(buf, (zend_long)g); smart_str_appendc(buf, ',');
+    smart_str_append_long(buf, (zend_long)b); smart_str_appendc(buf, ',');
+    char tmp[16];
+    int n = snprintf(tmp, sizeof(tmp), "%.3f", (double)a / 255.0);
+    if (n > 0) {
+        n = fc_fix_decimal_sep(tmp, n);
+        smart_str_appendl(buf, tmp, (size_t)n);
+    } else {
+        smart_str_appendc(buf, '0');
+    }
+    smart_str_appendc(buf, ')');
 }
 
 /* XML 1.0 PCDATA allows TAB (0x09), LF (0x0A), CR (0x0D), and Unicode
@@ -542,6 +580,7 @@ static void fc_emit_num(smart_str *buf, double v)
 	if (n <= 0 || (size_t)n >= sizeof(tmp)) {
 		smart_str_appendc(buf, '0'); return;
 	}
+	n = fc_fix_decimal_sep(tmp, n);
 	/* strip trailing zeros + trailing dot */
 	while (n > 1 && tmp[n - 1] == '0') n--;
 	if (n > 1 && tmp[n - 1] == '.') n--;
