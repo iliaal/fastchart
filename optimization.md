@@ -492,4 +492,61 @@ own primitive rasterization (band scanning in plutovg-ft-raster.c, span
 composition in plutovg-blend.c). Further significant wall-time wins
 would need to attack the FT raster's band-scanning algorithm itself or
 reduce the primitive count in fastchart's emitters — both substantial
-interventions. The low-hanging optimizations are done.
+interventions. The low-hanging raster optimizations are done.
+
+## Round 2 — the renderSvg build path (2026-05-29)
+
+Round 1 benchmarked only raster output (renderPng/Jpeg/Webp), where
+libpng/plutovg dominate and the SVG-string build is a rounding error. It
+never measured `renderSvg()` — the project's *canonical* output — where
+the build phase is 100% of the cost. Three renderSvg scenarios added to
+the harness (`scatter_trend`, `log_line`, `dense_svg`) surfaced a large,
+previously-invisible win.
+
+### 13. Hand-rolled SVG number formatting — **−80% renderSvg**
+
+`fc_svg_fmt_num` (every coordinate of every primitive) and `fc_emit_num`
+(every glyph-outline coordinate) formatted via `snprintf("%.1f"/"%.2f")`
+plus a separator-normalize pass plus a trailing-zero trim — three passes,
+and `snprintf`'s `%f` carries a format-string parse and a full dtoa per
+call. Replaced with an allocation-free integer/fraction emitter: integer
+fast-path for the common pixel-coordinate case, `nearbyint` (default
+FE_TONEAREST, matching `%f`) for the fractional tail, decimal point
+hard-coded so it's locale-immune by construction (subsumes the
+separator-normalize from the locale fix). Output byte-identical (142/142
+pass, bench out_len unchanged).
+
+Interleaved min-of-mins, release PHP, 3 rounds × 120 iters:
+
+| scenario | base | opt | Δ |
+|---|---|---|---|
+| scatter_trend (renderSvg) | 0.272 ms | 0.047 ms | **−82.9%** |
+| log_line (renderSvg) | 0.822 ms | 0.162 ms | **−80.3%** |
+| dense_svg (renderSvg) | 2.526 ms | 0.472 ms | **−81.3%** |
+| renderPng/Jpeg/Webp scenarios | — | — | −0.5% to −3.7% (no regression) |
+
+`snprintf("%f")` was the entire SVG-build bottleneck. renderPng is
+unaffected because raster+encode swamp the now-trivial build.
+
+### 14. Cached log10 in the pixel chokepoint
+
+`fastchart_y_to_pixel`/`x_to_pixel` recomputed `log10(min)`/`log10(max)`
+on every call on a log axis (per data point). Cached `log_min`/`log_span`
+in `fastchart_value_range` at `compute_log` time; the per-call division
+is unchanged so output is byte-identical. The standalone effect is within
+the noise floor of #13 on `log_line` (the formatter dominates even there),
+but it removes genuine redundant work and keeps the 60-caller chokepoint
+clean. Kept on those grounds, not on a measured delta.
+
+**Closed without merging (round 2):**
+
+- **Polyline batching for the scatter trend fit** — replacing the 200
+  `fastchart_target_line` sub-segments with `fastchart_draw_polyline` is a
+  no-op: that helper emits the same N−1 individual `<line>` elements (no
+  `<polyline>` element), so output bytes and primitive count are
+  unchanged, and it would additionally apply `chart->line_style` to a
+  trend that is always solid (a latent dash regression). Reverted. A real
+  win needs a new `<polyline points="…">` target primitive (one element,
+  fewer plutosvg parse events) routed through line/area/scatter — a
+  larger change touching the target API and many test expectations. Still
+  the standing lever for "reduce primitive count," now scoped.

@@ -39,6 +39,8 @@ typedef struct {
     double tick_step;
     int    n_ticks;
     int    log_scale;       /* 0 linear, 1 base-10 log */
+    double log_min;         /* log10(min), valid when log_scale */
+    double log_span;        /* log10(max) - log10(min), valid when log_scale */
     double ticks[FASTCHART_MAX_TICKS];
 } fastchart_value_range;
 

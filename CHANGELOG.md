@@ -54,6 +54,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   coordinate chokepoint robust regardless of caller discipline
   (`fastchart_axis.c`).
 
+### Performance
+
+- **`renderSvg()` is ~5x faster on coordinate-heavy charts.** Every SVG
+  coordinate was formatted with `snprintf("%f")` (a format-string parse
+  plus a full double-to-decimal conversion per number); `fc_svg_fmt_num`
+  and `fc_emit_num` now use an allocation-free integer/fraction emitter
+  with an integer fast path. Output is byte-identical. Measured −80% to
+  −83% on three `renderSvg` scenarios (scatter-with-trend, 1000-point
+  log line, 8x500-point multi-series) against a release build; raster
+  outputs are unaffected (encode dominates there). The pixel-mapping
+  helpers also cache `log10(min)/log10(max)` once per render instead of
+  recomputing them per data point on log axes.
+
 ## [1.1.1] - 2026-05-21
 
 ### Fixed

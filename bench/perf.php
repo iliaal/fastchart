@@ -229,15 +229,79 @@ function scenario_label_chart_webp(): callable {
     };
 }
 
+/* ----- Scenario 7: scatter + 200-segment trend fit -----------------
+ * Exercises the per-segment vs batched-polyline emit (the trend curve
+ * is drawn as 200 sub-segments) and the per-coordinate number format. */
+function scenario_scatter_trend(): callable {
+    mt_srand(424242);
+    $pts = [];
+    for ($i = 0; $i < 200; $i++) {
+        $pts[] = [$i * 1.3 + mt_rand(-20, 20) / 10.0,
+                  5 + $i * 0.4 + sin($i * 0.2) * 6];
+    }
+    return function() use ($pts) {
+        /* renderSvg: the segment-batching + number-format wins live in
+         * the SVG-build phase; raster would swamp them with encode time. */
+        return (new FastChart\ScatterChart())
+            ->setSize(900, 500)
+            ->setPoints($pts)
+            ->setTrendLine(true)
+            ->renderSvg();
+    };
+}
+
+/* ----- Scenario 8: log-scale line, 1000 points ---------------------
+ * Exercises fastchart_y_to_pixel on a log axis 1000x per render — the
+ * log10(min)/log10(max) recompute is the target. */
+function scenario_log_line(): callable {
+    $data = [];
+    $v = 1.0;
+    for ($i = 0; $i < 1000; $i++) {
+        $v *= 1.0 + (sin($i * 0.05) * 0.02 + 0.012);  /* positive, spans decades */
+        $data[] = $v;
+    }
+    return function() use ($data) {
+        return (new FastChart\LineChart())
+            ->setSize(1000, 500)
+            ->setSeries($data)
+            ->setYAxisScale(FastChart\Chart::SCALE_LOG)
+            ->renderSvg();   /* build-phase: 1000x y_to_pixel on a log axis */
+    };
+}
+
+/* ----- Scenario 9: coordinate-dense multi-series SVG ---------------
+ * Eight series of 500 points each → ~4000 polyline coordinates plus
+ * markers, all formatted by fc_svg_fmt_num. renderSvg so the per-
+ * coordinate format cost is the whole measurement. */
+function scenario_dense_svg(): callable {
+    $series = [];
+    for ($s = 0; $s < 8; $s++) {
+        $d = [];
+        for ($i = 0; $i < 500; $i++) {
+            $d[] = 50 + sin($i * 0.05 + $s) * 40 + $s * 5 + ($i % 7) * 1.37;
+        }
+        $series[] = ['data' => $d];
+    }
+    return function() use ($series) {
+        return (new FastChart\LineChart())
+            ->setSize(1200, 600)
+            ->setSeries($series)
+            ->renderSvg();
+    };
+}
+
 /* ------------------------------------------------------------------ */
 
 $scenarios = [
-    'label_chart' => scenario_label_chart(),
-    'qr_v10'      => scenario_qr_v10(),
-    'svg_to_png'  => scenario_svg_to_png(),
-    'basic_chart' => scenario_basic_chart(),
-    'label_webp'  => scenario_label_chart_webp(),
-    'label_jpeg'  => scenario_label_chart_jpeg(),
+    'label_chart'   => scenario_label_chart(),
+    'qr_v10'        => scenario_qr_v10(),
+    'svg_to_png'    => scenario_svg_to_png(),
+    'basic_chart'   => scenario_basic_chart(),
+    'label_webp'    => scenario_label_chart_webp(),
+    'label_jpeg'    => scenario_label_chart_jpeg(),
+    'scatter_trend' => scenario_scatter_trend(),
+    'log_line'      => scenario_log_line(),
+    'dense_svg'     => scenario_dense_svg(),
 ];
 
 $results = [];

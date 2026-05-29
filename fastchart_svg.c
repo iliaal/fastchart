@@ -64,25 +64,25 @@ static int fc_fix_decimal_sep(char *s, int n)
 
 void fc_svg_fmt_num(smart_str *buf, double v)
 {
-    /* %.1f covers chart geometry with no visible loss; trim "12.0"
-     * to "12" but keep "12.5". Negative zero collapses to "0". */
+    /* %.1f-equivalent, locale-independent and allocation-free: this is the
+     * hottest formatter (every coordinate of every primitive), so skip
+     * snprintf's format-parse + dtoa. Integer-valued inputs (the common
+     * case — pixel coords) take the exact fast path; the fractional tail
+     * rounds via nearbyint under the default FE_TONEAREST, matching %.1f.
+     * Coordinates are canvas-bounded (< 2^31), so the cast is exact. */
     if (v == 0.0) { smart_str_appendc(buf, '0'); return; }
-    char tmp[32];
-    int n = snprintf(tmp, sizeof(tmp), "%.1f", v);
-    if (n <= 0 || (size_t)n >= sizeof(tmp)) {
-        smart_str_appends(buf, "0");
-        return;
+    int neg = v < 0.0;
+    double av = neg ? -v : v;
+    long long ip = (long long)av;                        /* integer part */
+    int d = (int)nearbyint((av - (double)ip) * 10.0);    /* first decimal */
+    if (d >= 10) { ip++; d -= 10; }                      /* tail rounded to 1.0 */
+    if (ip == 0 && d == 0) { smart_str_appendc(buf, '0'); return; }  /* -0.0x -> 0 */
+    if (neg) smart_str_appendc(buf, '-');
+    smart_str_append_long(buf, (zend_long)ip);
+    if (d) {
+        smart_str_appendc(buf, '.');
+        smart_str_appendc(buf, (char)('0' + d));
     }
-    n = fc_fix_decimal_sep(tmp, n);
-    if (n >= 2 && tmp[n - 1] == '0' && tmp[n - 2] == '.') {
-        n -= 2;
-    }
-    /* Normalise "-0" (which %.1f can emit for -0.05 rounded) to "0". */
-    if (n == 2 && tmp[0] == '-' && tmp[1] == '0') {
-        smart_str_appendc(buf, '0');
-        return;
-    }
-    smart_str_appendl(buf, tmp, (size_t)n);
 }
 
 void fc_svg_fmt_color(smart_str *buf, uint32_t rgba)
@@ -574,17 +574,22 @@ typedef struct {
 
 static void fc_emit_num(smart_str *buf, double v)
 {
+	/* %.2f-equivalent, locale-independent, allocation-free (see
+	 * fc_svg_fmt_num). Used per glyph-outline coordinate. */
 	if (v == 0.0) { smart_str_appendc(buf, '0'); return; }
-	char tmp[32];
-	int n = snprintf(tmp, sizeof(tmp), "%.2f", v);
-	if (n <= 0 || (size_t)n >= sizeof(tmp)) {
-		smart_str_appendc(buf, '0'); return;
+	int neg = v < 0.0;
+	double av = neg ? -v : v;
+	long long ip = (long long)av;
+	int d = (int)nearbyint((av - (double)ip) * 100.0);   /* two decimals */
+	if (d >= 100) { ip++; d -= 100; }
+	if (ip == 0 && d == 0) { smart_str_appendc(buf, '0'); return; }
+	if (neg) smart_str_appendc(buf, '-');
+	smart_str_append_long(buf, (zend_long)ip);
+	if (d) {
+		smart_str_appendc(buf, '.');
+		smart_str_appendc(buf, (char)('0' + d / 10));
+		if (d % 10) smart_str_appendc(buf, (char)('0' + d % 10));
 	}
-	n = fc_fix_decimal_sep(tmp, n);
-	/* strip trailing zeros + trailing dot */
-	while (n > 1 && tmp[n - 1] == '0') n--;
-	if (n > 1 && tmp[n - 1] == '.') n--;
-	smart_str_appendl(buf, tmp, n);
 }
 
 /* Capture-pass callbacks: record FT outline at pen_x=0 into ops/pts.
