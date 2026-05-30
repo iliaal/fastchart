@@ -73,6 +73,12 @@ void fc_svg_fmt_num(smart_str *buf, double v)
     if (v == 0.0) { smart_str_appendc(buf, '0'); return; }
     int neg = v < 0.0;
     double av = neg ? -v : v;
+    /* Self-protect the cast below: real coordinates are canvas-bounded,
+     * but guard a non-finite or out-of-long-long-range value (a future
+     * caller, a pre-clamp coordinate) rather than hit (long long) UB.
+     * !(av < 9.0e18) is true for NaN, +Inf, and any av past the cast's
+     * safe range (9.0e18 < 2^63). */
+    if (!(av < 9.0e18)) { smart_str_appendc(buf, '0'); return; }
     long long ip = (long long)av;                        /* integer part */
     int d = (int)nearbyint((av - (double)ip) * 10.0);    /* first decimal */
     if (d >= 10) { ip++; d -= 10; }                      /* tail rounded to 1.0 */

@@ -925,14 +925,16 @@ void fastchart_draw_h_plot_bands_categorical(fastchart_target_t *t, fastchart_ob
     (void)pal;
     if (!chart->plot_bands || chart->n_plot_bands <= 0) return;
     if (n_categories <= 0) return;
-    int span = plot->y1 - plot->y0;
     for (int i = 0; i < chart->n_plot_bands; i++) {
         const fastchart_plot_band *b = &chart->plot_bands[i];
         if (b->is_vertical) continue;
         double frac_lo = b->low  / (double)n_categories;
         double frac_hi = b->high / (double)n_categories;
-        int y_top    = plot->y0 + (int)(frac_lo * span + 0.5);
-        int y_bottom = plot->y0 + (int)(frac_hi * span + 0.5);
+        /* Clamp the fractional category index to [0,1] before the pixel
+         * cast: band edges are finite-checked at the setter but not
+         * range-checked, so frac_to_px guards the (int) conversion. */
+        int y_top    = fastchart_frac_to_px(frac_lo, plot->y0, plot->y1);
+        int y_bottom = fastchart_frac_to_px(frac_hi, plot->y0, plot->y1);
         if (y_top < plot->y0) y_top = plot->y0 + 1;
         if (y_bottom > plot->y1) y_bottom = plot->y1 - 1;
         if (y_top >= y_bottom) continue;
@@ -958,7 +960,6 @@ void fastchart_draw_v_plot_bands_categorical(fastchart_target_t *t, fastchart_ob
     (void)pal;
     if (!chart->plot_bands || chart->n_plot_bands <= 0) return;
     if (n_categories <= 0) return;
-    int span = plot->x1 - plot->x0;
     for (int i = 0; i < chart->n_plot_bands; i++) {
         const fastchart_plot_band *b = &chart->plot_bands[i];
         if (!b->is_vertical) continue;
@@ -969,8 +970,8 @@ void fastchart_draw_v_plot_bands_categorical(fastchart_target_t *t, fastchart_ob
          * the first slot end-to-end). */
         double frac_lo = b->low  / (double)n_categories;
         double frac_hi = b->high / (double)n_categories;
-        int x_left  = plot->x0 + (int)(frac_lo * span + 0.5);
-        int x_right = plot->x0 + (int)(frac_hi * span + 0.5);
+        int x_left  = fastchart_frac_to_px(frac_lo, plot->x0, plot->x1);
+        int x_right = fastchart_frac_to_px(frac_hi, plot->x0, plot->x1);
         fastchart_draw_v_band_at(t, b, plot, x_left, x_right);
     }
 }
@@ -1998,6 +1999,12 @@ static int v_pos_categorical(const fastchart_rect *plot, double position, void *
 {
     int n = *(int *)ctx;
     if (n <= 0) return -1;
+    /* Range-guard before the cast: position is finite-checked at the
+     * setter but not bounded, so a finite-but-extreme index would make
+     * the (int) conversion UB. Mirror v_pos_time's pre-cast guard. */
+    if (!isfinite(position) || position < -0.5 || position >= (double)n) {
+        return -1;
+    }
     int idx = (int)floor(position + 0.5);
     if (idx < 0 || idx >= n) return -1;
     return fastchart_x_categorical_center(plot, idx, n);

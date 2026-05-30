@@ -46,13 +46,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cumulative count is now capped like `VectorChart::setVectors`
   (`fastchart.c`).
 
+- **Categorical plot bands and vertical-line annotations cast unbounded
+  coordinates.** The continuation of the 1.1.1 icon-cast fix, for the
+  categorical coordinate mappers it did not reach. Band edges
+  (`addVerticalBand` / `addHorizontalBand` on a category axis) and
+  vertical-line positions (`addVerticalLine`) are finite-checked at the
+  setter but not range-checked, so a finite-but-large value such as
+  `1e300` reached a float-to-int cast that is undefined (C11 §6.3.1.4p1).
+  The categorical band drawers now route through `fastchart_frac_to_px()`,
+  which clamps to `[0, 1]` before the cast, and `v_pos_categorical`
+  range-guards the index before casting, matching the continuous and
+  time-axis mappers (`fastchart_axis.c`).
+
+- **`SunburstChart` produced NaN wedge angles on value overflow.** An
+  interior node whose children summed past `DBL_MAX` aggregated to
+  `+Inf`; the proportion `value / sum` then evaluated to `Inf / Inf =
+  NaN`, which reached the wedge-angle float-to-int cast. The aggregation
+  now skips a non-finite total the way it already skipped a non-positive
+  one, leaving the affected wedges zero-width, in line with the
+  `isfinite` guards `MarimekkoChart::setColumns` and
+  `VectorChart::setVectors` already carry (`fastchart_sunburst.c`).
+
 - **Hardening.** The un-premultiply lookup table is now pre-warmed at
   `MINIT` rather than lazily on first rasterize, closing a ZTS data race
   on its unsynchronised ready flag (`fastchart_rasterize.c`).
   `fastchart_y_to_pixel` / `fastchart_x_to_pixel` self-guard against a
   non-finite argument (the frac clamps never caught NaN), making the
   coordinate chokepoint robust regardless of caller discipline
-  (`fastchart_axis.c`).
+  (`fastchart_axis.c`). The hand-rolled SVG number formatter self-guards
+  its integer cast against a non-finite or out-of-range value
+  (`fastchart_svg.c`), the treemap strip-ratio divide guards against a
+  zero remaining-area denominator (`fastchart_treemap.c`), and the stock
+  moving-average legend arrays size to `FASTCHART_MAX_SMA` instead of a
+  literal `8` so they track the cap (`fastchart_stock.c`).
 
 ### Performance
 

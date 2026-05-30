@@ -70,13 +70,19 @@ static void place_row(const double *areas,
     double row_sum = 0;
     for (int k = 0; k < n_row; k++) row_sum += areas[idx_row[k]];
 
+    /* Guard the strip-ratio divide: floating cancellation can drive
+     * total_area_remaining to 0 (or below) while rows remain, making
+     * row_sum/total non-finite and the (int) strip cast below UB. */
+    double denom = total_area_remaining > 0.0 ? total_area_remaining
+                 : (row_sum > 0.0 ? row_sum : 1.0);
+
     /* Strip thickness = (sum / remaining_total) * shorter_side, in
      * pixels. The area fraction of this row is row_sum / area_total
      * available; that fraction times the shorter side gives the
      * pixel thickness of the strip. */
     if (w <= h) {
         /* Shorter side is width — lay row vertically across height. */
-        int strip_w = (int)((row_sum / total_area_remaining) * (double)w + 0.5);
+        int strip_w = (int)((row_sum / denom) * (double)w + 0.5);
         if (strip_w < 1) strip_w = 1;
         if (strip_w > w) strip_w = w;
         double inv_sum = row_sum > 0 ? 1.0 / row_sum : 0;
@@ -97,7 +103,7 @@ static void place_row(const double *areas,
         rect->x0 += strip_w;
     } else {
         /* Shorter side is height — lay row horizontally across width. */
-        int strip_h = (int)((row_sum / total_area_remaining) * (double)h + 0.5);
+        int strip_h = (int)((row_sum / denom) * (double)h + 0.5);
         if (strip_h < 1) strip_h = 1;
         if (strip_h > h) strip_h = h;
         double inv_sum = row_sum > 0 ? 1.0 / row_sum : 0;
