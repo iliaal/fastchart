@@ -53,7 +53,11 @@ static void fastchart_sunburst_compute_wedges(
         for (int c = 0; c < nodes[i].child_count; c++) {
             sum += nodes[nodes[i].child_first + c].value;
         }
-        if (sum <= 0) continue;
+        /* Skip non-positive or overflowed totals: a sum of extreme child
+         * values can reach +Inf, and value/Inf or Inf/Inf would feed NaN
+         * into the wedge-angle (int) cast in ring_polygon. ecalloc leaves
+         * the skipped children's wedges zero-width, which is safe. */
+        if (!(sum > 0.0) || !isfinite(sum)) continue;
         double parent_span = wedges[i].end_rad - wedges[i].start_rad;
         double cur = wedges[i].start_rad;
         for (int c = 0; c < nodes[i].child_count; c++) {

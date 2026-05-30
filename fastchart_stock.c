@@ -792,8 +792,8 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
 
     /* Legend for the SMA overlays. */
     if (sma_count > 0) {
-        int legend_colors[8];
-        const char *legend_labels[8];
+        int legend_colors[FASTCHART_MAX_SMA];
+        const char *legend_labels[FASTCHART_MAX_SMA];
         char *legend_label_storage = ecalloc((size_t)sma_count, 16);
         for (int s = 0; s < sma_count; s++) {
             legend_colors[s] = pal.series[s % FASTCHART_PALETTE_SERIES_N];
