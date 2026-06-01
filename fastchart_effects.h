@@ -33,7 +33,7 @@ int fastchart_gradient_filled_polygon(fastchart_target_t *t,
                                       const fastchart_point_t *poly, int n_pts);
 
 /* Filled polygon. SVG renderers anti-alias by default, so the
- * dedicated AA-edge pass the libgd-era helper needed is unnecessary;
+ * dedicated AA-edge pass used by the old raster helper is unnecessary;
  * this stays as a separate entry point for callsite compatibility. */
 void fastchart_filled_polygon_aa(fastchart_target_t *t,
                                  const fastchart_point_t *poly,

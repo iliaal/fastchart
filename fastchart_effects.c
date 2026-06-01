@@ -73,9 +73,8 @@ void fastchart_filled_polygon_aa(fastchart_target_t *t,
     if (n_pts < 3) return;
     /* SVG renderers anti-alias by default; the target's polygon
      * primitive carries the fill as-is and the consumer's rasterizer
-     * smooths edges. The dedicated AA-edge pass the libgd path needed
-     * (to compensate for gdImageFilledPolygon's hard edges) is
-     * unnecessary here. */
+     * smooths edges. The dedicated AA-edge pass used by the old
+     * raster helper is unnecessary here. */
     fastchart_target_polygon(t, poly, n_pts, color, 1, 1);
 }
 

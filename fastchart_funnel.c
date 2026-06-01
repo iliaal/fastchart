@@ -141,7 +141,7 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
      * within the triangle. Width at any y is linear in (y - y0). */
     double cum_v = 0.0;
     for (int i = 0; i < n; i++) {
-        double v_top, v_bot;
+        double v_top;
         int half_top, half_bot, yt, yb;
         if (pyramid) {
             double y_top = y0 + cum_v / total_v * total_h;
@@ -153,10 +153,9 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
             half_top = (int)(max_half * (y_top - y0) / total_h + 0.5);
             half_bot = (int)(max_half * (y_bot - y0) / total_h + 0.5);
             v_top = self->stages[i].value;
-            v_bot = v_top;  /* unused in pyramid label path; kept for symmetry */
         } else {
             v_top = self->stages[i].value;
-            v_bot = (i + 1 < n) ? self->stages[i + 1].value : v_top * 0.6;
+            double v_bot = (i + 1 < n) ? self->stages[i + 1].value : v_top * 0.6;
             if (v_bot < 0) v_bot = 0;
             half_top = (int)(max_half * v_top / max_v + 0.5);
             half_bot = (int)(max_half * v_bot / max_v + 0.5);
@@ -257,4 +256,3 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
 }
-

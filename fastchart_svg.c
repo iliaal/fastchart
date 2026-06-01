@@ -532,8 +532,8 @@ void fc_svg_emit_text(smart_str *buf,
     } else if (align == FASTCHART_TARGET_ALIGN_RIGHT) {
         FC_APPENDS(buf, " text-anchor=\"end\"");
     }
-    /* libgd / fastchart_text_draw_rotated rotates CCW; SVG rotate()
-     * is CW with negative degrees for CCW. */
+    /* fastchart_text_draw_rotated uses CCW degrees; SVG rotate()
+     * needs negative degrees for that direction. */
     if (angle_deg != 0.0) {
         FC_APPENDS(buf, " transform=\"rotate(");
         fc_svg_fmt_num(buf, -angle_deg);
@@ -845,8 +845,8 @@ void fc_svg_emit_text_as_path(smart_str *buf,
 		fc_svg_fmt_num(buf, y);
 		smart_str_appendc(buf, ')');
 		if (angle_deg != 0.0) {
-			/* libgd / fastchart_text_draw_rotated rotates CCW; SVG
-			 * rotate() is CW. Apply at the post-translated origin
+			/* fastchart_text_draw_rotated uses CCW degrees; SVG
+			 * rotate() needs negative degrees. Apply at the post-translated origin
 			 * (the alignment-shifted anchor), matching the existing
 			 * <text> path. */
 			FC_APPENDS(buf, " rotate(");

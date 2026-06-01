@@ -258,7 +258,7 @@ typedef struct _fastchart_obj { FASTCHART_BASE_FIELDS } fastchart_obj;
 /* Shared series shape for the cartesian chart families (Line, Area,
  * Bar). Each series carries a parsed double array (NaN marks a gap),
  * an optional malloc'd label, optional per-point color overrides
- * (resolved at render time by gdImageColorAllocate), and for the bar
+ * (resolved at render time to target color handles), and for the bar
  * case an optional values_max array that turns the entries into
  * floating [min, max] ranges. */
 typedef struct {
@@ -1072,8 +1072,8 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
  * overlay labels, etc.) take the silent-drop path because rejecting
  * them with an exception would force every chart-type setter to
  * walk the whole input array up front. The render-vs-stored
- * divergence (gdImageStringFT truncates at \0, PHP keeps the full
- * length) is what we're guarding against. */
+ * divergence (text draw paths use C-string sentinels, PHP strings
+ * carry an explicit length) is what we're guarding against. */
 static inline const char *fastchart_label_or_null(const zval *zv)
 {
     if (!zv || Z_TYPE_P(zv) != IS_STRING) return NULL;
@@ -1083,8 +1083,8 @@ static inline const char *fastchart_label_or_null(const zval *zv)
 
 /* Per-chart SVG rendering helpers. Each chart family implements
  * fastchart_<name>_render_to_target(self, t), called by
- * dispatch_svg_render. The legacy fastchart_<name>_render_to_image
- * GD-direct wrappers retired in v1.0. */
+ * dispatch_svg_render. The legacy image-backend wrappers retired
+ * in v1.0. */
 struct fastchart_target;
 int fastchart_line_render_to_target(fastchart_line_obj *self,
                                      struct fastchart_target *t);

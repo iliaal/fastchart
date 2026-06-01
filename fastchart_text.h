@@ -24,8 +24,8 @@ typedef enum {
 /* Draw `text` at (x, y) with the given alignment. y is the baseline.
  * `text` must be NUL-terminated UTF-8. `color` is a target color
  * handle (allocate via fastchart_target_color* on the same target).
- * Returns 0 on success, -1 if libgd refused the font (sets *err).
- * `err_buf` (buf_n bytes) receives a libgd error string when present. */
+ * Returns 0 on success, -1 if the font cannot be resolved or used.
+ * `err_buf` (buf_n bytes) receives a short error string when present. */
 int fastchart_text_draw(fastchart_target_t *t,
                         const char *font_path, double font_size,
                         int color, int x, int y,
@@ -35,8 +35,7 @@ int fastchart_text_draw(fastchart_target_t *t,
 
 /* Same as fastchart_text_draw but rotates the text counter-clockwise
  * by `angle_deg` (typical: 0, 45, 90). The anchor (x, y) is the
- * alignment point of the unrotated bounding box; libgd rotates
- * around that anchor. */
+ * alignment point of the unrotated bounding box. */
 int fastchart_text_draw_rotated(fastchart_target_t *t,
                                 const char *font_path, double font_size,
                                 int color, int x, int y,

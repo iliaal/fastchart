@@ -44,14 +44,13 @@ typedef struct {
     double ticks[FASTCHART_MAX_TICKS];
 } fastchart_value_range;
 
-/* Per-render entry hook. Invalidates the font-path cache and the
- * shadow-color cache (so the next resolve_font / shadow_alloc call
- * re-runs open_basedir checks against the current ini state and
- * re-allocates against the current gdImage), and stamps the chart's
- * DPI on the canvas. Every renderer must call this at draw entry,
- * BEFORE any palette / text / background work. fastchart_compute_layout
- * already calls it; non-layout renderers (gauge, radar, polar, surface,
- * contour) need to call it directly. */
+/* Per-render entry hook. Invalidates the font-path cache and any
+ * per-target shadow-color cache so the next resolve_font / shadow
+ * draw re-runs open_basedir checks against the current ini state and
+ * uses the current render target. Every renderer must call this at
+ * draw entry, BEFORE any palette / text / background work.
+ * fastchart_compute_layout already calls it; non-layout renderers
+ * (gauge, radar, polar, surface, contour) need to call it directly. */
 void fastchart_begin_render(fastchart_obj *chart, fastchart_target_t *t);
 
 /* Compute the plot rectangle inside the canvas after subtracting space
@@ -310,7 +309,7 @@ typedef struct {
 } fastchart_pt;
 
 /* Draw a polyline through `pts` honoring the chart's
- * line_interpolation setting. Linear uses gdImageLine for each
+ * line_interpolation setting. Linear emits one target line for each
  * consecutive valid pair; smooth uses Catmull-Rom with ~10 sub-
  * segments per interval. Gaps (valid=false) break the polyline. */
 void fastchart_draw_polyline(fastchart_target_t *t, fastchart_obj *chart,

@@ -49,17 +49,14 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
         return -1;
     }
 
-    int top_pad = 16;
     int title_h = 0;
     const char *title_font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_TITLE);
     double base_size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
     double title_size = fastchart_resolve_font_size(
         (fastchart_obj *)self, FC_FONT_TITLE, base_size * 1.4);
     if (self->title && ZSTR_LEN(self->title) > 0 && title_font) {
-        if (fastchart_text_measure(t, title_font, title_size, ZSTR_VAL(self->title),
-                                   NULL, &title_h, NULL, 0) == 0) {
-            top_pad += title_h + 10;
-        }
+        fastchart_text_measure(t, title_font, title_size, ZSTR_VAL(self->title),
+                               NULL, &title_h, NULL, 0);
     }
 
     /* Data bounds for (x,y) anchor. */

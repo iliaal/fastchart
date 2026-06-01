@@ -212,22 +212,13 @@ static void catmull_point(int p0x, int p0y, int p1x, int p1y,
     *oy = (int)(y + 0.5);
 }
 
-/* Emit one polyline segment.
- *
- * The fast path is GD-native AA: when `aa_gd_color >= 0` and the
- * target is GD-backed, we keep calling gdImageLine with gdAntiAliased
- * directly so the libgd anti-aliased line algorithm runs unchanged
- * (it's a fundamentally different rasteriser than the thick / dashed
- * path and the target abstraction can't replicate it without losing
- * fidelity). For every other case — solid SVG, solid thick GD,
- * styled GD — we go through fastchart_target_line so the dispatch
- * works for both backends. */
+/* Emit one polyline segment through the target abstraction. */
 static inline void poly_seg(fastchart_target_t *t,
                             int x0, int y0, int x1, int y1,
                             int color_handle, int thickness, int dash,
                             int aa_gd_color)
 {
-    (void)aa_gd_color;  /* GD-only AA spine retired; SVG renderers AA natively */
+    (void)aa_gd_color;  /* Retired AA-spine hint; SVG renderers AA natively. */
     fastchart_target_line(t, x0, y0, x1, y1, color_handle, thickness, dash);
 }
 
@@ -235,10 +226,9 @@ static inline void poly_seg(fastchart_target_t *t,
  * can run two passes (thick non-AA underbody + thin AA spine) when
  * both weight and edge smoothness are wanted.
  *
- * color_handle / thickness / dash drive fastchart_target_line for the
- * general case. aa_gd_color is non-negative only on the AA spine pass
- * — when set, GD-backed targets short-circuit through gdImageLine with
- * gdAntiAliased to preserve libgd's native AA. */
+ * color_handle / thickness / dash drive fastchart_target_line.
+ * aa_gd_color is retained only to keep the retired two-pass call
+ * shape local to this helper. */
 static void polyline_pass(fastchart_target_t *t, fastchart_obj *chart,
                           const fastchart_pt *pts, int n,
                           int color_handle, int thickness, int dash,
@@ -324,7 +314,7 @@ void fastchart_draw_polyline(fastchart_target_t *t, fastchart_obj *chart,
 
     /* SVG renderers AA natively — single pass with the requested
      * dash + thickness. The historical two-pass thick-underbody +
-     * thin-AA-spine combo was a libgd-only workaround. */
+     * thin-AA-spine combo is no longer needed. */
     (void)antialiased;
     polyline_pass(t, chart, pts, n, color, thickness, dash, -1);
 }
@@ -380,8 +370,8 @@ void fastchart_begin_render(fastchart_obj *chart, fastchart_target_t *t)
      * narrowing of open_basedir between two draws of the same chart
      * object must NOT let the prior draw's resolved font path leak
      * past — fastchart_resolve_font re-runs check_font_path() on the
-     * first call after this point. The shadow color is re-allocated
-     * against the new gdImage `im` on the first shadow draw.
+     * first call after this point. Any per-draw shadow color handle is
+     * recomputed against the current render target on first use.
      *
      * Renderers that call fastchart_compute_layout get this for free
      * (compute_layout calls us). Non-layout renderers (gauge, radar,

@@ -259,14 +259,7 @@ static int fastchart_symbol_render_to_buf(fastchart_symbol_obj *self,
         return -1;
     }
 
-    /* Codec-availability guard — reject before SVG build + rasterize
-     * when the requested format's lib isn't compiled in. */
-    const char *missing = NULL;
-    switch (format) {
-    case 0: if (!fastchart_have_libpng())  missing = "libpng";        break;
-    case 1: if (!fastchart_have_libjpeg()) missing = "libjpeg-turbo"; break;
-    case 2: if (!fastchart_have_libwebp()) missing = "libwebp";       break;
-    }
+    const char *missing = fastchart_missing_encoder_lib(format);
     if (missing) {
         zend_throw_error(NULL,
             "%s: %s support not compiled in "
@@ -356,24 +349,6 @@ static void fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAMETERS,
 
 /* ---------------- Symbol SVG render ------------------------------- */
 
-/* Case-insensitive ASCII check for a `.svg` tail. Same parsing shape
- * as fastchart_format_from_path so a path like "weird.SVG/here.png"
- * reports .png and "report.SVG" reports .svg. Duplicated from
- * fastchart.c (file-static there) — tiny helper, not worth exposing. */
-static int fc_symbol_path_ends_with_svg(const char *path, size_t len)
-{
-    if (len == 0 || len > 4096) return 0;
-    const char *dot = NULL;
-    for (size_t i = len; i > 0; i--) {
-        if (path[i - 1] == '.') { dot = &path[i - 1]; break; }
-        if (path[i - 1] == '/' || path[i - 1] == '\\') break;
-    }
-    if (!dot) return 0;
-    const char *ext = dot + 1;
-    size_t ext_len = strlen(ext);
-    return zend_binary_strcasecmp(ext, ext_len, "svg", 3) == 0;
-}
-
 /* Shared SVG entry. fragment_only=0 emits a full document; =1 emits
  * just the <g class="fastchart-symbol"> group. Output viewport = the
  * Symbol's logical canvas size (default-substituted per class) at 1:1
@@ -429,8 +404,8 @@ static void fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAMETERS,
 
 /* SVG file-write branch invoked by Symbol::renderToFile when the path
  * extension is .svg. Mirrors fastchart_render_to_svg_file in
- * fastchart.c. Honors open_basedir, writes via php_stream_open_wrapper,
- * surfaces short writes as a thrown error. */
+ * fastchart.c. Honors open_basedir and surfaces short writes as a
+ * thrown error via the shared stream-write helper. */
 static void fastchart_symbol_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS,
                                                  zend_string *path)
 {
@@ -472,34 +447,15 @@ static void fastchart_symbol_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS,
         RETURN_THROWS();
     }
 
-    php_stream *stream = php_stream_open_wrapper(ZSTR_VAL(path), "wb",
-        REPORT_ERRORS, NULL);
-    if (!stream) {
+    zend_long written = 0;
+    if (fastchart_write_zstr_to_file(path, buf.s,
+                                     "FastChart\\Symbol::renderToFile()",
+                                     &written) != 0) {
         smart_str_free(&buf);
-        if (!EG(exception)) {
-            zend_throw_error(NULL,
-                "FastChart\\Symbol::renderToFile() could not open %s for writing",
-                ZSTR_VAL(path));
-        }
         RETURN_THROWS();
     }
-
-    size_t sz = ZSTR_LEN(buf.s);
-    ssize_t written = php_stream_write(stream, ZSTR_VAL(buf.s), sz);
-    php_stream_close(stream);
     smart_str_free(&buf);
-
-    if (written < 0) {
-        zend_throw_error(NULL, "FastChart: write to %s failed", ZSTR_VAL(path));
-        RETURN_THROWS();
-    }
-    if ((size_t)written != sz) {
-        zend_throw_error(NULL,
-            "FastChart: short write to %s (%zd of %zu bytes)",
-            ZSTR_VAL(path), written, sz);
-        RETURN_THROWS();
-    }
-    RETURN_LONG((zend_long)written);
+    RETURN_LONG(written);
 }
 
 /* ---------------- Symbol setters ---------------------------------- */
@@ -742,7 +698,7 @@ ZEND_METHOD(FastChart_Symbol, renderToFile)
     /* Vector branch. .svg ignores $quality (no lossy encoder) and
      * goes through a separate write path that emits text bytes.
      * Mirrors the Chart-side .svg routing in fastchart.c. */
-    if (fc_symbol_path_ends_with_svg(ZSTR_VAL(path), ZSTR_LEN(path))) {
+    if (fastchart_path_ends_with_svg(ZSTR_VAL(path), ZSTR_LEN(path))) {
         (void)quality;
         if (php_check_open_basedir(ZSTR_VAL(path))) {
             if (!EG(exception)) {
@@ -798,34 +754,15 @@ ZEND_METHOD(FastChart_Symbol, renderToFile)
         RETURN_THROWS();
     }
 
-    php_stream *stream = php_stream_open_wrapper(ZSTR_VAL(path), "wb",
-        REPORT_ERRORS, NULL);
-    if (!stream) {
+    zend_long written = 0;
+    if (fastchart_write_zstr_to_file(path, enc_buf.s,
+                                     "FastChart\\Symbol::renderToFile()",
+                                     &written) != 0) {
         zend_string_release(enc_buf.s);
-        if (!EG(exception)) {
-            zend_throw_error(NULL,
-                "FastChart\\Symbol::renderToFile() could not open %s for writing",
-                ZSTR_VAL(path));
-        }
         RETURN_THROWS();
     }
-
-    size_t sz = ZSTR_LEN(enc_buf.s);
-    ssize_t written = php_stream_write(stream, ZSTR_VAL(enc_buf.s), sz);
-    php_stream_close(stream);
     zend_string_release(enc_buf.s);
-
-    if (written < 0) {
-        zend_throw_error(NULL, "FastChart: write to %s failed", ZSTR_VAL(path));
-        RETURN_THROWS();
-    }
-    if ((size_t)written != sz) {
-        zend_throw_error(NULL,
-            "FastChart: short write to %s (%zd of %zu bytes)",
-            ZSTR_VAL(path), written, sz);
-        RETURN_THROWS();
-    }
-    RETURN_LONG((zend_long)written);
+    RETURN_LONG(written);
 }
 
 /* ---------------- Code128 setters --------------------------------- */
