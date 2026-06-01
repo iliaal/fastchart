@@ -23,6 +23,7 @@
 
 #include <limits.h>
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -295,10 +296,11 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
     b->icons = NULL;
     b->n_icons = 0;
 
-    b->image_map_entries = NULL;
-    b->n_image_map_entries = 0;
-    b->image_map_areas = NULL;
-    b->n_image_map_areas = 0;
+	b->image_map_entries = NULL;
+	b->n_image_map_entries = 0;
+	b->image_map_areas = NULL;
+	b->n_image_map_areas = 0;
+	b->image_map_areas_cap = 0;
 
     for (int i = 0; i < 4; i++) b->font_cache_path[i] = NULL;
     b->font_cache_valid = false;
@@ -415,12 +417,12 @@ static void fastchart_image_map_entries_free(fastchart_obj *b)
 
 static void fastchart_image_map_areas_free(fastchart_obj *b)
 {
-    /* Areas only own the struct array; href/tooltip pointers borrow
-     * from image_map_entries or per-chart-type data points. */
-    if (!b->image_map_areas) return;
-    efree(b->image_map_areas);
-    b->image_map_areas = NULL;
-    b->n_image_map_areas = 0;
+	/* Areas only own the struct array; href/tooltip pointers borrow
+	 * from image_map_entries or per-chart-type data points. */
+	if (b->image_map_areas) efree(b->image_map_areas);
+	b->image_map_areas = NULL;
+	b->n_image_map_areas = 0;
+	b->image_map_areas_cap = 0;
 }
 
 /* Renderer helper: borrow the category-label slots into a freshly
@@ -439,27 +441,38 @@ const char **fastchart_borrow_category_labels(fastchart_obj *b, int n)
 
 void fastchart_reset_image_map_areas(fastchart_obj *b)
 {
-    if (b->image_map_areas) {
-        efree(b->image_map_areas);
-        b->image_map_areas = NULL;
-    }
-    b->n_image_map_areas = 0;
+	b->n_image_map_areas = 0;
+}
+
+void fastchart_reserve_image_map_areas(fastchart_obj *b, int cap)
+{
+	if (cap <= b->image_map_areas_cap) return;
+	b->image_map_areas = erealloc(b->image_map_areas,
+		(size_t)cap * sizeof(fastchart_image_map_area));
+	b->image_map_areas_cap = cap;
 }
 
 static fastchart_image_map_area *fc_image_map_push(fastchart_obj *b, int idx)
 {
-    if (idx < 0 || idx >= b->n_image_map_entries) return NULL;
-    if (!b->image_map_entries[idx].href) return NULL;
-    /* Grow the areas array; legitimate charts have well under 1000
-     * data points so doubling growth is fine. */
-    int cap = b->n_image_map_areas + 1;
-    b->image_map_areas = erealloc(b->image_map_areas,
-        (size_t)cap * sizeof(fastchart_image_map_area));
-    fastchart_image_map_area *a = &b->image_map_areas[b->n_image_map_areas];
-    b->n_image_map_areas = cap;
-    memset(a, 0, sizeof(*a));
-    a->href    = b->image_map_entries[idx].href;
-    a->tooltip = b->image_map_entries[idx].tooltip;
+	if (idx < 0 || idx >= b->n_image_map_entries) return NULL;
+	if (!b->image_map_entries[idx].href) return NULL;
+	int need = b->n_image_map_areas + 1;
+	if (need > b->image_map_areas_cap) {
+		int cap = b->image_map_areas_cap > 0 ? b->image_map_areas_cap : 8;
+		while (cap < need) {
+			if (cap > INT_MAX / 2) {
+				cap = need;
+				break;
+			}
+			cap *= 2;
+		}
+		fastchart_reserve_image_map_areas(b, cap);
+	}
+	fastchart_image_map_area *a = &b->image_map_areas[b->n_image_map_areas];
+	b->n_image_map_areas = need;
+	memset(a, 0, sizeof(*a));
+	a->href    = b->image_map_entries[idx].href;
+	a->tooltip = b->image_map_entries[idx].tooltip;
     return a;
 }
 
@@ -594,8 +607,9 @@ static void fastchart_base_addref_owned(fastchart_obj *b)
     }
     /* image_map_areas is a render artifact; clones start empty. The
      * next draw on the clone repopulates with fresh hot-spots. */
-    b->image_map_areas = NULL;
-    b->n_image_map_areas = 0;
+	b->image_map_areas = NULL;
+	b->n_image_map_areas = 0;
+	b->image_map_areas_cap = 0;
     /* config is a real PHP HashTable wrapped in a zval; the lifecycle
      * macro's memcpy aliased the HashTable pointer between src and
      * dst. Setters that mutate config (addTextAnnotation,
@@ -4508,7 +4522,50 @@ static int fastchart_parse_candle(zval *row, fastchart_candle *out)
             out->volume = v; out->has_volume = 1;
         }
     }
-    return 0;
+	return 0;
+}
+
+static void fastchart_sort_candles_by_timestamp(fastchart_candle *candles, int n)
+{
+	bool sorted = true;
+	for (int i = 1; i < n; i++) {
+		if (candles[i - 1].ts > candles[i].ts) {
+			sorted = false;
+			break;
+		}
+	}
+	if (sorted) return;
+
+	fastchart_candle *tmp = emalloc((size_t)n * sizeof(*tmp));
+	fastchart_candle *src = candles;
+	fastchart_candle *dst = tmp;
+
+	for (int width = 1; width < n; width <<= 1) {
+		for (int left = 0; left < n; left += width << 1) {
+			int mid = left + width;
+			int right = left + (width << 1);
+			if (mid > n) mid = n;
+			if (right > n) right = n;
+
+			int i = left;
+			int j = mid;
+			int k = left;
+			while (i < mid && j < right) {
+				dst[k++] = (src[i].ts <= src[j].ts) ? src[i++] : src[j++];
+			}
+			while (i < mid) dst[k++] = src[i++];
+			while (j < right) dst[k++] = src[j++];
+		}
+
+		fastchart_candle *swap = src;
+		src = dst;
+		dst = swap;
+	}
+
+	if (src != candles) {
+		memcpy(candles, src, (size_t)n * sizeof(*candles));
+	}
+	efree(tmp);
 }
 
 ZEND_METHOD(FastChart_StockChart, setOhlcv)
@@ -4545,14 +4602,7 @@ ZEND_METHOD(FastChart_StockChart, setOhlcv)
         RETURN_THROWS();
     }
 
-    /* Insertion sort by timestamp. Caller is expected to feed already-
-     * sorted data so the loop runs O(n) on the happy path. */
-    for (int i = 1; i < n; i++) {
-        fastchart_candle k = parsed[i];
-        int j = i - 1;
-        while (j >= 0 && parsed[j].ts > k.ts) { parsed[j+1] = parsed[j]; j--; }
-        parsed[j+1] = k;
-    }
+	fastchart_sort_candles_by_timestamp(parsed, n);
 
     /* Right-size to n (avoids over-allocation when input had non-numeric
      * rows that got skipped). */
