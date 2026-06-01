@@ -244,9 +244,10 @@ extern zend_class_entry *fastchart_qrcode_ce;
      * by every Chart subclass; ScatterChart and BubbleChart populate \
      * circles, BarChart and StockChart rects, PieChart and SunburstChart \
      * polys, LineChart and AreaChart rects centered on each data point. */ \
-    struct fastchart_image_map_area *image_map_areas; \
-    int n_image_map_areas; \
-    zval config;
+	struct fastchart_image_map_area *image_map_areas; \
+	int n_image_map_areas; \
+	int image_map_areas_cap; \
+	zval config;
 
 /* Base view type. fastchart_obj* is what base setters and shared
  * helpers receive. It deliberately omits zend_object std — concrete

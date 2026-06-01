@@ -117,9 +117,12 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
         ? fastchart_target_color_rgb(t, (int)self->edge_color)
         : pal.border;
 
-    fastchart_reset_image_map_areas((fastchart_obj *)self);
+	fastchart_reset_image_map_areas((fastchart_obj *)self);
+	if (self->n_image_map_entries > 0) {
+		fastchart_reserve_image_map_areas((fastchart_obj *)self, n_slices);
+	}
 
-    int radius = diameter / 2;
+	int radius = diameter / 2;
     double start_deg = -90.0;  /* 12 o'clock */
     for (int i = 0; i < n_slices; i++) {
         double sweep = 360.0 * (slices[i].value / total);
@@ -280,4 +283,3 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
     efree(slice_colors);
     return 0;
 }
-

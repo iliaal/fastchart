@@ -178,11 +178,14 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
     fastchart_draw_x_axis_categorical(t, (fastchart_obj *)self, &plot, &pal, n_categories, label_ptrs);
     if (label_ptrs) efree((void *)label_ptrs);
 
-    fastchart_draw_axis_titles(t, (fastchart_obj *)self, &plot, &pal);
+	fastchart_draw_axis_titles(t, (fastchart_obj *)self, &plot, &pal);
 
-    fastchart_reset_image_map_areas((fastchart_obj *)self);
+	fastchart_reset_image_map_areas((fastchart_obj *)self);
+	if (self->n_image_map_entries > 0) {
+		fastchart_reserve_image_map_areas((fastchart_obj *)self, n_categories);
+	}
 
-    int zero_y = fastchart_y_to_pixel(0.0, &range, &plot);
+	int zero_y = fastchart_y_to_pixel(0.0, &range, &plot);
 
     int slot_w = (plot.x1 - plot.x0) / (n_categories > 0 ? n_categories : 1);
     int slot_pad = slot_w / 6;
@@ -662,4 +665,3 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
     }
     return 0;
 }
-

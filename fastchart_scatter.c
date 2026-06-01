@@ -334,18 +334,20 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
     /* Build the image-map area list from typed points. The href and
      * tooltip pointers borrow from points[i] — same lifetime since
      * the area list is freed/repopulated on every render. */
-    if (self->image_map_areas) {
-        efree(self->image_map_areas);
-        self->image_map_areas = NULL;
-    }
-    self->n_image_map_areas = 0;
+	if (self->image_map_areas) {
+		efree(self->image_map_areas);
+		self->image_map_areas = NULL;
+	}
+	self->n_image_map_areas = 0;
+	self->image_map_areas_cap = 0;
     int href_count = 0;
     for (int i = 0; i < n; i++) {
         if (points[i].href) href_count++;
     }
-    if (href_count > 0) {
-        self->image_map_areas = ecalloc((size_t)href_count, sizeof(fastchart_image_map_area));
-        int k = 0;
+	if (href_count > 0) {
+		self->image_map_areas = ecalloc((size_t)href_count, sizeof(fastchart_image_map_area));
+		self->image_map_areas_cap = href_count;
+		int k = 0;
         for (int i = 0; i < n; i++) {
             if (!points[i].href) continue;
             double frac_x = (xrange.max - xrange.min) > 0

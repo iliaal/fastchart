@@ -248,6 +248,7 @@ void fastchart_push_image_map_poly(fastchart_obj *b, int idx,
  * at the top of draw() so image_map_areas only reflects the most
  * recent render. */
 void fastchart_reset_image_map_areas(fastchart_obj *b);
+void fastchart_reserve_image_map_areas(fastchart_obj *b, int cap);
 
 /* Numeric X axis (ticks + gridlines + labels) for charts that put the
  * value axis on X — currently only horizontal-bar. Mirror of the
