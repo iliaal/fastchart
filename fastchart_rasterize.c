@@ -30,14 +30,18 @@ extern void fastchart_apply_text_overlays(void *plutovg_surface,
                                            const fastchart_text_overlay_t *overlays,
                                            int n_overlays);
 
-/* SSSE3 fast path uses __attribute__((target("ssse3"))) +
+/* x86 SSSE3 uses __attribute__((target("ssse3"))) +
  * __builtin_cpu_supports — both GCC/Clang extensions. MSVC builds
- * (and any compiler that doesn't define __GNUC__) fall through to
- * the scalar path, which is correct, just modestly slower on
- * opaque-row un-premultiply. */
+ * (and any compiler that doesn't define __GNUC__) fall through to the
+ * scalar path. AArch64 NEON is baseline for the architecture, so it
+ * does not need runtime dispatch. */
 #if (defined(__x86_64__) || defined(_M_X64)) && defined(__GNUC__)
 #  define FC_HAVE_X86_SIMD 1
 #  include <immintrin.h>
+#endif
+#if defined(__aarch64__) && (defined(__ARM_NEON) || defined(__ARM_NEON__))
+#  define FC_HAVE_ARM_NEON 1
+#  include <arm_neon.h>
 #endif
 
 /* inv_alpha LUT for un-premultiply: replaces the per-pixel integer
@@ -127,6 +131,30 @@ static int fc_cpu_has_ssse3(void)
 	return cached;
 }
 #endif  /* FC_HAVE_X86_SIMD */
+
+#ifdef FC_HAVE_ARM_NEON
+static int fc_unpremul_row_neon(const unsigned char *src, unsigned char *dst,
+                                 int n_pixels, int *any_translucent)
+{
+	int x = 0;
+	int simd_pixels = n_pixels & ~15;  /* round down to multiple of 16 */
+	for (; x < simd_pixels; x += 16) {
+		uint8x16x4_t bgra = vld4q_u8(src + (size_t)x * 4);
+		if (vminvq_u8(bgra.val[3]) != 255) {
+			return x;
+		}
+
+		uint8x16x4_t rgba;
+		rgba.val[0] = bgra.val[2];
+		rgba.val[1] = bgra.val[1];
+		rgba.val[2] = bgra.val[0];
+		rgba.val[3] = bgra.val[3];
+		vst4q_u8(dst + (size_t)x * 4, rgba);
+	}
+	(void)any_translucent;  /* opaque-only fast path */
+	return x;
+}
+#endif  /* FC_HAVE_ARM_NEON */
 
 /* Scalar tail: process pixels [x_start..n_pixels). Reads BGRA from
  * src+x*4, writes RGBA to dst+x*4. Sets *any_translucent if any pixel
@@ -260,7 +288,9 @@ static int fastchart_rasterize_doc(plutosvg_document_t *doc,
 		const unsigned char *row = src + y * stride;
 		unsigned char       *dst = pix->rgba + (size_t)y * pix->w * 4;
 		int x = 0;
-#ifdef FC_HAVE_X86_SIMD
+#ifdef FC_HAVE_ARM_NEON
+		x = fc_unpremul_row_neon(row, dst, pix->w, &any_translucent);
+#elif defined(FC_HAVE_X86_SIMD)
 		if (use_ssse3) {
 			x = fc_unpremul_row_ssse3(row, dst, pix->w, &any_translucent);
 		}
