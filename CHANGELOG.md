@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Renderer internals were cleaned up without public API changes.** Chart
+  and Symbol render-to-file paths now share filename/format/write helpers,
+  stale libgd-era renderer comments and `SECURITY.md` were updated to match
+  the current SVG → plutovg → libpng/libjpeg/libwebp pipeline, and
+  static-analyzer dead stores were removed from Code128, Funnel, Sunburst,
+  and Vector renderers.
+
 ### Fixed
 
 - **SVG geometry was corrupted under comma-decimal locales.** Every
@@ -92,6 +101,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outputs are unaffected (encode dominates there). The pixel-mapping
   helpers also cache `log10(min)/log10(max)` once per render instead of
   recomputing them per data point on log axes.
+
+- **Large StockChart and image-map cases avoid quadratic work.**
+  `StockChart::setOhlcv()` now uses a stable merge sort with an
+  already-sorted fast path instead of shifting rows through insertion
+  sort on unsorted input. BarChart, PieChart, and ScatterChart image-map
+  rendering now reserves/reuses hotspot capacity instead of growing the
+  area list one slot at a time during render.
 
 ## [1.1.1] - 2026-05-21
 
