@@ -11,7 +11,7 @@
 
   Raster encoder layer. Takes a plain RGBA pixel buffer (top-down,
   pre-multiplied or straight alpha — caller's choice) and produces a
-  PHP smart_str of encoded bytes. Replaces the libgd-based
+  PHP smart_str of encoded bytes. Replaces the former
   fastchart_encode_image() helper.
 
   Each of libpng / libjpeg-turbo / libwebp is independently probed

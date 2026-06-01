@@ -85,7 +85,6 @@ static int fastchart_sunburst_ring_polygon(
     int needed = 2 * (seg + 1);
     if (needed > max_pts) {
         seg = max_pts / 2 - 1;
-        needed = 2 * (seg + 1);
     }
     int n = 0;
     for (int i = 0; i <= seg; i++) {

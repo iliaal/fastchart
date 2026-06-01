@@ -177,8 +177,8 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
             if (!pts[i].valid) continue;
             /* marker_color is a target handle so it flows into
              * fastchart_draw_marker unchanged. Per-point RGB overrides
-             * go through the target's dedup table rather than the raw
-             * gdImageColorAllocate path. */
+             * go through the target's dedup table rather than bypassing
+             * the target layer. */
             int marker_color = color;
             if (series[s].point_colors) {
                 zend_long c = series[s].point_colors[i];
@@ -233,4 +233,3 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
 
     return 0;
 }
-

@@ -139,7 +139,7 @@ int fastchart_text_draw(fastchart_target_t *t,
     /* SVG path. text-anchor handles horizontal alignment so we don't
      * pre-measure; pass the alignment hint through and emit one
      * <text> per line. size_pt -> CSS px at 96 DPI baseline:
-     * px = pt * 4/3. 20% leading matches the GD path's line advance.
+     * px = pt * 4/3. 20% leading matches the measured line advance.
      * Branch on the target's text mode: PATHS flattens to <path>
      * glyphs via FreeType; NATIVE keeps <text>. */
     char family[64];

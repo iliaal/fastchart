@@ -153,7 +153,7 @@ int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,
     /* Walk the module grid. Adjacent dark modules form runs along the
      * x-axis; coalesce them into single rect emissions to reduce the
      * call count by ~3-5x on typical QR symbols (versions 1-10),
-     * which speeds the GD render and shrinks the SVG output as a side
+     * which speeds target emission and shrinks SVG output as a side
      * effect (one <rect> per run instead of one per module). The
      * visible output is identical. */
     for (int y = 0; y < N; y++) {
@@ -176,4 +176,3 @@ int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,
 
     return 0;
 }
-

@@ -450,7 +450,6 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
      * Reject when m < 1: the canvas is too small for the bar pattern
      * at any sane density. */
     int module_px;
-    int quiet_px;
     if (base->quiet_zone < 0) {
         module_px = W / (20 + total_modules);
         if (module_px < 1) {
@@ -459,9 +458,8 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
                 "+ default quiet zone (need at least 1 px per module)", 0);
             return -1;
         }
-        quiet_px = 10 * module_px;
     } else {
-        quiet_px = (int)base->quiet_zone;
+        int quiet_px = (int)base->quiet_zone;
         if (W <= 2 * quiet_px) {
             zend_throw_exception(zend_ce_value_error,
                 "FastChart\\Code128: quiet zone consumes the entire canvas", 0);
@@ -513,12 +511,12 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
      * widths alternate space / bar / space / ... thereafter.
      *
      * Centre the bars on the canvas. With integer-rounded module_px,
-     * bars + 2*quiet_px rarely consume the whole canvas; left-aligning
-     * at quiet_px would dump all the slack on the right edge. The
-     * `quiet_px` value is treated as the MINIMUM quiet zone — actual
-     * quiet on each side is at least quiet_px and may be larger when
-     * the canvas has slack from rounding. Mirrors the QR renderer's
-     * centring convention in fastchart_qrcode.c. */
+     * the bars rarely consume the whole canvas; left-aligning at the
+     * minimum quiet zone would dump all the slack on the right edge.
+     * The configured/default quiet zone is treated as the minimum —
+     * actual quiet on each side may be larger when the canvas has
+     * slack from rounding. Mirrors the QR renderer's centring
+     * convention in fastchart_qrcode.c. */
     int bars_px = total_modules * module_px;
     int x = (W - bars_px) / 2;
     int bar_h = bar_bottom - bar_top + 1;
@@ -549,10 +547,9 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
      * spaces (otherwise FreeType may produce odd glyphs or truncate
      * at NUL — though setData already rejects NUL).
      *
-     * Uses fastchart_text_draw with CENTER alignment so the SVG path
-     * can rely on native text-anchor handling and the GD path can use
-     * the same pre-measure-then-offset logic the rest of the chart
-     * family uses. */
+     * Uses fastchart_text_draw with CENTER alignment so native text
+     * and flattened glyph-path output share the same anchoring
+     * contract. */
     if (text_font && text_strip_h > 0) {
         char buf[C128_MAX_INPUT + 1];
         size_t in_len = ZSTR_LEN(base->data);
@@ -603,4 +600,3 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
 
     return 0;
 }
-

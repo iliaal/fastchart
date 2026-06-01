@@ -20,7 +20,7 @@
   layouts (FASTCHART_BASE_FIELDS vs FASTCHART_SYMBOL_BASE_FIELDS) with
   no common parent type.
 
-  v1.0: the libgd-based fastchart_encode_image() helper retired. Raster
+  v1.0: the former fastchart_encode_image() helper retired. Raster
   outputs go through fastchart_encoder.c (PNG/JPG/WebP via libpng /
   libjpeg-turbo / libwebp) after fastchart_rasterize.c rasterizes the
   SVG document via plutovg.
@@ -39,10 +39,25 @@ int fastchart_resolve_canvas_dims(zend_long width, zend_long height,
                                   zend_long dpi,
                                   int *out_w, int *out_h);
 
+/* Return the missing encoder library name for format 0..2, or NULL
+ * when the requested encoder is available. */
+const char *fastchart_missing_encoder_lib(int format);
+
 /* Map the file extension at the tail of `path` to one of the encoder
  * format ints (0..4). Returns -1 when no recognised extension is
  * present. ASCII-fold; locale-independent.
  * Format codes: 0=PNG, 1=JPEG, 2=WebP, 3=GIF (rejected), 4=AVIF (rejected). */
 int fastchart_format_from_path(const char *path, size_t len);
+
+/* Case-insensitive ASCII check for a `.svg` tail using the same
+ * bounded last-extension parsing as fastchart_format_from_path(). */
+int fastchart_path_ends_with_svg(const char *path, size_t len);
+
+/* Write `payload` to `path` through the Zend stream layer. `where`
+ * prefixes the open-failure message, e.g. "FastChart\\Chart::renderToFile()".
+ * On success, stores the byte count in written_out when non-NULL. */
+int fastchart_write_zstr_to_file(zend_string *path, zend_string *payload,
+                                 const char *where,
+                                 zend_long *written_out);
 
 #endif /* FASTCHART_RENDER_HELPERS_H */

@@ -158,10 +158,8 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
     int nx = cx + (int)((double)(radius - 6) * cos(rad));
     int ny = cy - (int)((double)(radius - 6) * sin(rad));
     /* Needle thickness scales with gauge size — visible on a 1200x800
-     * canvas, not dominant on a 480x320 one. libgd has no proper
-     * thick-AA primitive, so paint the body thick (no AA) then
-     * overdraw a 1px AA spine to soften diagonals. The SVG renderer
-     * AAs at the layer level so the thick stroke suffices. */
+     * canvas, not dominant on a 480x320 one. SVG renderers AA at the
+     * layer level so the thick stroke suffices. */
     double needle_thickness = (double)diameter / 200.0 + 2.0;
     if (needle_thickness < 3.0) needle_thickness = 3.0;
     fastchart_target_line(t, cx, cy, nx, ny,
