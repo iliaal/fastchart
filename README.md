@@ -225,13 +225,13 @@ therefore add the rasterize cost on top of the SVG-only number.
 SVG is sub-millisecond to ~1.5 ms across the board because there's
 no rasterization; the backend appends strings into a `smart_str`.
 The raster encoders split into three bands: JPG fastest (9-15 ms,
-libjpeg-turbo with 4:2:0 subsampling + SSSE3 RGBA-pack), WebP
+libjpeg-turbo with 4:2:0 subsampling + SSSE3/NEON RGBA-pack), WebP
 middle (29-44 ms, libwebp with `WEBP_PRESET_DRAWING` + method=2 +
 multi-thread), PNG slowest (38-53 ms, libpng's deflate dominates).
 All four formats stay under 55 ms at 1080p on one thread.
 
 These numbers reflect the optimization series in v1.1.x (glyph
-outline cache, opaque-detect un-premultiply with SSSE3 shuffle,
+outline cache, opaque-detect un-premultiply with SSSE3/NEON shuffle,
 deferred text overlays, larger FT raster pool); see
 [`optimization.md`](optimization.md) for the per-finding breakdown.
 

@@ -109,6 +109,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rendering now reserves/reuses hotspot capacity instead of growing the
   area list one slot at a time during render.
 
+- **AArch64 builds now have NEON byte-pack fast paths.** The opaque-row
+  un-premultiply path uses NEON interleaved loads/stores for BGRA → RGBA,
+  and JPEG opaque rows use NEON for RGBA → RGB packing. x86 SSSE3
+  dispatch is unchanged. On `gir` (AArch64, PHP 8.4 release build,
+  80-iteration bench), raster p50 improved by 0.1–1.9% and JPEG p50
+  improved by 9.0%, with output byte counts unchanged.
+
 ## [1.1.1] - 2026-05-21
 
 ### Fixed

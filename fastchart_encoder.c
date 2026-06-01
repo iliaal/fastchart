@@ -44,12 +44,15 @@
 #include <string.h>
 #include <stdlib.h>
 
-/* Same GCC/Clang gate as fastchart_rasterize.c — the JPEG opaque-row
- * pack uses __attribute__((target("ssse3"))) + __builtin_cpu_supports.
- * MSVC builds fall through to the scalar path. */
+/* Same SIMD gates as fastchart_rasterize.c: x86 uses SSSE3 runtime
+ * dispatch; AArch64 uses baseline NEON. */
 #if (defined(__x86_64__) || defined(_M_X64)) && defined(__GNUC__)
 #  define FC_ENC_HAVE_X86_SIMD 1
 #  include <immintrin.h>
+#endif
+#if defined(__aarch64__) && (defined(__ARM_NEON) || defined(__ARM_NEON__))
+#  define FC_ENC_HAVE_ARM_NEON 1
+#  include <arm_neon.h>
 #endif
 
 #ifdef FC_ENC_HAVE_X86_SIMD
@@ -89,6 +92,26 @@ static int fc_enc_pack_rgba_to_rgb_ssse3(const uint8_t *src, uint8_t *dst,
         _mm_storeu_si128((__m128i *)(dst + (size_t)x * 3), rgb);
     }
     return simd_end;
+}
+#endif
+
+#ifdef FC_ENC_HAVE_ARM_NEON
+/* Keep the NEON helper outside libjpeg's setjmp frame; AArch64 GCC can
+ * otherwise warn about clobbered vector temporaries when it inlines this. */
+__attribute__((noinline))
+static int fc_enc_pack_rgba_to_rgb_neon(const uint8_t *src, uint8_t *dst,
+                                         int n_pixels)
+{
+	int simd_end = n_pixels & ~15;  /* 16 RGBA pixels -> 48 RGB bytes */
+	for (int x = 0; x < simd_end; x += 16) {
+		uint8x16x4_t rgba = vld4q_u8(src + (size_t)x * 4);
+		uint8x16x3_t rgb;
+		rgb.val[0] = rgba.val[0];
+		rgb.val[1] = rgba.val[1];
+		rgb.val[2] = rgba.val[2];
+		vst3q_u8(dst + (size_t)x * 3, rgb);
+	}
+	return simd_end;
 }
 #endif
 
@@ -273,18 +296,20 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 
 	/* Per-row RGBA -> RGB strip. Two paths:
 	 *   - opaque (pix->has_alpha == 0, set by fastchart_rasterize_doc's
-	 *     opaque-detect): SSSE3 _mm_shuffle_epi8 on x86_64 packs 4
-	 *     pixels per instruction; scalar straight copy on the rest.
+	 *     opaque-detect): SSSE3 on x86_64 or NEON on AArch64 packs
+	 *     pixels in vector chunks; scalar straight copy handles the rest.
 	 *   - translucent: scalar alpha-flatten over white. JPEG has no
 	 *     alpha channel, so transparent regions show through as the
 	 *     composited background. */
-	rgb_row = emalloc((size_t)pix->w * 3 + 16);  /* +16 trailing slack for SSE store overrun */
+	rgb_row = emalloc((size_t)pix->w * 3 + 16);  /* +16 trailing slack for x86 SSE store overrun */
 	for (int y = 0; y < pix->h; y++) {
 		const uint8_t *src = pix->rgba + (size_t)y * pix->w * 4;
 		uint8_t       *dst = rgb_row;
 		int x = 0;
 		if (!pix->has_alpha) {
-#ifdef FC_ENC_HAVE_X86_SIMD
+#ifdef FC_ENC_HAVE_ARM_NEON
+			x = fc_enc_pack_rgba_to_rgb_neon(src, dst, pix->w);
+#elif defined(FC_ENC_HAVE_X86_SIMD)
 			if (fc_enc_cpu_has_ssse3()) {
 				x = fc_enc_pack_rgba_to_rgb_ssse3(src, dst, pix->w);
 			}
