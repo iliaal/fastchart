@@ -29,13 +29,16 @@
 
 /* Portable thread-safe gmtime + UTC mktime. POSIX provides
  * gmtime_r and timegm; MSVC ships gmtime_s (arg order swapped)
- * and _mkgmtime. Wrap so the rest of the file stays uniform. */
-static inline void fc_gmtime(time_t t, struct tm *out)
+ * and _mkgmtime. Wrap so the rest of the file stays uniform.
+ * Returns false when the timestamp can't be broken down (year
+ * overflows struct tm's int tm_year); on failure *out is left
+ * indeterminate, so callers must not read it. */
+static inline bool fc_gmtime(time_t t, struct tm *out)
 {
 #if defined(_WIN32) && !defined(__MINGW32__)
-    gmtime_s(out, &t);
+    return gmtime_s(out, &t) == 0;
 #else
-    gmtime_r(&t, out);
+    return gmtime_r(&t, out) != NULL;
 #endif
 }
 
@@ -2241,12 +2244,14 @@ void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
 
     /* Calendar-aware stride: emit ticks at unit boundaries (week
      * starts, month starts, etc.) instead of evenly-spaced dividers
-     * across the range. Reverts to auto-density when every == 0. */
-    if (chart->date_axis_every > 0) {
+     * across the range. Reverts to auto-density when every == 0.
+     * fc_gmtime fails when t_min's year overflows struct tm — candle
+     * timestamps arrive unclamped from setOhlcv, so reading tm_buf
+     * after a failed break-down would be UB. Fall through to the
+     * numeric auto-density path below in that case. */
+    struct tm tm_buf;
+    if (chart->date_axis_every > 0 && fc_gmtime((time_t)t_min, &tm_buf)) {
         zend_long every = chart->date_axis_every;
-        struct tm tm_buf;
-        time_t tt = (time_t)t_min;
-        fc_gmtime(tt, &tm_buf);
         /* Snap start to the unit boundary at-or-after t_min. */
         switch (chart->date_axis_unit) {
             case FASTCHART_DATE_DAY:
@@ -2303,19 +2308,19 @@ void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
                                            buf, sizeof(buf));
                 } else {
                     struct tm tm_lbl;
-                    fc_gmtime(cur, &tm_lbl);
-                    const char *fmt;
-                    switch (chart->date_axis_unit) {
-                        case FASTCHART_DATE_YEAR:    fmt = "%Y";       break;
-                        case FASTCHART_DATE_QUARTER: fmt = "%Y-Q";     break;
-                        case FASTCHART_DATE_MONTH:   fmt = "%Y-%m";    break;
-                        default:                     fmt = "%Y-%m-%d"; break;
-                    }
-                    if (chart->date_axis_unit == FASTCHART_DATE_QUARTER) {
+                    if (!fc_gmtime(cur, &tm_lbl)) {
+                        snprintf(buf, sizeof(buf), "%lld", (long long)cur);
+                    } else if (chart->date_axis_unit == FASTCHART_DATE_QUARTER) {
                         snprintf(buf, sizeof(buf), "%d-Q%d",
                                  tm_lbl.tm_year + 1900,
                                  (tm_lbl.tm_mon / 3) + 1);
                     } else {
+                        const char *fmt;
+                        switch (chart->date_axis_unit) {
+                            case FASTCHART_DATE_YEAR:  fmt = "%Y";       break;
+                            case FASTCHART_DATE_MONTH: fmt = "%Y-%m";    break;
+                            default:                   fmt = "%Y-%m-%d"; break;
+                        }
                         strftime(buf, sizeof(buf), fmt, &tm_lbl);
                     }
                 }
@@ -2371,9 +2376,11 @@ void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
                                    buf, sizeof(buf));
         } else {
             struct tm tm_buf;
-            time_t tt = (time_t)ts;
-            fc_gmtime(tt, &tm_buf);
-            strftime(buf, sizeof(buf), "%Y-%m-%d", &tm_buf);
+            if (fc_gmtime((time_t)ts, &tm_buf)) {
+                strftime(buf, sizeof(buf), "%Y-%m-%d", &tm_buf);
+            } else {
+                snprintf(buf, sizeof(buf), "%lld", (long long)ts);
+            }
         }
 
         if (angle == 0) {
