@@ -45,9 +45,12 @@ foreach ([
         "\n";
 }
 
-/* Case 2: same extreme input in NATIVE text mode. The numeric
- * fallback emits the raw integer timestamp as the label, so a long
- * digit run appears inside a <text> element. */
+/* Case 2: same extreme input in NATIVE text mode. On 64-bit PHP the
+ * timestamp overflows struct tm, so the numeric fallback emits the raw
+ * integer as the label (a long digit run inside a <text>) — this is the
+ * discriminator that catches the unfixed indeterminate-tm read. On
+ * 32-bit PHP zend_long == time_t == 32-bit, so PHP_INT_MAX is a valid
+ * 2038 timestamp and the overflow is unreachable; assert clean render. */
 $svg2 = (new FastChart\StockChart(600, 300))
     ->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE)
     ->setOhlcv([
@@ -56,8 +59,10 @@ $svg2 = (new FastChart\StockChart(600, 300))
     ])
     ->setDateAxisStride(FastChart\Chart::DATE_DAY, 1)
     ->renderSvg();
-echo "extreme_numeric_fallback: ",
-    (preg_match('/<text[^>]*>[^<]*\d{16,}/', $svg2) ? "ok" : "BAD"), "\n";
+$fallback_ok = PHP_INT_SIZE >= 8
+    ? (bool) preg_match('/<text[^>]*>[^<]*\d{16,}/', $svg2)
+    : (strlen($svg2) > 500 && strpos($svg2, '</svg>') !== false);
+echo "extreme_numeric_fallback: ", ($fallback_ok ? "ok" : "BAD"), "\n";
 
 /* Sanity: normal-range timestamps still take the calendar path and
  * emit real date labels. 1700000000 == 2023-11-14 UTC. */
