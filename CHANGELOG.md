@@ -76,6 +76,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `isfinite` guards `MarimekkoChart::setColumns` and
   `VectorChart::setVectors` already carry (`fastchart_sunburst.c`).
 
+- **The calendar-aware time-axis stride read an indeterminate `struct
+  tm` on out-of-range timestamps.** With `setDateAxisStride()` active,
+  the stride path broke `t_min` down via `gmtime_r` before snapping to a
+  unit boundary, but ignored the `NULL` `gmtime_r` returns when the year
+  overflows `struct tm`'s `int tm_year`. Candle timestamps arrive
+  unclamped from `setOhlcv()`, so a `PHP_INT_MAX` timestamp left the
+  `struct tm` indeterminate and the following `timegm()` / `strftime()`
+  read uninitialised members — undefined behaviour. The adjacent
+  numeric/auto-density path already clamped; the calendar branch did not.
+  `fc_gmtime` now reports break-down failure, the stride branch falls
+  through to the numeric path on failure, and both label paths fall back
+  to a raw-integer label rather than a garbage date (`fastchart_axis.c`).
+
 - **Hardening.** The un-premultiply lookup table is now pre-warmed at
   `MINIT` rather than lazily on first rasterize, closing a ZTS data race
   on its unsynchronised ready flag (`fastchart_rasterize.c`).
