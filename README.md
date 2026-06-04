@@ -392,4 +392,4 @@ SPDX: `(BSD-3-Clause AND MIT)`.
 
 ---
 
-[Follow @iliaa on X](https://x.com/iliaa) • [Blog](https://ilia.ws) • If this saved you a chart-rendering microservice, ⭐ star it!
+[Follow @iliaa on X](https://x.com/iliaa) • [Blog](https://ilia.ws/blog/fastchart-1-x-why-i-rewrote-it-after-0-2-release) • If this saved you a chart-rendering microservice, ⭐ star it!
