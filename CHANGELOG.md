@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-06-04
+
 ### Changed
 
 - **Renderer internals were cleaned up without public API changes.** Chart
@@ -101,6 +103,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   zero remaining-area denominator (`fastchart_treemap.c`), and the stock
   moving-average legend arrays size to `FASTCHART_MAX_SMA` instead of a
   literal `8` so they track the cap (`fastchart_stock.c`).
+
+- **In-tree builds used the wrong source directory.** `config.m4`
+  referenced `abs_srcdir` when locating the vendored plutovg/plutosvg
+  sources, which is unset for an in-tree (static-into-php-src) build and
+  left the compiler unable to find the vendored headers. It now uses
+  `$ext_srcdir`, matching the line above it, so building fastchart inside
+  a php-src tree works the same as a standalone `phpize` build. Thanks to
+  Marc (@pyc) for the fix.
 
 ### Performance
 
@@ -966,7 +976,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.1.1...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.1.5...HEAD
+[1.1.5]: https://github.com/iliaal/fastchart/releases/tag/1.1.5
 [1.1.1]: https://github.com/iliaal/fastchart/releases/tag/1.1.1
 [1.1.0]: https://github.com/iliaal/fastchart/releases/tag/1.1.0
 [1.0.2]: https://github.com/iliaal/fastchart/releases/tag/1.0.2

@@ -202,37 +202,40 @@ therefore add the rasterize cost on top of the SVG-only number.
 
 | Chart        | SVG ms | PNG ms | WebP ms | JPG ms |
 |--------------|-------:|-------:|--------:|-------:|
-| AreaChart    |   0.85 |  45.19 |   34.04 |  11.45 |
-| BarChart     |   1.55 |  43.54 |   35.18 |  12.35 |
-| BoxPlot      |   0.62 |  40.26 |   30.74 |   9.95 |
-| BubbleChart  |   0.32 |  52.84 |   44.18 |  14.84 |
-| ContourChart |   0.39 |  48.46 |   41.14 |  12.97 |
-| Funnel       |   0.60 |  40.15 |   31.59 |   9.53 |
-| GanttChart   |   0.82 |  40.08 |   30.98 |  10.22 |
-| GaugeChart   |   0.16 |  44.75 |   33.78 |  10.19 |
-| Heatmap      |   0.21 |  43.28 |   35.62 |  11.85 |
-| LineChart    |   0.69 |  45.45 |   37.23 |  11.81 |
-| LinearMeter  |   0.16 |  38.64 |   29.10 |   8.98 |
-| PieChart     |   0.40 |  44.42 |   33.84 |  11.75 |
-| PolarChart   |   0.17 |  47.60 |   37.10 |  11.48 |
-| RadarChart   |   0.48 |  47.89 |   36.48 |  13.39 |
-| ScatterChart |   0.67 |  43.05 |   32.48 |  10.38 |
-| StockChart   |   1.22 |  46.00 |   40.86 |  14.19 |
-| SurfaceChart |   0.29 |  40.09 |   34.50 |  10.35 |
-| Treemap      |   0.73 |  39.76 |   31.74 |   9.74 |
-| Waterfall    |   0.68 |  39.21 |   32.05 |  10.08 |
+| AreaChart    |   0.12 |  45.19 |   34.04 |  11.45 |
+| BarChart     |   0.22 |  43.54 |   35.18 |  12.35 |
+| BoxPlot      |   0.09 |  40.26 |   30.74 |   9.95 |
+| BubbleChart  |   0.06 |  52.84 |   44.18 |  14.84 |
+| ContourChart |   0.11 |  48.46 |   41.14 |  12.97 |
+| Funnel       |   0.08 |  40.15 |   31.59 |   9.53 |
+| GanttChart   |   0.12 |  40.08 |   30.98 |  10.22 |
+| GaugeChart   |   0.02 |  44.75 |   33.78 |  10.19 |
+| Heatmap      |   0.05 |  43.28 |   35.62 |  11.85 |
+| LineChart    |   0.11 |  45.45 |   37.23 |  11.81 |
+| LinearMeter  |   0.02 |  38.64 |   29.10 |   8.98 |
+| PieChart     |   0.06 |  44.42 |   33.84 |  11.75 |
+| PolarChart   |   0.02 |  47.60 |   37.10 |  11.48 |
+| RadarChart   |   0.06 |  47.89 |   36.48 |  13.39 |
+| ScatterChart |   0.11 |  43.05 |   32.48 |  10.38 |
+| StockChart   |   0.20 |  46.00 |   40.86 |  14.19 |
+| SurfaceChart |   0.06 |  40.09 |   34.50 |  10.35 |
+| Treemap      |   0.11 |  39.76 |   31.74 |   9.74 |
+| Waterfall    |   0.09 |  39.21 |   32.05 |  10.08 |
 
-SVG is sub-millisecond to ~1.5 ms across the board because there's
-no rasterization; the backend appends strings into a `smart_str`.
+SVG stays well under a quarter-millisecond across the board (0.02 to
+0.22 ms) because there's no rasterization; the backend appends strings
+into a `smart_str` via an allocation-free integer/fraction number
+emitter.
 The raster encoders split into three bands: JPG fastest (9-15 ms,
 libjpeg-turbo with 4:2:0 subsampling + SSSE3/NEON RGBA-pack), WebP
 middle (29-44 ms, libwebp with `WEBP_PRESET_DRAWING` + method=2 +
 multi-thread), PNG slowest (38-53 ms, libpng's deflate dominates).
 All four formats stay under 55 ms at 1080p on one thread.
 
-These numbers reflect the optimization series in v1.1.x (glyph
-outline cache, opaque-detect un-premultiply with SSSE3/NEON shuffle,
-deferred text overlays, larger FT raster pool); see
+These numbers reflect the optimization series in v1.1.x (allocation-free
+SVG number formatting, glyph outline cache, opaque-detect un-premultiply
+with SSSE3/NEON shuffle, deferred text overlays, larger FT raster pool);
+see
 [`optimization.md`](optimization.md) for the per-finding breakdown.
 
 Repro the numbers locally:
