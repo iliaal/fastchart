@@ -45,13 +45,56 @@ jobs:
           php /tmp/pie.phar repository:add path .
           php /tmp/pie.phar build iliaal/fastchart:*@dev --enable-fastchart
 
+  musl-smoke:
+    name: musl load smoke (Alpine + clang)
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v6
+      # Build the shared extension under musl + clang (the static-php-cli
+      # consumer's toolchain family) and confirm php can dlopen it. The
+      # glibc matrix can't see load failures rooted in libgcc/compiler-rt
+      # symbols that don't resolve off-glibc. checkout runs on the glibc
+      # host; the build runs inside the Alpine container via docker run so
+      # the musl image needs no node (Alpine + actions/checkout don't mix).
+      - name: Build + dlopen smoke in Alpine
+        run: |
+          # --enable-fastchart-dev holds the same -Werror -Wextra
+          # -Wstrict-prototypes bar as the glibc lanes (verified clean on
+          # clang + musl). No linux-headers package needed: vendored
+          # plutovg resolves PATH_MAX from <limits.h>, not the kernel's
+          # <linux/limits.h>.
+          docker run --rm -v "$PWD":/src -w /src php:8.3-alpine sh -ec '
+            apk add --no-cache build-base clang autoconf pkgconf binutils \
+              freetype-dev libpng-dev libjpeg-turbo-dev libwebp-dev
+            export CC=clang
+            phpize
+            ./configure --enable-fastchart --enable-fastchart-dev
+            make -j4
+            php -d extension="$(pwd)/modules/fastchart.so" --ri fastchart
+            if nm modules/fastchart.so | grep -E "__cpu_model|__cpu_indicator_init"; then
+              echo "::error::fastchart.so references libgcc cpu-feature symbols; breaks static/musl/zig-cc dlopen (iliaal/fastchart#6)"
+              exit 1
+            fi
+            echo "musl dlopen + symbol audit clean"
+          '
+
   linux:
-    name: PHP ${{ matrix.php }} - Linux
+    name: PHP ${{ matrix.php }} (${{ matrix.cc }}) - Linux
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         php: ['8.3', '8.4', '8.5']
+        cc: ['gcc']
+        # One clang lane: clang's diagnostics differ from gcc's and catch
+        # warnings/UB the gcc matrix misses. It does NOT catch the
+        # static/musl dlopen class on its own (a clang glibc build bundles
+        # the same symbols a gcc build does) — the symbol-audit step below
+        # and the musl-smoke job cover that.
+        include:
+          - php: '8.4'
+            cc: 'clang'
 
     steps:
       - uses: actions/checkout@v6
@@ -60,7 +103,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev pkg-config
+            clang libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev pkg-config
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -71,13 +114,31 @@ jobs:
 
       - name: Build extension
         run: |
+          export CC=${{ matrix.cc }}
           phpize
           ./configure --enable-fastchart --enable-fastchart-dev
           WARNINGS=$(make -j$(nproc) 2>&1 | tee /dev/stderr | grep -c 'warning:' || true)
           if [ "$WARNINGS" -gt 0 ]; then
-            echo "::error::Build produced $WARNINGS warning(s)"
+            echo "::error::Build produced $WARNINGS warning(s) with ${{ matrix.cc }}"
             exit 1
           fi
+
+      - name: Guard against non-static-linkable runtime symbols
+        run: |
+          # __builtin_cpu_supports / __builtin_cpu_init reference libgcc's
+          # __cpu_model and __cpu_indicator_init. On glibc the compiler
+          # bundles them into the .so so it loads here, but they go
+          # unresolved under fully-static / musl / zig-cc links, so the
+          # object fails to dlopen downstream (static-php-cli) with an
+          # undefined-symbol error and `php --ri` exits non-zero. Their
+          # presence in the object at all is the tell, regardless of
+          # compiler. Detect CPU features with __get_cpuid from <cpuid.h>
+          # instead. Reported in iliaal/fastchart#6.
+          if nm modules/fastchart.so | grep -E '__cpu_model|__cpu_indicator_init'; then
+            echo "::error::fastchart.so references libgcc cpu-feature symbols (__builtin_cpu_supports?); breaks static/musl/zig-cc dlopen — use __get_cpuid"
+            exit 1
+          fi
+          echo "symbol audit: no libgcc cpu-feature symbols"
 
       - name: Run tests
         run: |
