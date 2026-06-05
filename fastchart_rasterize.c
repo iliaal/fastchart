@@ -30,14 +30,18 @@ extern void fastchart_apply_text_overlays(void *plutovg_surface,
                                            const fastchart_text_overlay_t *overlays,
                                            int n_overlays);
 
-/* x86 SSSE3 uses __attribute__((target("ssse3"))) +
- * __builtin_cpu_supports — both GCC/Clang extensions. MSVC builds
- * (and any compiler that doesn't define __GNUC__) fall through to the
- * scalar path. AArch64 NEON is baseline for the architecture, so it
- * does not need runtime dispatch. */
+/* x86 SSSE3 worker fns carry __attribute__((target("ssse3"))); runtime
+ * dispatch detects the feature via raw CPUID (__get_cpuid from
+ * <cpuid.h>), NOT __builtin_cpu_supports. The builtin pulls in libgcc's
+ * __cpu_model / __cpu_indicator_init, which are absent or unexported in
+ * fully-static / musl / zig-cc builds (e.g. static-php-cli): the shared
+ * object then fails to dlopen with an undefined-symbol error. CPUID is
+ * emitted inline and needs no runtime support symbols. MSVC (no __GNUC__)
+ * falls through to scalar. AArch64 NEON is baseline, no dispatch. */
 #if (defined(__x86_64__) || defined(_M_X64)) && defined(__GNUC__)
 #  define FC_HAVE_X86_SIMD 1
 #  include <immintrin.h>
+#  include <cpuid.h>
 #endif
 #if defined(__aarch64__) && (defined(__ARM_NEON) || defined(__ARM_NEON__))
 #  define FC_HAVE_ARM_NEON 1
@@ -125,8 +129,9 @@ static int fc_cpu_has_ssse3(void)
 {
 	static int cached = -1;
 	if (cached < 0) {
-		__builtin_cpu_init();
-		cached = __builtin_cpu_supports("ssse3") ? 1 : 0;
+		unsigned int eax, ebx, ecx, edx;
+		cached = (__get_cpuid(1, &eax, &ebx, &ecx, &edx)
+		          && (ecx & bit_SSSE3)) ? 1 : 0;
 	}
 	return cached;
 }

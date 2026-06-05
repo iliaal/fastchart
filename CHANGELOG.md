@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The extension failed to load under fully-static / musl / zig-cc
+  builds on x86_64.** The SSSE3 runtime dispatch added in 1.1.5 detected
+  the CPU feature with `__builtin_cpu_supports`, which references
+  libgcc's `__cpu_model` / `__cpu_indicator_init`. Those symbols are
+  bundled into the shared object on ordinary glibc builds but left
+  unresolved under static / musl / zig-cc links, so `dlopen` of
+  `fastchart.so` aborted with an undefined-symbol error and
+  `php --ri fastchart` exited non-zero on every PHP version (reported via
+  static-php-cli in issue #6). SSSE3 is now detected with `__get_cpuid`
+  from `<cpuid.h>`, which emits the `cpuid` instruction inline and needs
+  no runtime support symbols (`fastchart_rasterize.c`,
+  `fastchart_encoder.c`).
+
 ## [1.1.5] - 2026-06-04
 
 ### Changed

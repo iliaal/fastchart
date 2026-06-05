@@ -45,10 +45,13 @@
 #include <stdlib.h>
 
 /* Same SIMD gates as fastchart_rasterize.c: x86 uses SSSE3 runtime
- * dispatch; AArch64 uses baseline NEON. */
+ * dispatch via raw CPUID (see the rationale there — __builtin_cpu_supports
+ * drags in libgcc's __cpu_model and breaks static/musl/zig dlopen);
+ * AArch64 uses baseline NEON. */
 #if (defined(__x86_64__) || defined(_M_X64)) && defined(__GNUC__)
 #  define FC_ENC_HAVE_X86_SIMD 1
 #  include <immintrin.h>
+#  include <cpuid.h>
 #endif
 #if defined(__aarch64__) && (defined(__ARM_NEON) || defined(__ARM_NEON__))
 #  define FC_ENC_HAVE_ARM_NEON 1
@@ -60,8 +63,9 @@ static int fc_enc_cpu_has_ssse3(void)
 {
     static int cached = -1;
     if (cached < 0) {
-        __builtin_cpu_init();
-        cached = __builtin_cpu_supports("ssse3") ? 1 : 0;
+        unsigned int eax, ebx, ecx, edx;
+        cached = (__get_cpuid(1, &eax, &ebx, &ecx, &edx)
+                  && (ecx & bit_SSSE3)) ? 1 : 0;
     }
     return cached;
 }
