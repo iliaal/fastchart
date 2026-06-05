@@ -20,8 +20,8 @@ PHP_ARG_WITH(fastchart-static-codecs, prefix containing static-built codec libs,
 if test "$PHP_FASTCHART" != "no"; then
 
   PHP_VERSION_ID=$($PHP_CONFIG --vernum)
-  if test "$PHP_VERSION_ID" -lt "80300"; then
-    AC_MSG_ERROR([fastchart requires PHP 8.3.0 or later (found $PHP_VERSION_ID)])
+  if test "$PHP_VERSION_ID" -lt "80100"; then
+    AC_MSG_ERROR([fastchart requires PHP 8.1.0 or later (found $PHP_VERSION_ID)])
   fi
 
   dnl ----- pkg-config-resolved deps ---------------------------------------

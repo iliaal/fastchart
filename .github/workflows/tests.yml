@@ -85,7 +85,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.3', '8.4', '8.5']
+        php: ['8.1', '8.2', '8.3', '8.4', '8.5']
         cc: ['gcc']
         # One clang lane: clang's diagnostics differ from gcc's and catch
         # warnings/UB the gcc matrix misses. It does NOT catch the
@@ -291,7 +291,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.3', '8.4']
+        php: ['8.1', '8.2', '8.3', '8.4']
 
     steps:
       - uses: actions/checkout@v6

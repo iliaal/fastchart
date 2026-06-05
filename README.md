@@ -79,7 +79,7 @@ php -d extension=./modules/fastchart.so \
 
 ## Requirements
 
-- PHP 8.3 or later (NTS or ZTS).
+- PHP 8.1 or later (NTS or ZTS).
 - **FreeType** development headers (`libfreetype-dev` /
   `freetype-devel`). Required, since text rendering depends on FreeType.
 - **libpng / libjpeg-turbo / libwebp** development headers. Each is

@@ -92,6 +92,20 @@ static inline zend_class_entry *zend_register_internal_class_with_flags(
 }
 #endif
 
+/* PHP 8.2 compat shim for zend_declare_typed_class_constant (added in
+ * 8.3). gen_stub.php emits it for any typed class constant (the stub's
+ * `public const int FOO = N;` enums). 8.2 has no typed class constants,
+ * so register an untyped one with the same value and drop the type. */
+#if PHP_VERSION_ID < 80300
+static zend_always_inline zend_class_constant *zend_declare_typed_class_constant(
+    zend_class_entry *ce, zend_string *name, zval *value,
+    int flags, zend_string *doc_comment, zend_type type)
+{
+    (void) type;
+    return zend_declare_class_constant_ex(ce, name, value, flags, doc_comment);
+}
+#endif
+
 extern zend_class_entry *fastchart_chart_ce;
 extern zend_class_entry *fastchart_line_chart_ce;
 extern zend_class_entry *fastchart_area_chart_ce;
