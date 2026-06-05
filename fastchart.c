@@ -6078,11 +6078,11 @@ ZEND_METHOD(FastChart_PolarChart, setSeries)
             (slot_)->angles = emalloc((size_t)_np * sizeof(double));     \
             (slot_)->radii  = emalloc((size_t)_np * sizeof(double));     \
             int _k = 0;                                                  \
-            zval *_p;                                                    \
-            ZEND_HASH_FOREACH_VAL(_dh, _p) {                             \
-                if (Z_TYPE_P(_p) != IS_ARRAY) continue;                  \
-                zval *_za = zend_hash_index_find(Z_ARRVAL_P(_p), 0);     \
-                zval *_zr = zend_hash_index_find(Z_ARRVAL_P(_p), 1);     \
+            zval *_pv;                                                    \
+            ZEND_HASH_FOREACH_VAL(_dh, _pv) {                             \
+                if (Z_TYPE_P(_pv) != IS_ARRAY) continue;                  \
+                zval *_za = zend_hash_index_find(Z_ARRVAL_P(_pv), 0);     \
+                zval *_zr = zend_hash_index_find(Z_ARRVAL_P(_pv), 1);     \
                 if (!_za || !_zr) continue;                              \
                 double _a, _r;                                           \
                 if (fastchart_zval_to_double(_za, &_a) != 0) continue;   \
