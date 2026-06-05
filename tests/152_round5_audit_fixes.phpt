@@ -125,14 +125,19 @@ $disk = file_get_contents($tmp_jpg);
 echo "chart_renderToFile_uses_jpegQuality: ",
     (abs(strlen($ram) - strlen($disk)) < 50 ? "ok" : "fail"), "\n";
 
-/* Explicit quality argument still works and overrides the setter. */
+/* Explicit quality argument still works and overrides the setter.
+ * clearstatcache() before every filesize() read: PHP 8.2 does not
+ * invalidate the stat cache when renderToFile() overwrites a path, so a
+ * stale size from the previous write would leak in (8.3+ auto-clears). */
 $c->renderToFile($tmp_jpg, 90);
+clearstatcache();
 $disk_q90 = filesize($tmp_jpg);
 echo "chart_explicit_quality_wins: ",
     ($disk_q90 > strlen($disk) * 2 ? "ok" : "fail"), "\n";
 
 /* Explicit quality argument that matches setter produces same output. */
 $c->renderToFile($tmp_jpg, 1);
+clearstatcache();
 echo "chart_explicit_quality_1: ",
     (abs(filesize($tmp_jpg) - strlen($ram)) < 50 ? "ok" : "fail"), "\n";
 
@@ -156,11 +161,13 @@ $q = (new FastChart\QrCode(200, 200))
     ->setJpegQuality(1);
 $ram_q = $q->renderJpeg();
 $q->renderToFile($tmp_jpg);
+clearstatcache();
 echo "symbol_renderToFile_uses_jpegQuality: ",
     (abs(strlen($ram_q) - filesize($tmp_jpg)) < 50 ? "ok" : "fail"), "\n";
 
 /* Symbol explicit quality wins. */
 $q->renderToFile($tmp_jpg, 90);
+clearstatcache();
 echo "symbol_explicit_quality_wins: ",
     (filesize($tmp_jpg) > strlen($ram_q) * 2 ? "ok" : "fail"), "\n";
 
