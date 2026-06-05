@@ -7,20 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-06-05
+
 ### Fixed
 
-- **The extension failed to load under fully-static / musl / zig-cc
-  builds on x86_64.** The SSSE3 runtime dispatch added in 1.1.5 detected
-  the CPU feature with `__builtin_cpu_supports`, which references
-  libgcc's `__cpu_model` / `__cpu_indicator_init`. Those symbols are
-  bundled into the shared object on ordinary glibc builds but left
-  unresolved under static / musl / zig-cc links, so `dlopen` of
-  `fastchart.so` aborted with an undefined-symbol error and
-  `php --ri fastchart` exited non-zero on every PHP version (reported via
-  static-php-cli in issue #6). SSSE3 is now detected with `__get_cpuid`
-  from `<cpuid.h>`, which emits the `cpuid` instruction inline and needs
-  no runtime support symbols (`fastchart_rasterize.c`,
-  `fastchart_encoder.c`).
+- SSSE3 detection now uses `__get_cpuid` instead of
+  `__builtin_cpu_supports`; the builtin pulled in libgcc `__cpu_model`
+  and broke `zig cc` and static-musl builds (#6).
+- Vendored plutovg uses `<limits.h>` for `PATH_MAX` instead of
+  `<linux/limits.h>`, fixing the build on musl/Alpine without
+  `linux-headers`.
 
 ## [1.1.5] - 2026-06-04
 
@@ -991,7 +987,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.1.5...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.1.6...HEAD
+[1.1.6]: https://github.com/iliaal/fastchart/releases/tag/1.1.6
 [1.1.5]: https://github.com/iliaal/fastchart/releases/tag/1.1.5
 [1.1.1]: https://github.com/iliaal/fastchart/releases/tag/1.1.1
 [1.1.0]: https://github.com/iliaal/fastchart/releases/tag/1.1.0
