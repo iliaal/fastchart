@@ -7,6 +7,8 @@ version_macro: PHP_FASTCHART_VERSION
 version_file: php_fastchart.h
 repo: iliaal/fastchart
 build_matrix:
+  - PHP-8.1
+  - PHP-8.2
   - PHP-8.3
   - PHP-8.4
   - PHP-8.5
