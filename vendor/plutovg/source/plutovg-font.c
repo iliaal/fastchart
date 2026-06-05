@@ -697,10 +697,14 @@ plutovg_font_face_t* plutovg_font_face_cache_get(plutovg_font_face_cache_t* cach
 #include <unistd.h>
 #include <dirent.h>
 
-#ifdef __linux__
-#include <linux/limits.h>
-#else
+/* fastchart local patch (re-apply on plutovg re-vendor): upstream guards
+ * this with #ifdef __linux__ -> <linux/limits.h>, a kernel UAPI header
+ * that musl/Alpine lack without the linux-headers package. Plain
+ * <limits.h> defines PATH_MAX on glibc and musl alike; the fallback
+ * covers any libc that omits it. */
 #include <limits.h>
+#ifndef PATH_MAX
+#define PATH_MAX 4096
 #endif
 
 #include <sys/mman.h>
