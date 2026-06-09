@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GanttChart::setTimeRange()` honors the documented null-side
   auto-fit; a null bound was stored as 0, so start-only threw and
   end-only anchored the axis at 1970.
+- All-negative `AreaChart` data now keeps 0 in the axis range; the
+  fill previously anchored at the axis max (the inverse of
+  fill-to-zero) because only positive data was zero-anchored.
 
 ## [1.1.6] - 2026-06-05
 
