@@ -440,7 +440,13 @@ int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
 	}
 	picture.width  = pix->w;
 	picture.height = pix->h;
-	picture.use_argb = 0;
+	/* Lossless must import straight into the ARGB plane: with
+	 * use_argb == 0 libwebp converts RGBA to YUV420 at import time
+	 * (4:2:0 chroma decimation — lossy per webp/encode.h), and VP8L
+	 * would encode the degraded pixels. Lossy modes keep the YUV
+	 * import; it is their native fast path and the opaque-detect
+	 * note below depends on it. */
+	picture.use_argb = (mode == FASTCHART_WEBP_LOSSLESS);
 
 	/* Always import RGBA — no manual RGB pack. When the input is
 	 * opaque (pix->has_alpha == 0, set by fastchart_rasterize_doc's
