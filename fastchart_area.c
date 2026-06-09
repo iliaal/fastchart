@@ -56,14 +56,21 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
     int seen = 0;
 
     if (stacked) {
+        /* The layer polygons span [cum, cum + v] (see the draw loop
+         * below), so the axis range must cover every partial
+         * cumulative sum — not just the per-category total. Negative
+         * values pull partials below zero; folding only the final sum
+         * would clamp those layers onto the baseline. */
         for (int i = 0; i < max_len; i++) {
-            double sum = 0;
+            double cum = 0;
             for (int s = 0; s < n_series; s++) {
                 double v = area_read_value(&series[s], i);
-                if (!isnan(v)) sum += v;
+                if (isnan(v)) continue;
+                cum += v;
+                if (cum < dmin) dmin = cum;
+                if (cum > dmax) dmax = cum;
             }
-            if (!seen) { dmin = 0; dmax = sum; seen = 1; }
-            else if (sum > dmax) dmax = sum;
+            seen = 1;
         }
     } else {
         for (int s = 0; s < n_series; s++) {
