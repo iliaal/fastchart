@@ -83,6 +83,12 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
     }
     fastchart_rect bars = plot;
     bars.x0 += label_pad;
+    /* A single long task name can measure wider than the plot,
+     * pushing x0 past x1; downstream time→pixel math then runs on a
+     * negative width and mirrors the axis. Keep the x1 >= x0 + 10
+     * invariant fastchart_compute_layout enforces — labels truncate
+     * visually instead. */
+    if (bars.x0 > bars.x1 - 10) bars.x0 = bars.x1 - 10;
 
     fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
