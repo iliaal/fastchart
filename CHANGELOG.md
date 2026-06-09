@@ -31,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CalendarHeatmap::setData()` no longer drops pre-1970 dates; the
   parser's `-1` failure sentinel collided with the day index of
   `1969-12-31`.
+- `AreaChart` log Y-axis threw "requires strictly-positive data" for
+  every input because the range pass zero-clamped the minimum first.
+  Overlay and band modes now render on log scale (fill anchors at the
+  axis bottom); stacked rejects with an honest "anchor at 0" message.
+- `GanttChart::setTimeRange()` honors the documented null-side
+  auto-fit; a null bound was stored as 0, so start-only threw and
+  end-only anchored the axis at 1970.
 
 ## [1.1.6] - 2026-06-05
 
