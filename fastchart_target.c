@@ -658,6 +658,19 @@ int fastchart_target_load_source_image(const char *path,
     if (!path || !*path || !out) return -1;
     memset(out, 0, sizeof(*out));
 
+    /* Stat BEFORE open: open(2) on a FIFO with no writer blocks
+     * indefinitely (the plain-files wrapper forced by IGNORE_URL
+     * passes no O_NONBLOCK), so the post-open non-regular-file check
+     * below would never be reached for exactly the FIFO case it
+     * names. A stat failure falls through — the open below reports
+     * it with proper warning suppression. The post-open fstat stays
+     * authoritative; it closes the swap race this pre-check alone
+     * would reintroduce. */
+    zend_stat_t pre_st;
+    if (VCWD_STAT(path, &pre_st) == 0 && !S_ISREG(pre_st.st_mode)) {
+        return -1;
+    }
+
     /* Suppress the E_WARNING the stream wrapper would emit on
      * open_basedir refusal / missing file. Background-image and
      * icon callers fall back to their solid-color backup; the
