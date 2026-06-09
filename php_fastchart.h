@@ -771,7 +771,10 @@ typedef struct {
 typedef struct {
     FASTCHART_BASE_FIELDS
     bool gantt_show_labels;
-    bool gantt_has_range;
+    /* Per-side flags: setTimeRange(null, $end) / ($start, null) force
+     * only one bound and auto-fit the other from task data. */
+    bool gantt_has_range_start;
+    bool gantt_has_range_end;
     zend_long gantt_range_start;
     zend_long gantt_range_end;
     fastchart_gantt_task *tasks;       /* owned */

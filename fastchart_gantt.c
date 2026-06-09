@@ -41,10 +41,8 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
         if (tasks[i].end   > t_max) t_max = tasks[i].end;
     }
 
-    if (self->gantt_has_range) {
-        t_min = self->gantt_range_start;
-        t_max = self->gantt_range_end;
-    }
+    if (self->gantt_has_range_start) t_min = self->gantt_range_start;
+    if (self->gantt_has_range_end)   t_max = self->gantt_range_end;
     if (t_max <= t_min) {
         /* Tasks accept any zend_long timestamp; t_min == ZEND_LONG_MAX
          * makes `t_min + 86400` signed overflow UB. Saturate to keep
