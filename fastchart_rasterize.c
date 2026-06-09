@@ -219,8 +219,13 @@ int fastchart_svg_get_intrinsic_dims(const char *svg, size_t svg_len,
 	 * downstream per-axis cap check at the caller still fires with
 	 * the user-friendly "exceed cap" message for normal-but-too-
 	 * large dimensions like width=50000. This bound is strictly for
-	 * UB avoidance on truly absurd inputs. */
-	if (w > (float)INT_MAX || h > (float)INT_MAX) return -1;
+	 * UB avoidance on truly absurd inputs.
+	 *
+	 * >= because (float)INT_MAX rounds UP to 2^31 (INT_MAX itself is
+	 * not representable in float): `>` would admit w == 2147483648.0f
+	 * and the cast below would be the very UB this guard exists to
+	 * prevent. The next float down, 2147483520.0f, casts cleanly. */
+	if (w >= (float)INT_MAX || h >= (float)INT_MAX) return -1;
 
 	int iw = (int)(w + 0.5f);
 	int ih = (int)(h + 0.5f);
@@ -376,8 +381,11 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 
 	float w = plutosvg_document_get_width(doc);
 	float h = plutosvg_document_get_height(doc);
+	/* >= : (float)INT_MAX rounds up to 2^31, which `>` would admit
+	 * straight into the UB (int) cast below. See the matching guard
+	 * in fastchart_svg_get_intrinsic_dims. */
 	if (!isfinite(w) || !isfinite(h) || w <= 0 || h <= 0
-	    || w > (float)INT_MAX || h > (float)INT_MAX) {
+	    || w >= (float)INT_MAX || h >= (float)INT_MAX) {
 		plutosvg_document_destroy(doc);
 		return -2;
 	}
