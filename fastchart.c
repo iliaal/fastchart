@@ -7696,11 +7696,15 @@ ZEND_METHOD(FastChart_ParetoChart, setValueFormat)
 
 /* --- CalendarHeatmap ------------------------------------------------- */
 
-/* Convert a "YYYY-MM-DD" string to a days-since-1970-01-01 index.
- * Returns -1 on parse failure. Uses the proleptic Gregorian calendar
- * via a closed-form day count to avoid pulling in mktime/gmtime —
- * those carry timezone weight we don't need for date arithmetic. */
-static long fastchart_parse_iso_date(const char *s, size_t len)
+/* Convert a "YYYY-MM-DD" string to a days-since-1970-01-01 index in
+ * *out. Returns 0 on success, -1 on parse failure. The day index is
+ * an out-param because its value domain includes every negative
+ * number down to -719468 ("0000-01-01"): "1969-12-31" is day -1, so
+ * a sentinel return would be indistinguishable from a valid pre-1970
+ * date. Uses the proleptic Gregorian calendar via a closed-form day
+ * count to avoid pulling in mktime/gmtime — those carry timezone
+ * weight we don't need for date arithmetic. */
+static int fastchart_parse_iso_date(const char *s, size_t len, long *out)
 {
     if (len != 10) return -1;
     if (s[4] != '-' || s[7] != '-') return -1;
@@ -7734,7 +7738,8 @@ static long fastchart_parse_iso_date(const char *s, size_t len)
     unsigned yoe = (unsigned)(y - era * 400);
     unsigned doy = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1;
     unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    return era * 146097 + (long)doe - 719468;
+    *out = era * 146097 + (long)doe - 719468;
+    return 0;
 }
 
 static int fastchart_calendar_day_cmp(const void *a, const void *b)
@@ -7767,8 +7772,8 @@ ZEND_METHOD(FastChart_CalendarHeatmap, setData)
     ZEND_HASH_FOREACH_STR_KEY_VAL(ht, key, val) {
         if (kept >= n) break;
         if (!key) continue;
-        long day = fastchart_parse_iso_date(ZSTR_VAL(key), ZSTR_LEN(key));
-        if (day < 0) continue;
+        long day;
+        if (fastchart_parse_iso_date(ZSTR_VAL(key), ZSTR_LEN(key), &day) != 0) continue;
         double dv;
         if (fastchart_zval_to_double(val, &dv) != 0 || !isfinite(dv)) continue;
         parsed[kept].day = day;
