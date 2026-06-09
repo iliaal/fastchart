@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - PHP 8.1 support (lowered the minimum from 8.3).
 
+### Fixed
+
+- Use-after-free read in `getImageMap()` after re-calling
+  `ScatterChart::setPoints()`; the area list borrowed freed point strings.
+- `WEBP_LOSSLESS` output was lossy; RGBA was imported through libwebp's
+  YUV420 path before VP8L encoding. Now imports straight ARGB and
+  round-trips bit-exact.
+- Stacked `AreaChart` now ranges over partial cumulative sums, so
+  negative values render as a diverging stack instead of clamping to
+  the baseline.
+- Background/icon image loading stats the path before opening it; a
+  writerless FIFO previously blocked the request in `open(2)` forever.
+- SVG dimension guards now reject the `2^31` float boundary;
+  `(float)INT_MAX` rounds up, so `>` admitted one value into a UB
+  float-to-int cast.
+- `GanttChart` clamps the task-label margin; a name wider than the
+  plot inverted the time axis and collapsed every bar.
+- `CalendarHeatmap::setData()` no longer drops pre-1970 dates; the
+  parser's `-1` failure sentinel collided with the day index of
+  `1969-12-31`.
+
 ## [1.1.6] - 2026-06-05
 
 ### Fixed
