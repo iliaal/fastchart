@@ -81,7 +81,10 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 else { if (d < dmin) dmin = d; if (d > dmax) dmax = d; }
             }
         }
-        if (dmin > 0) dmin = 0;
+        /* Zero-anchor the fill on linear scale only: a log axis has
+         * no zero, so the fill anchors at the axis bottom instead
+         * (the documented "Y-axis min, whichever is higher"). */
+        if (dmin > 0 && self->y_axis_scale != FASTCHART_SCALE_LOG) dmin = 0;
     }
     if (!seen) {
         zend_throw_error(NULL,
@@ -91,6 +94,10 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
 
     fastchart_value_range range;
     if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
+        if (stacked) {
+            zend_value_error("FastChart\\AreaChart::draw(): log Y-axis requires non-stacked data (stacked areas anchor at 0)");
+            return -1;
+        }
         if (dmin <= 0) {
             zend_value_error("FastChart\\AreaChart::draw(): log Y-axis requires strictly-positive data");
             return -1;
@@ -257,7 +264,10 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
         }
         efree(cum);
     } else {
-        int zero_y = fastchart_y_to_pixel(dmin > 0 ? dmin : 0.0, &range, &plot);
+        /* Fill anchor: the zero baseline on linear scale, the axis
+         * bottom on log (zero is not representable there). */
+        int zero_y = fastchart_y_to_pixel(
+            range.log_scale ? range.min : 0.0, &range, &plot);
 
         for (int s = 0; s < n_series; s++) {
             int base_handle = pal.series[s % FASTCHART_PALETTE_SERIES_N];
