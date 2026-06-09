@@ -83,8 +83,14 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
         }
         /* Zero-anchor the fill on linear scale only: a log axis has
          * no zero, so the fill anchors at the axis bottom instead
-         * (the documented "Y-axis min, whichever is higher"). */
-        if (dmin > 0 && self->y_axis_scale != FASTCHART_SCALE_LOG) dmin = 0;
+         * (the documented "Y-axis min, whichever is higher"). Both
+         * signs need the anchor: an all-negative range would exclude
+         * 0, and the fill baseline would clamp to the plot top (the
+         * axis max), inverting the fill. */
+        if (self->y_axis_scale != FASTCHART_SCALE_LOG) {
+            if (dmin > 0) dmin = 0;
+            if (dmax < 0) dmax = 0;
+        }
     }
     if (!seen) {
         zend_throw_error(NULL,
