@@ -3386,6 +3386,10 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_scatter_obj *self = Z_FASTCHART_SCATTER_OBJ_P(ZEND_THIS);
+    /* image_map_areas borrows points[i].href / tooltip after a render
+     * (fastchart_scatter.c); freeing the points below without hiding
+     * the area list would leave getImageMap() reading freed memory. */
+    fastchart_reset_image_map_areas((fastchart_obj *)self);
     /* Drop any existing parsed state. */
     if (self->points) {
         for (int i = 0; i < self->point_count; i++) {
