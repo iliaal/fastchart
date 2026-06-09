@@ -1323,7 +1323,8 @@ static void fastchart_gauge_addref_extras(fastchart_gauge_obj *o)
 static void fastchart_gantt_init_extras(fastchart_gantt_obj *o)
 {
     o->gantt_show_labels = true;
-    o->gantt_has_range = false;
+    o->gantt_has_range_start = false;
+    o->gantt_has_range_end = false;
     o->gantt_range_start = 0;
     o->gantt_range_end = 0;
     o->tasks = NULL;
@@ -4194,14 +4195,17 @@ ZEND_METHOD(FastChart_GanttChart, setTimeRange)
         Z_PARAM_LONG_OR_NULL(end, end_is_null)
     ZEND_PARSE_PARAMETERS_END();
     /* Validate before storing so the comparison runs against the
-     * full-precision zend_long values, not after a narrowing cast. */
-    bool has_range = !(start_is_null && end_is_null);
-    if (has_range && end <= start) {
+     * full-precision zend_long values, not after a narrowing cast.
+     * Only a fully-specified range is comparable here; a null side
+     * auto-fits from task data at draw time, so the ordering against
+     * the forced side is resolved by the render's saturation guard. */
+    if (!start_is_null && !end_is_null && end <= start) {
         zend_value_error("FastChart\\GanttChart::setTimeRange() requires start < end");
         RETURN_THROWS();
     }
     fastchart_gantt_obj *self = Z_FASTCHART_GANTT_OBJ_P(ZEND_THIS);
-    self->gantt_has_range = has_range;
+    self->gantt_has_range_start = !start_is_null;
+    self->gantt_has_range_end   = !end_is_null;
     self->gantt_range_start = start_is_null ? 0 : start;
     self->gantt_range_end   = end_is_null   ? 0 : end;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
