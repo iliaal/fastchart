@@ -70,6 +70,23 @@ $mal->renderSvg();
 $mal_map = $mal->getImageMap();
 echo "js scheme rejected: ", strpos($mal_map, 'javascript:') === false ? 'ok' : 'BAD', "\n";
 echo "safe url kept: ", strpos($mal_map, 'href="/safe"') !== false ? 'ok' : 'BAD', "\n";
+
+/* Structured areas (P1) */
+$bar_areas = $bar->getImageMapAreas();
+echo "bar_struct_count: ", count($bar_areas), "\n";
+echo "bar_struct_shape_str: ", (isset($bar_areas[0]['shape']) && $bar_areas[0]['shape']==='rect') ? 'ok' : 'BAD', "\n";
+/* rect in HTML form: coords[2] should be x+w (not raw w) */
+if (isset($bar_areas[0]['coords'][2])) {
+    echo "bar_rect_html_form: ", ($bar_areas[0]['coords'][2] > $bar_areas[0]['coords'][0]) ? 'ok' : 'BAD', "\n";
+}
+echo "bar_struct_href_present: ", (isset($bar_areas[0]['href']) && strpos($bar_areas[0]['href'], '/q/') !== false) ? 'ok' : 'BAD', "\n";
+
+$pie_areas = $pie->getImageMapAreas();
+echo "pie_struct_count: ", count($pie_areas), "\n";
+echo "pie_struct_shape_str: ", (isset($pie_areas[0]['shape']) && $pie_areas[0]['shape']==='poly') ? 'ok' : 'BAD', "\n";
+
+$empty_areas = $empty->getImageMapAreas();
+echo "no-imap-struct empty: ", (is_array($empty_areas) && count($empty_areas) === 0) ? 'ok' : 'BAD', "\n";
 ?>
 --EXPECT--
 bar areas: 5
@@ -84,3 +101,10 @@ scatter shape circle: ok
 no-imap empty: ok
 js scheme rejected: ok
 safe url kept: ok
+bar_struct_count: 5
+bar_struct_shape_str: ok
+bar_rect_html_form: ok
+bar_struct_href_present: ok
+pie_struct_count: 3
+pie_struct_shape_str: ok
+no-imap-struct empty: ok

@@ -4015,6 +4015,23 @@ ZEND_METHOD(FastChart_Chart, svgToWebp)
     RETURN_STR(out.s);
 }
 
+/* Small shared predicate for the href scheme allowlist used by both
+ * getImageMap() (HTML emission) and getImageMapAreas() (structured).
+ * Same rules as the original inline logic: empty, root-relative, or
+ * one of the three explicit safe schemes. Everything else (javascript:,
+ * data:, etc.) is dropped silently. */
+static bool fastchart_href_scheme_allowed(const char *s, size_t len)
+{
+    if (len == 0) return true;
+    if (s[0] == '/' || s[0] == '#') return true;
+    if (zend_binary_strncasecmp(s, len, "http://",  7, 7) == 0 ||
+        zend_binary_strncasecmp(s, len, "https://", 8, 8) == 0 ||
+        zend_binary_strncasecmp(s, len, "mailto:",  7, 7) == 0) {
+        return true;
+    }
+    return false;
+}
+
 /* Emit a HTML <map> for any chart's clickable hot-spots. Reads the
  * typed image_map_areas array populated by the renderer; the chart
  * must have been rendered at least once (via renderPng/Jpeg/Webp/Svg
@@ -4079,17 +4096,7 @@ ZEND_METHOD(FastChart_Chart, getImageMap)
          * <area> entry on a bad scheme rather than emit a sanitized
          * one -- callers can audit their input. Embedded NUL was
          * already dropped by the setter; href_str is NUL-clean. */
-        bool href_ok = false;
-        if (href_len == 0) {
-            href_ok = true;
-        } else if (href_str[0] == '/' || href_str[0] == '#') {
-            href_ok = true;
-        } else if (zend_binary_strncasecmp(href_str, href_len, "http://",  7,  7) == 0 ||
-                   zend_binary_strncasecmp(href_str, href_len, "https://", 8,  8) == 0 ||
-                   zend_binary_strncasecmp(href_str, href_len, "mailto:",  7,  7) == 0) {
-            href_ok = true;
-        }
-        if (!href_ok) continue;
+        if (!fastchart_href_scheme_allowed(href_str, href_len)) continue;
 
         char buf[512];
         int n_chars = 0;
@@ -4183,6 +4190,80 @@ ZEND_METHOD(FastChart_Chart, getImageMap)
     smart_str_appends(&out, "</map>");
     smart_str_0(&out);
     RETURN_STR(out.s);
+}
+
+/* Structured alternative to getImageMap(). Returns a PHP array of
+ * hot-spot descriptors instead of an HTML string. Uses the exact
+ * same areas array + scheme filter so behaviour (including which
+ * entries are dropped) is identical. Rect coords are emitted in
+ * the HTML <area> left/top/right/bottom form (per approved plan).
+ * Shapes are lowercase strings. */
+ZEND_METHOD(FastChart_Chart, getImageMapAreas)
+{
+    ZEND_PARSE_PARAMETERS_NONE();
+
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (!self->image_map_areas || self->n_image_map_areas == 0) {
+        array_init(return_value);
+        return;
+    }
+
+    array_init(return_value);
+
+    for (int i = 0; i < self->n_image_map_areas; i++) {
+        const fastchart_image_map_area *a = &self->image_map_areas[i];
+        const char *href = a->href;
+        size_t href_len = href ? strlen(href) : 0;
+
+        if (!href || !fastchart_href_scheme_allowed(href, href_len)) {
+            continue;
+        }
+
+        zval entry;
+        array_init(&entry);
+
+        /* shape as lowercase string (per user choice in Ask) */
+        const char *shape_str;
+        switch (a->shape) {
+            case FASTCHART_IMAGE_MAP_CIRCLE: shape_str = "circle"; break;
+            case FASTCHART_IMAGE_MAP_RECT:   shape_str = "rect";   break;
+            case FASTCHART_IMAGE_MAP_POLY:   shape_str = "poly";   break;
+            default:                         shape_str = "rect";   break;
+        }
+        add_assoc_string(&entry, "shape", (char*)shape_str);
+
+        /* coords: always in the form consumers would put into <area> */
+        zval coords_arr;
+        array_init(&coords_arr);
+        if (a->shape == FASTCHART_IMAGE_MAP_RECT) {
+            /* storage is x,y,w,h -> HTML left,top,right,bottom */
+            add_next_index_long(&coords_arr, a->coords[0]);
+            add_next_index_long(&coords_arr, a->coords[1]);
+            add_next_index_long(&coords_arr, a->coords[0] + a->coords[2]);
+            add_next_index_long(&coords_arr, a->coords[1] + a->coords[3]);
+        } else {
+            for (int k = 0; k < a->n_coords; k++) {
+                add_next_index_long(&coords_arr, a->coords[k]);
+            }
+        }
+        add_assoc_zval(&entry, "coords", &coords_arr);
+
+        add_assoc_long(&entry, "index", /* best effort: we don't store the original idx
+                                         * separately in the area, but the order is the
+                                         * render order which matches the set* index.
+                                         * For now use the area slot as a stable ordinal. */
+                       (zend_long)i);
+
+        add_assoc_string(&entry, "href", (char*)href);
+
+        if (a->tooltip) {
+            add_assoc_string(&entry, "tooltip", (char*)a->tooltip);
+        } else {
+            add_assoc_null(&entry, "tooltip");
+        }
+
+        add_next_index_zval(return_value, &entry);
+    }
 }
 
 ZEND_METHOD(FastChart_GanttChart, setTimeRange)
