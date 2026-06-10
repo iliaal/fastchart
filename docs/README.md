@@ -1030,6 +1030,25 @@ you want to composite the symbol onto an existing image.
   `setFloating(true)` is the most common; without it, the parser
   expects scalars, not `[min, max]` tuples.
 
+### Strict mode coverage and best-effort families
+
+`setStrict(true)` is **only** honored by `LineChart`, `AreaChart` and
+`BarChart` `setSeries()`. Every other setter that ingests arrays of
+data (slices, points, OHLCV rows, tasks, boxes, grids, stages,
+vectors, columns, etc.) is **best-effort**: bad entries are silently
+dropped or coerced to NaN. No `TypeError` is ever raised for them,
+even if `setStrict(true)` was called on the chart instance.
+
+This contract is intentional (complex shapes such as a Gantt task
+list or Sankey flows are often assembled from heterogeneous sources;
+dropping one bad row is usually preferable to aborting the whole
+render). The behaviour is covered by dedicated tests
+(`193_strict_best_effort_pie.phpt`, `194_strict_best_effort_gantt.phpt`
+and friends) so it cannot regress accidentally.
+
+If you need hard validation for a non-cartesian family you must
+pre-process the input array yourself before passing it to the setter.
+
 ## See also
 
 - [`examples/`](examples/): runnable PHP scripts for each chart above

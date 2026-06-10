@@ -240,10 +240,14 @@ abstract class Chart
      * TypeError instead of silently coercing to NaN. Default: off.
      *
      * Coverage: enforced on `LineChart::setSeries`,
-     * `AreaChart::setSeries`, `BarChart::setSeries`. Other setters
-     * (Pie / Scatter / Stock / BoxPlot / Radar / Polar / Bubble /
-     * Gantt) silently skip malformed entries regardless of this
-     * flag; those shapes are best-effort.
+     * `AreaChart::setSeries`, `BarChart::setSeries`. All other
+     * array-based setters (Pie::setSlices, Scatter::setPoints,
+     * Stock::setOhlcv, Gantt::setTasks, BoxPlot::setBoxes,
+     * Radar/Polar::setSeries, Surface/Contour::setGrid,
+     * Treemap/Funnel/Waterfall/Heatmap/Sunburst/Sankey/etc.)
+     * are best-effort: malformed entries are silently dropped
+     * (or turned into NaN) even when setStrict(true) is used.
+     * See docs/README.md "Strict mode coverage and best-effort families".
      */
     public function setStrict(bool $strict): static {}
 
@@ -720,6 +724,27 @@ abstract class Chart
      * '-' + '_' so it's safe to inline into an `<img usemap="#...">`.
      */
     public function getImageMap(string $name = 'fastchart'): string {}
+
+    /**
+     * Return structured hot-spot data (for custom <map>, JS overlays,
+     * or server-side link generation). Same contract as getImageMap():
+     * the chart must have been rendered at least once.
+     *
+     * Returns a list of arrays:
+     *   [
+     *     'shape'  => 'rect' | 'circle' | 'poly',
+     *     'coords' => int[],   // HTML <area> form: rect=[left,top,right,bottom],
+     *                          // circle=[cx,cy,r], poly=[x1,y1,x2,y2,...]
+     *     'index'  => int,     // position in the original setSeries/setSlices/setPoints
+     *     'href'   => string,
+     *     'tooltip'=> string|null,
+     *   ]
+     *
+     * Only entries that had a non-empty allowed href after scheme
+     * filtering are included (same rules as getImageMap).
+     * Shape strings are lowercase.
+     */
+    public function getImageMapAreas(): array {}
 }
 
 final class LineChart extends Chart
