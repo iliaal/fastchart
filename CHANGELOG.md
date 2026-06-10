@@ -9,7 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Chart::getImageMapAreas(): array` — structured hot-spot data (shape strings "rect"/"circle"/"poly", HTML <area>-style coords for rects, href/tooltip/index). Same filtering and lifetime rules as the HTML `getImageMap()`. Useful for custom overlays or link generation without parsing HTML.
 - PHP 8.1 support (lowered the minimum from 8.3).
+
+### Changed
+
+- Clarified `setStrict(true)` coverage in stub, docs/README.md and tests: only Line/Area/Bar `setSeries` are strict; all other data-ingest setters remain best-effort (silent drop) even when the flag is on. New phpt 193/194 lock the contract.
 
 ### Fixed
 

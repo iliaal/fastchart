@@ -69,6 +69,23 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
                               int n_cat_y_labels,
                               fastchart_rect *out_plot);
 
+/* Common setup for all standard cartesian families (Line, Area, Bar,
+ * Scatter, Bubble, Gantt, Heatmap, etc.). Performs the layout,
+ * palette resolution, frame, title, common band drawing, X axis and
+ * axis titles. The caller is still responsible for its own Y axis
+ * (and optional right Y) plus any range-dependent plot bands that
+ * must be drawn before the X axis. This removes the ~8-12 line
+ * duplicated block that appeared in every cartesian render_to_target.
+ * Non-cartesian families (Treemap, Sankey, Gauge, Pie, Stock panes
+ * etc.) continue to use begin_render + bespoke layout directly. */
+void fastchart_render_cartesian_setup(fastchart_obj *chart,
+                                      fastchart_target_t *t,
+                                      int has_y_axis, int has_x_axis,
+                                      const char *const *cat_y_labels,
+                                      int n_cat_y_labels,
+                                      fastchart_rect *out_plot,
+                                      fastchart_palette *out_pal);
+
 /* "Nice" rounded value range that brackets [dmin, dmax]. Picks tick
  * step from {1, 2, 2.5, 5} × 10^N to land roughly `target_ticks` lines.
  * Always emits at least 2 ticks. */

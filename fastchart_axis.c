@@ -571,6 +571,27 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
     if (out_plot->y1 < out_plot->y0 + 10) out_plot->y1 = out_plot->y0 + 10;
 }
 
+/* See declaration in fastchart_axis.h for contract. This is the
+ * narrow helper for standard cartesian families only (per P0 plan).
+ * Non-cartesian families keep their begin_render + bespoke paths. */
+void fastchart_render_cartesian_setup(fastchart_obj *chart,
+                                      fastchart_target_t *t,
+                                      int has_y_axis, int has_x_axis,
+                                      const char *const *cat_y_labels,
+                                      int n_cat_y_labels,
+                                      fastchart_rect *out_plot,
+                                      fastchart_palette *out_pal)
+{
+    fastchart_compute_layout(chart, t, has_y_axis, has_x_axis,
+                             cat_y_labels, n_cat_y_labels, out_plot);
+
+    fastchart_palette_init(t, (int)chart->theme, out_pal);
+    fastchart_palette_apply_overrides(t, chart, out_pal);
+
+    fastchart_draw_frame(t, chart, out_plot, out_pal);
+    fastchart_draw_title(t, chart, out_plot, out_pal);
+}
+
 void fastchart_value_range_compute(double dmin, double dmax,
                                    int target_ticks,
                                    fastchart_value_range *out)
