@@ -5388,6 +5388,13 @@ static int fastchart_chart_render_to_buf(fastchart_obj *self,
         return -1;
     }
 
+    /* Stable raster path: SVG (PATHS + text defer) -> plutosvg parse +
+     * plutovg raster at physical size -> encode. An experimental direct
+     * plutovg canvas path (bypass SVG, immediate text, SIMD unpremul) was
+     * fully prototyped with measurement harness on
+     * spike/direct-plutovg-raster-optimization for future review & analysis
+     * (per review plan "P1.2" + "verify or discard" gate; -O2 runs and
+     * all tweak states are on that branch only). */
     /* Build the SVG in PATHS mode regardless of self->svg_text_mode —
      * plutovg has no text-rendering support. */
     smart_str svg_buf = {0};
