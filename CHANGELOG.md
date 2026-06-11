@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-11
+
 ### Added
 
 - `Chart::getImageMapAreas(): array` — structured hot-spot data (shape strings "rect"/"circle"/"poly", HTML <area>-style coords for rects, href/tooltip/index). Same filtering and lifetime rules as the HTML `getImageMap()`. Useful for custom overlays or link generation without parsing HTML.
@@ -1027,7 +1029,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.1.6...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.2.0...HEAD
+[1.2.0]: https://github.com/iliaal/fastchart/releases/tag/1.2.0
 [1.1.6]: https://github.com/iliaal/fastchart/releases/tag/1.1.6
 [1.1.5]: https://github.com/iliaal/fastchart/releases/tag/1.1.5
 [1.1.1]: https://github.com/iliaal/fastchart/releases/tag/1.1.1
