@@ -12,6 +12,7 @@ $lower = array_map(fn($v) => $v - 2.5, $forecast);
 
 $c = (new FastChart\AreaChart())
     ->setSize(400, 250)
+    ->setStacked(false)
     ->setSeries([
         ['label' => 'upper', 'data' => $upper],
         ['label' => 'lower', 'data' => $lower],

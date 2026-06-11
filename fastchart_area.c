@@ -52,33 +52,69 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
      * (stacked wins, band is silently ignored). */
     bool band = self->band_mode && n_series == 2 && !stacked;
 
-    double dmin = 0, dmax = 0;
-    int seen = 0;
+    /* With secondary_y off, all series map to the left axis regardless
+     * of the per-series right_axis flag — mirrors LineChart. */
+    int n_right = 0;
+    if (self->secondary_y) {
+        for (int s = 0; s < n_series; s++) {
+            if (series[s].right_axis) n_right++;
+        }
+    }
+
+    double dmin_l = 0, dmax_l = 0, dmin_r = 0, dmax_r = 0;
+    int seen_l = 0, seen_r = 0;
 
     if (stacked) {
         /* The layer polygons span [cum, cum + v] (see the draw loop
          * below), so the axis range must cover every partial
          * cumulative sum — not just the per-category total. Negative
          * values pull partials below zero; folding only the final sum
-         * would clamp those layers onto the baseline. */
+         * would clamp those layers onto the baseline. Left- and
+         * right-axis series stack independently when secondary_y is on. */
         for (int i = 0; i < max_len; i++) {
-            double cum = 0;
+            double cum_l = 0, cum_r = 0;
             for (int s = 0; s < n_series; s++) {
                 double v = area_read_value(&series[s], i);
                 if (isnan(v)) continue;
-                cum += v;
-                if (cum < dmin) dmin = cum;
-                if (cum > dmax) dmax = cum;
+                bool right = self->secondary_y && series[s].right_axis;
+                if (right) {
+                    cum_r += v;
+                    if (!seen_r) { dmin_r = dmax_r = cum_r; seen_r = 1; }
+                    else {
+                        if (cum_r < dmin_r) dmin_r = cum_r;
+                        if (cum_r > dmax_r) dmax_r = cum_r;
+                    }
+                } else {
+                    cum_l += v;
+                    if (!seen_l) { dmin_l = dmax_l = cum_l; seen_l = 1; }
+                    else {
+                        if (cum_l < dmin_l) dmin_l = cum_l;
+                        if (cum_l > dmax_l) dmax_l = cum_l;
+                    }
+                }
             }
-            seen = 1;
+        }
+        if (self->y_axis_scale != FASTCHART_SCALE_LOG) {
+            if (dmin_l > 0) dmin_l = 0;
+            if (dmax_l < 0) dmax_l = 0;
+            if (n_right > 0) {
+                if (dmin_r > 0) dmin_r = 0;
+                if (dmax_r < 0) dmax_r = 0;
+            }
         }
     } else {
         for (int s = 0; s < n_series; s++) {
+            bool right = self->secondary_y && series[s].right_axis;
             for (int i = 0; i < series[s].len; i++) {
                 double d = series[s].values[i];
                 if (isnan(d)) continue;
-                if (!seen) { dmin = dmax = d; seen = 1; }
-                else { if (d < dmin) dmin = d; if (d > dmax) dmax = d; }
+                if (right) {
+                    if (!seen_r) { dmin_r = dmax_r = d; seen_r = 1; }
+                    else { if (d < dmin_r) dmin_r = d; if (d > dmax_r) dmax_r = d; }
+                } else {
+                    if (!seen_l) { dmin_l = dmax_l = d; seen_l = 1; }
+                    else { if (d < dmin_l) dmin_l = d; if (d > dmax_l) dmax_l = d; }
+                }
             }
         }
         /* Zero-anchor the fill on linear scale only: a log axis has
@@ -88,33 +124,45 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
          * 0, and the fill baseline would clamp to the plot top (the
          * axis max), inverting the fill. */
         if (self->y_axis_scale != FASTCHART_SCALE_LOG) {
-            if (dmin > 0) dmin = 0;
-            if (dmax < 0) dmax = 0;
+            if (dmin_l > 0) dmin_l = 0;
+            if (dmax_l < 0) dmax_l = 0;
+            if (n_right > 0) {
+                if (dmin_r > 0) dmin_r = 0;
+                if (dmax_r < 0) dmax_r = 0;
+            }
         }
     }
-    if (!seen) {
+    if (!seen_l) {
         zend_throw_error(NULL,
-            "FastChart\\AreaChart::draw() found no numeric values");
+            "FastChart\\AreaChart::draw() found no numeric values for the primary Y axis");
+        return -1;
+    }
+    if (n_right > 0 && !seen_r) {
+        zend_throw_error(NULL,
+            "FastChart\\AreaChart::draw() found no numeric values for the secondary Y axis");
         return -1;
     }
 
-    fastchart_value_range range;
+    fastchart_value_range range_l, range_r;
     if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
         if (stacked) {
             zend_value_error("FastChart\\AreaChart::draw(): log Y-axis requires non-stacked data (stacked areas anchor at 0)");
             return -1;
         }
-        if (dmin <= 0) {
+        if (dmin_l <= 0) {
             zend_value_error("FastChart\\AreaChart::draw(): log Y-axis requires strictly-positive data");
             return -1;
         }
-        if (fastchart_value_range_compute_log(dmin, dmax, &range) != 0) {
+        if (fastchart_value_range_compute_log(dmin_l, dmax_l, &range_l) != 0) {
             zend_value_error("FastChart\\AreaChart::draw(): log Y-axis requires strictly-positive data");
             return -1;
         }
     } else {
-        fastchart_value_range_compute(dmin, dmax, 6, &range);
-        fastchart_value_range_apply_override((fastchart_obj *)self, &range);
+        fastchart_value_range_compute(dmin_l, dmax_l, 6, &range_l);
+        fastchart_value_range_apply_override((fastchart_obj *)self, &range_l);
+        if (n_right > 0) {
+            fastchart_value_range_compute(dmin_r, dmax_r, 6, &range_r);
+        }
     }
 
     fastchart_rect plot;
@@ -122,8 +170,11 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
     fastchart_render_cartesian_setup((fastchart_obj *)self, t,
                                      1, 1, NULL, 0, &plot, &pal);
 
-    fastchart_draw_y_axis(t, (fastchart_obj *)self, &plot, &pal, &range);
-    fastchart_draw_plot_bands(t, (fastchart_obj *)self, &plot, &range, &pal);
+    fastchart_draw_y_axis(t, (fastchart_obj *)self, &plot, &pal, &range_l);
+    if (n_right > 0) {
+        fastchart_draw_y_axis_right(t, (fastchart_obj *)self, &plot, &pal, &range_r);
+    }
+    fastchart_draw_plot_bands(t, (fastchart_obj *)self, &plot, &range_l, &pal);
     fastchart_draw_v_plot_bands_categorical(t, (fastchart_obj *)self, &plot,
                                             max_len, &pal);
 
@@ -156,7 +207,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             double v = area_read_value(&series[0], i);
             if (isnan(v)) v = 0;
             int x = fastchart_x_categorical_center(&plot, i, max_len);
-            int y = fastchart_y_to_pixel(v, &range, &plot);
+            int y = fastchart_y_to_pixel(v, &range_l, &plot);
             poly[n_pts].x = x; poly[n_pts].y = y;
             n_pts++;
         }
@@ -164,7 +215,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             double v = area_read_value(&series[1], i);
             if (isnan(v)) v = 0;
             int x = fastchart_x_categorical_center(&plot, i, max_len);
-            int y = fastchart_y_to_pixel(v, &range, &plot);
+            int y = fastchart_y_to_pixel(v, &range_l, &plot);
             poly[n_pts].x = x; poly[n_pts].y = y;
             n_pts++;
         }
@@ -203,7 +254,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 double v = area_read_value(&series[s], i);
                 if (isnan(v)) { prev_valid = false; continue; }
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
-                int y = fastchart_y_to_pixel(v, &range, &plot);
+                int y = fastchart_y_to_pixel(v, &range_l, &plot);
                 if (prev_valid) {
                     fastchart_target_line(t, prev_x, prev_y, x, y,
                                           stroke_handle, 2, FASTCHART_DASH_SOLID);
@@ -212,8 +263,12 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             }
         }
     } else if (stacked) {
-        double *cum = ecalloc((size_t)max_len, sizeof(double));
+        double *cum_l = ecalloc((size_t)max_len, sizeof(double));
+        double *cum_r = n_right > 0 ? ecalloc((size_t)max_len, sizeof(double)) : NULL;
         for (int s = 0; s < n_series; s++) {
+            bool right = self->secondary_y && series[s].right_axis;
+            double *cum = right ? cum_r : cum_l;
+            const fastchart_value_range *rng = right ? &range_r : &range_l;
             int series_handle = pal.series[s % FASTCHART_PALETTE_SERIES_N];
             int n_pts = 0;
 
@@ -222,14 +277,14 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 double v = area_read_value(&series[s], i);
                 if (isnan(v)) v = 0;
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
-                int y = fastchart_y_to_pixel(cum[i] + v, &range, &plot);
+                int y = fastchart_y_to_pixel(cum[i] + v, rng, &plot);
                 poly[n_pts].x = x; poly[n_pts].y = y;
                 n_pts++;
             }
             /* Bottom edge: right to left at cum. */
             for (int i = max_len - 1; i >= 0 && n_pts < 2 * 2048; i--) {
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
-                int y = fastchart_y_to_pixel(cum[i], &range, &plot);
+                int y = fastchart_y_to_pixel(cum[i], rng, &plot);
                 poly[n_pts].x = x; poly[n_pts].y = y;
                 n_pts++;
             }
@@ -255,7 +310,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 double v = area_read_value(&series[s], i);
                 if (isnan(v)) v = 0;
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
-                int y = fastchart_y_to_pixel(cum[i] + v, &range, &plot);
+                int y = fastchart_y_to_pixel(cum[i] + v, rng, &plot);
                 if (prev_valid) {
                     fastchart_target_line(t, prev_x, prev_y, x, y,
                                           pal.border, 1, FASTCHART_DASH_SOLID);
@@ -264,14 +319,17 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 cum[i] += v;
             }
         }
-        efree(cum);
+        efree(cum_l);
+        if (cum_r) efree(cum_r);
     } else {
-        /* Fill anchor: the zero baseline on linear scale, the axis
-         * bottom on log (zero is not representable there). */
-        int zero_y = fastchart_y_to_pixel(
-            range.log_scale ? range.min : 0.0, &range, &plot);
-
         for (int s = 0; s < n_series; s++) {
+            bool right = self->secondary_y && series[s].right_axis;
+            const fastchart_value_range *rng = right ? &range_r : &range_l;
+            /* Fill anchor: the zero baseline on linear scale, the axis
+             * bottom on log (zero is not representable there). */
+            int zero_y = fastchart_y_to_pixel(
+                rng->log_scale ? rng->min : 0.0, rng, &plot);
+
             int base_handle = pal.series[s % FASTCHART_PALETTE_SERIES_N];
             uint32_t rgba = fastchart_target_color_to_rgba(t, base_handle);
             int r = (rgba >> 16) & 0xFF;
@@ -287,7 +345,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 double v = area_read_value(&series[s], i);
                 if (isnan(v)) v = 0;
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
-                int y = fastchart_y_to_pixel(v, &range, &plot);
+                int y = fastchart_y_to_pixel(v, rng, &plot);
                 poly[n_pts].x = x; poly[n_pts].y = y;
                 n_pts++;
             }
@@ -325,7 +383,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 double v = area_read_value(&series[s], i);
                 if (isnan(v)) { prev_valid = false; continue; }
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
-                int y = fastchart_y_to_pixel(v, &range, &plot);
+                int y = fastchart_y_to_pixel(v, rng, &plot);
                 if (prev_valid) {
                     fastchart_target_line(t, prev_x, prev_y, x, y,
                                           base_handle, 2, FASTCHART_DASH_SOLID);
@@ -337,9 +395,11 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
 
     /* Combo overlays + annotations on top of the area fills. */
     fastchart_draw_overlays_categorical(t, (fastchart_obj *)self, &plot, &pal,
-                                         &range, NULL, max_len);
+                                         &range_l,
+                                         n_right > 0 ? &range_r : NULL,
+                                         max_len);
 
-    fastchart_draw_h_annotations(t, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_h_annotations(t, (fastchart_obj *)self, &plot, &pal, &range_l);
     fastchart_draw_v_annotations_categorical(t, (fastchart_obj *)self, &plot, &pal, max_len);
 
     /* Legend. */
@@ -368,7 +428,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 ? (ic->x + 0.5) / (double)max_len
                 : 0.5;
             int px = fastchart_frac_to_px(frac_x, plot.x0, plot.x1);
-            int py = fastchart_y_to_pixel(ic->y, &range, &plot);
+            int py = fastchart_y_to_pixel(ic->y, &range_l, &plot);
             fastchart_blit_icon(t, ic, px, py);
         }
     }

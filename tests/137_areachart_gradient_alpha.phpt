@@ -17,6 +17,7 @@ $svg_tx = (new FastChart\AreaChart(200, 120))
         ['data' => [1, 3, 2, 5, 4]],
         ['data' => [2, 2, 4, 3, 5]],
     ])
+    ->setStacked(false)
     ->setGradientFill(0xFF0000, 0x00FF00)
     ->setFillOpacity(64)
     ->renderSvg();

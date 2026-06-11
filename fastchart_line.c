@@ -82,7 +82,6 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
     }
     if (n_right > 0) {
         fastchart_value_range_compute(dmin_r, dmax_r, 6, &range_r);
-        fastchart_value_range_apply_override((fastchart_obj *)self, &range_r);
     }
 
     fastchart_rect plot;
