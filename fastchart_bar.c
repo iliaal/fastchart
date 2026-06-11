@@ -452,6 +452,11 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
 
     fastchart_draw_axis_titles(t, (fastchart_obj *)self, &plot, &pal);
 
+    fastchart_reset_image_map_areas((fastchart_obj *)self);
+    if (self->n_image_map_entries > 0) {
+        fastchart_reserve_image_map_areas((fastchart_obj *)self, n_categories);
+    }
+
     /* Plot bands: in the horizontal-bar layout the value axis is X
      * and the category axis is Y. The user-facing API names are
      * tied to the default vertical orientation, so the visual roles
@@ -503,6 +508,11 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
 
     for (int i = 0; i < n_categories; i++) {
         int slot_top = plot.y0 + i * slot_h + slot_pad;
+
+        /* One hot-spot per category row — full plot width, mirroring
+         * the vertical path's full-height column rects. */
+        fastchart_push_image_map_rect((fastchart_obj *)self, i,
+            plot.x0, slot_top, plot.x1 - plot.x0, slot_inner);
 
         if (floating) {
             for (int s = 0; s < n_series; s++) {

@@ -893,7 +893,7 @@ static void fastchart_line_addref_extras(fastchart_line_obj *o)
 static void fastchart_area_init_extras(fastchart_area_obj *o)
 {
     o->area_alpha = 64;
-    o->stacked = false;
+    o->stacked = true;
     o->band_mode = false;
     fastchart_series_array_init(o->series, FASTCHART_MAX_SERIES);
     o->n_series = 0;

@@ -21,6 +21,7 @@ var_dump((bool) preg_match('/>10</', $svg), (bool) preg_match('/>100</', $svg));
 /* Band mode: the envelope polygon has no zero anchor, so log scale
  * is a natural fit. */
 $svg = (new FastChart\AreaChart(400, 300))
+    ->setStacked(false)
     ->setBandMode(true)
     ->setSeries([
         ['data' => [80, 90, 70]],
