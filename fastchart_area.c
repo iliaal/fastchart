@@ -160,9 +160,9 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
     } else {
         fastchart_value_range_compute(dmin_l, dmax_l, 6, &range_l);
         fastchart_value_range_apply_override((fastchart_obj *)self, &range_l);
-        if (n_right > 0) {
-            fastchart_value_range_compute(dmin_r, dmax_r, 6, &range_r);
-        }
+    }
+    if (n_right > 0) {
+        fastchart_value_range_compute(dmin_r, dmax_r, 6, &range_r);
     }
 
     fastchart_rect plot;
