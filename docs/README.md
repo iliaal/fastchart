@@ -666,6 +666,12 @@ $map = $chart->getImageMap('quarterly');
 file_put_contents('chart.html', '<img src="30_image_map.png" usemap="#quarterly">' . $map);
 ```
 
+To build overlays or links without parsing HTML, `getImageMapAreas()`
+returns the same hot-spots as structured data: an array of entries
+carrying `'shape'` (`'rect'`, `'circle'`, or `'poly'`), HTML
+`<area>`-style `'coords'`, plus `'href'`, `'tooltip'`, and the source
+`'index'`. Scheme filtering and lifetime rules match `getImageMap()`.
+
 ![](examples/30_image_map.png)
 
 ---

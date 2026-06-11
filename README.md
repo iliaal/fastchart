@@ -303,8 +303,9 @@ Cross-cutting features available on most chart types:
 - Strict-mode input validation (`setStrict(true)` rejects malformed
   series with a `TypeError` instead of silently coercing to NaN).
 - Background images, drop shadows, anti-aliased lines and markers.
-- Image map output (`getImageMap()` returns category-aligned
-  rectangles for HTML overlay).
+- Image map output: `getImageMap()` returns category-aligned
+  rectangles for HTML overlay; `getImageMapAreas()` returns the same
+  hot-spots as structured array data.
 
 ## Examples
 
