@@ -50,8 +50,8 @@ foreach (['2147483520', '2147483648'] as $dim) {
 }
 
 ?>
---EXPECT--
+--EXPECTF--
 2.147483648e9: ValueError (intrinsic-dims)
 1e10: ValueError (intrinsic-dims)
-2147483520: ValueError (cap)
-2147483648: ValueError (cap)
+2147483520: ValueError (%s)
+2147483648: ValueError (%s)
