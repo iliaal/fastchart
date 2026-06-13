@@ -648,12 +648,14 @@ abstract class Chart
     /**
      * Render and write directly to a file. Format is inferred from
      * the path extension: `.png` / `.jpg` / `.jpeg` / `.webp` /
-     * `.svg`. `$quality` only applies to JPEG / WebP outputs; SVG
-     * and PNG ignore it. Default `0` means "use the per-format
-     * default": JPEG uses the value set via `setJpegQuality()`
-     * (default 88), WebP uses 90. Explicit values must be in
-     * `1..100`. Returns the byte count written. Honors
-     * `open_basedir`. `.gif` / `.avif` extensions raise a clear
+     * `.svg` / `.pdf`. `$quality` only applies to JPEG / WebP outputs;
+     * SVG, PNG, and PDF ignore it. Default `0` means "use the
+     * per-format default": JPEG uses the value set via
+     * `setJpegQuality()` (default 88), WebP uses 90. Explicit values
+     * must be in `1..100`. Returns the byte count written. Honors
+     * `open_basedir`. `.pdf` requires the `--with-pdfio` build;
+     * without it, writing a `.pdf` path throws "PDF support not
+     * compiled in". `.gif` / `.avif` extensions raise a clear
      * "dropped in v1.0" Error.
      */
     public function renderToFile(string $path, int $quality = 0): int {}
@@ -687,6 +689,23 @@ abstract class Chart
      * — smaller files, but consumers need text rendering support.
      */
     public function renderSvg(): string {}
+
+    /**
+     * Render to a vector PDF document. Returns the PDF bytes (a
+     * single page sized to the logical `setSize()` dimensions).
+     *
+     * Chart bodies emit PDF path operators directly through the same
+     * primitive layer as `renderSvg()` — no rasterization — so the
+     * output stays crisp at any zoom and print resolution. Text is
+     * flattened to glyph outlines (no font embedding in this release).
+     *
+     * Requires the extension to be built `--with-pdfio` against a
+     * system pdfio install (msweet.org); without it this method throws
+     * an `Error` ("PDF support not compiled in"). DPI-invariant like
+     * `renderSvg()`. Gradients fall back to a solid fill and raster
+     * background images are omitted in this release.
+     */
+    public function renderPdf(): string {}
 
     /**
      * Render to an SVG fragment: a single `<g class="fastchart">…</g>`

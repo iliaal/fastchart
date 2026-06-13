@@ -35,6 +35,7 @@
 #include "fastchart_svg.h"
 #include "fastchart_rasterize.h"
 #include "php_fastchart.h"
+#include "fastchart_pdf.h"
 
 /* Source-image bytes cap. FC_IMAGE_MAX_DIM / FC_IMAGE_MAX_PIXELS
  * are shared with the SVG rasterizer via fastchart_rasterize.h. */
@@ -73,6 +74,42 @@ void fastchart_target_from_svg(fastchart_target_t *t, smart_str *buf,
     t->u.svg.text_mode = (text_mode == FASTCHART_SVG_TEXT_NATIVE)
         ? FASTCHART_SVG_TEXT_NATIVE
         : FASTCHART_SVG_TEXT_PATHS;
+}
+
+void fastchart_target_from_pdf(fastchart_target_t *t, smart_str *out,
+                                int width, int height, int dpi)
+{
+    memset(t, 0, sizeof(*t));
+    t->kind = FASTCHART_TARGET_PDF;
+#ifdef HAVE_FASTCHART_PDF
+    t->u.pdf.state = fc_pdf_doc_open(out, width, height);
+#else
+    (void)out;
+    t->u.pdf.state = NULL;
+#endif
+    t->u.pdf.width = width;
+    t->u.pdf.height = height;
+    /* Vector output is DPI-invariant, same rationale as the SVG target:
+     * layout/text measurement stay on the 96 baseline. */
+    (void)dpi;
+    t->u.pdf.dpi = 96;
+}
+
+int fastchart_target_pdf_ok(const fastchart_target_t *t)
+{
+    return (t->kind == FASTCHART_TARGET_PDF && t->u.pdf.state != NULL) ? 1 : 0;
+}
+
+int fastchart_target_pdf_finish(fastchart_target_t *t)
+{
+    if (t->kind != FASTCHART_TARGET_PDF) return -1;
+#ifdef HAVE_FASTCHART_PDF
+    int rc = fc_pdf_doc_close((fc_pdf_state *)t->u.pdf.state);
+    t->u.pdf.state = NULL;
+    return rc;
+#else
+    return -1;
+#endif
 }
 
 /* ============================================================ *
@@ -121,12 +158,18 @@ uint32_t fastchart_target_color_to_rgba(fastchart_target_t *t, int handle)
 
 void fastchart_target_get_dims(fastchart_target_t *t, int *w, int *h)
 {
+    if (t->kind == FASTCHART_TARGET_PDF) {
+        *w = t->u.pdf.width;
+        *h = t->u.pdf.height;
+        return;
+    }
     *w = t->u.svg.width;
     *h = t->u.svg.height;
 }
 
 int fastchart_target_get_dpi(fastchart_target_t *t)
 {
+    if (t->kind == FASTCHART_TARGET_PDF) return t->u.pdf.dpi;
     return t->u.svg.dpi;
 }
 
@@ -139,6 +182,12 @@ void fastchart_target_line(fastchart_target_t *t,
                             int color, int thickness, int dash)
 {
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
+#ifdef HAVE_FASTCHART_PDF
+    if (t->kind == FASTCHART_TARGET_PDF) {
+        fc_pdf_emit_line(t->u.pdf.state, x0, y0, x1, y1, rgba, thickness, dash);
+        return;
+    }
+#endif
     fc_svg_emit_line(t->u.svg.buf, x0, y0, x1, y1, rgba, thickness, dash);
 }
 
@@ -147,6 +196,12 @@ void fastchart_target_rect(fastchart_target_t *t,
                             int color, int fill, int thickness)
 {
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
+#ifdef HAVE_FASTCHART_PDF
+    if (t->kind == FASTCHART_TARGET_PDF) {
+        fc_pdf_emit_rect(t->u.pdf.state, x, y, w, h, rgba, fill, thickness);
+        return;
+    }
+#endif
     fc_svg_emit_rect(t->u.svg.buf, x, y, w, h, rgba, fill, thickness);
 }
 
@@ -169,6 +224,13 @@ void fastchart_target_polygon(fastchart_target_t *t,
         ys[i] = pts[i].y;
     }
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
+#ifdef HAVE_FASTCHART_PDF
+    if (t->kind == FASTCHART_TARGET_PDF) {
+        fc_pdf_emit_polygon(t->u.pdf.state, xs, ys, n, rgba, fill, thickness);
+        if (n > 256) { efree(xs); efree(ys); }
+        return;
+    }
+#endif
     fc_svg_emit_polygon(t->u.svg.buf, xs, ys, n, rgba, fill, thickness);
     if (n > 256) { efree(xs); efree(ys); }
 }
@@ -179,6 +241,13 @@ void fastchart_target_arc(fastchart_target_t *t,
                            int color, int fill, int thickness)
 {
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
+#ifdef HAVE_FASTCHART_PDF
+    if (t->kind == FASTCHART_TARGET_PDF) {
+        fc_pdf_emit_arc(t->u.pdf.state, cx, cy, rx, ry,
+                        start_deg, end_deg, rgba, fill, thickness);
+        return;
+    }
+#endif
     fc_svg_emit_path_arc(t->u.svg.buf, cx, cy, rx, ry,
                           start_deg, end_deg, rgba, fill, thickness);
 }
@@ -188,6 +257,12 @@ void fastchart_target_ellipse(fastchart_target_t *t,
                                int color, int fill, int thickness)
 {
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
+#ifdef HAVE_FASTCHART_PDF
+    if (t->kind == FASTCHART_TARGET_PDF) {
+        fc_pdf_emit_ellipse(t->u.pdf.state, cx, cy, rx, ry, rgba, fill, thickness);
+        return;
+    }
+#endif
     fc_svg_emit_ellipse(t->u.svg.buf, cx, cy, rx, ry, rgba, fill, thickness);
 }
 
@@ -455,6 +530,15 @@ void fastchart_target_text(fastchart_target_t *t,
     /* SVG. size_pt -> size_px at 96 DPI baseline: px = pt * 4/3. */
     double size_px = size_pt * (4.0 / 3.0);
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
+#ifdef HAVE_FASTCHART_PDF
+    if (t->kind == FASTCHART_TARGET_PDF) {
+        /* Always glyph-as-path for PDF — no native <text> equivalent and
+         * no font embedding in v1; reuses the shared glyph cache. */
+        fc_pdf_emit_text_as_path(t->u.pdf.state, x, y, font_path, size_px,
+                                  rgba, angle_deg, align, text, strlen(text));
+        return;
+    }
+#endif
     char family[64];
     fastchart_target_resolve_font_family(t, font_path, family, sizeof(family));
 
@@ -531,6 +615,13 @@ void fastchart_target_release(fastchart_target_t *t)
 void fastchart_target_clip_push(fastchart_target_t *t,
                                  int x, int y, int w, int h)
 {
+#ifdef HAVE_FASTCHART_PDF
+    if (t->kind == FASTCHART_TARGET_PDF) {
+        if (t->clip_depth < FASTCHART_TARGET_CLIP_DEPTH) t->clip_depth++;
+        fc_pdf_emit_clip_open(t->u.pdf.state, x, y, w, h);
+        return;
+    }
+#endif
     int id = t->u.svg.next_clip_id++;
     if (t->clip_depth < FASTCHART_TARGET_CLIP_DEPTH) {
         t->clip_stack[t->clip_depth++] = id;
@@ -541,6 +632,12 @@ void fastchart_target_clip_push(fastchart_target_t *t,
 void fastchart_target_clip_pop(fastchart_target_t *t)
 {
     if (t->clip_depth > 0) t->clip_depth--;
+#ifdef HAVE_FASTCHART_PDF
+    if (t->kind == FASTCHART_TARGET_PDF) {
+        fc_pdf_emit_clip_close(t->u.pdf.state);
+        return;
+    }
+#endif
     fc_svg_emit_clip_close(t->u.svg.buf);
 }
 
@@ -761,6 +858,12 @@ void fastchart_target_image_emit(fastchart_target_t *t,
 {
     if (!t || !buf || !buf->bytes || !buf->mime) return;
     if (w <= 0 || h <= 0) return;
+#ifdef HAVE_FASTCHART_PDF
+    /* v1 PDF backend does not embed raster images; emit nothing so the
+     * caller falls through to its solid-fill backup (same contract the
+     * SVG path honors for unsupported source formats). */
+    if (t->kind == FASTCHART_TARGET_PDF) return;
+#endif
 
     zend_string *b64 = php_base64_encode(
         (const unsigned char *)ZSTR_VAL(buf->bytes),
@@ -788,6 +891,13 @@ void fastchart_target_gradient_rect(fastchart_target_t *t,
                                      int dir)
 {
     if (w <= 0 || h <= 0) return;
+#ifdef HAVE_FASTCHART_PDF
+    if (t->kind == FASTCHART_TARGET_PDF) {
+        fc_pdf_emit_gradient_rect(t->u.pdf.state, x, y, w, h,
+                                   from_rgb, to_rgb, dir);
+        return;
+    }
+#endif
     int id = t->u.svg.next_grad_id++;
     fc_svg_emit_gradient_rect(t->u.svg.buf, id, x, y, w, h,
                                from_rgb, to_rgb, dir);
@@ -810,6 +920,14 @@ void fastchart_target_gradient_polygon(fastchart_target_t *t,
         xs[i] = pts[i].x;
         ys[i] = pts[i].y;
     }
+#ifdef HAVE_FASTCHART_PDF
+    if (t->kind == FASTCHART_TARGET_PDF) {
+        fc_pdf_emit_gradient_polygon(t->u.pdf.state, xs, ys, n,
+                                      from_rgb, to_rgb, dir);
+        if (n > 256) { efree(xs); efree(ys); }
+        return;
+    }
+#endif
     int id = t->u.svg.next_grad_id++;
     fc_svg_emit_gradient_polygon(t->u.svg.buf, id, xs, ys, n,
                                   from_rgb, to_rgb, dir);
