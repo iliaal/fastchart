@@ -17,6 +17,14 @@ PHP_ARG_WITH(fastchart-static-codecs, prefix containing static-built codec libs,
                           PREFIX of "yes" uses whatever PKG_CONFIG_PATH
                           already resolves.], no, no)
 
+PHP_ARG_WITH(pdfio, whether to enable PDF output via system pdfio,
+[  --with-pdfio[=PREFIX]   Enable renderPdf() / renderToFile('*.pdf') using a
+                          system-installed pdfio (msweet.org). Off by default;
+                          PDF methods throw "PDF support not compiled in" when
+                          absent. Vector output — charts emit PDF path operators
+                          directly, no rasterization. PREFIX of "yes" uses
+                          whatever PKG_CONFIG_PATH already resolves.], no, no)
+
 if test "$PHP_FASTCHART" != "no"; then
 
   PHP_VERSION_ID=$($PHP_CONFIG --vernum)
@@ -89,6 +97,31 @@ if test "$PHP_FASTCHART" != "no"; then
     fi
   done
 
+  dnl Optional PDF output via system pdfio (msweet.org). Opt-in: unlike
+  dnl the codecs above (auto-detected), --with-pdfio must be requested,
+  dnl and a request that can't be satisfied is a hard error rather than
+  dnl a silent skip — the user explicitly asked for PDF. pdfio is not
+  dnl vendored; it carries a PDF parser fastchart never uses, so it
+  dnl stays a system dependency. PDF emission is vector (chart bodies
+  dnl emit PDF path operators directly through the target abstraction),
+  dnl so it needs no codec libs.
+  FC_PDF_SRC=""
+  if test "$PHP_PDFIO" != "no"; then
+    if test "$PHP_PDFIO" != "yes"; then
+      PKG_CONFIG_PATH="$PHP_PDFIO/lib/pkgconfig:$PKG_CONFIG_PATH"
+      export PKG_CONFIG_PATH
+    fi
+    if $FC_PKGCFG --exists pdfio; then
+      FC_PC_CFLAGS="$FC_PC_CFLAGS `$FC_PKGCFG $FC_PKGCFG_STATIC --cflags pdfio`"
+      FC_PC_LIBS="$FC_PC_LIBS `$FC_PKGCFG $FC_PKGCFG_STATIC --libs pdfio`"
+      FC_OPT_DEFS="$FC_OPT_DEFS -DHAVE_FASTCHART_PDF=1"
+      FC_PDF_SRC="fastchart_pdf.c"
+      AC_MSG_NOTICE([fastchart: pdfio found, PDF output enabled])
+    else
+      AC_MSG_ERROR([--with-pdfio given but pkg-config cannot find pdfio. Install it from https://www.msweet.org/pdfio (make install ships pdfio.pc), or pass --with-pdfio=PREFIX.])
+    fi
+  fi
+
   PHP_EVAL_INCLINE([$FC_PC_CFLAGS])
   PHP_EVAL_LIBLINE([$FC_PC_LIBS], FASTCHART_SHARED_LIBADD)
 
@@ -147,6 +180,7 @@ if test "$PHP_FASTCHART" != "no"; then
     fastchart_symbol.c \
     fastchart_code128.c \
     fastchart_qrcode.c \
+    $FC_PDF_SRC \
     vendor/qrcodegen/qrcodegen.c \
     vendor/plutovg/source/plutovg-blend.c \
     vendor/plutovg/source/plutovg-canvas.c \

@@ -107,6 +107,9 @@ typedef struct fastchart_text_overlay {
 /* Retained for source-compat with chart bodies that reference the
  * enum even though only SVG is now valid. */
 #define FASTCHART_TARGET_SVG  1
+/* Vector PDF backend (configure --with-pdfio). Chart bodies emit the
+ * same primitives; target.c routes them to fastchart_pdf.c. */
+#define FASTCHART_TARGET_PDF  2
 
 #define FASTCHART_TARGET_MAX_COLORS  512
 #define FASTCHART_TARGET_CLIP_DEPTH  8
@@ -158,6 +161,15 @@ typedef struct fastchart_target {
             int next_grad_id;
             int text_mode;
         } svg;
+        /* PDF backend (configure --with-pdfio). `state` is an opaque
+         * fc_pdf_state* owned by fastchart_pdf.c; kept void* so pdfio.h
+         * stays out of this widely-included header. */
+        struct {
+            void *state;
+            int width;
+            int height;
+            int dpi;
+        } pdf;
     } u;
 
     /* Shared color table. handle = index. */
@@ -189,6 +201,24 @@ typedef struct fastchart_target {
 void fastchart_target_from_svg(fastchart_target_t *t, smart_str *buf,
                                 int width, int height, int dpi,
                                 int text_mode);
+
+/* Initialise as a PDF-backed target (configure --with-pdfio). Streams a
+ * one-page PDF sized width x height into `out`. Like SVG, output is
+ * DPI-invariant — layout uses the 96-DPI baseline; the vector page
+ * scales freely. After this call the caller MUST check
+ * fastchart_target_pdf_ok(t): a NULL pdfio state means doc creation
+ * failed. Only declared/usable when built with PDF support. */
+void fastchart_target_from_pdf(fastchart_target_t *t, smart_str *out,
+                                int width, int height, int dpi);
+
+/* 1 if a PDF target initialised successfully, 0 otherwise. Always 0 for
+ * non-PDF targets. */
+int fastchart_target_pdf_ok(const fastchart_target_t *t);
+
+/* Finalise a PDF target: close the document (flushing the trailer to the
+ * `out` buffer) and release backend state. Returns 0 on success. No-op
+ * returning -1 for non-PDF targets. */
+int fastchart_target_pdf_finish(fastchart_target_t *t);
 
 /* Enable deferred text overlay recording (opt #7). When set, PATHS-mode
  * text emits go to t->text_overlays instead of the SVG buffer. Must

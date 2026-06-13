@@ -24,6 +24,7 @@
 #include "fastchart_text.h"
 #include "fastchart_target.h"
 #include "fastchart_svg.h"
+#include "fastchart_pdf.h"
 
 /* Measure a UTF-8 byte range at the given point size + DPI using
  * FreeType directly. text_len is the byte count (NOT codepoint count);
@@ -162,6 +163,13 @@ int fastchart_text_draw(fastchart_target_t *t,
         size_t len = end ? (size_t)(end - p) : strlen(p);
 
         if (len > 0) {
+#ifdef HAVE_FASTCHART_PDF
+            if (t->kind == FASTCHART_TARGET_PDF) {
+                fc_pdf_emit_text_as_path(t->u.pdf.state, (double)x, line_y,
+                                          font_path, size_px, rgba,
+                                          0.0, svg_align, p, len);
+            } else
+#endif
             if (t->u.svg.text_mode == FASTCHART_SVG_TEXT_PATHS) {
                 fc_svg_emit_text_as_path(t->u.svg.buf, (double)x, line_y,
                                           font_path, size_px, rgba,
@@ -226,6 +234,13 @@ int fastchart_text_draw_rotated(fastchart_target_t *t,
             double offset = line_no * line_step;
             double line_x = (double)x - offset * sin_t;
             double line_y = (double)y + offset * cos_t;
+#ifdef HAVE_FASTCHART_PDF
+            if (t->kind == FASTCHART_TARGET_PDF) {
+                fc_pdf_emit_text_as_path(t->u.pdf.state, line_x, line_y,
+                                          font_path, size_px, rgba,
+                                          angle_deg, svg_align, p, len);
+            } else
+#endif
             if (t->u.svg.text_mode == FASTCHART_SVG_TEXT_PATHS) {
                 fc_svg_emit_text_as_path(t->u.svg.buf, line_x, line_y,
                                           font_path, size_px, rgba,

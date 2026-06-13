@@ -5588,6 +5588,71 @@ ZEND_METHOD(FastChart_Chart, drawSvgFragment)
     fastchart_render_to_svg(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
 }
 
+/* Vector PDF. Like renderSvg, dimensions are the LOGICAL setSize()
+ * values — PDF is vector-scalable so DPI doesn't multiply the page.
+ * Chart bodies emit the same primitives through the target abstraction;
+ * the PDF target routes them to pdfio. Requires --with-pdfio at build
+ * time; throws otherwise. Returns 0 on success, -1 (with a thrown
+ * error) on failure. out_buf receives the PDF bytes. */
+static int fastchart_chart_render_to_pdf(fastchart_obj *self,
+                                         zend_class_entry *ce,
+                                         const char *where,
+                                         smart_str *out_buf)
+{
+#ifndef HAVE_FASTCHART_PDF
+    (void)self; (void)ce; (void)out_buf;
+    zend_throw_error(NULL,
+        "%s: PDF support not compiled in (configure with --with-pdfio "
+        "and a system pdfio install to enable it)", where);
+    return -1;
+#else
+    if (self->width <= 0 || self->height <= 0) {
+        zend_throw_error(NULL, "FastChart: invalid canvas size; setSize() first");
+        return -1;
+    }
+
+    fastchart_target_t t;
+    fastchart_target_from_pdf(&t, out_buf,
+                               (int)self->width, (int)self->height,
+                               (int)self->dpi);
+    if (!fastchart_target_pdf_ok(&t)) {
+        smart_str_free(out_buf);
+        zend_throw_error(NULL, "%s: PDF document creation failed", where);
+        return -1;
+    }
+
+    if (dispatch_svg_render(self, ce, &t) != 0 || EG(exception)) {
+        fastchart_target_pdf_finish(&t);
+        fastchart_target_release(&t);
+        smart_str_free(out_buf);
+        return -1;
+    }
+
+    int rc = fastchart_target_pdf_finish(&t);
+    fastchart_target_release(&t);
+    if (rc != 0 || !out_buf->s) {
+        smart_str_free(out_buf);
+        zend_throw_error(NULL, "%s: PDF encoder produced no output", where);
+        return -1;
+    }
+    smart_str_0(out_buf);
+    return 0;
+#endif
+}
+
+ZEND_METHOD(FastChart_Chart, renderPdf)
+{
+    ZEND_PARSE_PARAMETERS_NONE();
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    smart_str out_buf = {0};
+    if (fastchart_chart_render_to_pdf(self, Z_OBJCE_P(ZEND_THIS),
+                                      "FastChart\\Chart::renderPdf()",
+                                      &out_buf) != 0) {
+        RETURN_THROWS();
+    }
+    RETURN_STR(out_buf.s);
+}
+
 ZEND_METHOD(FastChart_Chart, setImageMap)
 {
     zval *list;
@@ -5690,6 +5755,20 @@ int fastchart_path_ends_with_svg(const char *path, size_t len)
     return zend_binary_strcasecmp(ext, ext_len, "svg", 3) == 0;
 }
 
+static int fastchart_path_ends_with_pdf(const char *path, size_t len)
+{
+    if (len == 0 || len > 4096) return 0;
+    const char *dot = NULL;
+    for (size_t i = len; i > 0; i--) {
+        if (path[i - 1] == '.') { dot = &path[i - 1]; break; }
+        if (path[i - 1] == '/' || path[i - 1] == '\\') break;
+    }
+    if (!dot) return 0;
+    const char *ext = dot + 1;
+    size_t ext_len = strlen(ext);
+    return zend_binary_strcasecmp(ext, ext_len, "pdf", 3) == 0;
+}
+
 int fastchart_write_zstr_to_file(zend_string *path, zend_string *payload,
                                  const char *where,
                                  zend_long *written_out)
@@ -5770,6 +5849,29 @@ static void fastchart_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS, zend_stri
     RETURN_LONG(written);
 }
 
+/* PDF file-write branch invoked by renderToFile when the path extension
+ * is .pdf. Vector output via pdfio; throws "PDF support not compiled in"
+ * when built without --with-pdfio. Honors open_basedir same as SVG. */
+static void fastchart_render_to_pdf_file(INTERNAL_FUNCTION_PARAMETERS, zend_string *path)
+{
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    smart_str buf = {0};
+    if (fastchart_chart_render_to_pdf(self, Z_OBJCE_P(ZEND_THIS),
+                                      "FastChart\\Chart::renderToFile()",
+                                      &buf) != 0) {
+        RETURN_THROWS();
+    }
+    zend_long written = 0;
+    if (fastchart_write_zstr_to_file(path, buf.s,
+                                     "FastChart\\Chart::renderToFile()",
+                                     &written) != 0) {
+        smart_str_free(&buf);
+        RETURN_THROWS();
+    }
+    smart_str_free(&buf);
+    RETURN_LONG(written);
+}
+
 ZEND_METHOD(FastChart_Chart, renderToFile)
 {
     zend_string *path;
@@ -5802,10 +5904,26 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         return;
     }
 
+    /* Vector PDF branch. Like .svg, ignores $quality and writes through
+     * a dedicated path. Throws if PDF support wasn't compiled in. */
+    if (fastchart_path_ends_with_pdf(ZSTR_VAL(path), ZSTR_LEN(path))) {
+        (void)quality;
+        if (php_check_open_basedir(ZSTR_VAL(path))) {
+            if (!EG(exception)) {
+                zend_throw_error(NULL,
+                    "FastChart\\Chart::renderToFile() open_basedir restriction "
+                    "prevents access to %s", ZSTR_VAL(path));
+            }
+            RETURN_THROWS();
+        }
+        fastchart_render_to_pdf_file(INTERNAL_FUNCTION_PARAM_PASSTHRU, path);
+        return;
+    }
+
     int format = fastchart_format_from_path(ZSTR_VAL(path), ZSTR_LEN(path));
     if (format < 0) {
         zend_value_error("FastChart\\Chart::renderToFile() could not infer "
-            "format from extension; expected .png/.jpg/.jpeg/.webp/.svg");
+            "format from extension; expected .png/.jpg/.jpeg/.webp/.svg/.pdf");
         RETURN_THROWS();
     }
     if (format == 3) {
@@ -8552,6 +8670,12 @@ PHP_MINFO_FUNCTION(fastchart)
     php_info_print_table_row(2, "libwebp",
         fastchart_have_libwebp()
             ? fastchart_libwebp_version() : "(not compiled in)");
+
+#ifdef HAVE_FASTCHART_PDF
+    php_info_print_table_row(2, "PDF output (pdfio)", "enabled");
+#else
+    php_info_print_table_row(2, "PDF output (pdfio)", "(not compiled in)");
+#endif
 
     /* plutovg + plutosvg are vendored; their headers export
      * VERSION_STRING macros directly. */
