@@ -1,0 +1,12 @@
+# michaelrsweet/pdfio — PDF generation library (msweet.org), Apache-2.0.
+# NOT vendored: pdfio carries a PDF *parser* fastchart never uses, so it
+# stays an opt-in system dependency, linked statically when the extension
+# is built with --with-pdfio. Powers renderPdf() / renderToFile('*.pdf').
+#
+# Because it's a system dep (no vendor/ copy), the freshness gate is
+# warn-only — a trailing pin doesn't block a release. Keep `pinned` in
+# sync with the PDFIO_VERSION pinned in the tests.yml `pdf` CI lane.
+
+resolver: github
+repo: michaelrsweet/pdfio
+pinned: 1.6.4

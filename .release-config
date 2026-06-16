@@ -14,6 +14,17 @@ build_matrix:
   - PHP-8.5
 configure_base: "--enable-fastchart --enable-fastchart-dev"
 
+# Extra variant: the opt-in PDF backend. The base matrix builds with PDF
+# compiled out (configure_base has no --with-pdfio), so this lane is what
+# actually exercises fastchart_pdf.c. Local runs need pdfio findable on
+# PKG_CONFIG_PATH (it is not packaged in apt — build michaelrsweet/pdfio
+# into a prefix and pass --with-pdfio=PREFIX, or export PKG_CONFIG_PATH).
+# CI covers this via the tests.yml `pdf` job, which source-builds pdfio.
+extra_build_variants:
+  - name: "PDF backend (--with-pdfio)"
+    configure: "--enable-fastchart --enable-fastchart-dev --with-pdfio"
+    php_version: PHP-8.4
+
 # Prebuilt-binary release lanes. windows.yml builds Windows DLLs for
 # PHP-8.3/8.4/8.5 (NTS+TS, x64+x86) via php-windows-builder; the four
 # system deps (freetype, libpng, libjpeg-turbo, libwebp) come through
