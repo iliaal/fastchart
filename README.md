@@ -170,6 +170,20 @@ Raster outputs (PNG/JPG/WebP) always use the PATHS mode internally;
 plutovg has no text support of its own, so glyph flattening is what
 makes labels appear in the rasterized output.
 
+PDF is a second vector format, available when the extension is built
+with `--with-pdfio` (it links a system [pdfio](https://www.msweet.org/pdfio);
+off by default). Chart bodies emit PDF path operators directly — no
+rasterization — so every chart class renders as sharp vector output:
+
+```php
+$pdf = $chart->renderPdf();              // PDF document bytes
+$chart->renderToFile('/tmp/dau.pdf');    // inferred from the extension
+```
+
+Without `--with-pdfio`, both methods throw `"PDF support not compiled
+in"`. This first cut falls back to solid fills for gradients, omits
+raster background images, and renders fills opaque (alpha is ignored).
+
 Three static methods on `FastChart\Chart` rasterize caller-supplied
 SVG bytes through the same plutovg + libpng / libjpeg-turbo /
 libwebp pipeline. Useful for round-tripping `renderSvg()` output, or

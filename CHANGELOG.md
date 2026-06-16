@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-16
+
+### Added
+
+- `Chart::renderPdf(): string` and `Chart::renderToFile('out.pdf')` — vector PDF output. Chart bodies emit PDF path operators through the same `fastchart_target_t` primitive layer as `renderSvg()`, so all 26 chart classes render with no rasterization; text flattens to glyph outlines via the shared glyph cache (TrueType quadratics degree-elevated to PDF cubics, arcs/ellipses approximated with cubic Béziers). Opt-in at build time: `./configure --with-pdfio` links a system [pdfio](https://www.msweet.org/pdfio) statically, so the runtime dependency set is unchanged. Without the flag both methods throw `"PDF support not compiled in"` and the PDF tests skip.
+
+  v1 limitations: gradient fills fall back to solid, raster background images are omitted (the caller falls back to solid fill), and alpha is ignored, so fills render opaque.
+
 ## [1.2.0] - 2026-06-11
 
 ### Added
@@ -1029,7 +1037,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.2.0...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.3.0...HEAD
+[1.3.0]: https://github.com/iliaal/fastchart/releases/tag/1.3.0
 [1.2.0]: https://github.com/iliaal/fastchart/releases/tag/1.2.0
 [1.1.6]: https://github.com/iliaal/fastchart/releases/tag/1.1.6
 [1.1.5]: https://github.com/iliaal/fastchart/releases/tag/1.1.5
