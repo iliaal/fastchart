@@ -35,6 +35,10 @@
 #include "fastchart_encoder.h"
 #include "fastchart_rasterize.h"
 
+#ifdef HAVE_FASTCHART_PDF
+#include <pdfio.h>
+#endif
+
 #include "plutovg.h"
 #include "plutosvg.h"
 
@@ -8673,6 +8677,7 @@ PHP_MINFO_FUNCTION(fastchart)
 
 #ifdef HAVE_FASTCHART_PDF
     php_info_print_table_row(2, "PDF output (pdfio)", "enabled");
+    php_info_print_table_row(2, "pdfio", PDFIO_VERSION);
 #else
     php_info_print_table_row(2, "PDF output (pdfio)", "(not compiled in)");
 #endif
