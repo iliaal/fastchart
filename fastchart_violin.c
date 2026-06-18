@@ -131,11 +131,14 @@ int fastchart_violin_render_to_target(fastchart_violin_obj *self, fastchart_targ
         double h = sd > 0.0 ? 1.06 * sd * pow((double)n, -0.2) : 0.0;
         if (h < (vmax - vmin) * 0.01) h = (vmax - vmin) * 0.02;  /* floor */
 
-        /* Density over the global value grid. */
+        /* Density over the global value grid. Cache each grid point's
+         * pixel y so the two polygon passes below don't recompute it. */
         double dens[VIOLIN_GRID];
+        double yv[VIOLIN_GRID];
         double dmax = 0.0;
         for (int j = 0; j < VIOLIN_GRID; j++) {
             double x = vmin + (vmax - vmin) * ((double)j / (VIOLIN_GRID - 1));
+            yv[j] = plot_y1 - (x - vmin) / (vmax - vmin) * plot_h;
             double s = 0.0;
             for (int i = 0; i < grp->n; i++) {
                 if (!isfinite(grp->values[i])) continue;
@@ -149,19 +152,15 @@ int fastchart_violin_render_to_target(fastchart_violin_obj *self, fastchart_targ
 
         int np = 0;
         for (int j = 0; j < VIOLIN_GRID; j++) {
-            double x = vmin + (vmax - vmin) * ((double)j / (VIOLIN_GRID - 1));
-            double y = plot_y1 - (x - vmin) / (vmax - vmin) * plot_h;
             double w = dens[j] / dmax * half_max;
             poly[np].x = (int)(cx + w);
-            poly[np].y = (int)y;
+            poly[np].y = (int)yv[j];
             np++;
         }
         for (int j = VIOLIN_GRID - 1; j >= 0; j--) {
-            double x = vmin + (vmax - vmin) * ((double)j / (VIOLIN_GRID - 1));
-            double y = plot_y1 - (x - vmin) / (vmax - vmin) * plot_h;
             double w = dens[j] / dmax * half_max;
             poly[np].x = (int)(cx - w);
-            poly[np].y = (int)y;
+            poly[np].y = (int)yv[j];
             np++;
         }
         fastchart_target_polygon(t, poly, np, color, 1, 0);

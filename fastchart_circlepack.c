@@ -29,9 +29,11 @@
 /* Circle packing: a hierarchy of nested circles. Leaves are sized by
  * value (radius proportional to sqrt(value) so area tracks value); each
  * parent is the enclosing circle of its spiral-packed children. The
- * spiral placement guarantees non-overlap among siblings — the property
- * that actually matters visually — at the cost of a slightly loose
- * (non-minimal) enclosing circle. Coordinates are kept abstract during
+ * spiral placement keeps siblings non-overlapping — the property that
+ * actually matters visually — at the cost of a slightly loose
+ * (non-minimal) enclosing circle. A fixed iteration cap bounds the
+ * search; in the rare case it is exhausted the last candidate is used
+ * as-is (see pack_siblings). Coordinates are kept abstract during
  * packing and scaled to the canvas in a single top-down render pass. */
 
 #define PACK_PAD 2.0
@@ -62,6 +64,10 @@ static double pack_siblings(fastchart_pack_node **kids, int n)
     for (int i = 0; i < n; i++) {
         fastchart_pack_node *c = kids[i];
         if (i == 0) { c->x = 0.0; c->y = 0.0; continue; }
+        /* Spiral outward until a collision-free slot is found. The cap is
+         * a backstop; rad grows without bound so a clear slot is reached
+         * long before it for any realistic radius set. If the cap is hit,
+         * the last (possibly overlapping) candidate stands. */
         int placed = 0;
         for (long s = 0; s < 200000 && !placed; s++) {
             double tt = (double)s;
@@ -184,6 +190,7 @@ int fastchart_circlepack_render_to_target(fastchart_circlepack_obj *self, fastch
     int plot_x0 = 12, plot_x1 = W - 12;
     double avail = (plot_x1 - plot_x0) < (plot_y1 - plot_y0)
         ? (plot_x1 - plot_x0) : (plot_y1 - plot_y0);
+    if (avail < 20.0) return 0;   /* canvas too small to draw into */
     double scale = (avail / 2.0 * 0.97) / self->root->r;
     double cx = (plot_x0 + plot_x1) / 2.0;
     double cy = (plot_y0 + plot_y1) / 2.0;
