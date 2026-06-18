@@ -61,4 +61,22 @@ fastchart_graph_node *fastchart_graph_clone_nodes(
 fastchart_graph_link *fastchart_graph_clone_links(
     const fastchart_graph_link *links, int count);
 
+/* Object-field helpers shared by the graph chart classes (ArcDiagram,
+ * ChordDiagram, NetworkChart), which all carry the same
+ * {nodes, node_count, links, link_count} quad. Each operates through
+ * field pointers so it makes no assumption about the surrounding struct
+ * layout. */
+void fastchart_graph_fields_release(fastchart_graph_node **nodes, int *ncount,
+                                    fastchart_graph_link **links, int *lcount);
+void fastchart_graph_fields_addref(fastchart_graph_node **nodes, int ncount,
+                                   fastchart_graph_link **links, int lcount);
+/* setNodes semantics: free the old nodes AND links (stale link indices
+ * reference the old node array), then parse the new node list. */
+void fastchart_graph_fields_set_nodes(fastchart_graph_node **nodes, int *ncount,
+                                      fastchart_graph_link **links, int *lcount,
+                                      zval *arr);
+void fastchart_graph_fields_set_links(int node_count,
+                                      fastchart_graph_link **links, int *lcount,
+                                      zval *arr);
+
 #endif /* FASTCHART_GRAPH_H */

@@ -107,8 +107,20 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
     double area = plot_w * plot_h;
     double k = 0.8 * sqrt(area / (double)n);
     if (k < 1.0) k = 1.0;
+    double k2 = k * k;                  /* loop-invariant; hoisted */
     int iters = (int)self->iterations;
     if (iters < 1) iters = 1;
+    /* Repulsion is O(n^2) per pass, so total work is O(n^2 * iters).
+     * Scale the iteration count down for large graphs so a single
+     * render can't pin a CPU on adversarial input (n up to 512,
+     * user-settable iters up to 5000). Small graphs keep their full
+     * requested count. */
+    long pairs = (long)n * n;
+    long budget = 60000000L;           /* ~ pair-steps per render */
+    if (pairs > 0 && (long)iters * pairs > budget) {
+        iters = (int)(budget / pairs);
+        if (iters < 1) iters = 1;
+    }
     double temp0 = plot_w * 0.1;
 
     for (int it = 0; it < iters; it++) {
@@ -126,7 +138,7 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
                     ddy = fc_xs_unit(&rng) - 0.5;
                     dist = sqrt(ddx * ddx + ddy * ddy) + 0.01;
                 }
-                double force = (k * k) / dist;
+                double force = k2 / dist;
                 double ux = ddx / dist, uy = ddy / dist;
                 dx[i] += ux * force; dy[i] += uy * force;
                 dx[j] -= ux * force; dy[j] -= uy * force;

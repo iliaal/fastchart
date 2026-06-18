@@ -141,3 +141,40 @@ fastchart_graph_link *fastchart_graph_clone_links(
     memcpy(copy, links, bytes);
     return copy;
 }
+
+void fastchart_graph_fields_release(fastchart_graph_node **nodes, int *ncount,
+                                    fastchart_graph_link **links, int *lcount)
+{
+    fastchart_graph_free_nodes(*nodes, *ncount);
+    *nodes = NULL;
+    *ncount = 0;
+    fastchart_graph_free_links(*links);
+    *links = NULL;
+    *lcount = 0;
+}
+
+void fastchart_graph_fields_addref(fastchart_graph_node **nodes, int ncount,
+                                   fastchart_graph_link **links, int lcount)
+{
+    *nodes = fastchart_graph_clone_nodes(*nodes, ncount);
+    *links = fastchart_graph_clone_links(*links, lcount);
+}
+
+void fastchart_graph_fields_set_nodes(fastchart_graph_node **nodes, int *ncount,
+                                      fastchart_graph_link **links, int *lcount,
+                                      zval *arr)
+{
+    fastchart_graph_fields_release(nodes, ncount, links, lcount);
+    fastchart_graph_parse_nodes(arr, FASTCHART_MAX_GRAPH_NODES, nodes, ncount);
+}
+
+void fastchart_graph_fields_set_links(int node_count,
+                                      fastchart_graph_link **links, int *lcount,
+                                      zval *arr)
+{
+    fastchart_graph_free_links(*links);
+    *links = NULL;
+    *lcount = 0;
+    fastchart_graph_parse_links(arr, node_count, FASTCHART_MAX_GRAPH_LINKS,
+                                links, lcount);
+}

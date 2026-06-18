@@ -128,8 +128,8 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
             wc_box cand = { bx - hw, by - hh, bx + hw, by + hh };
             if (cand.x0 < plot_x0 || cand.x1 > plot_x1 ||
                 cand.y0 < plot_y0 || cand.y1 > plot_y1) {
-                /* Out of bounds: keep spiralling, but accept eventually
-                 * by relaxing only when nothing else fits. */
+                /* Out of bounds: keep spiralling. A word that never fits
+                 * inside the plot rect is dropped below (ok stays 0). */
                 continue;
             }
             ok = 1;
@@ -149,9 +149,11 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
         placed[placed_n].y1 = by + hh;
         placed_n++;
 
+        /* Palette colour keyed on the word's stable index, not its
+         * weight rank, so a word keeps its colour when weights change. */
         int color = self->words[wi].color_rgb >= 0
             ? fastchart_target_color_rgb(t, self->words[wi].color_rgb)
-            : pal.series[oi % FASTCHART_PALETTE_SERIES_N];
+            : pal.series[wi % FASTCHART_PALETTE_SERIES_N];
         fastchart_text_draw(t, font, fs, color,
                             (int)bx, (int)(by + th * 0.35),
                             FASTCHART_ALIGN_CENTER, text, NULL, 0);

@@ -1929,17 +1929,11 @@ static void fastchart_arc_init_extras(fastchart_arc_obj *o)
 }
 static void fastchart_arc_release_extras(fastchart_arc_obj *o)
 {
-    fastchart_graph_free_nodes(o->nodes, o->node_count);
-    o->nodes = NULL;
-    o->node_count = 0;
-    fastchart_graph_free_links(o->links);
-    o->links = NULL;
-    o->link_count = 0;
+    fastchart_graph_fields_release(&o->nodes, &o->node_count, &o->links, &o->link_count);
 }
 static void fastchart_arc_addref_extras(fastchart_arc_obj *o)
 {
-    o->nodes = fastchart_graph_clone_nodes(o->nodes, o->node_count);
-    o->links = fastchart_graph_clone_links(o->links, o->link_count);
+    fastchart_graph_fields_addref(&o->nodes, o->node_count, &o->links, o->link_count);
 }
 
 static void fastchart_chord_init_extras(fastchart_chord_obj *o)
@@ -1952,17 +1946,11 @@ static void fastchart_chord_init_extras(fastchart_chord_obj *o)
 }
 static void fastchart_chord_release_extras(fastchart_chord_obj *o)
 {
-    fastchart_graph_free_nodes(o->nodes, o->node_count);
-    o->nodes = NULL;
-    o->node_count = 0;
-    fastchart_graph_free_links(o->links);
-    o->links = NULL;
-    o->link_count = 0;
+    fastchart_graph_fields_release(&o->nodes, &o->node_count, &o->links, &o->link_count);
 }
 static void fastchart_chord_addref_extras(fastchart_chord_obj *o)
 {
-    o->nodes = fastchart_graph_clone_nodes(o->nodes, o->node_count);
-    o->links = fastchart_graph_clone_links(o->links, o->link_count);
+    fastchart_graph_fields_addref(&o->nodes, o->node_count, &o->links, o->link_count);
 }
 
 static void fastchart_network_init_extras(fastchart_network_obj *o)
@@ -1976,17 +1964,11 @@ static void fastchart_network_init_extras(fastchart_network_obj *o)
 }
 static void fastchart_network_release_extras(fastchart_network_obj *o)
 {
-    fastchart_graph_free_nodes(o->nodes, o->node_count);
-    o->nodes = NULL;
-    o->node_count = 0;
-    fastchart_graph_free_links(o->links);
-    o->links = NULL;
-    o->link_count = 0;
+    fastchart_graph_fields_release(&o->nodes, &o->node_count, &o->links, &o->link_count);
 }
 static void fastchart_network_addref_extras(fastchart_network_obj *o)
 {
-    o->nodes = fastchart_graph_clone_nodes(o->nodes, o->node_count);
-    o->links = fastchart_graph_clone_links(o->links, o->link_count);
+    fastchart_graph_fields_addref(&o->nodes, o->node_count, &o->links, o->link_count);
 }
 
 static void fastchart_pyramid_side_release(fastchart_pyramid_side *s)
@@ -8675,18 +8657,8 @@ ZEND_METHOD(FastChart_ArcDiagram, setNodes)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_arc_obj *self = Z_FASTCHART_ARC_OBJ_P(ZEND_THIS);
-    fastchart_graph_free_nodes(self->nodes, self->node_count);
-    self->nodes = NULL;
-    self->node_count = 0;
-    /* Existing links index into the OLD node array; shrinking the node
-     * count under setNodes would leave dangling indices that render
-     * reads out of bounds. Drop them — setLinks must be called again. */
-    fastchart_graph_free_links(self->links);
-    self->links = NULL;
-    self->link_count = 0;
-
-    fastchart_graph_parse_nodes(nodes, FASTCHART_MAX_GRAPH_NODES,
-                                &self->nodes, &self->node_count);
+    fastchart_graph_fields_set_nodes(&self->nodes, &self->node_count,
+                                     &self->links, &self->link_count, nodes);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -8698,12 +8670,8 @@ ZEND_METHOD(FastChart_ArcDiagram, setLinks)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_arc_obj *self = Z_FASTCHART_ARC_OBJ_P(ZEND_THIS);
-    fastchart_graph_free_links(self->links);
-    self->links = NULL;
-    self->link_count = 0;
-
-    fastchart_graph_parse_links(links, self->node_count, FASTCHART_MAX_GRAPH_LINKS,
-                                &self->links, &self->link_count);
+    fastchart_graph_fields_set_links(self->node_count, &self->links,
+                                     &self->link_count, links);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -8732,15 +8700,8 @@ ZEND_METHOD(FastChart_ChordDiagram, setNodes)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_chord_obj *self = Z_FASTCHART_CHORD_OBJ_P(ZEND_THIS);
-    fastchart_graph_free_nodes(self->nodes, self->node_count);
-    self->nodes = NULL;
-    self->node_count = 0;
-    fastchart_graph_free_links(self->links);
-    self->links = NULL;
-    self->link_count = 0;
-
-    fastchart_graph_parse_nodes(nodes, FASTCHART_MAX_GRAPH_NODES,
-                                &self->nodes, &self->node_count);
+    fastchart_graph_fields_set_nodes(&self->nodes, &self->node_count,
+                                     &self->links, &self->link_count, nodes);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -8752,12 +8713,8 @@ ZEND_METHOD(FastChart_ChordDiagram, setLinks)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_chord_obj *self = Z_FASTCHART_CHORD_OBJ_P(ZEND_THIS);
-    fastchart_graph_free_links(self->links);
-    self->links = NULL;
-    self->link_count = 0;
-
-    fastchart_graph_parse_links(links, self->node_count, FASTCHART_MAX_GRAPH_LINKS,
-                                &self->links, &self->link_count);
+    fastchart_graph_fields_set_links(self->node_count, &self->links,
+                                     &self->link_count, links);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -8785,15 +8742,8 @@ ZEND_METHOD(FastChart_NetworkChart, setNodes)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_network_obj *self = Z_FASTCHART_NETWORK_OBJ_P(ZEND_THIS);
-    fastchart_graph_free_nodes(self->nodes, self->node_count);
-    self->nodes = NULL;
-    self->node_count = 0;
-    fastchart_graph_free_links(self->links);
-    self->links = NULL;
-    self->link_count = 0;
-
-    fastchart_graph_parse_nodes(nodes, FASTCHART_MAX_GRAPH_NODES,
-                                &self->nodes, &self->node_count);
+    fastchart_graph_fields_set_nodes(&self->nodes, &self->node_count,
+                                     &self->links, &self->link_count, nodes);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -8805,12 +8755,8 @@ ZEND_METHOD(FastChart_NetworkChart, setLinks)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_network_obj *self = Z_FASTCHART_NETWORK_OBJ_P(ZEND_THIS);
-    fastchart_graph_free_links(self->links);
-    self->links = NULL;
-    self->link_count = 0;
-
-    fastchart_graph_parse_links(links, self->node_count, FASTCHART_MAX_GRAPH_LINKS,
-                                &self->links, &self->link_count);
+    fastchart_graph_fields_set_links(self->node_count, &self->links,
+                                     &self->link_count, links);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
