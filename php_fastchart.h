@@ -19,6 +19,8 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+#include "fastchart_graph.h"
+
 #define PHP_FASTCHART_VERSION "1.3.0"
 
 extern zend_module_entry fastchart_module_entry;
@@ -952,6 +954,154 @@ typedef struct {
     zend_object std;
 } fastchart_vector_obj;
 
+/* ArcDiagram orientation: which side of the node baseline the link
+ * arcs bulge toward. SPLIT routes forward links (to > from) above and
+ * backward links below to cut visual crossings. */
+#define FASTCHART_ARC_ORIENT_UP     0
+#define FASTCHART_ARC_ORIENT_DOWN   1
+#define FASTCHART_ARC_ORIENT_SPLIT  2
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_graph_node *nodes;
+    int node_count;
+    fastchart_graph_link *links;
+    int link_count;
+    zend_long orientation;             /* FASTCHART_ARC_ORIENT_* */
+    zend_object std;
+} fastchart_arc_obj;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_graph_node *nodes;
+    int node_count;
+    fastchart_graph_link *links;
+    int link_count;
+    double pad_deg;                    /* gap between node arcs (degrees) */
+    zend_object std;
+} fastchart_chord_obj;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_graph_node *nodes;
+    int node_count;
+    fastchart_graph_link *links;
+    int link_count;
+    zend_long seed;                    /* PRNG seed for deterministic layout */
+    zend_long iterations;              /* Fruchterman-Reingold passes */
+    zend_object std;
+} fastchart_network_obj;
+
+typedef struct {
+    char  *label;          /* malloc'd; NULL = no legend entry */
+    int    color_rgb;      /* -1 = palette default */
+    double *data;          /* malloc'd per-category values */
+    int    n;
+} fastchart_pyramid_side;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    char **categories;     /* malloc'd array of malloc'd row labels */
+    int    cat_count;
+    fastchart_pyramid_side left;
+    fastchart_pyramid_side right;
+    zend_object std;
+} fastchart_pyramid_obj;
+
+typedef struct {
+    char  *label;          /* malloc'd; NULL = no label */
+    int    color_rgb;      /* -1 = palette default */
+    double *values;        /* malloc'd raw samples */
+    int    n;
+} fastchart_violin_group;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_violin_group *groups;
+    int group_count;
+    zend_object std;
+} fastchart_violin_obj;
+
+typedef struct fastchart_pack_node {
+    char  *label;          /* malloc'd; NULL = no label */
+    int    color_rgb;      /* -1 = palette default */
+    double value;          /* leaf magnitude; internal nodes sum children */
+    double r, x, y;        /* packed radius + centre (abstract units) */
+    struct fastchart_pack_node **children;  /* malloc'd child pointer array */
+    int    child_count;
+} fastchart_pack_node;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_pack_node *root;
+    int node_count;        /* total nodes, for the build cap */
+    zend_object std;
+} fastchart_circlepack_obj;
+
+/* Pictogram icon shapes. */
+#define FASTCHART_PICTO_SHAPE_SQUARE  0
+#define FASTCHART_PICTO_SHAPE_CIRCLE  1
+#define FASTCHART_PICTO_SHAPE_PERSON  2
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    double value;
+    double total;
+    zend_long icon_count;  /* number of unit icons in the grid */
+    zend_long columns;     /* 0 = auto */
+    zend_long shape;       /* FASTCHART_PICTO_SHAPE_* */
+    int fill_color_rgb;    /* -1 = palette default */
+    int empty_color_rgb;   /* -1 = light grey default */
+    zend_object std;
+} fastchart_pictogram_obj;
+
+typedef struct {
+    char  *label;          /* malloc'd; NULL = no label */
+    int    color_rgb;      /* -1 = palette default */
+    double size;           /* set magnitude */
+} fastchart_venn_set;
+
+typedef struct {
+    int    a, b;           /* set indices */
+    double size;           /* intersection magnitude */
+} fastchart_venn_inter;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_venn_set sets[3];
+    int set_count;
+    fastchart_venn_inter inters[3];
+    int inter_count;
+    zend_object std;
+} fastchart_venn_obj;
+
+typedef struct {
+    char  *text;           /* malloc'd */
+    double weight;
+    int    color_rgb;      /* -1 = palette default */
+} fastchart_word;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_word *words;
+    int word_count;
+    zend_object std;
+} fastchart_wordcloud_obj;
+
+typedef struct {
+    char *label;           /* malloc'd; NULL = no label */
+    char *date;            /* malloc'd; NULL = no date line */
+    int   color_rgb;       /* -1 = palette default */
+} fastchart_timeline_event;
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_timeline_event *events;
+    int event_count;
+    zend_long per_row;     /* 0 = auto */
+    zend_object std;
+} fastchart_serpentine_obj;
+
 /* Walk back from zend_object* to the start of the containing per-type
  * struct using each class's handlers->offset. Cast to fastchart_obj*
  * is the common-initial-sequence access — base fields land at the
@@ -987,6 +1137,16 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define Z_FASTCHART_SANKEY_OBJ_P(zv)    ((fastchart_sankey_obj *)Z_FASTCHART_OBJ_P(zv))
 #define Z_FASTCHART_MARIMEKKO_OBJ_P(zv) ((fastchart_marimekko_obj *)Z_FASTCHART_OBJ_P(zv))
 #define Z_FASTCHART_VECTOR_OBJ_P(zv)    ((fastchart_vector_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_ARC_OBJ_P(zv)       ((fastchart_arc_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_CHORD_OBJ_P(zv)     ((fastchart_chord_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_NETWORK_OBJ_P(zv)   ((fastchart_network_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_PYRAMID_OBJ_P(zv)   ((fastchart_pyramid_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_VIOLIN_OBJ_P(zv)    ((fastchart_violin_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_CIRCLEPACK_OBJ_P(zv) ((fastchart_circlepack_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_PICTOGRAM_OBJ_P(zv)  ((fastchart_pictogram_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_VENN_OBJ_P(zv)       ((fastchart_venn_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_WORDCLOUD_OBJ_P(zv)  ((fastchart_wordcloud_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_SERPENTINE_OBJ_P(zv) ((fastchart_serpentine_obj *)Z_FASTCHART_OBJ_P(zv))
 
 #define FASTCHART_DEFAULT_WIDTH      800
 #define FASTCHART_DEFAULT_HEIGHT     600
@@ -1155,6 +1315,26 @@ int fastchart_marimekko_render_to_target(fastchart_marimekko_obj *self,
                                           struct fastchart_target *t);
 int fastchart_vector_render_to_target(fastchart_vector_obj *self,
                                        struct fastchart_target *t);
+int fastchart_arc_render_to_target(fastchart_arc_obj *self,
+                                    struct fastchart_target *t);
+int fastchart_chord_render_to_target(fastchart_chord_obj *self,
+                                      struct fastchart_target *t);
+int fastchart_network_render_to_target(fastchart_network_obj *self,
+                                        struct fastchart_target *t);
+int fastchart_pyramid_render_to_target(fastchart_pyramid_obj *self,
+                                        struct fastchart_target *t);
+int fastchart_violin_render_to_target(fastchart_violin_obj *self,
+                                       struct fastchart_target *t);
+int fastchart_circlepack_render_to_target(fastchart_circlepack_obj *self,
+                                           struct fastchart_target *t);
+int fastchart_pictogram_render_to_target(fastchart_pictogram_obj *self,
+                                          struct fastchart_target *t);
+int fastchart_venn_render_to_target(fastchart_venn_obj *self,
+                                     struct fastchart_target *t);
+int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self,
+                                          struct fastchart_target *t);
+int fastchart_serpentine_render_to_target(fastchart_serpentine_obj *self,
+                                           struct fastchart_target *t);
 
 /* --- Symbol family (1D/2D codes) ----------------------------------
  *
