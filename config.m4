@@ -174,6 +174,17 @@ if test "$PHP_FASTCHART" != "no"; then
     fastchart_sankey.c \
     fastchart_marimekko.c \
     fastchart_vector.c \
+    fastchart_graph.c \
+    fastchart_arc.c \
+    fastchart_chord.c \
+    fastchart_network.c \
+    fastchart_pyramid.c \
+    fastchart_violin.c \
+    fastchart_circlepack.c \
+    fastchart_pictogram.c \
+    fastchart_venn.c \
+    fastchart_wordcloud.c \
+    fastchart_serpentine.c \
     fastchart_effects.c \
     fastchart_encoder.c \
     fastchart_rasterize.c \

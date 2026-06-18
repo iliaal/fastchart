@@ -670,7 +670,9 @@ abstract class Chart
      * GanttChart, BoxPlot, Treemap, Funnel, Waterfall, Heatmap,
      * LinearMeter, BulletChart, ParetoChart, CalendarHeatmap,
      * SunburstChart, SankeyChart, MarimekkoChart, VectorChart,
-     * StockChart). The `Symbol` family (Code128, QrCode)
+     * ArcDiagram, ChordDiagram, NetworkChart, PopulationPyramid,
+     * ViolinPlot, CirclePacking, Pictogram, VennDiagram, WordCloud,
+     * SerpentineTimeline, StockChart). The `Symbol` family (Code128, QrCode)
      * exposes the same method on its own abstract base.
      *
      * The output viewport matches the logical `setSize()` dimensions.
@@ -1570,6 +1572,307 @@ final class SankeyChart extends Chart
      * or non-positive values are dropped.
      */
     public function setLinks(array $links): static {}
+
+}
+
+/**
+ * Arc diagram: nodes laid out on a single baseline, each link drawn as
+ * a semicircular (elliptical for long spans) arc connecting its two
+ * endpoints. Shares the node/link data model with SankeyChart. Good
+ * for showing relationships in a 1D ordering (sequence adjacency,
+ * call graphs, co-occurrence) where a full network layout is overkill.
+ */
+final class ArcDiagram extends Chart
+{
+    /** setOrientation(): link arcs bulge above the baseline (default). */
+    const int ORIENT_UP = 0;
+    /** setOrientation(): link arcs bulge below the baseline. */
+    const int ORIENT_DOWN = 1;
+    /**
+     * setOrientation(): forward links (`to` > `from`) arc above the
+     * baseline, backward links below, to reduce visual crossings.
+     */
+    const int ORIENT_SPLIT = 2;
+
+    /**
+     * Node list. Each entry: `['label' => string?, 'color' => int?]`.
+     * Order in the array is the node id used in `setLinks()`.
+     */
+    public function setNodes(array $nodes): static {}
+
+    /**
+     * Link list. Each entry:
+     * `['from' => int, 'to' => int, 'value' => number]`. `from` / `to`
+     * are 0-based indices into the `setNodes()` array; `value` drives
+     * the arc stroke width. Out-of-range indices, self-loops, and
+     * non-positive values are dropped.
+     */
+    public function setLinks(array $links): static {}
+
+    /**
+     * Which side of the node baseline link arcs bulge toward.
+     * `ORIENT_UP` (default), `ORIENT_DOWN`, or `ORIENT_SPLIT`.
+     */
+    public function setOrientation(int $mode): static {}
+
+}
+
+/**
+ * Chord diagram: nodes are arc segments around a circle sized by their
+ * total incident flow; links are ribbons that attach to value-
+ * proportional slices of each endpoint's arc and curve through the
+ * centre. Shares the node/link data model with SankeyChart. Good for
+ * dense any-to-any relationship matrices (migration flows, trade,
+ * co-occurrence) where a left-to-right Sankey would tangle.
+ */
+final class ChordDiagram extends Chart
+{
+    /**
+     * Node list. Each entry: `['label' => string?, 'color' => int?]`.
+     * Order in the array is the node id used in `setLinks()`.
+     */
+    public function setNodes(array $nodes): static {}
+
+    /**
+     * Link list. Each entry:
+     * `['from' => int, 'to' => int, 'value' => number]`. `from` / `to`
+     * are 0-based indices into the `setNodes()` array; `value` sizes the
+     * ribbon. Out-of-range indices, self-loops, and non-positive values
+     * are dropped.
+     */
+    public function setLinks(array $links): static {}
+
+    /**
+     * Angular gap between adjacent node arcs, in degrees. Default 2.0.
+     * Clamped to [0, 30]; the total padding is further capped so node
+     * arcs always remain visible.
+     */
+    public function setPadAngle(float $deg): static {}
+
+}
+
+/**
+ * Force-directed network graph (Fruchterman-Reingold). Nodes repel one
+ * another while links pull their endpoints together; the simulation
+ * settles into an organic layout that reveals clusters and hubs.
+ * Shares the node/link data model with SankeyChart.
+ *
+ * The layout is deterministic: initial placement is driven by a seeded
+ * PRNG and the iteration count is fixed, so identical input + `setSeed()`
+ * + `setIterations()` always produce identical output. Change the seed
+ * to explore alternative settled arrangements of the same graph.
+ */
+final class NetworkChart extends Chart
+{
+    /**
+     * Node list. Each entry: `['label' => string?, 'color' => int?]`.
+     * Order in the array is the node id used in `setLinks()`. Node
+     * radius scales with degree (number of incident links).
+     */
+    public function setNodes(array $nodes): static {}
+
+    /**
+     * Link list. Each entry:
+     * `['from' => int, 'to' => int, 'value' => number]`. `from` / `to`
+     * are 0-based indices into the `setNodes()` array; `value` drives
+     * the edge stroke width. Out-of-range indices, self-loops, and
+     * non-positive values are dropped.
+     */
+    public function setLinks(array $links): static {}
+
+    /**
+     * PRNG seed for the initial node placement. Default 1. Same graph +
+     * same seed = identical layout; vary it to get a different (still
+     * deterministic) arrangement.
+     */
+    public function setSeed(int $seed): static {}
+
+    /**
+     * Number of force-relaxation passes. Default 300. More iterations
+     * settle large graphs further at higher cost. Clamped to [1, 5000].
+     */
+    public function setIterations(int $iterations): static {}
+
+}
+
+/**
+ * Population pyramid: two opposing series share a common set of category
+ * rows (age bands, cohorts). One series extends left of the central
+ * axis, the other right; category labels sit in the centre. The classic
+ * demographic age/sex pyramid, also useful for any back-to-back
+ * comparison of two groups across the same categories.
+ */
+final class PopulationPyramid extends Chart
+{
+    /**
+     * Row labels, top to bottom (e.g. age bands). Defines the number of
+     * rows; each side's `data` is read positionally against this list.
+     */
+    public function setCategories(array $categories): static {}
+
+    /**
+     * Left-extending series:
+     * `['label' => string?, 'color' => int?, 'data' => [number, ...]]`.
+     * `data[i]` is the magnitude for category `i`; missing or non-finite
+     * entries render as zero.
+     */
+    public function setLeftSeries(array $series): static {}
+
+    /**
+     * Right-extending series, same shape as `setLeftSeries()`. Both sides
+     * share one value scale so the two halves stay comparable.
+     */
+    public function setRightSeries(array $series): static {}
+
+}
+
+/**
+ * Violin plot: for each group, a gaussian kernel-density estimate of the
+ * sample distribution is mirrored about the group's centre line to form
+ * the violin silhouette, with the median marked. Bandwidth follows
+ * Silverman's rule. Shows distribution shape (modes, skew, spread) that
+ * a box plot's five-number summary hides.
+ */
+final class ViolinPlot extends Chart
+{
+    /**
+     * Groups to plot side by side. Each entry:
+     * `['label' => string?, 'color' => int?, 'values' => [number, ...]]`.
+     * `values` are the raw samples for that group; non-finite entries are
+     * dropped. All groups share one vertical value scale.
+     */
+    public function setGroups(array $groups): static {}
+
+}
+
+/**
+ * Circle packing: a hierarchy drawn as nested circles. Leaf circles are
+ * sized so area tracks `value`; each parent is the enclosing circle of
+ * its packed children. A compact, space-filling alternative to a treemap
+ * for part-of-whole hierarchies.
+ */
+final class CirclePacking extends Chart
+{
+    /**
+     * Root node of the hierarchy. Each node:
+     * `['label' => string?, 'color' => int?, 'value' => number?,
+     *   'children' => [ ...nodes ]]`. Leaves use `value` for sizing;
+     * internal nodes derive their size from packed children. Nesting is
+     * capped at 24 levels and 2048 total nodes.
+     */
+    public function setHierarchy(array $root): static {}
+
+}
+
+/**
+ * Pictogram (pictorial fraction): a grid of unit icons where a value's
+ * share of a total is shown by filling that fraction of the icons left
+ * to right; the boundary icon is partially filled so fractional values
+ * read precisely. The "7 in 10 people" infographic style.
+ */
+final class Pictogram extends Chart
+{
+    /** setShape(): filled square cells (default). */
+    const int SHAPE_SQUARE = 0;
+    /** setShape(): filled circles. */
+    const int SHAPE_CIRCLE = 1;
+    /** setShape(): a simple person silhouette. */
+    const int SHAPE_PERSON = 2;
+
+    /** The measured value. Its share of the total drives the fill. */
+    public function setValue(float $value): static {}
+
+    /** The whole that `value` is a fraction of. Must be positive. */
+    public function setTotal(float $total): static {}
+
+    /**
+     * How many unit icons make up the grid. Default 10. Each icon
+     * represents `total / iconCount` units. Clamped to [1, 1000].
+     */
+    public function setIconCount(int $count): static {}
+
+    /** Icons per row. 0 (default) auto-fits (max 10 per row). */
+    public function setColumns(int $columns): static {}
+
+    /** Icon shape: `SHAPE_SQUARE` (default), `SHAPE_CIRCLE`, `SHAPE_PERSON`. */
+    public function setShape(int $shape): static {}
+
+    /** Colour of the filled portion. 0xRRGGBB; default palette colour. */
+    public function setFillColor(int $rgb): static {}
+
+    /** Colour of the unfilled icons. 0xRRGGBB; default light grey. */
+    public function setEmptyColor(int $rgb): static {}
+
+}
+
+/**
+ * Venn diagram for 2 or 3 sets. Circle areas are proportional to set
+ * size and pairwise centre distances are solved so each overlap lens
+ * area matches the requested intersection; circles blend through
+ * translucent fills. Capped at 3 sets — exact area-proportional layout
+ * has no general solution beyond that.
+ */
+final class VennDiagram extends Chart
+{
+    /**
+     * The sets (2 or 3). Each entry:
+     * `['label' => string?, 'size' => number?, 'color' => int?]`.
+     * `size` drives the circle area (default 1). Extra sets beyond 3
+     * are ignored.
+     */
+    public function setSets(array $sets): static {}
+
+    /**
+     * Pairwise intersection magnitudes. Each entry:
+     * `['sets' => [i, j], 'size' => number]`, where `i` / `j` are
+     * 0-based indices into `setSets()`. The centre distance for that
+     * pair is fitted so the lens area matches `size`. Pairs left
+     * unspecified are drawn disjoint.
+     */
+    public function setIntersections(array $intersections): static {}
+
+}
+
+/**
+ * Word cloud: each word's font size scales with its weight and words are
+ * laid out largest-first along a spiral, skipping positions that would
+ * collide with an already-placed word. Layout is deterministic. Words
+ * are drawn horizontally.
+ */
+final class WordCloud extends Chart
+{
+    /**
+     * The words. Each entry:
+     * `['text' => string, 'weight' => number?, 'color' => int?]`.
+     * `weight` drives the font size (default 1); `text` is required.
+     * Words that cannot be fitted without overlap are dropped. Capped at
+     * 256 words.
+     */
+    public function setWords(array $words): static {}
+
+}
+
+/**
+ * Serpentine timeline: events laid out in rows that reverse direction
+ * each line (boustrophedon), so the connecting path snakes back and
+ * forth and a long ordered sequence fits a compact rectangle. Good for
+ * roadmaps, process steps, and chronologies.
+ */
+final class SerpentineTimeline extends Chart
+{
+    /**
+     * Ordered events. Each entry:
+     * `['label' => string?, 'date' => string?, 'color' => int?]`. Events
+     * are placed in array order along the snaking path; `date` renders
+     * above the marker, `label` below. Capped at 512 events.
+     */
+    public function setEvents(array $events): static {}
+
+    /**
+     * Events per row before the path turns back. 0 (default) auto-fits
+     * for roughly square cells.
+     */
+    public function setColumns(int $columns): static {}
 
 }
 
