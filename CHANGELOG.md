@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     pies) and `setRings()` (concentric nested-donut bands).
   - `BarChart::setBarStyle(BAR_STYLE_LOLLIPOP)` (stem + bullet) and
     `BAR_STYLE_DUMBBELL` (paired bullets on floating data).
+  - `BarChart::setOrientation(BAR_RADIAL)` — a circular ("race track")
+    bar chart: each category is a concentric ring whose bar is a thick
+    arc swept from 12 o'clock, with multiple series as concentric
+    sub-bands.
+  - `AreaChart` now honors `setLineInterpolation()`: `INTERP_SMOOTH`
+    draws a Catmull-Rom curved fill and the `INTERP_STEP_*` modes draw a
+    stepped fill, matching the line renderer (stacked layers tile without
+    gaps; band and stream modes stay linear).
+  - `PieChart` variable-radius (rose) pies: a positive `radius` key on
+    any slice scales that slice's outer radius by a second metric while
+    the angle still tracks the value.
 - Seven new `StockChart` indicators: `addVWAP()` and `addZigZag()` price
   overlays, plus `addATR()`, `addCCI()`, `addWilliamsR()`, `addAroon()`
   (two-series), and `addStdDev()` panes. The price-overlay cap rose to 6

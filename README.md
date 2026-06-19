@@ -268,9 +268,11 @@ Iteration count via `FC_BENCH_ITERS` (default 50). Bench source at
 `FastChart\` namespace. Each name links to its rendered example image:
 
 - **Cartesian:** [`LineChart`](docs/examples/01_line_basic.png),
-  [`AreaChart`](docs/examples/27a_area_stacked.png),
+  [`AreaChart`](docs/examples/27a_area_stacked.png) (stacked, band,
+  stream, and [smooth / stepped](docs/examples/69_area_smooth.png) fills),
   [`BarChart`](docs/examples/03_bar_grouped.png) (vertical, horizontal,
-  stacked, grouped, floating, layered),
+  stacked, grouped, floating, layered, lollipop, dumbbell, and
+  [radial](docs/examples/71_radial_bar.png)),
   [`ScatterChart`](docs/examples/06_scatter_trend.png),
   [`BubbleChart`](docs/examples/14_bubble.png).
 - **Financial:** [`StockChart`](docs/examples/07_stock_candle_ma.png)
@@ -283,8 +285,9 @@ Iteration count via `FC_BENCH_ITERS` (default 50). Bench source at
   [`PolarChart`](docs/examples/16_polar.png),
   [`SurfaceChart`](docs/examples/15a_surface.png),
   [`ContourChart`](docs/examples/15b_contour.png).
-- **Specialised:** [`PieChart`](docs/examples/05_pie_donut.png) (with
-  optional donut hole + leader lines),
+- **Specialised:** [`PieChart`](docs/examples/05_pie_donut.png) (donut
+  hole + leader lines, semi-circle, nested-donut rings, and
+  [variable-radius / rose](docs/examples/70_rose_pie.png)),
   [`GaugeChart`](docs/examples/10_gauge.png),
   [`LinearMeter`](docs/examples/36a_linear_meter_horizontal.png),
   [`GanttChart`](docs/examples/17_gantt.png),
