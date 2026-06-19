@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 49b744813274df7b1587f2e587b1fd0ed067afea */
+ * Stub hash: 78dbb2f3cf35803644c582bb5382042611b203f3 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -2059,6 +2059,12 @@ static zend_class_entry *register_class_FastChart_ChordDiagram(zend_class_entry 
 	zend_string *const_STYLE_LINE_name = zend_string_init_interned("STYLE_LINE", sizeof("STYLE_LINE") - 1, 1);
 	zend_declare_typed_class_constant(class_entry, const_STYLE_LINE_name, &const_STYLE_LINE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
 	zend_string_release(const_STYLE_LINE_name);
+
+	zval const_STYLE_DIRECTED_value;
+	ZVAL_LONG(&const_STYLE_DIRECTED_value, 2);
+	zend_string *const_STYLE_DIRECTED_name = zend_string_init_interned("STYLE_DIRECTED", sizeof("STYLE_DIRECTED") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_STYLE_DIRECTED_name, &const_STYLE_DIRECTED_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_STYLE_DIRECTED_name);
 
 	return class_entry;
 }

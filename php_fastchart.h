@@ -1004,8 +1004,9 @@ typedef struct {
 } fastchart_arc_obj;
 
 /* ChordDiagram ribbon style. */
-#define FASTCHART_CHORD_STYLE_RIBBON  0
-#define FASTCHART_CHORD_STYLE_LINE    1
+#define FASTCHART_CHORD_STYLE_RIBBON   0
+#define FASTCHART_CHORD_STYLE_LINE     1
+#define FASTCHART_CHORD_STYLE_DIRECTED 2
 
 typedef struct {
     FASTCHART_BASE_FIELDS

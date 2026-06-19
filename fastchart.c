@@ -8802,7 +8802,7 @@ ZEND_METHOD(FastChart_ChordDiagram, setStyle)
         Z_PARAM_LONG(style)
     ZEND_PARSE_PARAMETERS_END();
 
-    if (style < FASTCHART_CHORD_STYLE_RIBBON || style > FASTCHART_CHORD_STYLE_LINE) {
+    if (style < FASTCHART_CHORD_STYLE_RIBBON || style > FASTCHART_CHORD_STYLE_DIRECTED) {
         style = FASTCHART_CHORD_STYLE_RIBBON;
     }
     fastchart_chord_obj *self = Z_FASTCHART_CHORD_OBJ_P(ZEND_THIS);

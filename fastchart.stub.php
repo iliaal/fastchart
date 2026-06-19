@@ -1635,6 +1635,12 @@ final class ChordDiagram extends Chart
      * value, rather than a filled ribbon.
      */
     const int STYLE_LINE = 1;
+    /**
+     * setStyle(): filled ribbons with an arrowhead at each link's target
+     * endpoint, marking flow direction. A->B and B->A are distinct links,
+     * so reciprocal flows draw two opposing arrows.
+     */
+    const int STYLE_DIRECTED = 2;
 
     /**
      * Node list. Each entry: `['label' => string?, 'color' => int?]`.
