@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 60f0d96ad09e2ce8c1cab07d83f33aac29ab0441 */
+ * Stub hash: 71e6eeccb737fb88eff3883e0bb04d1341375416 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -578,6 +578,8 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_ChordDiagram_set
 	ZEND_ARG_TYPE_INFO(0, deg, IS_DOUBLE, 0)
 ZEND_END_ARG_INFO()
 
+#define arginfo_class_FastChart_ChordDiagram_setStyle arginfo_class_FastChart_Chart_setLineStyle
+
 #define arginfo_class_FastChart_NetworkChart_setNodes arginfo_class_FastChart_SankeyChart_setNodes
 
 #define arginfo_class_FastChart_NetworkChart_setLinks arginfo_class_FastChart_SankeyChart_setLinks
@@ -637,6 +639,8 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_WordCloud_setWords, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, words, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_WordCloud_setOrientation arginfo_class_FastChart_Chart_setLineInterpolation
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_SerpentineTimeline_setEvents, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, events, IS_ARRAY, 0)
@@ -873,6 +877,7 @@ ZEND_METHOD(FastChart_ArcDiagram, setOrientation);
 ZEND_METHOD(FastChart_ChordDiagram, setNodes);
 ZEND_METHOD(FastChart_ChordDiagram, setLinks);
 ZEND_METHOD(FastChart_ChordDiagram, setPadAngle);
+ZEND_METHOD(FastChart_ChordDiagram, setStyle);
 ZEND_METHOD(FastChart_NetworkChart, setNodes);
 ZEND_METHOD(FastChart_NetworkChart, setLinks);
 ZEND_METHOD(FastChart_NetworkChart, setSeed);
@@ -892,6 +897,7 @@ ZEND_METHOD(FastChart_Pictogram, setEmptyColor);
 ZEND_METHOD(FastChart_VennDiagram, setSets);
 ZEND_METHOD(FastChart_VennDiagram, setIntersections);
 ZEND_METHOD(FastChart_WordCloud, setWords);
+ZEND_METHOD(FastChart_WordCloud, setOrientation);
 ZEND_METHOD(FastChart_SerpentineTimeline, setEvents);
 ZEND_METHOD(FastChart_SerpentineTimeline, setColumns);
 ZEND_METHOD(FastChart_MarimekkoChart, setColumns);
@@ -1196,6 +1202,7 @@ static const zend_function_entry class_FastChart_ChordDiagram_methods[] = {
 	ZEND_ME(FastChart_ChordDiagram, setNodes, arginfo_class_FastChart_ChordDiagram_setNodes, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ChordDiagram, setLinks, arginfo_class_FastChart_ChordDiagram_setLinks, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_ChordDiagram, setPadAngle, arginfo_class_FastChart_ChordDiagram_setPadAngle, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_ChordDiagram, setStyle, arginfo_class_FastChart_ChordDiagram_setStyle, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -1243,6 +1250,7 @@ static const zend_function_entry class_FastChart_VennDiagram_methods[] = {
 
 static const zend_function_entry class_FastChart_WordCloud_methods[] = {
 	ZEND_ME(FastChart_WordCloud, setWords, arginfo_class_FastChart_WordCloud_setWords, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_WordCloud, setOrientation, arginfo_class_FastChart_WordCloud_setOrientation, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -2012,6 +2020,18 @@ static zend_class_entry *register_class_FastChart_ChordDiagram(zend_class_entry 
 	INIT_NS_CLASS_ENTRY(ce, "FastChart", "ChordDiagram", class_FastChart_ChordDiagram_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
 
+	zval const_STYLE_RIBBON_value;
+	ZVAL_LONG(&const_STYLE_RIBBON_value, 0);
+	zend_string *const_STYLE_RIBBON_name = zend_string_init_interned("STYLE_RIBBON", sizeof("STYLE_RIBBON") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_STYLE_RIBBON_name, &const_STYLE_RIBBON_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_STYLE_RIBBON_name);
+
+	zval const_STYLE_LINE_value;
+	ZVAL_LONG(&const_STYLE_LINE_value, 1);
+	zend_string *const_STYLE_LINE_name = zend_string_init_interned("STYLE_LINE", sizeof("STYLE_LINE") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_STYLE_LINE_name, &const_STYLE_LINE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_STYLE_LINE_name);
+
 	return class_entry;
 }
 
@@ -2099,6 +2119,18 @@ static zend_class_entry *register_class_FastChart_WordCloud(zend_class_entry *cl
 
 	INIT_NS_CLASS_ENTRY(ce, "FastChart", "WordCloud", class_FastChart_WordCloud_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	zval const_ORIENT_HORIZONTAL_value;
+	ZVAL_LONG(&const_ORIENT_HORIZONTAL_value, 0);
+	zend_string *const_ORIENT_HORIZONTAL_name = zend_string_init_interned("ORIENT_HORIZONTAL", sizeof("ORIENT_HORIZONTAL") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_ORIENT_HORIZONTAL_name, &const_ORIENT_HORIZONTAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_ORIENT_HORIZONTAL_name);
+
+	zval const_ORIENT_MIXED_value;
+	ZVAL_LONG(&const_ORIENT_MIXED_value, 1);
+	zend_string *const_ORIENT_MIXED_name = zend_string_init_interned("ORIENT_MIXED", sizeof("ORIENT_MIXED") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_ORIENT_MIXED_name, &const_ORIENT_MIXED_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_ORIENT_MIXED_name);
 
 	return class_entry;
 }

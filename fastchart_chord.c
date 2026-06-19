@@ -153,7 +153,16 @@ int fastchart_chord_render_to_target(fastchart_chord_obj *self, fastchart_target
     double R_in = R - band / 2.0 - 2.0;     /* ribbon attach radius */
     if (R_in < 10.0) R_in = 10.0;
 
-    /* Ribbons first (behind node bands). */
+    double max_val = 0.0;
+    for (int e = 0; e < self->link_count; e++) {
+        if (self->links[e].value > max_val) max_val = self->links[e].value;
+    }
+    if (max_val <= 0.0) max_val = 1.0;
+    int ribbon_mode = self->style != FASTCHART_CHORD_STYLE_LINE;
+
+    /* Ribbons (or curves) first, behind the node bands. Fills are
+     * translucent so overlapping chords blend instead of one masking
+     * the next. */
     fastchart_point_t poly[80];
     for (int e = 0; e < self->link_count; e++) {
         const fastchart_graph_link *lk = &self->links[e];
@@ -168,26 +177,47 @@ int fastchart_chord_render_to_target(fastchart_chord_obj *self, fastchart_target
         a->cursor += wa;
         b->cursor += wb;
 
-        int n = 0;
-        int k_arc = 5, k_bez = 14;
-        /* from-node inner arc aL -> aR */
-        n += chord_arc_samples(cx, cy, R_in, aL, aR, poly + n, k_arc);
-        /* bezier (a,aR) -> (b,bL) through centre */
+        int src_rgb;
+        if (self->nodes[lk->from].color_rgb >= 0) {
+            src_rgb = self->nodes[lk->from].color_rgb;
+        } else {
+            uint32_t rgba = fastchart_target_color_to_rgba(
+                t, pal.series[lk->from % FASTCHART_PALETTE_SERIES_N]);
+            src_rgb = (int)(rgba & 0xFFFFFF);
+        }
+        int cr = (src_rgb >> 16) & 0xFF, cg = (src_rgb >> 8) & 0xFF, cb = src_rgb & 0xFF;
         double x0, y0, x1, y1;
-        chord_pt(cx, cy, R_in, aR, &x0, &y0);
-        chord_pt(cx, cy, R_in, bL, &x1, &y1);
-        n += chord_bezier_samples(x0, y0, cx, cy, x1, y1, poly + n, k_bez);
-        /* to-node inner arc bL -> bR */
-        n += chord_arc_samples(cx, cy, R_in, bL, bR, poly + n, k_arc);
-        /* bezier (b,bR) -> (a,aL) through centre */
-        chord_pt(cx, cy, R_in, bR, &x0, &y0);
-        chord_pt(cx, cy, R_in, aL, &x1, &y1);
-        n += chord_bezier_samples(x0, y0, cx, cy, x1, y1, poly + n, k_bez);
 
-        int color = self->nodes[lk->from].color_rgb >= 0
-            ? fastchart_target_color_rgb(t, self->nodes[lk->from].color_rgb)
-            : pal.series[lk->from % FASTCHART_PALETTE_SERIES_N];
-        if (n >= 4) fastchart_target_polygon(t, poly, n, color, 1, 0);
+        if (ribbon_mode) {
+            int n = 0;
+            int k_arc = 5, k_bez = 14;
+            n += chord_arc_samples(cx, cy, R_in, aL, aR, poly + n, k_arc);
+            chord_pt(cx, cy, R_in, aR, &x0, &y0);
+            chord_pt(cx, cy, R_in, bL, &x1, &y1);
+            n += chord_bezier_samples(x0, y0, cx, cy, x1, y1, poly + n, k_bez);
+            n += chord_arc_samples(cx, cy, R_in, bL, bR, poly + n, k_arc);
+            chord_pt(cx, cy, R_in, bR, &x0, &y0);
+            chord_pt(cx, cy, R_in, aL, &x1, &y1);
+            n += chord_bezier_samples(x0, y0, cx, cy, x1, y1, poly + n, k_bez);
+            int fill = fastchart_target_color(t, cr, cg, cb, 150);
+            if (n >= 4) fastchart_target_polygon(t, poly, n, fill, 1, 0);
+        } else {
+            /* Non-ribbon: a single curve from the centre of each
+             * endpoint's slice, stroke width proportional to value. */
+            double amid = (aL + aR) / 2.0, bmid = (bL + bR) / 2.0;
+            chord_pt(cx, cy, R_in, amid, &x0, &y0);
+            chord_pt(cx, cy, R_in, bmid, &x1, &y1);
+            int n = chord_bezier_samples(x0, y0, cx, cy, x1, y1, poly,
+                                         (int)(sizeof(poly) / sizeof(poly[0])));
+            int thickness = (int)(1.0 + (lk->value / max_val) * 8.0);
+            if (thickness < 1) thickness = 1;
+            int stroke = fastchart_target_color(t, cr, cg, cb, 200);
+            for (int s = 0; s + 1 < n; s++) {
+                fastchart_target_line(t, poly[s].x, poly[s].y,
+                                      poly[s + 1].x, poly[s + 1].y,
+                                      stroke, thickness, FASTCHART_DASH_SOLID);
+            }
+        }
     }
 
     /* Node bands (thick arc strokes) + labels. */

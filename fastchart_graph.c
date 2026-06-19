@@ -88,7 +88,8 @@ int fastchart_graph_parse_links(zval *arr, int node_count, int max,
         if (Z_TYPE_P(zf) != IS_LONG || Z_TYPE_P(zt) != IS_LONG) continue;
         zend_long from = Z_LVAL_P(zf), to = Z_LVAL_P(zt);
         double val;
-        if (fastchart_zval_to_double(zv, &val) != 0 || !isfinite(val) || val <= 0) {
+        if (fastchart_zval_to_double(zv, &val) != 0 || !isfinite(val) ||
+            val <= 0 || val > FASTCHART_MAX_DATA_MAG) {
             continue;
         }
         if (from < 0 || from >= node_count) continue;
