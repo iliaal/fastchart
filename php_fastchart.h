@@ -558,10 +558,9 @@ typedef struct {
     double pie_start_deg;              /* sweep window start; 0 with end 360 = full pie */
     double pie_end_deg;
     /* Variable-radius (rose) pie: enabled when any flat slice carries a
-     * positive "radius" metric. pie_max_radius_value is the largest such
-     * value, used to normalise per-slice radii at draw time. */
+     * positive "radius" metric. The normalising max is recomputed at
+     * draw time over the slices actually drawn (post "Other" merge). */
     bool pie_variable_radius;
-    double pie_max_radius_value;
     fastchart_pie_ring rings[FASTCHART_MAX_PIE_RINGS]; /* nested-donut; ring_count 0 = flat */
     int ring_count;
     zend_object std;

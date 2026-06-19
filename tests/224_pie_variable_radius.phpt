@@ -55,6 +55,35 @@ $chart->setSlices($varied);
 $chart->setSlices($plain);
 echo "reset_clears_mode: ", ($chart->renderSvg() === $plainPie) ? "yes" : "no", "\n";
 
+/* The largest-radius slice drives normalization. If it is folded into
+ * the "Other" bucket by setOtherThreshold, the surviving slices must
+ * still scale up so the largest survivor reaches the full radius -- the
+ * max is recomputed over the drawn slices, not the setter-time set.
+ * Extract the largest wedge radius (the "A<r>,<r>" arc command). */
+function max_arc_radius(string $svg): int {
+    preg_match_all('/\bA(\d+),\d+/', $svg, $m);
+    return $m[1] ? max(array_map('intval', $m[1])) : 0;
+}
+
+/* Reference full radius: a plain pie at the same canvas (no radius keys)
+ * draws every slice at the full radius. */
+$fullRef = max_arc_radius(
+    (new FastChart\PieChart(420, 360))->setSlices([['label'=>'A','value'=>30], ['label'=>'C','value'=>30]])->renderSvg()
+);
+
+/* B carries the largest radius but a tiny value, so a 10% threshold
+ * folds it into "Other". A and C (radius 40 each) are the survivors;
+ * with the fix the larger of them reaches the full radius. */
+$folded = (new FastChart\PieChart(420, 360))
+    ->setSlices([
+        ['label'=>'A','value'=>30,'radius'=>40],
+        ['label'=>'B','value'=>2, 'radius'=>80],
+        ['label'=>'C','value'=>30,'radius'=>40],
+    ])
+    ->setOtherThreshold(10)
+    ->renderSvg();
+echo "survivor_reaches_full_radius: ", (max_arc_radius($folded) === $fullRef && $fullRef > 0) ? "yes" : "no", "\n";
+
 echo "ok\n";
 ?>
 --EXPECT--
@@ -63,4 +92,5 @@ rose_finite: yes
 rose_differs_from_uniform: yes
 uniform_equals_plain_geometry: yes
 reset_clears_mode: yes
+survivor_reaches_full_radius: yes
 ok

@@ -153,6 +153,19 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
         n_slices = n_kept;
     }
 
+    /* Variable-radius normalization runs over the slices actually drawn,
+     * not the setter-time max: if the largest-radius slice was folded
+     * into the "Other" bucket by setOtherThreshold, the surviving slices
+     * must still scale up to the full radius. Recompute the max here. */
+    double max_radius_value = 0.0;
+    if (self->pie_variable_radius) {
+        for (int i = 0; i < n_slices; i++) {
+            if (slices[i].radius_value > max_radius_value) {
+                max_radius_value = slices[i].radius_value;
+            }
+        }
+    }
+
     double donut = self->donut_hole_ratio;
     if (donut < 0) donut = 0;
     if (donut >= 1.0) donut = 0.95;
@@ -230,9 +243,9 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
          * keeps the smallest slices visible; slices without a metric
          * (e.g. the aggregated "Other" bucket) draw at full radius. */
         int slice_radius = radius;
-        if (self->pie_variable_radius && self->pie_max_radius_value > 0.0 &&
+        if (self->pie_variable_radius && max_radius_value > 0.0 &&
             slices[i].radius_value > 0.0) {
-            double frac = slices[i].radius_value / self->pie_max_radius_value;
+            double frac = slices[i].radius_value / max_radius_value;
             if (frac < 0.35) frac = 0.35;
             if (frac > 1.0)  frac = 1.0;
             slice_radius = (int)((double)radius * frac);
