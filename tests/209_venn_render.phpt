@@ -68,7 +68,6 @@ $im = imagecreatefromstring(
         ->setIntersections([['sets' => [0, 1], 'size' => 4]])
         ->renderPng());
 echo "png_ok: ", ($im !== false ? "yes" : "no"), "\n";
-if ($im) { imagedestroy($im); }
 
 echo "ok\n";
 ?>

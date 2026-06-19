@@ -53,7 +53,6 @@ $im = imagecreatefromstring(
         ->setRightSeries(['data' => [2, 1]])
         ->renderPng());
 echo "png_ok: ", ($im !== false ? "yes" : "no"), "\n";
-if ($im) { imagedestroy($im); }
 
 echo "ok\n";
 ?>

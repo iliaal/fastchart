@@ -65,7 +65,6 @@ $png = (new FastChart\ChordDiagram(240, 240))
     ->renderPng();
 $im = imagecreatefromstring($png);
 echo "png_ok: ", ($im !== false ? "yes" : "no"), "\n";
-if ($im) { imagedestroy($im); }
 
 echo "ok\n";
 ?>

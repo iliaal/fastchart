@@ -63,7 +63,6 @@ try {
 /* Raster round-trip emits a valid PNG. */
 $im = imagecreatefromstring(net(1)->renderPng());
 echo "png_ok: ", ($im !== false ? "yes" : "no"), "\n";
-if ($im) { imagedestroy($im); }
 
 echo "ok\n";
 ?>

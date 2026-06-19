@@ -63,7 +63,6 @@ $im = imagecreatefromstring(
         ->setGroups([['label' => 'Z', 'values' => [1, 2, 2, 3, 3, 3, 4, 4, 5]]])
         ->renderPng());
 echo "png_ok: ", ($im !== false ? "yes" : "no"), "\n";
-if ($im) { imagedestroy($im); }
 
 echo "ok\n";
 ?>
