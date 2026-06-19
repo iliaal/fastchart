@@ -43,15 +43,21 @@ static void fastchart_sunburst_compute_wedges(
     if (node_count <= 0) return;
     wedges[0].start_rad = -M_PI_2;
     wedges[0].end_rad   = -M_PI_2 + 2.0 * M_PI;
-    /* BFS-style by depth: a parent's wedge is fully partitioned
-     * among its children proportional to their values. Walk in node
-     * order; since build_rec is DFS, every node's parent is already
-     * processed when we encounter it. */
+    /* Partition each parent's wedge among its direct children,
+     * proportional to value. Children are found via the `parent`
+     * back-pointer, NOT a contiguous [child_first, +child_count) range:
+     * build_rec is depth-first, so a child's whole subtree is appended
+     * before the next sibling and direct children are interleaved with
+     * grandchildren. Scanning by parent in ascending index order
+     * preserves input order (each child is appended before its
+     * siblings). Walk parents in node order; since a parent is always
+     * appended before its descendants, wedges[i] is set before we
+     * partition it. */
     for (int i = 0; i < node_count; i++) {
         if (nodes[i].child_count <= 0) continue;
         double sum = 0.0;
-        for (int c = 0; c < nodes[i].child_count; c++) {
-            sum += nodes[nodes[i].child_first + c].value;
+        for (int j = 0; j < node_count; j++) {
+            if (nodes[j].parent == i) sum += nodes[j].value;
         }
         /* Skip non-positive or overflowed totals: a sum of extreme child
          * values can reach +Inf, and value/Inf or Inf/Inf would feed NaN
@@ -60,12 +66,12 @@ static void fastchart_sunburst_compute_wedges(
         if (!(sum > 0.0) || !isfinite(sum)) continue;
         double parent_span = wedges[i].end_rad - wedges[i].start_rad;
         double cur = wedges[i].start_rad;
-        for (int c = 0; c < nodes[i].child_count; c++) {
-            int ci = nodes[i].child_first + c;
-            double share = nodes[ci].value / sum;
-            wedges[ci].start_rad = cur;
-            wedges[ci].end_rad   = cur + parent_span * share;
-            cur = wedges[ci].end_rad;
+        for (int j = 0; j < node_count; j++) {
+            if (nodes[j].parent != i) continue;
+            double share = nodes[j].value / sum;
+            wedges[j].start_rad = cur;
+            wedges[j].end_rad   = cur + parent_span * share;
+            cur = wedges[j].end_rad;
         }
     }
 }

@@ -53,8 +53,13 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
     double y_min = 0, y_max = 0;
     for (int i = 0; i < n; i++) {
         if (self->bars[i].kind == FASTCHART_WF_TOTAL) {
+            /* A TOTAL bar is rendered at its absolute height from the
+             * baseline (per the documented contract). fabs keeps a
+             * negative running total (a net-loss subtotal) from being
+             * dropped by the y-range scan below and clamped to the
+             * baseline; cum still carries the signed value forward. */
             bar_lo[i] = 0;
-            bar_hi[i] = self->bars[i].value;
+            bar_hi[i] = fabs(self->bars[i].value);
             cum = self->bars[i].value;
         } else {
             double next = cum + self->bars[i].value;
