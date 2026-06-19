@@ -45,6 +45,13 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
 
     bool stacked = self->stacked;
     if (n_series < 2) stacked = false;
+    /* Stream graph (ThemeRiver): a stacked area centered on a baseline
+     * instead of anchored at zero. It needs >=2 series, is always a
+     * stacked variant, and ignores the secondary axis (all series stack
+     * on the left). Assumes non-negative data; negatives are clamped to
+     * 0 for the centering total. */
+    bool stream = self->stream_mode && n_series >= 2;
+    if (stream) stacked = true;
     /* Band mode requires exactly two series — the polygon is the
      * envelope between series[0] (upper) and series[1] (lower).
      * Falls back to the regular fill-to-baseline path if the caller
@@ -55,7 +62,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
     /* With secondary_y off, all series map to the left axis regardless
      * of the per-series right_axis flag — mirrors LineChart. */
     int n_right = 0;
-    if (self->secondary_y) {
+    if (self->secondary_y && !stream) {
         for (int s = 0; s < n_series; s++) {
             if (series[s].right_axis) n_right++;
         }
@@ -76,7 +83,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             for (int s = 0; s < n_series; s++) {
                 double v = area_read_value(&series[s], i);
                 if (isnan(v)) continue;
-                bool right = self->secondary_y && series[s].right_axis;
+                bool right = self->secondary_y && !stream && series[s].right_axis;
                 if (right) {
                     cum_r += v;
                     if (!seen_r) { dmin_r = dmax_r = cum_r; seen_r = 1; }
@@ -131,6 +138,23 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 if (dmax_r < 0) dmax_r = 0;
             }
         }
+    }
+    if (stream) {
+        /* Center the stack on zero: the symmetric range is [-T/2, +T/2]
+         * where T is the tallest per-category total. */
+        double max_total = 0.0;
+        for (int i = 0; i < max_len; i++) {
+            double tot = 0.0;
+            for (int s = 0; s < n_series; s++) {
+                double v = area_read_value(&series[s], i);
+                if (!isnan(v) && v > 0.0) tot += v;
+            }
+            if (tot > max_total) max_total = tot;
+        }
+        if (max_total <= 0.0) max_total = 1.0;
+        dmin_l = -max_total / 2.0;
+        dmax_l = max_total / 2.0;
+        seen_l = 1;
     }
     if (!seen_l) {
         zend_throw_error(NULL,
@@ -196,6 +220,22 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
      * For non-stacked overlay, each series's polygon spans
      * [0, v] with translucent fill so layered shapes show through. */
     gdPoint poly[2 * FASTCHART_MAX_POINTS_PER_SERIES];
+
+    /* Stream centering offset per category: -total/2, applied to every
+     * layer so the stack straddles the zero line. NULL (and a 0 offset)
+     * for the plain stacked / non-stacked paths, which stay unchanged. */
+    double *stream_off = NULL;
+    if (stream) {
+        stream_off = ecalloc((size_t)max_len, sizeof(double));
+        for (int i = 0; i < max_len; i++) {
+            double tot = 0.0;
+            for (int s = 0; s < n_series; s++) {
+                double v = area_read_value(&series[s], i);
+                if (!isnan(v) && v > 0.0) tot += v;
+            }
+            stream_off[i] = -tot / 2.0;
+        }
+    }
 
     if (band) {
         /* Build one closed polygon: series[0] left→right along the
@@ -266,25 +306,27 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
         double *cum_l = ecalloc((size_t)max_len, sizeof(double));
         double *cum_r = n_right > 0 ? ecalloc((size_t)max_len, sizeof(double)) : NULL;
         for (int s = 0; s < n_series; s++) {
-            bool right = self->secondary_y && series[s].right_axis;
+            bool right = self->secondary_y && !stream && series[s].right_axis;
             double *cum = right ? cum_r : cum_l;
             const fastchart_value_range *rng = right ? &range_r : &range_l;
             int series_handle = pal.series[s % FASTCHART_PALETTE_SERIES_N];
             int n_pts = 0;
 
-            /* Top edge: left to right at cum + v. */
+            /* Top edge: left to right at cum + v (+ stream centering). */
             for (int i = 0; i < max_len && n_pts < 2048; i++) {
                 double v = area_read_value(&series[s], i);
                 if (isnan(v)) v = 0;
+                double soff = stream_off ? stream_off[i] : 0.0;
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
-                int y = fastchart_y_to_pixel(cum[i] + v, rng, &plot);
+                int y = fastchart_y_to_pixel(cum[i] + v + soff, rng, &plot);
                 poly[n_pts].x = x; poly[n_pts].y = y;
                 n_pts++;
             }
-            /* Bottom edge: right to left at cum. */
+            /* Bottom edge: right to left at cum (+ stream centering). */
             for (int i = max_len - 1; i >= 0 && n_pts < 2 * 2048; i--) {
+                double soff = stream_off ? stream_off[i] : 0.0;
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
-                int y = fastchart_y_to_pixel(cum[i], rng, &plot);
+                int y = fastchart_y_to_pixel(cum[i] + soff, rng, &plot);
                 poly[n_pts].x = x; poly[n_pts].y = y;
                 n_pts++;
             }
@@ -309,8 +351,9 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             for (int i = 0; i < max_len; i++) {
                 double v = area_read_value(&series[s], i);
                 if (isnan(v)) v = 0;
+                double soff = stream_off ? stream_off[i] : 0.0;
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
-                int y = fastchart_y_to_pixel(cum[i] + v, rng, &plot);
+                int y = fastchart_y_to_pixel(cum[i] + v + soff, rng, &plot);
                 if (prev_valid) {
                     fastchart_target_line(t, prev_x, prev_y, x, y,
                                           pal.border, 1, FASTCHART_DASH_SOLID);
@@ -392,6 +435,8 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             }
         }
     }
+
+    if (stream_off) efree(stream_off);
 
     /* Combo overlays + annotations on top of the area fills. */
     fastchart_draw_overlays_categorical(t, (fastchart_obj *)self, &plot, &pal,

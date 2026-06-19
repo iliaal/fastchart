@@ -923,6 +923,7 @@ static void fastchart_area_init_extras(fastchart_area_obj *o)
     o->area_alpha = 64;
     o->stacked = true;
     o->band_mode = false;
+    o->stream_mode = false;
     fastchart_series_array_init(o->series, FASTCHART_MAX_SERIES);
     o->n_series = 0;
     o->max_len = 0;
@@ -5605,6 +5606,17 @@ ZEND_METHOD(FastChart_AreaChart, setBandMode)
     ZEND_PARSE_PARAMETERS_END();
     fastchart_area_obj *self = Z_FASTCHART_AREA_OBJ_P(ZEND_THIS);
     self->band_mode = band;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_AreaChart, setStreamMode)
+{
+    bool on;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(on)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_area_obj *self = Z_FASTCHART_AREA_OBJ_P(ZEND_THIS);
+    self->stream_mode = on;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 

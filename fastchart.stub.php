@@ -816,6 +816,16 @@ final class AreaChart extends Chart
      */
     public function setBandMode(bool $enabled): static {}
 
+    /**
+     * Stream graph (ThemeRiver): render a stacked area centered on a
+     * baseline instead of anchored at zero, so the silhouette flows
+     * symmetrically. Requires at least two series and a linear Y axis,
+     * and assumes non-negative data (negatives are clamped to zero for
+     * the centering). Always stacks on the primary axis; the secondary
+     * axis is ignored. Silently no-op with fewer than two series.
+     */
+    public function setStreamMode(bool $on): static {}
+
 }
 
 final class BarChart extends Chart
