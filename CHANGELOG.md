@@ -9,94 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Two more chart classes, taking the catalog from 36 to 38: `Dendrogram`
-  (a hierarchy drawn as a node-link tree, with `STYLE_TREE` / `STYLE_ELBOW`
-  edges and top-down or left-right orientation) and `Partition` (a
-  rectangular hierarchy subdivision, with `ORIENT_VERTICAL` giving the
-  icicle layout). Both reuse the `setHierarchy()` data model.
-- New chart-variant modes on existing classes:
-  - `ChordDiagram::setStyle(STYLE_DIRECTED)` — ribbons with an arrowhead at
-    each link's target, marking flow direction.
-  - `AreaChart::setStreamMode()` — a centered stacked silhouette
-    (stream graph / ThemeRiver).
-  - `GaugeChart::setStyle(STYLE_SOLID)` — a radial progress-fill arc instead
-    of a needle.
-  - `PieChart::setStartAngle()` / `setEndAngle()` (semi-circle and partial
-    pies) and `setRings()` (concentric nested-donut bands).
-  - `BarChart::setBarStyle(BAR_STYLE_LOLLIPOP)` (stem + bullet) and
-    `BAR_STYLE_DUMBBELL` (paired bullets on floating data).
-  - `BarChart::setOrientation(BAR_RADIAL)` — a circular ("race track")
-    bar chart: each category is a concentric ring whose bar is a thick
-    arc swept from 12 o'clock, with multiple series as concentric
-    sub-bands.
-  - `AreaChart` now honors `setLineInterpolation()`: `INTERP_SMOOTH`
-    draws a Catmull-Rom curved fill and the `INTERP_STEP_*` modes draw a
-    stepped fill, matching the line renderer (stacked layers tile without
-    gaps; band and stream modes stay linear).
-  - `PieChart` variable-radius (rose) pies: a positive `radius` key on
-    any slice scales that slice's outer radius by a second metric while
-    the angle still tracks the value.
-- Seven new `StockChart` indicators: `addVWAP()` and `addZigZag()` price
-  overlays, plus `addATR()`, `addCCI()`, `addWilliamsR()`, `addAroon()`
-  (two-series), and `addStdDev()` panes. The price-overlay cap rose to 6
-  and the indicator-pane cap to 6.
-- Ten new chart classes, taking the catalog from 26 to 36, all under the
-  `FastChart\` namespace and rendering through the existing
-  SVG-canonical pipeline (SVG / PNG / JPEG / WebP):
-  - **Graph family** over a shared `setNodes()` / `setLinks()` data model:
-    `ArcDiagram` (semicircular link arcs on a baseline, `ORIENT_UP` /
-    `_DOWN` / `_SPLIT`), `ChordDiagram` (radial node arcs with bezier
-    ribbons, `setPadAngle()`), and `NetworkChart` (force-directed
-    Fruchterman-Reingold layout; deterministic via `setSeed()` /
-    `setIterations()`).
-  - **Statistical:** `PopulationPyramid` (back-to-back diverging bars,
-    `setCategories()` / `setLeftSeries()` / `setRightSeries()`) and
-    `ViolinPlot` (gaussian KDE with Silverman bandwidth and median tick,
-    `setGroups()`).
-  - **Hierarchy:** `CirclePacking` (nested value-sized circles,
-    `setHierarchy()`).
-  - **Infographic:** `Pictogram` (fractional icon fill via clip;
-    `SHAPE_SQUARE` / `_CIRCLE` / `_PERSON`), `VennDiagram` (2–3 sets with
-    numerically area-fitted overlaps, `setSets()` / `setIntersections()`),
-    `WordCloud` (deterministic weighted spiral placement, `setWords()`),
-    and `SerpentineTimeline` (boustrophedon event path, `setEvents()`).
-
-### Fixed
-
-- Array data setters now accept arrays carrying PHP references. A series,
-  point, slice, link, or hierarchy array that had been walked with
-  `foreach ($a as &$v)` (which leaves `IS_REFERENCE` buckets) previously
-  failed to parse — silently dropping values or throwing "found no
-  numeric values". The shared scalar converters, the string/label
-  reader, and every parser's array/string structure checks now
-  dereference user buckets first.
+- `Dendrogram` and `Partition` chart classes (catalog 36 to 38): a
+  node-link hierarchy tree and a rectangular hierarchy/icicle, both fed by
+  `setHierarchy()`.
+- `ChordDiagram::setStyle(STYLE_DIRECTED)`: ribbons with an arrowhead at
+  each link's target.
+- `AreaChart::setStreamMode()`: centered stacked silhouette (stream graph /
+  ThemeRiver).
+- `GaugeChart::setStyle(STYLE_SOLID)`: radial progress-fill arc instead of a
+  needle.
+- `PieChart::setStartAngle()` / `setEndAngle()` for semi-circle and partial
+  pies, and `setRings()` for nested-donut bands.
+- `BarChart::setBarStyle(BAR_STYLE_LOLLIPOP)` and `BAR_STYLE_DUMBBELL`, and
+  `setOrientation(BAR_RADIAL)` for circular "race track" bars.
+- `AreaChart` honors `setLineInterpolation()`: `INTERP_SMOOTH` draws a
+  Catmull-Rom curved fill, `INTERP_STEP_*` a stepped fill.
+- `PieChart` variable-radius (rose) pies: a slice `radius` key scales that
+  slice's outer radius by a second metric while the angle tracks the value.
+- Seven `StockChart` indicators: `addVWAP()` and `addZigZag()` overlays,
+  `addATR()` / `addCCI()` / `addWilliamsR()` / `addAroon()` / `addStdDev()`
+  panes; overlay and pane caps raised to 6.
+- Ten chart classes (catalog 26 to 36): `ArcDiagram`, `ChordDiagram`,
+  `NetworkChart`, `PopulationPyramid`, `ViolinPlot`, `CirclePacking`,
+  `Pictogram`, `VennDiagram`, `WordCloud`, `SerpentineTimeline`.
 
 ### Changed
 
-- `Chart` and `Symbol` objects (and all their subclasses) now forbid
-  dynamic properties (`@strict-properties`) and serialization
-  (`@not-serializable`). Their state lives in a native C struct, so a
-  stray property assignment was silently dropped from every render and
-  `serialize()` emitted a state-less husk; both now fail loudly.
+- `Chart` and `Symbol` objects (and subclasses) now forbid dynamic
+  properties (`@strict-properties`) and serialization (`@not-serializable`);
+  both previously failed silently.
 
 ### Fixed
 
-- `Funnel::setStyle(STYLE_CONE)` left thin white crescents between
-  bands: each band's front-facing arcs were depthed from the band's
-  average half-width, so a shared boundary got two mismatched arc
-  depths. Each arc is now depthed from the half-width at its own
-  boundary (and the 1px trapezoid inset is dropped for cone bands), so
-  a band's bottom arc and the next band's top arc coincide and tile
-  seamlessly.
-- `LineChart::setLineInterpolation(INTERP_STEP_BEFORE)` drew a plain
-  diagonal instead of a staircase: the step corner used the new point's
-  x for both segments, collapsing the mode to linear. It now jumps to
-  the new value at the previous x and holds across, mirroring
-  `INTERP_STEP_AFTER`.
-- Gallery generators (`scripts/build-v1-gallery.php`,
-  `scripts/build-readme-gallery.php`): corrected a stale `require` of
-  `tests/_font_candidates.inc.php` left behind when the helper was
-  renamed to `tests/_font_candidates.inc`.
+- Array data setters now accept arrays carrying PHP references; a series,
+  slice, or hierarchy walked with `foreach ($a as &$v)` previously dropped
+  values or threw "found no numeric values".
+- `Funnel::setStyle(STYLE_CONE)` no longer leaves white crescents between
+  bands; arcs are depthed from each boundary's own half-width.
+- `LineChart::setLineInterpolation(INTERP_STEP_BEFORE)` now draws a
+  staircase instead of collapsing to a diagonal.
+- Gallery generators no longer `require` the renamed
+  `tests/_font_candidates.inc.php`.
 
 ## [1.3.0] - 2026-06-16
 
