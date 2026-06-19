@@ -79,7 +79,6 @@ $im = imagecreatefromstring(
         ->setHierarchy(['children' => [['value' => 3], ['value' => 5]]])
         ->renderPng());
 echo "png_ok: ", ($im !== false ? "yes" : "no"), "\n";
-if ($im) { imagedestroy($im); }
 
 echo "ok\n";
 ?>

@@ -56,7 +56,6 @@ $im = imagecreatefromstring(
         ->setEvents([['label' => 'A'], ['label' => 'B'], ['label' => 'C']])
         ->renderPng());
 echo "png_ok: ", ($im !== false ? "yes" : "no"), "\n";
-if ($im) { imagedestroy($im); }
 
 echo "ok\n";
 ?>

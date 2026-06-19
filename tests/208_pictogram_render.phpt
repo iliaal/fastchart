@@ -63,7 +63,6 @@ try {
 $im = imagecreatefromstring(
     (new FastChart\Pictogram(240, 120))->setTotal(10)->setValue(3)->renderPng());
 echo "png_ok: ", ($im !== false ? "yes" : "no"), "\n";
-if ($im) { imagedestroy($im); }
 
 echo "ok\n";
 ?>
