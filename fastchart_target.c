@@ -235,6 +235,39 @@ void fastchart_target_polygon(fastchart_target_t *t,
     if (n > 256) { efree(xs); efree(ys); }
 }
 
+void fastchart_target_polyline(fastchart_target_t *t,
+                                const fastchart_point_t *pts, int n,
+                                int color, int thickness)
+{
+    if (n < 2) return;
+#ifdef HAVE_FASTCHART_PDF
+    if (t->kind == FASTCHART_TARGET_PDF) {
+        /* PDF content streams are compact, so the per-segment line ops
+         * cost nothing comparable to the SVG element explosion; reuse
+         * the line primitive rather than adding a PDF polyline op. */
+        for (int i = 0; i + 1 < n; i++) {
+            fastchart_target_line(t, pts[i].x, pts[i].y,
+                                  pts[i + 1].x, pts[i + 1].y,
+                                  color, thickness, FASTCHART_DASH_SOLID);
+        }
+        return;
+    }
+#endif
+    int xs_stack[256], ys_stack[256];
+    int *xs = xs_stack, *ys = ys_stack;
+    if (n > 256) {
+        xs = emalloc(sizeof(int) * (size_t)n);
+        ys = emalloc(sizeof(int) * (size_t)n);
+    }
+    for (int i = 0; i < n; i++) {
+        xs[i] = pts[i].x;
+        ys[i] = pts[i].y;
+    }
+    uint32_t rgba = fastchart_target_color_to_rgba(t, color);
+    fc_svg_emit_polyline(t->u.svg.buf, xs, ys, n, rgba, thickness);
+    if (n > 256) { efree(xs); efree(ys); }
+}
+
 void fastchart_target_arc(fastchart_target_t *t,
                            int cx, int cy, int rx, int ry,
                            double start_deg, double end_deg,

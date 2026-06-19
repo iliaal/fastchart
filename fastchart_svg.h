@@ -67,6 +67,10 @@ void fc_svg_emit_polygon(smart_str *buf,
                           const int *xs, const int *ys, int n,
                           uint32_t rgba, int fill, int thickness);
 
+void fc_svg_emit_polyline(smart_str *buf,
+                           const int *xs, const int *ys, int n,
+                           uint32_t rgba, int thickness);
+
 void fc_svg_emit_ellipse(smart_str *buf,
                           double cx, double cy, double rx, double ry,
                           uint32_t rgba, int fill, int thickness);

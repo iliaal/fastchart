@@ -1862,8 +1862,9 @@ final class VennDiagram extends Chart
 /**
  * Word cloud: each word's font size scales with its weight and words are
  * laid out largest-first along a spiral, skipping positions that would
- * collide with an already-placed word. Layout is deterministic. Words
- * are drawn horizontally.
+ * collide with an already-placed word. Layout is deterministic. Word
+ * orientation is selectable via setOrientation(): horizontal, vertical,
+ * or ORIENT_MIXED.
  */
 final class WordCloud extends Chart
 {
