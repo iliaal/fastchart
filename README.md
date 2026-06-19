@@ -5,7 +5,7 @@
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-green.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![Follow @iliaa](https://img.shields.io/badge/Follow-@iliaa-000000?style=flat&logo=x&logoColor=white)](https://x.com/intent/follow?screen_name=iliaa)
 
-Native C PHP extension. 36 chart types behind a modern OO API with
+Native C PHP extension. 38 chart types behind a modern OO API with
 fluent setters and `final` classes. Line, area, bar, scatter, bubble,
 pie, radar, polar, surface, contour, gauge, gantt, box-plot, treemap,
 funnel, waterfall, heatmap, linear meter, network / chord / arc graphs,
@@ -21,7 +21,7 @@ without rebuilding state. `renderToFile()` picks the encoder from the
 extension; `renderPng()` / `renderJpeg()` / `renderWebp()` /
 `renderSvg()` return bytes in-process.
 
-![fastchart: 36 chart types in one PHP extension](images/fastchart-hero.jpg)
+![fastchart: 38 chart types in one PHP extension](images/fastchart-hero.jpg)
 
 **[Live gallery →](https://iliaal.github.io/fastchart/v1-gallery.html)**. Side-by-side SVG / PNG / JPG / WebP renders for every chart family, with the source PHP shown above each row.
 
@@ -32,7 +32,7 @@ curves with overlay vectors, log-scale bubble plots, HTML image-map
 hot-spots on Bar / Pie / Scatter (`setImageMap` + `getImageMap`).
 v1.0 dropped libgd as a runtime dependency, rebuilt rasterization
 around vendored plutovg, and replaced `draw($canvas)` with
-`renderSvg/Png/Jpeg/Webp` + `renderToFile`. 36 chart types, 2-class
+`renderSvg/Png/Jpeg/Webp` + `renderToFile`. 38 chart types, 2-class
 Symbol family. See [`CHANGELOG.md`](CHANGELOG.md)
 for the full breaking-change list.
 
@@ -264,7 +264,7 @@ Iteration count via `FC_BENCH_ITERS` (default 50). Bench source at
 
 ## What you can render
 
-36 chart classes plus a 2-class symbology family, all under the
+38 chart classes plus a 2-class symbology family, all under the
 `FastChart\` namespace. Each name links to its rendered example image:
 
 - **Cartesian:** [`LineChart`](docs/examples/01_line_basic.png),
@@ -277,7 +277,8 @@ Iteration count via `FC_BENCH_ITERS` (default 50). Bench source at
   with seven candle styles (`STYLE_CANDLE`, `STYLE_BAR`,
   `STYLE_DIAMOND`, `STYLE_I_CAP`, `STYLE_HOLLOW`, `STYLE_VOLUME`,
   `STYLE_VECTOR`), SMA / EMA / WMA overlays, optional volume pane and
-  custom indicator panes (RSI, MACD, Bollinger, OBV, stochastic, PSAR).
+  custom indicator panes (RSI, MACD, Bollinger, OBV, stochastic, PSAR,
+  ATR, CCI, Williams %R, Aroon, StdDev) and VWAP / ZigZag overlays.
 - **Non-Cartesian:** [`RadarChart`](docs/examples/08_radar.png),
   [`PolarChart`](docs/examples/16_polar.png),
   [`SurfaceChart`](docs/examples/15a_surface.png),
@@ -304,7 +305,9 @@ Iteration count via `FC_BENCH_ITERS` (default 50). Bench source at
   [`ArcDiagram`](docs/examples/57_arc_diagram.png),
   [`ChordDiagram`](docs/examples/58_chord_diagram.png),
   [`NetworkChart`](docs/examples/59_network.png) (force-directed,
-  deterministic seeded layout).
+  deterministic seeded layout), `Dendrogram` (node-link hierarchy tree,
+  straight or elbow edges), `Partition` (rectangular hierarchy / icicle).
+  `ChordDiagram` also has a `STYLE_DIRECTED` mode (arrowhead ribbons).
 - **Statistical:**
   [`PopulationPyramid`](docs/examples/60_population_pyramid.png)
   (back-to-back diverging bars),
