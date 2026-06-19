@@ -104,7 +104,14 @@ if (PHP_FASTCHART != "no") {
             "fastchart_calendar.c fastchart_sunburst.c fastchart_sankey.c " +
             "fastchart_marimekko.c fastchart_vector.c fastchart_effects.c " +
             "fastchart_encoder.c fastchart_rasterize.c fastchart_symbol.c " +
-            "fastchart_code128.c fastchart_qrcode.c";
+            "fastchart_code128.c fastchart_qrcode.c " +
+            // Graph family (shared node/link data model) + the remaining
+            // v1.2 chart classes. Must mirror config.m4 or fastchart.c
+            // references their render entry points as unresolved externals.
+            "fastchart_graph.c fastchart_arc.c fastchart_chord.c " +
+            "fastchart_network.c fastchart_pyramid.c fastchart_violin.c " +
+            "fastchart_circlepack.c fastchart_pictogram.c fastchart_venn.c " +
+            "fastchart_wordcloud.c fastchart_serpentine.c";
 
         var qrcode_sources = "qrcodegen.c";
 
