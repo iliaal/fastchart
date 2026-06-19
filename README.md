@@ -5,12 +5,13 @@
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-green.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![Follow @iliaa](https://img.shields.io/badge/Follow-@iliaa-000000?style=flat&logo=x&logoColor=white)](https://x.com/intent/follow?screen_name=iliaa)
 
-Native C PHP extension. 26 chart types behind a modern OO API with
+Native C PHP extension. 36 chart types behind a modern OO API with
 fluent setters and `final` classes. Line, area, bar, scatter, bubble,
 pie, radar, polar, surface, contour, gauge, gantt, box-plot, treemap,
-funnel, waterfall, heatmap, linear meter, plus a deep `StockChart`
-(seven candle styles, SMA / EMA / WMA overlays, volume + indicator
-panes).
+funnel, waterfall, heatmap, linear meter, network / chord / arc graphs,
+circle packing, violin and population pyramids, Venn, word clouds,
+pictograms, serpentine timelines, plus a deep `StockChart` (seven candle
+styles, SMA / EMA / WMA overlays, volume + indicator panes).
 
 SVG is the canonical render format. PNG / JPG / WebP outputs flatten
 text to glyph paths, run plutovg over the resulting SVG, and encode
@@ -20,7 +21,7 @@ without rebuilding state. `renderToFile()` picks the encoder from the
 extension; `renderPng()` / `renderJpeg()` / `renderWebp()` /
 `renderSvg()` return bytes in-process.
 
-![fastchart: 26 chart types in one PHP extension](images/fastchart-hero.jpg)
+![fastchart: 36 chart types in one PHP extension](images/fastchart-hero.jpg)
 
 **[Live gallery →](https://iliaal.github.io/fastchart/v1-gallery.html)**. Side-by-side SVG / PNG / JPG / WebP renders for every chart family, with the source PHP shown above each row.
 
@@ -31,8 +32,8 @@ curves with overlay vectors, log-scale bubble plots, HTML image-map
 hot-spots on Bar / Pie / Scatter (`setImageMap` + `getImageMap`).
 v1.0 dropped libgd as a runtime dependency, rebuilt rasterization
 around vendored plutovg, and replaced `draw($canvas)` with
-`renderSvg/Png/Jpeg/Webp` + `renderToFile`. 26 chart types, 2-class
-Symbol family, 138 phpt tests. See [`CHANGELOG.md`](CHANGELOG.md)
+`renderSvg/Png/Jpeg/Webp` + `renderToFile`. 36 chart types, 2-class
+Symbol family. See [`CHANGELOG.md`](CHANGELOG.md)
 for the full breaking-change list.
 
 ## Install
@@ -263,7 +264,7 @@ Iteration count via `FC_BENCH_ITERS` (default 50). Bench source at
 
 ## What you can render
 
-26 chart classes plus a 2-class symbology family, all under the
+36 chart classes plus a 2-class symbology family, all under the
 `FastChart\` namespace. Each name links to its rendered example image:
 
 - **Cartesian:** [`LineChart`](docs/examples/01_line_basic.png),
@@ -294,11 +295,29 @@ Iteration count via `FC_BENCH_ITERS` (default 50). Bench source at
   [`BulletChart`](docs/examples/43_bullet.png),
   [`ParetoChart`](docs/examples/44_pareto.png),
   [`CalendarHeatmap`](docs/examples/45_calendar_heatmap.png).
-- **Hierarchical / flow:**
+- **Hierarchical / flow / graph:**
   [`SunburstChart`](docs/examples/46_sunburst.png),
   [`SankeyChart`](docs/examples/47_sankey.png),
   [`MarimekkoChart`](docs/examples/48_marimekko.png),
-  [`VectorChart`](docs/examples/49_vector.png).
+  [`VectorChart`](docs/examples/49_vector.png),
+  [`CirclePacking`](docs/examples/62_circle_packing.png),
+  [`ArcDiagram`](docs/examples/57_arc_diagram.png),
+  [`ChordDiagram`](docs/examples/58_chord_diagram.png),
+  [`NetworkChart`](docs/examples/59_network.png) (force-directed,
+  deterministic seeded layout).
+- **Statistical:**
+  [`PopulationPyramid`](docs/examples/60_population_pyramid.png)
+  (back-to-back diverging bars),
+  [`ViolinPlot`](docs/examples/61_violin.png) (gaussian KDE silhouettes
+  with median ticks).
+- **Infographic:** [`Pictogram`](docs/examples/63_pictogram.png)
+  (fractional icon fill),
+  [`VennDiagram`](docs/examples/64_venn.png) (2–3 sets,
+  area-proportional overlaps),
+  [`WordCloud`](docs/examples/65_wordcloud.png) (deterministic spiral
+  layout),
+  [`SerpentineTimeline`](docs/examples/66_serpentine_timeline.png)
+  (boustrophedon event path).
 - **Symbology:** [`Code128`](docs/examples/41a_code128_alphanumeric.png)
   (1D barcode, ISO/IEC 15417, auto-switching A/B/C subsets, optional
   human-readable text), [`QrCode`](docs/examples/42b_qrcode_ecc_m.png)
@@ -324,7 +343,7 @@ Cross-cutting features available on most chart types:
 ## Examples
 
 A gallery of code + rendered chart pairs lives in
-[`docs/README.md`](docs/README.md). Forty-two runnable scripts in
+[`docs/README.md`](docs/README.md). Sixty-six runnable scripts in
 [`docs/examples/`](docs/examples/) regenerate the images and exercise
 every public method on the API surface.
 
@@ -352,6 +371,16 @@ All under the `FastChart\` namespace:
   supports a triangle-with-bands layout via `setStyle(STYLE_PYRAMID)`
   for callers who want the classic pyramid shape.
 - `Heatmap`: 2D grid with linear color-ramp interpolation.
+- `ArcDiagram`, `ChordDiagram`, `NetworkChart`: node/edge graphs over a
+  shared `setNodes()` / `setLinks()` data model: a 1-D arc layout, a
+  radial chord layout, and a deterministic force-directed layout.
+- `CirclePacking`: nested circles sized by value (`setHierarchy()`).
+- `PopulationPyramid`, `ViolinPlot`: distribution plots; diverging
+  paired bars, and gaussian-KDE silhouettes.
+- `Pictogram`, `VennDiagram`, `WordCloud`, `SerpentineTimeline`:
+  infographic layouts: fractional icon grids, area-proportional set
+  overlaps (≤3 sets), weighted spiral word placement, and snaking
+  event timelines.
 
 Every setter returns `static`, so a single fluent expression configures
 and emits a chart.
