@@ -1850,6 +1850,10 @@ final class VennDiagram extends Chart
      * set is geometrically impossible (the lens cannot exceed the smaller
      * circle) and is dropped rather than saturated to full containment.
      * Duplicate or reversed pairs collapse to one, last value winning.
+     * For three sets, an overlap combination that no triangle can realize
+     * (e.g. A-B and A-C both near-total while B-C is zero) falls back to a
+     * symmetric layout: all three circles stay visible, but the impossible
+     * areas are not reproduced.
      */
     public function setIntersections(array $intersections): static {}
 
