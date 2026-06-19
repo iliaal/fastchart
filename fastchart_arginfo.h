@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 78dbb2f3cf35803644c582bb5382042611b203f3 */
+ * Stub hash: 9cb06884856525dd393903a9119c345cbcf9b981 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -307,6 +307,10 @@ ZEND_END_ARG_INFO()
 #define arginfo_class_FastChart_AreaChart_setFillOpacity arginfo_class_FastChart_Chart_setShadowAlpha
 
 #define arginfo_class_FastChart_AreaChart_setBandMode arginfo_class_FastChart_Chart_setSecondaryYAxis
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_AreaChart_setStreamMode, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, on, _IS_BOOL, 0)
+ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_BarChart_setSeries arginfo_class_FastChart_LineChart_setSeries
 
@@ -798,6 +802,7 @@ ZEND_METHOD(FastChart_AreaChart, setSeries);
 ZEND_METHOD(FastChart_AreaChart, setStacked);
 ZEND_METHOD(FastChart_AreaChart, setFillOpacity);
 ZEND_METHOD(FastChart_AreaChart, setBandMode);
+ZEND_METHOD(FastChart_AreaChart, setStreamMode);
 ZEND_METHOD(FastChart_BarChart, setSeries);
 ZEND_METHOD(FastChart_BarChart, setStacked);
 ZEND_METHOD(FastChart_BarChart, setOrientation);
@@ -1032,6 +1037,7 @@ static const zend_function_entry class_FastChart_AreaChart_methods[] = {
 	ZEND_ME(FastChart_AreaChart, setStacked, arginfo_class_FastChart_AreaChart_setStacked, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_AreaChart, setFillOpacity, arginfo_class_FastChart_AreaChart_setFillOpacity, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_AreaChart, setBandMode, arginfo_class_FastChart_AreaChart_setBandMode, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_AreaChart, setStreamMode, arginfo_class_FastChart_AreaChart_setStreamMode, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 

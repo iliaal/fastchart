@@ -509,6 +509,7 @@ typedef struct {
     zend_long area_alpha;
     bool stacked;
     bool band_mode;
+    bool stream_mode;
     fastchart_series_t series[FASTCHART_MAX_SERIES];
     int n_series;
     int max_len;
