@@ -197,9 +197,9 @@ double fastchart_resolve_font_size(fastchart_obj *chart,
 /* Catmull-Rom interpolation of one segment (p1 -> p2) at parameter
  * t in [0, 1], with the surrounding control points p0 (or p1 if
  * none) and p3 (or p2 if none). */
-static void catmull_point(int p0x, int p0y, int p1x, int p1y,
-                          int p2x, int p2y, int p3x, int p3y,
-                          double t, int *ox, int *oy)
+void fastchart_catmull_point(int p0x, int p0y, int p1x, int p1y,
+                             int p2x, int p2y, int p3x, int p3y,
+                             double t, int *ox, int *oy)
 {
     double t2 = t * t;
     double t3 = t2 * t;
@@ -291,7 +291,7 @@ static void polyline_pass(fastchart_target_t *t, fastchart_obj *chart,
             for (int k = 1; k <= subdiv; k++) {
                 double tt = (double)k / (double)subdiv;
                 int x, y;
-                catmull_point(pts[p0i].x, pts[p0i].y,
+                fastchart_catmull_point(pts[p0i].x, pts[p0i].y,
                               pts[i].x,   pts[i].y,
                               pts[i + 1].x, pts[i + 1].y,
                               pts[p3i].x, pts[p3i].y,
