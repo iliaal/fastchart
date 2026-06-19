@@ -63,6 +63,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Funnel::setStyle(STYLE_CONE)` left thin white crescents between
+  bands: each band's front-facing arcs were depthed from the band's
+  average half-width, so a shared boundary got two mismatched arc
+  depths. Each arc is now depthed from the half-width at its own
+  boundary (and the 1px trapezoid inset is dropped for cone bands), so
+  a band's bottom arc and the next band's top arc coincide and tile
+  seamlessly.
 - `LineChart::setLineInterpolation(INTERP_STEP_BEFORE)` drew a plain
   diagonal instead of a staircase: the step corner used the new point's
   x for both segments, collapsing the mode to linear. It now jumps to
