@@ -94,6 +94,47 @@ $pg = (new FastChart\Pictogram(400, 200))
     ->renderSvg();
 echo "pictogram_one_clip: ", (substr_count($pg, '<clipPath') === 1 ? "yes" : "no"), "\n";
 
+/* CR-006: a leaf with zero/missing value carries no area and is dropped,
+ * not drawn as a min-radius placeholder dot. Of three children only the
+ * valued one survives, so the root (1 outline circle) wraps a single
+ * leaf (fill + border = 2 circles) => 3 circles total. */
+$cp = (new FastChart\CirclePacking(300, 300))
+    ->setHierarchy(['children' => [
+        ['value' => 0],     /* zero => dropped */
+        ['value' => 7],     /* kept */
+        ['label' => 'x'],   /* no value => dropped */
+    ]])
+    ->renderSvg();
+echo "circlepack_zero_leaf_dropped: ",
+    (substr_count($cp, '<circle') === 3 ? "yes" : "no"), "\n";
+
+/* CR-006: when every leaf prunes away the hierarchy is empty and draw
+ * throws rather than emitting a lone placeholder circle. */
+try {
+    (new FastChart\CirclePacking(300, 300))
+        ->setHierarchy(['children' => [['value' => 0], ['value' => -5]]])
+        ->renderSvg();
+    echo "circlepack_empty_throws: no_throw\n";
+} catch (\Throwable $e) {
+    echo "circlepack_empty_throws: threw\n";
+}
+
+/* CR-007: a geometrically impossible overlap (larger than the smaller
+ * set) is dropped, not saturated to full containment. Dropped lays the
+ * two equal circles side by side; a valid full-containment overlap makes
+ * them concentric. The two layouts differ. */
+$venn_mk = function (float $isize) {
+    return (new FastChart\VennDiagram(400, 400))
+        ->setSets([['size' => 10], ['size' => 10]])
+        ->setIntersections([['sets' => [0, 1], 'size' => $isize]])
+        ->renderSvg();
+};
+$venn_impossible = $venn_mk(100.0);   /* > min set size => dropped */
+$venn_full       = $venn_mk(10.0);    /* == min set size => full overlap */
+echo "venn_impossible_dropped: ",
+    ($venn_impossible !== $venn_full ? "yes" : "no"), "\n";
+echo "venn_impossible_clean: ", clean($venn_impossible) ? "yes" : "no", "\n";
+
 echo "ok\n";
 ?>
 --EXPECT--
@@ -107,4 +148,8 @@ venn_tiny_blank: yes
 venn_dedup_clean: yes
 violin_empty_dropped: yes
 pictogram_one_clip: yes
+circlepack_zero_leaf_dropped: yes
+circlepack_empty_throws: threw
+venn_impossible_dropped: yes
+venn_impossible_clean: yes
 ok
