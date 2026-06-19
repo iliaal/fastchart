@@ -125,16 +125,21 @@ int fastchart_pictogram_render_to_target(fastchart_pictogram_obj *self, fastchar
         double x = plot_x0 + c * cell_w + pad_x;
         double y = plot_y0 + r * cell_h + pad_y;
 
-        /* Empty base. */
-        picto_draw_icon(t, x, y, icon, icon, self->shape, empty_color);
-
-        double fw = 0.0;
-        if (i < full) fw = icon;
-        else if (i == full) fw = icon * partial;
-        if (fw > 0.5) {
-            fastchart_target_clip_push(t, (int)x, (int)y, (int)ceil(fw), (int)icon);
+        if (i < full) {
+            /* Fully filled: draw directly, no clip needed. */
             picto_draw_icon(t, x, y, icon, icon, self->shape, fill_color);
-            fastchart_target_clip_pop(t);
+        } else {
+            picto_draw_icon(t, x, y, icon, icon, self->shape, empty_color);
+            /* Only the boundary icon needs a fractional clip. */
+            if (i == full && partial > 0.0) {
+                double fw = icon * partial;
+                if (fw > 0.5) {
+                    fastchart_target_clip_push(t, (int)x, (int)y,
+                                               (int)ceil(fw), (int)icon);
+                    picto_draw_icon(t, x, y, icon, icon, self->shape, fill_color);
+                    fastchart_target_clip_pop(t);
+                }
+            }
         }
     }
 

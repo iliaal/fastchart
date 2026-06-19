@@ -1943,6 +1943,7 @@ static void fastchart_chord_init_extras(fastchart_chord_obj *o)
     o->links = NULL;
     o->link_count = 0;
     o->pad_deg = 2.0;
+    o->style = FASTCHART_CHORD_STYLE_RIBBON;
 }
 static void fastchart_chord_release_extras(fastchart_chord_obj *o)
 {
@@ -2087,7 +2088,8 @@ static fastchart_pack_node *fastchart_pack_build(HashTable *ht, int depth, int *
     }
     zval *zv = zend_hash_str_find(ht, "value", sizeof("value") - 1);
     double v;
-    if (zv && fastchart_zval_to_double(zv, &v) == 0 && isfinite(v) && v > 0) {
+    if (zv && fastchart_zval_to_double(zv, &v) == 0 && isfinite(v) &&
+        v > 0 && v <= FASTCHART_MAX_DATA_MAG) {
         node->value = v;
     }
 
@@ -2095,11 +2097,18 @@ static fastchart_pack_node *fastchart_pack_build(HashTable *ht, int depth, int *
     if (zch && Z_TYPE_P(zch) == IS_ARRAY) {
         HashTable *cht = Z_ARRVAL_P(zch);
         int cn = zend_hash_num_elements(cht);
+        /* Bound the child-pointer allocation to the remaining node
+         * budget so a huge `children` array can't reserve memory the
+         * node cap would never let us fill. */
+        int budget = FASTCHART_MAX_PACK_NODES - *count;
+        if (budget < 0) budget = 0;
+        if (cn > budget) cn = budget;
         if (cn > 0) {
             node->children = ecalloc(cn, sizeof(*node->children));
             int kept = 0;
             zval *e;
             ZEND_HASH_FOREACH_VAL(cht, e) {
+                if (kept >= cn || *count >= FASTCHART_MAX_PACK_NODES) break;
                 if (Z_TYPE_P(e) != IS_ARRAY) continue;
                 fastchart_pack_node *child =
                     fastchart_pack_build(Z_ARRVAL_P(e), depth + 1, count);
@@ -2197,6 +2206,7 @@ static void fastchart_wordcloud_init_extras(fastchart_wordcloud_obj *o)
 {
     o->words = NULL;
     o->word_count = 0;
+    o->orientation = FASTCHART_WC_ORIENT_HORIZONTAL;
 }
 static void fastchart_wordcloud_release_extras(fastchart_wordcloud_obj *o)
 {
@@ -8732,6 +8742,21 @@ ZEND_METHOD(FastChart_ChordDiagram, setPadAngle)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+ZEND_METHOD(FastChart_ChordDiagram, setStyle)
+{
+    zend_long style;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(style)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (style < FASTCHART_CHORD_STYLE_RIBBON || style > FASTCHART_CHORD_STYLE_LINE) {
+        style = FASTCHART_CHORD_STYLE_RIBBON;
+    }
+    fastchart_chord_obj *self = Z_FASTCHART_CHORD_OBJ_P(ZEND_THIS);
+    self->style = style;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 /* --- NetworkChart --------------------------------------------------- */
 
 ZEND_METHOD(FastChart_NetworkChart, setNodes)
@@ -8940,7 +8965,8 @@ ZEND_METHOD(FastChart_ViolinPlot, setGroups)
                 ZEND_HASH_FOREACH_VAL(vht, vv) {
                     if (vk >= vn) break;
                     double d;
-                    if (fastchart_zval_to_double(vv, &d) == 0 && isfinite(d)) {
+                    if (fastchart_zval_to_double(vv, &d) == 0 && isfinite(d) &&
+                        fabs(d) <= FASTCHART_MAX_DATA_MAG) {
                         vals[vk++] = d;
                     }
                 } ZEND_HASH_FOREACH_END();
@@ -8952,7 +8978,14 @@ ZEND_METHOD(FastChart_ViolinPlot, setGroups)
                 }
             }
         }
-        kept++;
+        /* Drop a group with no finite values rather than reserving a
+         * blank column for it. */
+        if (parsed[kept].n > 0) {
+            kept++;
+        } else if (parsed[kept].label) {
+            efree(parsed[kept].label);
+            parsed[kept].label = NULL;
+        }
     } ZEND_HASH_FOREACH_END();
     self->groups = parsed;
     self->group_count = kept;
@@ -9102,7 +9135,8 @@ ZEND_METHOD(FastChart_VennDiagram, setSets)
         }
         double sz = 1.0;
         zval *zs = zend_hash_str_find(eht, "size", sizeof("size") - 1);
-        if (zs && fastchart_zval_to_double(zs, &sz) == 0 && isfinite(sz) && sz > 0) {
+        if (zs && fastchart_zval_to_double(zs, &sz) == 0 && isfinite(sz) &&
+            sz > 0 && sz <= FASTCHART_MAX_DATA_MAG) {
             self->sets[kept].size = sz;
         } else {
             self->sets[kept].size = 1.0;
@@ -9143,11 +9177,21 @@ ZEND_METHOD(FastChart_VennDiagram, setIntersections)
             continue;
         }
         double sz;
-        if (fastchart_zval_to_double(zsz, &sz) != 0 || !isfinite(sz) || sz < 0) continue;
-        self->inters[kept].a = (int)a;
-        self->inters[kept].b = (int)b;
-        self->inters[kept].size = sz;
-        kept++;
+        if (fastchart_zval_to_double(zsz, &sz) != 0 || !isfinite(sz) || sz < 0 ||
+            sz > FASTCHART_MAX_DATA_MAG) {
+            continue;
+        }
+        /* Canonicalize the unordered pair and replace any duplicate so a
+         * later entry wins rather than both being stored. */
+        if (a > b) { zend_long tmp = a; a = b; b = tmp; }
+        int slot = -1;
+        for (int k = 0; k < kept; k++) {
+            if (self->inters[k].a == (int)a && self->inters[k].b == (int)b) { slot = k; break; }
+        }
+        if (slot < 0) slot = kept++;
+        self->inters[slot].a = (int)a;
+        self->inters[slot].b = (int)b;
+        self->inters[slot].size = sz;
     } ZEND_HASH_FOREACH_END();
     self->inter_count = kept;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -9207,6 +9251,21 @@ ZEND_METHOD(FastChart_WordCloud, setWords)
     } ZEND_HASH_FOREACH_END();
     self->words = parsed;
     self->word_count = kept;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_WordCloud, setOrientation)
+{
+    zend_long mode;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(mode)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (mode < FASTCHART_WC_ORIENT_HORIZONTAL || mode > FASTCHART_WC_ORIENT_MIXED) {
+        mode = FASTCHART_WC_ORIENT_HORIZONTAL;
+    }
+    fastchart_wordcloud_obj *self = Z_FASTCHART_WORDCLOUD_OBJ_P(ZEND_THIS);
+    self->orientation = mode;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 

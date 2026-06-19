@@ -114,7 +114,14 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
         int tw = 0, th = 0;
         if (fastchart_text_measure(t, font, fs, text, &tw, &th, NULL, 0) != 0) continue;
         if (tw <= 0 || th <= 0) continue;
-        double hw = tw / 2.0, hh = th / 2.0;
+
+        /* In MIXED mode, rotate ~1/3 of words 90 degrees, picked
+         * deterministically by stable index. The collision box and the
+         * bounds check use the rotated extent (width/height swapped). */
+        int vertical = (self->orientation == FASTCHART_WC_ORIENT_MIXED) && (wi % 3 == 1);
+        double box_w = vertical ? th : tw;
+        double box_h = vertical ? tw : th;
+        double hw = box_w / 2.0, hh = box_h / 2.0;
 
         /* Spiral outward until the box clears every placed box. */
         double bx = cx, by = cy;
@@ -154,9 +161,18 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
         int color = self->words[wi].color_rgb >= 0
             ? fastchart_target_color_rgb(t, self->words[wi].color_rgb)
             : pal.series[wi % FASTCHART_PALETTE_SERIES_N];
-        fastchart_text_draw(t, font, fs, color,
-                            (int)bx, (int)(by + th * 0.35),
-                            FASTCHART_ALIGN_CENTER, text, NULL, 0);
+        if (vertical) {
+            /* 90 deg CCW about a pivot offset so the glyph box centres
+             * on (bx, by) after rotation. */
+            fastchart_text_draw_rotated(t, font, fs, color,
+                                        (int)(bx + th * 0.35), (int)by,
+                                        FASTCHART_ALIGN_CENTER, 90.0,
+                                        text, NULL, 0);
+        } else {
+            fastchart_text_draw(t, font, fs, color,
+                                (int)bx, (int)(by + th * 0.35),
+                                FASTCHART_ALIGN_CENTER, text, NULL, 0);
+        }
     }
 
     if (self->title && ZSTR_LEN(self->title) > 0 && title_font && title_h > 0) {

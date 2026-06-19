@@ -26,4 +26,5 @@ require __DIR__ . '/_bootstrap.php';
         ['text' => 'axis', 'weight' => 9],
         ['text' => 'legend', 'weight' => 7],
     ])
+    ->setOrientation(FastChart\WordCloud::ORIENT_MIXED)
     ->renderToFile(__DIR__ . '/65_wordcloud.png');

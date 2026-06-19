@@ -1627,6 +1627,15 @@ final class ArcDiagram extends Chart
  */
 final class ChordDiagram extends Chart
 {
+    /** setStyle(): filled translucent ribbons (default). */
+    const int STYLE_RIBBON = 0;
+    /**
+     * setStyle(): non-ribbon mode. Each link is a single curve between
+     * the centres of its endpoint slices, stroke width proportional to
+     * value, rather than a filled ribbon.
+     */
+    const int STYLE_LINE = 1;
+
     /**
      * Node list. Each entry: `['label' => string?, 'color' => int?]`.
      * Order in the array is the node id used in `setLinks()`.
@@ -1648,6 +1657,13 @@ final class ChordDiagram extends Chart
      * arcs always remain visible.
      */
     public function setPadAngle(float $deg): static {}
+
+    /**
+     * Ribbon rendering style: `STYLE_RIBBON` (default, filled translucent
+     * ribbons) or `STYLE_LINE` (thin value-weighted curves, the
+     * "non-ribbon" chord variant).
+     */
+    public function setStyle(int $style): static {}
 
 }
 
@@ -1688,8 +1704,11 @@ final class NetworkChart extends Chart
     public function setSeed(int $seed): static {}
 
     /**
-     * Number of force-relaxation passes. Default 300. More iterations
-     * settle large graphs further at higher cost. Clamped to [1, 5000].
+     * Requested number of force-relaxation passes. Default 300, accepted
+     * up to 5000. This is an upper bound: because each pass is O(n^2) in
+     * the node count, the renderer automatically reduces the pass count
+     * for large graphs so a single render stays within a fixed work
+     * budget. Small graphs run the full requested count.
      */
     public function setIterations(int $iterations): static {}
 
@@ -1841,6 +1860,14 @@ final class VennDiagram extends Chart
  */
 final class WordCloud extends Chart
 {
+    /** setOrientation(): all words horizontal (default). */
+    const int ORIENT_HORIZONTAL = 0;
+    /**
+     * setOrientation(): mix horizontal and vertical (90 deg) words; a
+     * deterministic ~1/3 of words are rotated vertical.
+     */
+    const int ORIENT_MIXED = 1;
+
     /**
      * The words. Each entry:
      * `['text' => string, 'weight' => number?, 'color' => int?]`.
@@ -1849,6 +1876,12 @@ final class WordCloud extends Chart
      * 256 words.
      */
     public function setWords(array $words): static {}
+
+    /**
+     * Word orientation: `ORIENT_HORIZONTAL` (default) or `ORIENT_MIXED`
+     * (mix in vertical words). Layout stays deterministic.
+     */
+    public function setOrientation(int $mode): static {}
 
 }
 

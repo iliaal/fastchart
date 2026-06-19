@@ -620,6 +620,14 @@ typedef struct {
 #define FASTCHART_MAX_SUNBURST_NODES   2048      /* per chart, all rings */
 #define FASTCHART_MAX_SANKEY_NODES     256       /* per chart */
 #define FASTCHART_MAX_SANKEY_LINKS     1024      /* per chart */
+
+/* Magnitude cap for user-supplied data values. Finite but enormous
+ * inputs (e.g. 1e308) overflow squared sums and span subtractions to
+ * Inf/NaN, which then reach int casts at draw time as undefined
+ * behavior (garbage SVG coordinates). A trillion is already far beyond
+ * any real chart value; values exceeding it in magnitude are rejected
+ * at setter time so the layout math stays representable. */
+#define FASTCHART_MAX_DATA_MAG         1e12
 #define FASTCHART_MAX_MARIMEKKO_COLS   128       /* per chart */
 #define FASTCHART_MAX_MARIMEKKO_SEGS   64        /* per column */
 #define FASTCHART_MAX_VECTORS          4096      /* per chart */
@@ -971,6 +979,10 @@ typedef struct {
     zend_object std;
 } fastchart_arc_obj;
 
+/* ChordDiagram ribbon style. */
+#define FASTCHART_CHORD_STYLE_RIBBON  0
+#define FASTCHART_CHORD_STYLE_LINE    1
+
 typedef struct {
     FASTCHART_BASE_FIELDS
     fastchart_graph_node *nodes;
@@ -978,6 +990,7 @@ typedef struct {
     fastchart_graph_link *links;
     int link_count;
     double pad_deg;                    /* gap between node arcs (degrees) */
+    zend_long style;                   /* FASTCHART_CHORD_STYLE_* */
     zend_object std;
 } fastchart_chord_obj;
 
@@ -1081,10 +1094,15 @@ typedef struct {
     int    color_rgb;      /* -1 = palette default */
 } fastchart_word;
 
+/* WordCloud orientation modes. */
+#define FASTCHART_WC_ORIENT_HORIZONTAL  0
+#define FASTCHART_WC_ORIENT_MIXED       1
+
 typedef struct {
     FASTCHART_BASE_FIELDS
     fastchart_word *words;
     int word_count;
+    zend_long orientation;             /* FASTCHART_WC_ORIENT_* */
     zend_object std;
 } fastchart_wordcloud_obj;
 

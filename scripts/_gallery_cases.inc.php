@@ -1467,80 +1467,97 @@ PHP,
 ];
 
 $cases[] = [
-    'label' => '35. ChordDiagram — commuter flow between districts',
+    'label' => '35. ChordDiagram — travel between European cities',
     'ref'   => 'docs/examples/58_chord_diagram.php',
     'code'  => <<<'PHP'
-(new FastChart\ChordDiagram(560, 560))
-    ->setTitle('Commuter flow between districts')
+/* Bidirectional flows; translucent ribbons blend at overlaps. */
+(new FastChart\ChordDiagram(580, 580))
+    ->setTitle('Travel between European cities')
     ->setNodes([
-        ['label' => 'Centre', 'color' => 0xCC4444], ['label' => 'North', 'color' => 0x4477CC],
-        ['label' => 'East', 'color' => 0x44AA88], ['label' => 'West', 'color' => 0xD79B00],
+        ['label' => 'Berlin', 'color' => 0xCC4444], ['label' => 'Amsterdam', 'color' => 0xD79B00],
+        ['label' => 'London', 'color' => 0x4477CC], ['label' => 'Paris', 'color' => 0x44AA88],
+        ['label' => 'Madrid', 'color' => 0x9673A6],
     ])
     ->setLinks([
-        ['from' => 0, 'to' => 1, 'value' => 18], ['from' => 0, 'to' => 2, 'value' => 12],
-        ['from' => 0, 'to' => 3, 'value' => 15], ['from' => 1, 'to' => 2, 'value' => 6],
-        ['from' => 2, 'to' => 3, 'value' => 9], ['from' => 1, 'to' => 3, 'value' => 4],
+        ['from' => 0, 'to' => 1, 'value' => 14], ['from' => 1, 'to' => 0, 'value' => 42],
+        ['from' => 0, 'to' => 2, 'value' => 22], ['from' => 2, 'to' => 0, 'value' => 31],
+        ['from' => 2, 'to' => 3, 'value' => 40], ['from' => 3, 'to' => 2, 'value' => 33],
+        ['from' => 3, 'to' => 4, 'value' => 30], ['from' => 4, 'to' => 3, 'value' => 21],
+        /* ... more pairs in the example script ... */
     ])
-    ->setPadAngle(3.0);
+    ->setPadAngle(2.0);
 PHP,
     'build' => function () use ($font, $dpi) {
-        return (new FastChart\ChordDiagram(560, 560))
+        return (new FastChart\ChordDiagram(580, 580))
             ->setFontPath($font)->setDpi($dpi)
-            ->setTitle('Commuter flow between districts')
+            ->setTitle('Travel between European cities')
             ->setNodes([
-                ['label' => 'Centre', 'color' => 0xCC4444], ['label' => 'North', 'color' => 0x4477CC],
-                ['label' => 'East', 'color' => 0x44AA88], ['label' => 'West', 'color' => 0xD79B00],
+                ['label' => 'Berlin', 'color' => 0xCC4444], ['label' => 'Amsterdam', 'color' => 0xD79B00],
+                ['label' => 'London', 'color' => 0x4477CC], ['label' => 'Paris', 'color' => 0x44AA88],
+                ['label' => 'Madrid', 'color' => 0x9673A6],
             ])
             ->setLinks([
-                ['from' => 0, 'to' => 1, 'value' => 18], ['from' => 0, 'to' => 2, 'value' => 12],
-                ['from' => 0, 'to' => 3, 'value' => 15], ['from' => 1, 'to' => 2, 'value' => 6],
-                ['from' => 2, 'to' => 3, 'value' => 9], ['from' => 1, 'to' => 3, 'value' => 4],
+                ['from' => 0, 'to' => 1, 'value' => 14], ['from' => 1, 'to' => 0, 'value' => 42],
+                ['from' => 0, 'to' => 2, 'value' => 22], ['from' => 2, 'to' => 0, 'value' => 31],
+                ['from' => 0, 'to' => 3, 'value' => 18], ['from' => 3, 'to' => 0, 'value' => 25],
+                ['from' => 1, 'to' => 2, 'value' => 35], ['from' => 2, 'to' => 1, 'value' => 19],
+                ['from' => 1, 'to' => 3, 'value' => 12], ['from' => 3, 'to' => 1, 'value' => 28],
+                ['from' => 2, 'to' => 3, 'value' => 40], ['from' => 3, 'to' => 2, 'value' => 33],
+                ['from' => 2, 'to' => 4, 'value' => 16], ['from' => 4, 'to' => 2, 'value' => 24],
+                ['from' => 3, 'to' => 4, 'value' => 30], ['from' => 4, 'to' => 3, 'value' => 21],
             ])
-            ->setPadAngle(3.0);
+            ->setPadAngle(2.0);
     },
 ];
 
 $cases[] = [
-    'label' => '36. NetworkChart — force-directed collaboration graph',
+    'label' => '36. NetworkChart — force-directed clustered network',
     'ref'   => 'docs/examples/59_network.php',
     'code'  => <<<'PHP'
-(new FastChart\NetworkChart(640, 520))
-    ->setTitle('Team collaboration graph')
+/* A central hub linking four colour-coded clusters (full data in the
+ * example script); node radius tracks degree. */
+$blue = 0x4477CC; $green = 0x44AA88; $orange = 0xD79B00; $purple = 0x9673A6;
+(new FastChart\NetworkChart(680, 560))
+    ->setTitle('Team network')
     ->setNodes([
-        ['label' => 'Ana', 'color' => 0x6C8EBF], ['label' => 'Ben', 'color' => 0x6C8EBF],
-        ['label' => 'Cy', 'color' => 0x6C8EBF], ['label' => 'Dee', 'color' => 0x6C8EBF],
-        ['label' => 'Eve', 'color' => 0xD79B00],
-        ['label' => 'Fin', 'color' => 0x82B366], ['label' => 'Gus', 'color' => 0x82B366],
-        ['label' => 'Hana', 'color' => 0x82B366],
+        ['label' => 'Core', 'color' => 0x555555],
+        ['label' => 'Web', 'color' => $blue],  ['label' => 'API', 'color' => $green],
+        ['label' => 'Data', 'color' => $orange], ['label' => 'Ops', 'color' => $purple],
+        /* ... cluster members ... */
     ])
-    ->setLinks([
-        ['from' => 0, 'to' => 1, 'value' => 3], ['from' => 0, 'to' => 2, 'value' => 2],
-        ['from' => 1, 'to' => 3, 'value' => 2], ['from' => 2, 'to' => 3, 'value' => 1],
-        ['from' => 3, 'to' => 4, 'value' => 4], ['from' => 4, 'to' => 5, 'value' => 4],
-        ['from' => 5, 'to' => 6, 'value' => 2], ['from' => 5, 'to' => 7, 'value' => 3],
-        ['from' => 6, 'to' => 7, 'value' => 2],
-    ])
-    ->setSeed(7)->setIterations(400);
+    ->setLinks([/* hub -> leads, lead -> members, cross-links */])
+    ->setSeed(11)->setIterations(500);
 PHP,
     'build' => function () use ($font, $dpi) {
-        return (new FastChart\NetworkChart(640, 520))
+        $blue = 0x4477CC; $green = 0x44AA88; $orange = 0xD79B00; $purple = 0x9673A6;
+        return (new FastChart\NetworkChart(680, 560))
             ->setFontPath($font)->setDpi($dpi)
-            ->setTitle('Team collaboration graph')
+            ->setTitle('Team network')
             ->setNodes([
-                ['label' => 'Ana', 'color' => 0x6C8EBF], ['label' => 'Ben', 'color' => 0x6C8EBF],
-                ['label' => 'Cy', 'color' => 0x6C8EBF], ['label' => 'Dee', 'color' => 0x6C8EBF],
-                ['label' => 'Eve', 'color' => 0xD79B00],
-                ['label' => 'Fin', 'color' => 0x82B366], ['label' => 'Gus', 'color' => 0x82B366],
-                ['label' => 'Hana', 'color' => 0x82B366],
+                ['label' => 'Core', 'color' => 0x555555],
+                ['label' => 'Web', 'color' => $blue], ['label' => 'UI', 'color' => $blue],
+                ['label' => 'UX', 'color' => $blue], ['label' => 'A11y', 'color' => $blue],
+                ['label' => 'API', 'color' => $green], ['label' => 'Auth', 'color' => $green],
+                ['label' => 'Cache', 'color' => $green], ['label' => 'Queue', 'color' => $green],
+                ['label' => 'Data', 'color' => $orange], ['label' => 'ETL', 'color' => $orange],
+                ['label' => 'Lake', 'color' => $orange], ['label' => 'BI', 'color' => $orange],
+                ['label' => 'Ops', 'color' => $purple], ['label' => 'CI', 'color' => $purple],
+                ['label' => 'Infra', 'color' => $purple],
             ])
             ->setLinks([
-                ['from' => 0, 'to' => 1, 'value' => 3], ['from' => 0, 'to' => 2, 'value' => 2],
-                ['from' => 1, 'to' => 3, 'value' => 2], ['from' => 2, 'to' => 3, 'value' => 1],
-                ['from' => 3, 'to' => 4, 'value' => 4], ['from' => 4, 'to' => 5, 'value' => 4],
-                ['from' => 5, 'to' => 6, 'value' => 2], ['from' => 5, 'to' => 7, 'value' => 3],
-                ['from' => 6, 'to' => 7, 'value' => 2],
+                ['from' => 0, 'to' => 1, 'value' => 5], ['from' => 0, 'to' => 5, 'value' => 5],
+                ['from' => 0, 'to' => 9, 'value' => 5], ['from' => 0, 'to' => 13, 'value' => 5],
+                ['from' => 1, 'to' => 2, 'value' => 3], ['from' => 1, 'to' => 3, 'value' => 3],
+                ['from' => 1, 'to' => 4, 'value' => 2], ['from' => 2, 'to' => 3, 'value' => 1],
+                ['from' => 5, 'to' => 6, 'value' => 3], ['from' => 5, 'to' => 7, 'value' => 3],
+                ['from' => 5, 'to' => 8, 'value' => 2],
+                ['from' => 9, 'to' => 10, 'value' => 3], ['from' => 9, 'to' => 11, 'value' => 3],
+                ['from' => 9, 'to' => 12, 'value' => 2],
+                ['from' => 13, 'to' => 14, 'value' => 3], ['from' => 13, 'to' => 15, 'value' => 3],
+                ['from' => 5, 'to' => 1, 'value' => 2], ['from' => 9, 'to' => 5, 'value' => 2],
+                ['from' => 13, 'to' => 5, 'value' => 2], ['from' => 8, 'to' => 10, 'value' => 1],
             ])
-            ->setSeed(7)->setIterations(400);
+            ->setSeed(11)->setIterations(500);
     },
 ];
 
@@ -1706,7 +1723,8 @@ $cases[] = [
         ['text' => 'tests', 'weight' => 18], ['text' => 'pdf', 'weight' => 11],
         ['text' => 'color', 'weight' => 13], ['text' => 'axis', 'weight' => 9],
         ['text' => 'legend', 'weight' => 7],
-    ]);
+    ])
+    ->setOrientation(FastChart\WordCloud::ORIENT_MIXED);
 PHP,
     'build' => function () use ($font, $dpi) {
         return (new FastChart\WordCloud(680, 420))
@@ -1721,7 +1739,8 @@ PHP,
                 ['text' => 'tests', 'weight' => 18], ['text' => 'pdf', 'weight' => 11],
                 ['text' => 'color', 'weight' => 13], ['text' => 'axis', 'weight' => 9],
                 ['text' => 'legend', 'weight' => 7],
-            ]);
+            ])
+            ->setOrientation(FastChart\WordCloud::ORIENT_MIXED);
     },
 ];
 
