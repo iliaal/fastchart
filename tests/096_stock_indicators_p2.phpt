@@ -106,8 +106,7 @@ $combo = (new FastChart\StockChart(720, 520))
     ->renderPng();
 echo "combo:           ", ($combo !== '' ? "ok" : "empty"), "\n";
 
-/* Price-overlay cap: 4 overlays max (Bollinger + PSAR are 2;
- * 3 more PSARs would hit the cap, the 5th throws). */
+/* Price-overlay cap: 6 overlays max. Six PSARs fit; the 7th throws. */
 try {
     (new FastChart\StockChart(720, 360))
         ->setOhlcv($rows)
@@ -115,7 +114,9 @@ try {
         ->addParabolicSAR()
         ->addParabolicSAR()
         ->addParabolicSAR()
-        ->addParabolicSAR();   /* 5th must reject */
+        ->addParabolicSAR()
+        ->addParabolicSAR()
+        ->addParabolicSAR();   /* 7th must reject */
     echo "overlay_cap: no throw (unexpected)\n";
 } catch (\ValueError $e) {
     echo "overlay_cap:     ValueError\n";

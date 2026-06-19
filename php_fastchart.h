@@ -603,8 +603,10 @@ typedef struct {
  * Computed at addX() time from the typed candle array, drawn as
  * an overlay on the price pane during stock render. Up to 4
  * overlays per chart. */
-#define FASTCHART_OVERLAY_BOLL  0   /* Bollinger Bands: line + line + line */
-#define FASTCHART_OVERLAY_PSAR  1   /* Parabolic SAR: dot per bar */
+#define FASTCHART_OVERLAY_BOLL   0   /* Bollinger Bands: line + line + line */
+#define FASTCHART_OVERLAY_PSAR   1   /* Parabolic SAR: dot per bar */
+#define FASTCHART_OVERLAY_VWAP   2   /* VWAP: one connected line */
+#define FASTCHART_OVERLAY_ZIGZAG 3   /* ZigZag: line connecting pivots */
 
 typedef struct {
     int kind;
@@ -615,11 +617,11 @@ typedef struct {
     int color_rgb;         /* user colour override; -1 = palette */
 } fastchart_price_overlay;
 
-#define FASTCHART_MAX_PRICE_OVERLAYS 4
+#define FASTCHART_MAX_PRICE_OVERLAYS 6
 
 #define FASTCHART_MAX_CANDLES         4096
 #define FASTCHART_MAX_SMA             8
-#define FASTCHART_MAX_INDICATOR_PANES 3
+#define FASTCHART_MAX_INDICATOR_PANES 6
 #define FASTCHART_MAX_INDICATOR_VALUES 4096
 
 /* Per-setter input caps for the remaining list-shaped setters that

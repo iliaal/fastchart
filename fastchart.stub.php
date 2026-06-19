@@ -1078,6 +1078,61 @@ final class StockChart extends Chart
      */
     public function addParabolicSAR(float $af_init = 0.02, float $af_max = 0.2): static {}
 
+    /**
+     * VWAP (volume-weighted average price): one line overlaid on the
+     * price pane, the running sum(typical*volume)/sum(volume) with
+     * typical = (high+low+close)/3. With no usable volume it falls back
+     * to the cumulative typical-price average. `color` is an optional
+     * 0xRRGGBB override. Requires `setOhlcv()`; uses the overlay budget.
+     */
+    public function addVWAP(int $color = -1): static {}
+
+    /**
+     * ZigZag: a pivot line overlaid on the price pane that connects
+     * swing highs and lows, filtering out moves smaller than
+     * `threshold_pct` percent (default 5, clamped to (0, 100]). Requires
+     * `setOhlcv()`; uses the overlay budget.
+     */
+    public function addZigZag(float $threshold_pct = 5.0): static {}
+
+    /**
+     * ATR (Wilder's Average True Range): a pane indicator measuring
+     * volatility as the smoothed average of the true range over
+     * `period` bars (default 14). Requires `setOhlcv()`; uses the
+     * indicator-pane budget.
+     */
+    public function addATR(int $period = 14): static {}
+
+    /**
+     * CCI (Commodity Channel Index): a pane oscillator, (typical -
+     * SMA(typical)) / (0.015 * mean absolute deviation) over `period`
+     * bars (default 20), centered on 0. Requires `setOhlcv()`; uses the
+     * indicator-pane budget.
+     */
+    public function addCCI(int $period = 20): static {}
+
+    /**
+     * Williams %R: a pane oscillator in [-100, 0] measuring the close
+     * relative to the high-low range over `period` bars (default 14).
+     * Requires `setOhlcv()`; uses the indicator-pane budget.
+     */
+    public function addWilliamsR(int $period = 14): static {}
+
+    /**
+     * Rolling standard deviation of close over `period` bars (default
+     * 20), drawn as a pane indicator. Requires `setOhlcv()`; uses the
+     * indicator-pane budget.
+     */
+    public function addStdDev(int $period = 20): static {}
+
+    /**
+     * Aroon: a two-line pane indicator (Aroon Up and Aroon Down, each
+     * in [0, 100]) measuring how recently the highest high / lowest low
+     * occurred within the trailing `period`+1 window (default 25).
+     * Requires `setOhlcv()`; uses the indicator-pane budget.
+     */
+    public function addAroon(int $period = 25): static {}
+
 }
 
 /**
