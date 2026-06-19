@@ -94,29 +94,17 @@ $pg = (new FastChart\Pictogram(400, 200))
     ->renderSvg();
 echo "pictogram_one_clip: ", (substr_count($pg, '<clipPath') === 1 ? "yes" : "no"), "\n";
 
-/* CR-006: a leaf with zero/missing value carries no area and is dropped,
- * not drawn as a min-radius placeholder dot. Of three children only the
- * valued one survives, so the root (1 outline circle) wraps a single
- * leaf (fill + border = 2 circles) => 3 circles total. */
-$cp = (new FastChart\CirclePacking(300, 300))
-    ->setHierarchy(['children' => [
-        ['value' => 0],     /* zero => dropped */
-        ['value' => 7],     /* kept */
-        ['label' => 'x'],   /* no value => dropped */
-    ]])
-    ->renderSvg();
-echo "circlepack_zero_leaf_dropped: ",
-    (substr_count($cp, '<circle') === 3 ? "yes" : "no"), "\n";
-
-/* CR-006: when every leaf prunes away the hierarchy is empty and draw
- * throws rather than emitting a lone placeholder circle. */
+/* #2: a hierarchy nested past the depth cap (24) is rejected at the
+ * setter rather than silently truncated and surfaced as a bad render.
+ * Wide-but-shallow data past the node cap stays graceful (CR-003,
+ * exercised by circlepack_bigarray_clean above). */
+$deep = ['value' => 1];
+for ($i = 0; $i < 30; $i++) { $deep = ['children' => [$deep]]; }
 try {
-    (new FastChart\CirclePacking(300, 300))
-        ->setHierarchy(['children' => [['value' => 0], ['value' => -5]]])
-        ->renderSvg();
-    echo "circlepack_empty_throws: no_throw\n";
+    (new FastChart\CirclePacking(300, 300))->setHierarchy($deep);
+    echo "circlepack_overdepth_throws: no_throw\n";
 } catch (\Throwable $e) {
-    echo "circlepack_empty_throws: threw\n";
+    echo "circlepack_overdepth_throws: threw\n";
 }
 
 /* CR-007: a geometrically impossible overlap (larger than the smaller
@@ -135,6 +123,40 @@ echo "venn_impossible_dropped: ",
     ($venn_impossible !== $venn_full ? "yes" : "no"), "\n";
 echo "venn_impossible_clean: ", clean($venn_impossible) ? "yes" : "no", "\n";
 
+/* #6: with three unique pairs stored, a fourth entry duplicating an
+ * earlier pair must still replace it (last value wins), not be skipped.
+ * The result must equal the layout where that value was given outright. */
+$venn3 = function (array $inters) {
+    return (new FastChart\VennDiagram(400, 400))
+        ->setSets([['size' => 10], ['size' => 10], ['size' => 10]])
+        ->setIntersections($inters)->renderSvg();
+};
+$with_late_dup = $venn3([
+    ['sets' => [0, 1], 'size' => 3],
+    ['sets' => [0, 2], 'size' => 3],
+    ['sets' => [1, 2], 'size' => 3],
+    ['sets' => [0, 1], 'size' => 6],   /* fourth entry replaces pair 0-1 */
+]);
+$replacement_only = $venn3([
+    ['sets' => [0, 1], 'size' => 6],
+    ['sets' => [0, 2], 'size' => 3],
+    ['sets' => [1, 2], 'size' => 3],
+]);
+echo "venn_late_dup_replaces: ",
+    ($with_late_dup === $replacement_only ? "yes" : "no"), "\n";
+
+/* #3: a 3-set overlap no triangle can realize (A-B and A-C near-total,
+ * B-C zero) renders a clean symmetric fallback with all three sets
+ * visible (2 circles each), not a collapsed/garbage layout. */
+$venn_inf = $venn3([
+    ['sets' => [0, 1], 'size' => 9],
+    ['sets' => [0, 2], 'size' => 9],
+    ['sets' => [1, 2], 'size' => 0],
+]);
+echo "venn_infeasible_clean: ", clean($venn_inf) ? "yes" : "no", "\n";
+echo "venn_infeasible_three_sets: ",
+    (substr_count($venn_inf, '<circle') === 6 ? "yes" : "no"), "\n";
+
 echo "ok\n";
 ?>
 --EXPECT--
@@ -148,8 +170,10 @@ venn_tiny_blank: yes
 venn_dedup_clean: yes
 violin_empty_dropped: yes
 pictogram_one_clip: yes
-circlepack_zero_leaf_dropped: yes
-circlepack_empty_throws: threw
+circlepack_overdepth_throws: threw
 venn_impossible_dropped: yes
 venn_impossible_clean: yes
+venn_late_dup_replaces: yes
+venn_infeasible_clean: yes
+venn_infeasible_three_sets: yes
 ok

@@ -65,6 +65,39 @@ $families = [
         ->setGrid([[1, 2], [3, 4]]),
     'LinearMeter'  => fn() => (new FastChart\LinearMeter(300, 60))
         ->setValue(40),
+    'ArcDiagram'   => fn() => (new FastChart\ArcDiagram(400, 200))
+        ->setNodes([['label' => 'A'], ['label' => 'B'], ['label' => 'C']])
+        ->setLinks([['from' => 0, 'to' => 1, 'value' => 1],
+                    ['from' => 1, 'to' => 2, 'value' => 2]]),
+    'ChordDiagram' => fn() => (new FastChart\ChordDiagram(300, 300))
+        ->setNodes([['label' => 'A'], ['label' => 'B'], ['label' => 'C']])
+        ->setLinks([['from' => 0, 'to' => 1, 'value' => 1],
+                    ['from' => 1, 'to' => 2, 'value' => 2]]),
+    'NetworkChart' => fn() => (new FastChart\NetworkChart(300, 300))
+        ->setNodes([['label' => 'A'], ['label' => 'B'], ['label' => 'C']])
+        ->setLinks([['from' => 0, 'to' => 1, 'value' => 1],
+                    ['from' => 1, 'to' => 2, 'value' => 2]]),
+    'PopulationPyramid' => fn() => (new FastChart\PopulationPyramid(300, 300))
+        ->setCategories(['a', 'b', 'c'])
+        ->setLeftSeries(['label' => 'L', 'data' => [1, 2, 3]])
+        ->setRightSeries(['label' => 'R', 'data' => [2, 3, 1]]),
+    'ViolinPlot'   => fn() => (new FastChart\ViolinPlot(300, 300))
+        ->setGroups([['label' => 'X', 'values' => [1, 2, 3, 4, 3, 2]]]),
+    'CirclePacking' => fn() => (new FastChart\CirclePacking(300, 300))
+        ->setHierarchy(['children' => [['value' => 5], ['value' => 3], ['value' => 8]]]),
+    'Pictogram'    => fn() => (new FastChart\Pictogram(300, 150))
+        ->setTotal(10)->setValue(6),
+    'VennDiagram'  => fn() => (new FastChart\VennDiagram(300, 300))
+        ->setSets([['size' => 10], ['size' => 8]])
+        ->setIntersections([['sets' => [0, 1], 'size' => 3]]),
+    'WordCloud'    => fn() => (new FastChart\WordCloud(300, 300))
+        ->setWords([['text' => 'alpha', 'weight' => 5],
+                    ['text' => 'beta', 'weight' => 3],
+                    ['text' => 'gamma', 'weight' => 8]]),
+    'SerpentineTimeline' => fn() => (new FastChart\SerpentineTimeline(400, 200))
+        ->setEvents([['label' => 'a', 'date' => 'Jan'],
+                     ['label' => 'b', 'date' => 'Feb'],
+                     ['label' => 'c', 'date' => 'Mar']]),
     'Code128'      => fn() => (new FastChart\Code128())
         ->setData('FC-12345')->setSize(300, 80),
     'QrCode'       => fn() => (new FastChart\QrCode())
@@ -141,6 +174,16 @@ Funnel: PNG/JPEG/WebP/SVG ok
 Waterfall: PNG/JPEG/WebP/SVG ok
 Heatmap: PNG/JPEG/WebP/SVG ok
 LinearMeter: PNG/JPEG/WebP/SVG ok
+ArcDiagram: PNG/JPEG/WebP/SVG ok
+ChordDiagram: PNG/JPEG/WebP/SVG ok
+NetworkChart: PNG/JPEG/WebP/SVG ok
+PopulationPyramid: PNG/JPEG/WebP/SVG ok
+ViolinPlot: PNG/JPEG/WebP/SVG ok
+CirclePacking: PNG/JPEG/WebP/SVG ok
+Pictogram: PNG/JPEG/WebP/SVG ok
+VennDiagram: PNG/JPEG/WebP/SVG ok
+WordCloud: PNG/JPEG/WebP/SVG ok
+SerpentineTimeline: PNG/JPEG/WebP/SVG ok
 Code128: PNG/JPEG/WebP/SVG ok
 QrCode: PNG/JPEG/WebP/SVG ok
 ALL OK

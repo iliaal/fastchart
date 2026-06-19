@@ -61,9 +61,26 @@ static double pack_siblings(fastchart_pack_node **kids, int n)
     double rad_step = avg_r * 0.05;
     if (rad_step < 0.01) rad_step = 0.01;
 
+    /* The spiral search costs O(i) collision checks per spiral step, so a
+     * large sibling group is super-quadratic overall. Cap the cumulative
+     * collision work; once spent, the remaining siblings are placed on a
+     * bare golden-angle spiral (no collision test) so a huge group stays
+     * bounded and deterministic at the cost of some overlap in the tail.
+     * Normal-sized groups never approach the budget and are unaffected. */
+    long work = 0;
+    const long WORK_BUDGET = 8000000;
+
     for (int i = 0; i < n; i++) {
         fastchart_pack_node *c = kids[i];
         if (i == 0) { c->x = 0.0; c->y = 0.0; continue; }
+        if (work > WORK_BUDGET) {
+            double tt = (double)i;
+            double ang = tt * 2.39996322972865332;
+            double rad = rad_step * tt;
+            c->x = rad * cos(ang);
+            c->y = rad * sin(ang);
+            continue;
+        }
         /* Spiral outward until a collision-free slot is found. The cap is
          * a backstop; rad grows without bound so a clear slot is reached
          * long before it for any realistic radius set. If the cap is hit,
@@ -77,6 +94,7 @@ static double pack_siblings(fastchart_pack_node **kids, int n)
             c->y = rad * sin(ang);
             placed = 1;
             for (int j = 0; j < i; j++) {
+                work++;
                 double dxp = c->x - kids[j]->x;
                 double dyp = c->y - kids[j]->y;
                 double need = c->r + kids[j]->r;
@@ -181,16 +199,6 @@ int fastchart_circlepack_render_to_target(fastchart_circlepack_obj *self, fastch
                                    NULL, &title_h, NULL, 0) == 0) {
             top_pad += title_h + 10;
         }
-    }
-
-    /* After empty-leaf pruning at build time a hierarchy can collapse to
-     * a valueless root with no children. Treat that as no data rather
-     * than drawing a lone placeholder circle. */
-    if (self->root->child_count == 0 && self->root->value <= 0.0) {
-        zend_throw_error(NULL,
-            "FastChart\\CirclePacking::draw() requires a hierarchy with at "
-            "least one positive leaf value");
-        return -1;
     }
 
     pack_layout(self->root);

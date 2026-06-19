@@ -127,14 +127,31 @@ int fastchart_venn_render_to_target(fastchart_venn_obj *self, fastchart_target_t
     if (n == 3) {
         double d02 = venn_solve_distance(r[0], r[2], venn_pair_size(self, 0, 2));
         double d12 = venn_solve_distance(r[1], r[2], venn_pair_size(self, 1, 2));
+        int infeasible = 1;
         if (d01 > 1e-6) {
             double x = (d01 * d01 + d02 * d02 - d12 * d12) / (2.0 * d01);
             double y2 = d02 * d02 - x * x;
-            cx[2] = x;
-            cy[2] = sqrt(fmax(0.0, y2));
-        } else {
-            cx[2] = 0.0;
-            cy[2] = r[0] + r[2];
+            /* y2 < 0 means the three solved pairwise distances violate the
+             * triangle inequality: the requested overlaps cannot all hold
+             * at once (e.g. A-B and A-C both near-total but B-C zero).
+             * Rather than flatten circle 2 onto the axis and emit a
+             * misleading layout, fall back to a symmetric triad below. */
+            if (y2 >= 0.0) {
+                cx[2] = x;
+                cy[2] = sqrt(y2);
+                infeasible = 0;
+            }
+        }
+        if (infeasible) {
+            /* Symmetric placement so all three sets stay visible; the
+             * exact (unsatisfiable) overlap areas are not reproduced. */
+            double avg = (r[0] + r[1] + r[2]) / 3.0;
+            double sep = avg * 1.1;
+            for (int i = 0; i < 3; i++) {
+                double ang = M_PI / 2.0 + i * (2.0 * M_PI / 3.0);
+                cx[i] = sep * cos(ang);
+                cy[i] = sep * sin(ang);
+            }
         }
     }
 

@@ -2068,11 +2068,18 @@ static void fastchart_violin_addref_extras(fastchart_violin_obj *o)
 #define FASTCHART_MAX_PACK_NODES 2048
 #define FASTCHART_MAX_PACK_DEPTH 24
 
-static void fastchart_pack_free(fastchart_pack_node *node);
-
-static fastchart_pack_node *fastchart_pack_build(HashTable *ht, int depth, int *count)
+static fastchart_pack_node *fastchart_pack_build(HashTable *ht, int depth,
+                                                 int *count, int *overflow)
 {
-    if (depth > FASTCHART_MAX_PACK_DEPTH || *count >= FASTCHART_MAX_PACK_NODES) {
+    /* Depth breach is an error (pathological nesting, never a readable
+     * chart) and is reported up via *overflow. The node-count cap is a
+     * graceful truncation: large flat data is legitimate, just dense, so
+     * it is capped and rendered rather than rejected (see CR-003). */
+    if (depth > FASTCHART_MAX_PACK_DEPTH) {
+        *overflow = 1;
+        return NULL;
+    }
+    if (*count >= FASTCHART_MAX_PACK_NODES) {
         return NULL;
     }
     fastchart_pack_node *node = ecalloc(1, sizeof(*node));
@@ -2104,7 +2111,7 @@ static fastchart_pack_node *fastchart_pack_build(HashTable *ht, int depth, int *
          * node cap would never let us fill. */
         int budget = FASTCHART_MAX_PACK_NODES - *count;
         if (budget < 0) budget = 0;
-        if (cn > budget) cn = budget;
+        if (cn > budget) cn = budget;   /* graceful node-count cap (CR-003) */
         if (cn > 0) {
             node->children = ecalloc(cn, sizeof(*node->children));
             int kept = 0;
@@ -2113,19 +2120,8 @@ static fastchart_pack_node *fastchart_pack_build(HashTable *ht, int depth, int *
                 if (kept >= cn || *count >= FASTCHART_MAX_PACK_NODES) break;
                 if (Z_TYPE_P(e) != IS_ARRAY) continue;
                 fastchart_pack_node *child =
-                    fastchart_pack_build(Z_ARRVAL_P(e), depth + 1, count);
-                if (child) {
-                    /* A leaf with no positive value carries no area: drop
-                     * it rather than render a min-radius placeholder dot.
-                     * A subtree whose descendants all dropped collapses to
-                     * such a leaf, so this prunes empty branches too. */
-                    if (child->child_count == 0 && child->value <= 0.0) {
-                        fastchart_pack_free(child);
-                        (*count)--;
-                        continue;
-                    }
-                    node->children[kept++] = child;
-                }
+                    fastchart_pack_build(Z_ARRVAL_P(e), depth + 1, count, overflow);
+                if (child) node->children[kept++] = child;
             } ZEND_HASH_FOREACH_END();
             node->child_count = kept;
             if (kept == 0) { efree(node->children); node->children = NULL; }
@@ -9016,8 +9012,22 @@ ZEND_METHOD(FastChart_CirclePacking, setHierarchy)
 
     fastchart_circlepack_obj *self = Z_FASTCHART_CIRCLEPACK_OBJ_P(ZEND_THIS);
 
-    int count = 0;
-    fastchart_pack_node *built = fastchart_pack_build(Z_ARRVAL_P(root), 0, &count);
+    int count = 0, overflow = 0;
+    fastchart_pack_node *built =
+        fastchart_pack_build(Z_ARRVAL_P(root), 0, &count, &overflow);
+
+    /* Build into a temporary tree and only adopt it on full success.
+     * Pathological nesting past the depth limit would otherwise be
+     * silently truncated and only surface as a malformed render later, so
+     * reject it at the setter. (Wide-but-shallow data is capped, not
+     * rejected; see CR-003.) */
+    if (overflow) {
+        fastchart_pack_free(built);
+        zend_throw_error(NULL,
+            "FastChart\\CirclePacking::setHierarchy(): hierarchy nesting "
+            "exceeds the supported depth (max %d)", FASTCHART_MAX_PACK_DEPTH);
+        RETURN_THROWS();
+    }
 
     fastchart_pack_free(self->root);
     self->root = built;
@@ -9174,7 +9184,6 @@ ZEND_METHOD(FastChart_VennDiagram, setIntersections)
     int kept = 0;
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
-        if (kept >= 3) break;
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         zval *zset = zend_hash_str_find(eht, "sets", sizeof("sets") - 1);
@@ -9210,7 +9219,14 @@ ZEND_METHOD(FastChart_VennDiagram, setIntersections)
         for (int k = 0; k < kept; k++) {
             if (self->inters[k].a == (int)a && self->inters[k].b == (int)b) { slot = k; break; }
         }
-        if (slot < 0) slot = kept++;
+        if (slot < 0) {
+            /* New pair: only three are possible for three sets. Keep
+             * scanning past that point so a later duplicate still
+             * replaces an existing slot (last value wins), rather than
+             * breaking out and dropping it. */
+            if (kept >= 3) continue;
+            slot = kept++;
+        }
         self->inters[slot].a = (int)a;
         self->inters[slot].b = (int)b;
         self->inters[slot].size = sz;
