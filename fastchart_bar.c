@@ -251,9 +251,26 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
                 int x0 = slot_left + s * sub_w + sub_inset;
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
-                bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
-                if (edge_handle >= 0) {
-                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                if (self->bar_style == FASTCHART_BAR_STYLE_DUMBBELL) {
+                    /* Connector between the [min,max] pair with a filled
+                     * circle at each end. */
+                    int x_center = (x0 + x1) / 2;
+                    int bullet_r = draw_w / 2;
+                    if (bullet_r < 3) bullet_r = 3;
+                    if (bullet_r > 12) bullet_r = 12;
+                    fastchart_target_line(t, x_center, y0, x_center, y1,
+                                          color, 2, FASTCHART_DASH_SOLID);
+                    fastchart_target_ellipse(t, x_center, y0, bullet_r, bullet_r, color, 1, 0);
+                    fastchart_target_ellipse(t, x_center, y1, bullet_r, bullet_r, color, 1, 0);
+                    if (edge_handle >= 0) {
+                        fastchart_target_ellipse(t, x_center, y0, bullet_r, bullet_r, edge_handle, 0, 1);
+                        fastchart_target_ellipse(t, x_center, y1, bullet_r, bullet_r, edge_handle, 0, 1);
+                    }
+                } else {
+                    bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
+                    if (edge_handle >= 0) {
+                        fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                    }
                 }
             }
         } else if (stack_layer && n_series > 1) {
@@ -315,11 +332,26 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
 
-                int y0 = y_v < zero_y ? y_v : zero_y;
-                int y1 = y_v < zero_y ? zero_y : y_v;
-                bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
-                if (edge_handle >= 0) {
-                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                if (self->bar_style == FASTCHART_BAR_STYLE_LOLLIPOP) {
+                    /* Thin stem from the zero baseline to the value with
+                     * a filled circle bullet at the value. */
+                    int x_center = (x0 + x1) / 2;
+                    int bullet_r = draw_w / 2;
+                    if (bullet_r < 3) bullet_r = 3;
+                    if (bullet_r > 12) bullet_r = 12;
+                    fastchart_target_line(t, x_center, zero_y, x_center, y_v,
+                                          color, 2, FASTCHART_DASH_SOLID);
+                    fastchart_target_ellipse(t, x_center, y_v, bullet_r, bullet_r, color, 1, 0);
+                    if (edge_handle >= 0) {
+                        fastchart_target_ellipse(t, x_center, y_v, bullet_r, bullet_r, edge_handle, 0, 1);
+                    }
+                } else {
+                    int y0 = y_v < zero_y ? y_v : zero_y;
+                    int y1 = y_v < zero_y ? zero_y : y_v;
+                    bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
+                    if (edge_handle >= 0) {
+                        fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                    }
                 }
             }
         }

@@ -834,8 +834,24 @@ final class BarChart extends Chart
     public const int BAR_VERTICAL   = 0;
     public const int BAR_HORIZONTAL = 1;
 
+    /** Glyph style for setBarStyle(). */
+    public const int BAR_STYLE_BAR      = 0;
+    public const int BAR_STYLE_LOLLIPOP = 1;
+    public const int BAR_STYLE_DUMBBELL = 2;
+
     public function setSeries(array $series): static {}
     public function setStacked(bool $stacked): static {}
+
+    /**
+     * Glyph style for vertical bars. BAR_STYLE_BAR (default) draws
+     * filled rectangles. BAR_STYLE_LOLLIPOP draws a thin stem from the
+     * zero baseline to the value with a circle bullet at the tip.
+     * BAR_STYLE_DUMBBELL requires setFloating(true): it draws a
+     * connector between each `[$min, $max]` pair with a circle at both
+     * ends. Both lollipop and dumbbell styles apply to the vertical
+     * orientation; horizontal bars fall back to filled rectangles.
+     */
+    public function setBarStyle(int $style): static {}
 
     /**
      * Bar orientation. BAR_VERTICAL (default) draws traditional
@@ -870,6 +886,26 @@ final class PieChart extends Chart
 {
     public function setSlices(array $slices): static {}
     public function setDonutHoleRatio(float $ratio): static {}
+
+    /**
+     * Concentric nested-donut rings. Each element is itself a slice
+     * array in the same shapes setSlices() accepts ({label => value}
+     * or a list of {value, label?, color?} dicts). The first ring is
+     * the innermost band, the last the outermost; at most eight rings
+     * render. When set, the rings replace the flat single-pie slices.
+     * setDonutHoleRatio() carves an optional center hole.
+     */
+    public function setRings(array $rings): static {}
+
+    /**
+     * Sweep window in degrees for a partial / semi-circle pie. The
+     * default 0..360 draws a full pie from 12 o'clock. A narrower
+     * window such as setStartAngle(0)->setEndAngle(180) draws a
+     * semi-circle; the start angle also rotates the whole pie. A
+     * degenerate or oversized span falls back to the full circle.
+     */
+    public function setStartAngle(float $degrees): static {}
+    public function setEndAngle(float $degrees): static {}
 
     /**
      * Per-slice radial offset in pixels, indexed by slice index.
@@ -1195,6 +1231,10 @@ final class SurfaceChart extends Chart
  */
 final class GaugeChart extends Chart
 {
+    /** Dial style for setStyle(). */
+    public const int STYLE_NEEDLE = 0;
+    public const int STYLE_SOLID  = 1;
+
     public function setValue(float $value): static {}
 
     /**
@@ -1208,6 +1248,14 @@ final class GaugeChart extends Chart
      * covering the full range fill in with the theme accent color.
      */
     public function setZones(array $zones): static {}
+
+    /**
+     * Dial style. STYLE_NEEDLE (default) draws a pointer and hub.
+     * STYLE_SOLID instead fills a progress arc from min to the value
+     * in the color of the zone the value falls in (or the theme accent
+     * when no zone matches), with no needle.
+     */
+    public function setStyle(int $style): static {}
 
     /**
      * sprintf format for the central value label. Default `"%.1f"`.

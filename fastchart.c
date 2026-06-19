@@ -945,6 +945,7 @@ static void fastchart_bar_init_extras(fastchart_bar_obj *o)
     o->bar_floating = false;
     o->stacked = false;
     o->bar_orientation = FASTCHART_BAR_VERTICAL;
+    o->bar_style = FASTCHART_BAR_STYLE_BAR;
     fastchart_series_array_init(o->series, FASTCHART_MAX_SERIES);
     o->n_series = 0;
     o->max_len = 0;
@@ -983,6 +984,9 @@ static void fastchart_pie_init_extras(fastchart_pie_obj *o)
     o->donut_hole_ratio = 0.0;
     o->explode = NULL;
     o->explode_count = 0;
+    o->pie_start_deg = 0.0;
+    o->pie_end_deg = 360.0;
+    o->ring_count = 0;
 }
 static void fastchart_pie_release_extras(fastchart_pie_obj *o)
 {
@@ -996,6 +1000,17 @@ static void fastchart_pie_release_extras(fastchart_pie_obj *o)
         o->slices = NULL;
     }
     if (o->explode) { efree(o->explode); o->explode = NULL; }
+    for (int r = 0; r < o->ring_count; r++) {
+        fastchart_pie_slice *rs = o->rings[r].slices;
+        if (rs) {
+            for (int i = 0; i < o->rings[r].count; i++) {
+                if (rs[i].label) efree(rs[i].label);
+            }
+            efree(rs);
+            o->rings[r].slices = NULL;
+        }
+    }
+    o->ring_count = 0;
     o->slice_count = 0;
     o->explode_count = 0;
 }
@@ -1021,6 +1036,21 @@ static void fastchart_pie_addref_extras(fastchart_pie_obj *o)
         o->explode = copy;
     } else {
         o->explode = NULL;
+    }
+    for (int r = 0; r < o->ring_count; r++) {
+        fastchart_pie_ring *ring = &o->rings[r];
+        if (ring->slices && ring->count > 0) {
+            size_t bytes = (size_t)ring->count * sizeof(fastchart_pie_slice);
+            fastchart_pie_slice *copy = emalloc(bytes);
+            memcpy(copy, ring->slices, bytes);
+            for (int i = 0; i < ring->count; i++) {
+                copy[i].label = fc_strdup_opt(ring->slices[i].label);
+            }
+            ring->slices = copy;
+        } else {
+            ring->slices = NULL;
+            ring->count = 0;
+        }
     }
 }
 
@@ -1330,6 +1360,7 @@ static void fastchart_gauge_init_extras(fastchart_gauge_obj *o)
     o->gauge_value_format = NULL;
     o->zones = NULL;
     o->n_zones = 0;
+    o->gauge_style = FASTCHART_GAUGE_STYLE_NEEDLE;
 }
 static void fastchart_gauge_release_extras(fastchart_gauge_obj *o)
 {
@@ -4065,6 +4096,21 @@ ZEND_METHOD(FastChart_GaugeChart, setValueFormat)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+ZEND_METHOD(FastChart_GaugeChart, setStyle)
+{
+    zend_long style;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(style)
+    ZEND_PARSE_PARAMETERS_END();
+    if (style < FASTCHART_GAUGE_STYLE_NEEDLE || style > FASTCHART_GAUGE_STYLE_SOLID) {
+        zend_value_error("FastChart\\GaugeChart::setStyle() expects a STYLE_* class constant");
+        RETURN_THROWS();
+    }
+    fastchart_gauge_obj *self = Z_FASTCHART_GAUGE_OBJ_P(ZEND_THIS);
+    self->gauge_style = style;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 ZEND_METHOD(FastChart_Chart, setDateAxisStride)
 {
     zend_long unit, every = 1;
@@ -5281,6 +5327,184 @@ ZEND_METHOD(FastChart_Chart, setYAxisRange)
 }
 
 FASTCHART_BOOL_SETTER(FastChart_Chart, setSecondaryYAxis, secondary_y)
+
+/* Parse a pie-slice array (associative {label => value} or list of
+ * {value, label?, color?} dicts) into a freshly-allocated slice array.
+ * Mirrors setSlices()'s body so the nested-donut ring parser shares one
+ * shape-detection path. *out_slices is emalloc'd (caller owns) or NULL
+ * when nothing valid parsed; the array may be over-allocated (tail slots
+ * are zeroed, so freeing the whole block is safe). */
+static void fastchart_parse_pie_slices(HashTable *ht,
+                                       fastchart_pie_slice **out_slices,
+                                       int *out_count, double *out_total)
+{
+    *out_slices = NULL;
+    *out_count = 0;
+    *out_total = 0.0;
+
+    int n = (int)zend_hash_num_elements(ht);
+    if (n == 0) return;
+    if (n > FASTCHART_MAX_SLICES) n = FASTCHART_MAX_SLICES;
+
+    fastchart_pie_slice *slices = ecalloc((size_t)n, sizeof(fastchart_pie_slice));
+    double total = 0.0;
+    int slot = 0;
+
+    int shape_assoc = 1;
+    {
+        zend_string *k;
+        zend_ulong h;
+        zval *v;
+        ZEND_HASH_FOREACH_KEY_VAL(ht, h, k, v) {
+            (void)h;
+            if (!k || (Z_TYPE_P(v) != IS_LONG && Z_TYPE_P(v) != IS_DOUBLE)) {
+                shape_assoc = 0;
+            }
+            break;
+        } ZEND_HASH_FOREACH_END();
+    }
+
+    if (shape_assoc) {
+        zend_string *k;
+        zend_ulong h;
+        zval *v;
+        ZEND_HASH_FOREACH_KEY_VAL(ht, h, k, v) {
+            (void)h;
+            if (slot >= n) break;
+            double d;
+            if (fastchart_zval_to_double(v, &d) != 0) continue;
+            if (d <= 0.0 || !isfinite(d)) continue;
+            if (k && memchr(ZSTR_VAL(k), 0, ZSTR_LEN(k)) != NULL) continue;
+            slices[slot].label = k ? fc_strdup_opt(ZSTR_VAL(k)) : NULL;
+            if (!k) {
+                snprintf(slices[slot].idx_label,
+                         sizeof(slices[slot].idx_label), "%d", slot);
+            } else {
+                slices[slot].idx_label[0] = '\0';
+            }
+            slices[slot].value = d;
+            slices[slot].color_rgb = -1;
+            total += d;
+            slot++;
+        } ZEND_HASH_FOREACH_END();
+    } else {
+        zval *entry;
+        ZEND_HASH_FOREACH_VAL(ht, entry) {
+            if (slot >= n) break;
+            if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+            zval *value_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
+                                                "value", sizeof("value") - 1);
+            if (!value_zv) continue;
+            double d;
+            if (fastchart_zval_to_double(value_zv, &d) != 0) continue;
+            if (d <= 0.0 || !isfinite(d)) continue;
+
+            zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
+                                                "label", sizeof("label") - 1);
+            const char *label = fastchart_label_or_null(label_zv);
+            slices[slot].label = fc_strdup_opt(label);
+            if (!label) {
+                snprintf(slices[slot].idx_label,
+                         sizeof(slices[slot].idx_label), "%d", slot);
+            } else {
+                slices[slot].idx_label[0] = '\0';
+            }
+            slices[slot].value = d;
+            slices[slot].color_rgb = -1;
+            zval *color_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
+                                                "color", sizeof("color") - 1);
+            if (color_zv && Z_TYPE_P(color_zv) == IS_LONG) {
+                zend_long c = Z_LVAL_P(color_zv);
+                if (c >= 0 && c <= 0xFFFFFF) {
+                    slices[slot].color_rgb = (int)c;
+                }
+            }
+            total += d;
+            slot++;
+        } ZEND_HASH_FOREACH_END();
+    }
+
+    if (slot == 0) {
+        efree(slices);
+        slices = NULL;
+    }
+    *out_slices = slices;
+    *out_count = slot;
+    *out_total = total;
+}
+
+ZEND_METHOD(FastChart_PieChart, setRings)
+{
+    zval *data_zv;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(data_zv)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
+
+    /* Drop any previously-parsed rings. */
+    for (int r = 0; r < self->ring_count; r++) {
+        fastchart_pie_slice *rs = self->rings[r].slices;
+        if (rs) {
+            for (int i = 0; i < self->rings[r].count; i++) {
+                if (rs[i].label) efree(rs[i].label);
+            }
+            efree(rs);
+        }
+        self->rings[r].slices = NULL;
+        self->rings[r].count = 0;
+        self->rings[r].total = 0.0;
+    }
+    self->ring_count = 0;
+
+    HashTable *ht = Z_ARRVAL_P(data_zv);
+    zval *ring_zv;
+    ZEND_HASH_FOREACH_VAL(ht, ring_zv) {
+        if (self->ring_count >= FASTCHART_MAX_PIE_RINGS) break;
+        if (Z_TYPE_P(ring_zv) != IS_ARRAY) continue;
+        fastchart_pie_slice *slices;
+        int count;
+        double total;
+        fastchart_parse_pie_slices(Z_ARRVAL_P(ring_zv), &slices, &count, &total);
+        if (count == 0) continue;
+        self->rings[self->ring_count].slices = slices;
+        self->rings[self->ring_count].count = count;
+        self->rings[self->ring_count].total = total;
+        self->ring_count++;
+    } ZEND_HASH_FOREACH_END();
+
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_PieChart, setStartAngle)
+{
+    double deg;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_DOUBLE(deg)
+    ZEND_PARSE_PARAMETERS_END();
+    if (!isfinite(deg)) {
+        zend_value_error("FastChart\\PieChart::setStartAngle() expects a finite degree value");
+        RETURN_THROWS();
+    }
+    fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
+    self->pie_start_deg = deg;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_PieChart, setEndAngle)
+{
+    double deg;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_DOUBLE(deg)
+    ZEND_PARSE_PARAMETERS_END();
+    if (!isfinite(deg)) {
+        zend_value_error("FastChart\\PieChart::setEndAngle() expects a finite degree value");
+        RETURN_THROWS();
+    }
+    fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
+    self->pie_end_deg = deg;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
 ZEND_METHOD(FastChart_PieChart, setExplode)
 {
@@ -6989,6 +7213,21 @@ ZEND_METHOD(FastChart_BarChart, setOrientation)
     }
     fastchart_bar_obj *self = Z_FASTCHART_BAR_OBJ_P(ZEND_THIS);
     self->bar_orientation = orientation;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_BarChart, setBarStyle)
+{
+    zend_long style;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(style)
+    ZEND_PARSE_PARAMETERS_END();
+    if (style < FASTCHART_BAR_STYLE_BAR || style > FASTCHART_BAR_STYLE_DUMBBELL) {
+        zend_value_error("FastChart\\BarChart::setBarStyle() expects a BAR_STYLE_* class constant");
+        RETURN_THROWS();
+    }
+    fastchart_bar_obj *self = Z_FASTCHART_BAR_OBJ_P(ZEND_THIS);
+    self->bar_style = style;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
