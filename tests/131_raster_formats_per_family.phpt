@@ -98,6 +98,10 @@ $families = [
         ->setEvents([['label' => 'a', 'date' => 'Jan'],
                      ['label' => 'b', 'date' => 'Feb'],
                      ['label' => 'c', 'date' => 'Mar']]),
+    'Dendrogram'   => fn() => (new FastChart\Dendrogram(300, 300))
+        ->setHierarchy(['children' => [['value' => 5], ['value' => 3], ['value' => 8]]]),
+    'Partition'    => fn() => (new FastChart\Partition(300, 300))
+        ->setHierarchy(['children' => [['value' => 5], ['value' => 3], ['value' => 8]]]),
     'Code128'      => fn() => (new FastChart\Code128())
         ->setData('FC-12345')->setSize(300, 80),
     'QrCode'       => fn() => (new FastChart\QrCode())
@@ -184,6 +188,8 @@ Pictogram: PNG/JPEG/WebP/SVG ok
 VennDiagram: PNG/JPEG/WebP/SVG ok
 WordCloud: PNG/JPEG/WebP/SVG ok
 SerpentineTimeline: PNG/JPEG/WebP/SVG ok
+Dendrogram: PNG/JPEG/WebP/SVG ok
+Partition: PNG/JPEG/WebP/SVG ok
 Code128: PNG/JPEG/WebP/SVG ok
 QrCode: PNG/JPEG/WebP/SVG ok
 ALL OK

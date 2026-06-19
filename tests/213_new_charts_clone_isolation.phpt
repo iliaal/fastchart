@@ -54,6 +54,12 @@ $builders = [
         ->setEvents([['label' => 'a', 'date' => 'Jan'],
                      ['label' => 'b', 'date' => 'Feb'],
                      ['label' => 'c', 'date' => 'Mar']]),
+    'Dendrogram' => fn() => (new FastChart\Dendrogram(300, 300))
+        ->setHierarchy(['children' => [
+            ['label' => 'a', 'value' => 5], ['value' => 3], ['value' => 8]]]),
+    'Partition' => fn() => (new FastChart\Partition(300, 300))
+        ->setHierarchy(['children' => [
+            ['label' => 'a', 'value' => 5], ['value' => 3], ['value' => 8]]]),
 ];
 
 foreach ($builders as $name => $build) {
@@ -76,4 +82,6 @@ CirclePacking: ok
 VennDiagram: ok
 WordCloud: ok
 SerpentineTimeline: ok
+Dendrogram: ok
+Partition: ok
 done

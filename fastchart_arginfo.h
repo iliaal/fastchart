@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 41cd358adfadef613dae889fbb5c7b12f65a9796 */
+ * Stub hash: 49b744813274df7b1587f2e587b1fd0ed067afea */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -612,6 +612,10 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_Dendrogram_setOrientation arginfo_class_FastChart_Chart_setLineInterpolation
 
+#define arginfo_class_FastChart_Partition_setHierarchy arginfo_class_FastChart_SunburstChart_setHierarchy
+
+#define arginfo_class_FastChart_Partition_setOrientation arginfo_class_FastChart_Chart_setLineInterpolation
+
 #define arginfo_class_FastChart_Pictogram_setValue arginfo_class_FastChart_GaugeChart_setValue
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Pictogram_setTotal, 0, 1, IS_STATIC, 0)
@@ -896,6 +900,8 @@ ZEND_METHOD(FastChart_CirclePacking, setHierarchy);
 ZEND_METHOD(FastChart_Dendrogram, setHierarchy);
 ZEND_METHOD(FastChart_Dendrogram, setStyle);
 ZEND_METHOD(FastChart_Dendrogram, setOrientation);
+ZEND_METHOD(FastChart_Partition, setHierarchy);
+ZEND_METHOD(FastChart_Partition, setOrientation);
 ZEND_METHOD(FastChart_Pictogram, setValue);
 ZEND_METHOD(FastChart_Pictogram, setTotal);
 ZEND_METHOD(FastChart_Pictogram, setIconCount);
@@ -1244,6 +1250,12 @@ static const zend_function_entry class_FastChart_Dendrogram_methods[] = {
 	ZEND_ME(FastChart_Dendrogram, setHierarchy, arginfo_class_FastChart_Dendrogram_setHierarchy, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Dendrogram, setStyle, arginfo_class_FastChart_Dendrogram_setStyle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_Dendrogram, setOrientation, arginfo_class_FastChart_Dendrogram_setOrientation, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_FastChart_Partition_methods[] = {
+	ZEND_ME(FastChart_Partition, setHierarchy, arginfo_class_FastChart_Partition_setHierarchy, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Partition, setOrientation, arginfo_class_FastChart_Partition_setOrientation, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -2121,6 +2133,28 @@ static zend_class_entry *register_class_FastChart_Dendrogram(zend_class_entry *c
 	zend_string *const_ORIENT_LEFT_name = zend_string_init_interned("ORIENT_LEFT", sizeof("ORIENT_LEFT") - 1, 1);
 	zend_declare_typed_class_constant(class_entry, const_ORIENT_LEFT_name, &const_ORIENT_LEFT_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
 	zend_string_release(const_ORIENT_LEFT_name);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_FastChart_Partition(zend_class_entry *class_entry_FastChart_Chart)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "FastChart", "Partition", class_FastChart_Partition_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	zval const_ORIENT_HORIZONTAL_value;
+	ZVAL_LONG(&const_ORIENT_HORIZONTAL_value, 0);
+	zend_string *const_ORIENT_HORIZONTAL_name = zend_string_init_interned("ORIENT_HORIZONTAL", sizeof("ORIENT_HORIZONTAL") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_ORIENT_HORIZONTAL_name, &const_ORIENT_HORIZONTAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_ORIENT_HORIZONTAL_name);
+
+	zval const_ORIENT_VERTICAL_value;
+	ZVAL_LONG(&const_ORIENT_VERTICAL_value, 1);
+	zend_string *const_ORIENT_VERTICAL_name = zend_string_init_interned("ORIENT_VERTICAL", sizeof("ORIENT_VERTICAL") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_ORIENT_VERTICAL_name, &const_ORIENT_VERTICAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_ORIENT_VERTICAL_name);
 
 	return class_entry;
 }
