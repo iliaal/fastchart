@@ -1846,7 +1846,10 @@ final class VennDiagram extends Chart
      * `['sets' => [i, j], 'size' => number]`, where `i` / `j` are
      * 0-based indices into `setSets()`. The centre distance for that
      * pair is fitted so the lens area matches `size`. Pairs left
-     * unspecified are drawn disjoint.
+     * unspecified are drawn disjoint. An overlap larger than the smaller
+     * set is geometrically impossible (the lens cannot exceed the smaller
+     * circle) and is dropped rather than saturated to full containment.
+     * Duplicate or reversed pairs collapse to one, last value winning.
      */
     public function setIntersections(array $intersections): static {}
 

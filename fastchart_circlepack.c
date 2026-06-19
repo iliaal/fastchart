@@ -183,6 +183,16 @@ int fastchart_circlepack_render_to_target(fastchart_circlepack_obj *self, fastch
         }
     }
 
+    /* After empty-leaf pruning at build time a hierarchy can collapse to
+     * a valueless root with no children. Treat that as no data rather
+     * than drawing a lone placeholder circle. */
+    if (self->root->child_count == 0 && self->root->value <= 0.0) {
+        zend_throw_error(NULL,
+            "FastChart\\CirclePacking::draw() requires a hierarchy with at "
+            "least one positive leaf value");
+        return -1;
+    }
+
     pack_layout(self->root);
     if (self->root->r <= 0.0) return 0;
 

@@ -2068,6 +2068,8 @@ static void fastchart_violin_addref_extras(fastchart_violin_obj *o)
 #define FASTCHART_MAX_PACK_NODES 2048
 #define FASTCHART_MAX_PACK_DEPTH 24
 
+static void fastchart_pack_free(fastchart_pack_node *node);
+
 static fastchart_pack_node *fastchart_pack_build(HashTable *ht, int depth, int *count)
 {
     if (depth > FASTCHART_MAX_PACK_DEPTH || *count >= FASTCHART_MAX_PACK_NODES) {
@@ -2112,7 +2114,18 @@ static fastchart_pack_node *fastchart_pack_build(HashTable *ht, int depth, int *
                 if (Z_TYPE_P(e) != IS_ARRAY) continue;
                 fastchart_pack_node *child =
                     fastchart_pack_build(Z_ARRVAL_P(e), depth + 1, count);
-                if (child) node->children[kept++] = child;
+                if (child) {
+                    /* A leaf with no positive value carries no area: drop
+                     * it rather than render a min-radius placeholder dot.
+                     * A subtree whose descendants all dropped collapses to
+                     * such a leaf, so this prunes empty branches too. */
+                    if (child->child_count == 0 && child->value <= 0.0) {
+                        fastchart_pack_free(child);
+                        (*count)--;
+                        continue;
+                    }
+                    node->children[kept++] = child;
+                }
             } ZEND_HASH_FOREACH_END();
             node->child_count = kept;
             if (kept == 0) { efree(node->children); node->children = NULL; }
@@ -9184,6 +9197,15 @@ ZEND_METHOD(FastChart_VennDiagram, setIntersections)
         /* Canonicalize the unordered pair and replace any duplicate so a
          * later entry wins rather than both being stored. */
         if (a > b) { zend_long tmp = a; a = b; b = tmp; }
+        /* A pair's overlap cannot exceed the smaller set: the lens area is
+         * bounded by the smaller circle's area. Drop geometrically
+         * impossible overlaps rather than letting the distance solver
+         * silently saturate them to full containment. */
+        double cap = self->sets[a].size < self->sets[b].size
+            ? self->sets[a].size : self->sets[b].size;
+        if (sz > cap) {
+            continue;
+        }
         int slot = -1;
         for (int k = 0; k < kept; k++) {
             if (self->inters[k].a == (int)a && self->inters[k].b == (int)b) { slot = k; break; }

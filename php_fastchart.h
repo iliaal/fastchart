@@ -123,6 +123,28 @@ extern zend_class_entry *fastchart_gantt_chart_ce;
 extern zend_class_entry *fastchart_box_plot_ce;
 extern zend_class_entry *fastchart_polar_chart_ce;
 extern zend_class_entry *fastchart_contour_chart_ce;
+extern zend_class_entry *fastchart_treemap_ce;
+extern zend_class_entry *fastchart_funnel_ce;
+extern zend_class_entry *fastchart_waterfall_ce;
+extern zend_class_entry *fastchart_heatmap_ce;
+extern zend_class_entry *fastchart_linear_meter_ce;
+extern zend_class_entry *fastchart_bullet_chart_ce;
+extern zend_class_entry *fastchart_pareto_chart_ce;
+extern zend_class_entry *fastchart_calendar_heatmap_ce;
+extern zend_class_entry *fastchart_sunburst_chart_ce;
+extern zend_class_entry *fastchart_sankey_chart_ce;
+extern zend_class_entry *fastchart_marimekko_chart_ce;
+extern zend_class_entry *fastchart_vector_chart_ce;
+extern zend_class_entry *fastchart_arc_diagram_ce;
+extern zend_class_entry *fastchart_chord_diagram_ce;
+extern zend_class_entry *fastchart_network_chart_ce;
+extern zend_class_entry *fastchart_population_pyramid_ce;
+extern zend_class_entry *fastchart_violin_plot_ce;
+extern zend_class_entry *fastchart_circle_packing_ce;
+extern zend_class_entry *fastchart_pictogram_ce;
+extern zend_class_entry *fastchart_venn_diagram_ce;
+extern zend_class_entry *fastchart_word_cloud_ce;
+extern zend_class_entry *fastchart_serpentine_timeline_ce;
 
 /* Symbol family (1D/2D codes). Parallel hierarchy to Chart: the slim
  * fastchart_symbol_obj base shares none of FASTCHART_BASE_FIELDS, since
