@@ -96,12 +96,11 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
     bool pyramid = (self->funnel_style == FASTCHART_FUNNEL_STYLE_PYRAMID);
     bool cone    = (self->funnel_style == FASTCHART_FUNNEL_STYLE_CONE);
     /* CONE bands draw front-facing ellipse arcs at the top and
-     * bottom of every band. The bottom arc dips below the band's
-     * geometric y by ring_h ≈ 22% of the band's average half-width.
-     * For the bottom-most band that half is max_half (the widest
-     * point), so reserve max_half * 0.22 pixels at the bottom of
-     * the plot region — otherwise the bottom band's arc spills
-     * past the canvas edge. */
+     * bottom of every band. Each arc dips below its boundary y by
+     * ring_h ≈ 22% of the half-width at that boundary. The bottom-most
+     * boundary is max_half (the widest point), so reserve max_half *
+     * 0.22 pixels at the bottom of the plot region — otherwise the
+     * bottom band's arc spills past the canvas edge. */
     int cone_bottom_reserve = cone ? (int)(max_half * 0.22 + 0.5) : 0;
     int total_h = (y1 - y0) - cone_bottom_reserve;
     if (cone && total_h <= 0) {
@@ -148,7 +147,11 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
             cum_v += self->stages[i].value;
             double y_bot = y0 + cum_v / total_v * total_h;
             yt = (int)(y_top + 0.5);
-            yb = (int)(y_bot + 0.5) - 1;
+            /* CONE bands must share an exact boundary y with the next
+             * band so their front-facing arcs coincide. The 1px inset
+             * that keeps flat PYRAMID trapezoids from overlapping would
+             * leave a white crescent between cone bands, so skip it. */
+            yb = (int)(y_bot + 0.5) - (cone ? 0 : 1);
             if (yb <= yt) yb = yt + 1;
             half_top = (int)(max_half * (y_top - y0) / total_h + 0.5);
             half_bot = (int)(max_half * (y_bot - y0) / total_h + 0.5);
@@ -179,9 +182,13 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
              * the silhouette smooth without blowing the polygon
              * point budget. */
             enum { ARC_N = 14, CONE_PTS = (ARC_N + 1) * 2 };
-            double avg_half = (half_top + half_bot) * 0.5;
-            int ring_h_top = (int)(avg_half * 0.22 + 0.5);
-            int ring_h_bot = (int)(avg_half * 0.22 + 0.5);
+            /* Depth each arc from the half-width AT that boundary, not
+             * the band average: a shared boundary (this band's bottom,
+             * the next band's top) has one width, so both arcs get the
+             * same depth and tile seamlessly. Averaging gave each side
+             * of a boundary a different depth -> white crescents. */
+            int ring_h_top = (int)(half_top * 0.22 + 0.5);
+            int ring_h_bot = (int)(half_bot * 0.22 + 0.5);
             if (ring_h_top < 1) ring_h_top = 1;
             if (ring_h_bot < 1) ring_h_bot = 1;
             gdPoint band[CONE_PTS];
