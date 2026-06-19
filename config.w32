@@ -111,7 +111,8 @@ if (PHP_FASTCHART != "no") {
             "fastchart_graph.c fastchart_arc.c fastchart_chord.c " +
             "fastchart_network.c fastchart_pyramid.c fastchart_violin.c " +
             "fastchart_circlepack.c fastchart_pictogram.c fastchart_venn.c " +
-            "fastchart_wordcloud.c fastchart_serpentine.c fastchart_dendrogram.c";
+            "fastchart_wordcloud.c fastchart_serpentine.c fastchart_dendrogram.c " +
+            "fastchart_partition.c";
 
         var qrcode_sources = "qrcodegen.c";
 

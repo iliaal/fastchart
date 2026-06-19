@@ -146,6 +146,7 @@ extern zend_class_entry *fastchart_venn_diagram_ce;
 extern zend_class_entry *fastchart_word_cloud_ce;
 extern zend_class_entry *fastchart_serpentine_timeline_ce;
 extern zend_class_entry *fastchart_dendrogram_ce;
+extern zend_class_entry *fastchart_partition_ce;
 
 /* Symbol family (1D/2D codes). Parallel hierarchy to Chart: the slim
  * fastchart_symbol_obj base shares none of FASTCHART_BASE_FIELDS, since
@@ -1091,6 +1092,21 @@ typedef struct {
     zend_object std;
 } fastchart_dendrogram_obj;
 
+/* Partition: a hierarchy drawn as nested rectangles, each level a band whose
+ * span is subdivided among children in proportion to their leaf-value sums.
+ * Reuses the same parsed fastchart_pack_node tree; only the layout/draw pass
+ * differs. ORIENT_VERTICAL is the icicle variant. */
+#define FASTCHART_PARTITION_ORIENT_HORIZONTAL 0  /* depth grows left->right */
+#define FASTCHART_PARTITION_ORIENT_VERTICAL   1  /* depth grows top->down (icicle) */
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_pack_node *root;
+    int node_count;
+    zend_long orientation; /* FASTCHART_PARTITION_ORIENT_* */
+    zend_object std;
+} fastchart_partition_obj;
+
 /* Pictogram icon shapes. */
 #define FASTCHART_PICTO_SHAPE_SQUARE  0
 #define FASTCHART_PICTO_SHAPE_CIRCLE  1
@@ -1206,6 +1222,7 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define Z_FASTCHART_WORDCLOUD_OBJ_P(zv)  ((fastchart_wordcloud_obj *)Z_FASTCHART_OBJ_P(zv))
 #define Z_FASTCHART_SERPENTINE_OBJ_P(zv) ((fastchart_serpentine_obj *)Z_FASTCHART_OBJ_P(zv))
 #define Z_FASTCHART_DENDROGRAM_OBJ_P(zv) ((fastchart_dendrogram_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_PARTITION_OBJ_P(zv)  ((fastchart_partition_obj *)Z_FASTCHART_OBJ_P(zv))
 
 #define FASTCHART_DEFAULT_WIDTH      800
 #define FASTCHART_DEFAULT_HEIGHT     600
@@ -1396,6 +1413,8 @@ int fastchart_serpentine_render_to_target(fastchart_serpentine_obj *self,
                                            struct fastchart_target *t);
 int fastchart_dendrogram_render_to_target(fastchart_dendrogram_obj *self,
                                            struct fastchart_target *t);
+int fastchart_partition_render_to_target(fastchart_partition_obj *self,
+                                          struct fastchart_target *t);
 
 /* --- Symbol family (1D/2D codes) ----------------------------------
  *

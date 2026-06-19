@@ -1816,6 +1816,32 @@ final class Dendrogram extends Chart
 }
 
 /**
+ * Partition: a hierarchy drawn as nested rectangles. Shares CirclePacking's
+ * nested-node input shape; each depth level is a band, and a node's span is
+ * subdivided among its children in proportion to their leaf-value sums.
+ * ORIENT_VERTICAL is the icicle variant (depth grows downward).
+ */
+final class Partition extends Chart
+{
+    /** setOrientation(): depth grows left-to-right (default). */
+    const int ORIENT_HORIZONTAL = 0;
+    /** setOrientation(): depth grows top-to-bottom (icicle). */
+    const int ORIENT_VERTICAL = 1;
+
+    /**
+     * Root node of the hierarchy. Each node:
+     * `['label' => string?, 'color' => int?, 'value' => number?,
+     *   'children' => [ ...nodes ]]`. Nesting is capped at 24 levels and
+     * 2048 total nodes, same as CirclePacking.
+     */
+    public function setHierarchy(array $root): static {}
+
+    /** Layout direction: ORIENT_HORIZONTAL (partition) or ORIENT_VERTICAL (icicle). */
+    public function setOrientation(int $mode): static {}
+
+}
+
+/**
  * Pictogram (pictorial fraction): a grid of unit icons where a value's
  * share of a total is shown by filling that fraction of the icons left
  * to right; the boundary icon is partially filled so fractional values
