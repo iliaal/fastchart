@@ -1916,5 +1916,85 @@ PHP,
     },
 ];
 
+$cases[] = [
+    'label' => '49. StockChart — VWAP + ZigZag overlays, ATR/CCI/Williams %R panes',
+    'ref'   => 'docs/examples/38_stock_indicators.php',
+    'code'  => <<<'PHP'
+$rows = []; $ts = strtotime('2025-04-01'); $close = 100.0;
+for ($i = 0; $i < 60; $i++) {
+    $shock = $i === 25 ? -8.0 : ($i === 26 ? -5.0 : 0.0);
+    $delta = sin($i * 0.45) * 1.6 + 0.4 + $shock;
+    $open = $close; $close += $delta;
+    $high = max($open, $close) + 0.6; $low = min($open, $close) - 0.6;
+    $rows[] = [$ts + $i * 86400, $open, $high, $low, $close, 1500 + abs($delta) * 220];
+}
+(new FastChart\StockChart(800, 560))
+    ->setTitle('Price action with VWAP + ZigZag and oscillators')
+    ->setOhlcv($rows)
+    ->addVWAP(0xCC4444)
+    ->addZigZag(4.0)
+    ->addATR(14)
+    ->addCCI(20)
+    ->addWilliamsR(14);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        $rows = []; $ts = strtotime('2025-04-01'); $close = 100.0;
+        for ($i = 0; $i < 60; $i++) {
+            $shock = $i === 25 ? -8.0 : ($i === 26 ? -5.0 : 0.0);
+            $delta = sin($i * 0.45) * 1.6 + 0.4 + $shock;
+            $open = $close; $close += $delta;
+            $high = max($open, $close) + 0.6; $low = min($open, $close) - 0.6;
+            $rows[] = [$ts + $i * 86400, $open, $high, $low, $close, 1500 + abs($delta) * 220];
+        }
+        return (new FastChart\StockChart(800, 560))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Price action with VWAP + ZigZag and oscillators')
+            ->setOhlcv($rows)
+            ->addVWAP(0xCC4444)
+            ->addZigZag(4.0)
+            ->addATR(14)
+            ->addCCI(20)
+            ->addWilliamsR(14);
+    },
+];
+
+$cases[] = [
+    'label' => '50. StockChart — Aroon + StdDev panes with SMA',
+    'ref'   => 'docs/examples/38_stock_indicators.php',
+    'code'  => <<<'PHP'
+$rows = []; $ts = strtotime('2025-04-01'); $close = 100.0;
+for ($i = 0; $i < 60; $i++) {
+    $shock = $i === 25 ? -8.0 : ($i === 26 ? -5.0 : 0.0);
+    $delta = sin($i * 0.45) * 1.6 + 0.4 + $shock;
+    $open = $close; $close += $delta;
+    $high = max($open, $close) + 0.6; $low = min($open, $close) - 0.6;
+    $rows[] = [$ts + $i * 86400, $open, $high, $low, $close, 1500 + abs($delta) * 220];
+}
+(new FastChart\StockChart(800, 520))
+    ->setTitle('Trend strength: Aroon + rolling volatility (StdDev)')
+    ->setOhlcv($rows)
+    ->addMovingAverage(20, FastChart\StockChart::MA_SMA)
+    ->addAroon(25)
+    ->addStdDev(20);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        $rows = []; $ts = strtotime('2025-04-01'); $close = 100.0;
+        for ($i = 0; $i < 60; $i++) {
+            $shock = $i === 25 ? -8.0 : ($i === 26 ? -5.0 : 0.0);
+            $delta = sin($i * 0.45) * 1.6 + 0.4 + $shock;
+            $open = $close; $close += $delta;
+            $high = max($open, $close) + 0.6; $low = min($open, $close) - 0.6;
+            $rows[] = [$ts + $i * 86400, $open, $high, $low, $close, 1500 + abs($delta) * 220];
+        }
+        return (new FastChart\StockChart(800, 520))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Trend strength: Aroon + rolling volatility (StdDev)')
+            ->setOhlcv($rows)
+            ->addMovingAverage(20, FastChart\StockChart::MA_SMA)
+            ->addAroon(25)
+            ->addStdDev(20);
+    },
+];
+
 
 return ['font' => $font, 'dpi' => $dpi, 'cases' => $cases];
