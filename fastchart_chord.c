@@ -159,6 +159,7 @@ int fastchart_chord_render_to_target(fastchart_chord_obj *self, fastchart_target
     }
     if (max_val <= 0.0) max_val = 1.0;
     int ribbon_mode = self->style != FASTCHART_CHORD_STYLE_LINE;
+    int directed = self->style == FASTCHART_CHORD_STYLE_DIRECTED;
 
     /* Ribbons (or curves) first, behind the node bands. Fills are
      * translucent so overlapping chords blend instead of one masking
@@ -201,6 +202,27 @@ int fastchart_chord_render_to_target(fastchart_chord_obj *self, fastchart_target
             n += chord_bezier_samples(x0, y0, cx, cy, x1, y1, poly + n, k_bez);
             int fill = fastchart_target_color(t, cr, cg, cb, 150);
             if (n >= 4) fastchart_target_polygon(t, poly, n, fill, 1, 0);
+            /* Directed: an arrowhead at the target endpoint marks flow
+             * direction. The triangle points radially outward (toward the
+             * destination node's band) at the centre of the to-arc. */
+            if (directed && n >= 4) {
+                double bmid = (bL + bR) / 2.0;
+                double bx, by;
+                chord_pt(cx, cy, R_in, bmid, &bx, &by);
+                double dx = bx - cx, dy = by - cy;
+                double len = sqrt(dx * dx + dy * dy);
+                if (len > 1e-6) {
+                    double ux = dx / len, uy = dy / len;   /* radial out */
+                    double tx = -uy, ty = ux;              /* tangent */
+                    double ah = 9.0, aw = 6.0;
+                    fastchart_point_t tri[3];
+                    tri[0].x = (int)(bx + ux * ah); tri[0].y = (int)(by + uy * ah);
+                    tri[1].x = (int)(bx + tx * aw); tri[1].y = (int)(by + ty * aw);
+                    tri[2].x = (int)(bx - tx * aw); tri[2].y = (int)(by - ty * aw);
+                    int afill = fastchart_target_color(t, cr, cg, cb, 230);
+                    fastchart_target_polygon(t, tri, 3, afill, 1, 0);
+                }
+            }
         } else {
             /* Non-ribbon: a single curve from the centre of each
              * endpoint's slice, stroke width proportional to value. */
