@@ -1326,6 +1326,7 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 /* BarChart orientation. */
 #define FASTCHART_BAR_VERTICAL   0
 #define FASTCHART_BAR_HORIZONTAL 1
+#define FASTCHART_BAR_RADIAL     2
 
 /* BarChart glyph style. BAR = filled rect (default); LOLLIPOP = thin
  * stem + circle at the value; DUMBBELL = connector between the

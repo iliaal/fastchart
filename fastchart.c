@@ -7227,8 +7227,9 @@ ZEND_METHOD(FastChart_BarChart, setOrientation)
         Z_PARAM_LONG(orientation)
     ZEND_PARSE_PARAMETERS_END();
     if (orientation != FASTCHART_BAR_VERTICAL &&
-        orientation != FASTCHART_BAR_HORIZONTAL) {
-        zend_value_error("FastChart\\BarChart::setOrientation() expects BAR_VERTICAL or BAR_HORIZONTAL");
+        orientation != FASTCHART_BAR_HORIZONTAL &&
+        orientation != FASTCHART_BAR_RADIAL) {
+        zend_value_error("FastChart\\BarChart::setOrientation() expects BAR_VERTICAL, BAR_HORIZONTAL or BAR_RADIAL");
         RETURN_THROWS();
     }
     fastchart_bar_obj *self = Z_FASTCHART_BAR_OBJ_P(ZEND_THIS);
