@@ -7349,7 +7349,8 @@ ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
 
     fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
     if (self->indicator_pane_count >= FASTCHART_MAX_INDICATOR_PANES) {
-        zend_value_error("FastChart\\StockChart::addIndicatorPane() supports at most 3 panes");
+        zend_value_error("FastChart\\StockChart::addIndicatorPane() supports at most %d panes",
+                         FASTCHART_MAX_INDICATOR_PANES);
         RETURN_THROWS();
     }
 
@@ -9154,9 +9155,15 @@ static int fastchart_sunburst_build_rec(
     /* Aggregate value: explicit if leaf or if user set one; sum of
      * children otherwise. */
     if (self->child_count > 0 && !have_val) {
+        /* Sum the DIRECT children via the parent back-pointer, not a
+         * contiguous child_first range: this builder is depth-first, so
+         * a child's whole subtree is appended before its next sibling
+         * and the direct children are interleaved with grandchildren.
+         * The subtree occupies [child_first, *n); filter to parent ==
+         * self_idx to pick out the direct children. */
         double sum = 0.0;
-        for (int i = 0; i < self->child_count; i++) {
-            sum += (*nodes)[self->child_first + i].value;
+        for (int i = self->child_first; i < *n; i++) {
+            if ((*nodes)[i].parent == self_idx) sum += (*nodes)[i].value;
         }
         self->value = sum;
     } else {

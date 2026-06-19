@@ -746,6 +746,14 @@ static int fastchart_bar_render_radial(fastchart_bar_obj *self,
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
 
     fastchart_obj *base = (fastchart_obj *)self;
+
+    /* Reset image-map areas as the vertical (line 185) and horizontal
+     * paths do. Radial bars are arcs with no rect hot-spots, so a reset
+     * with no reserve/push is correct: it stops getImageMapAreas() from
+     * returning stale rects left by a prior vertical/horizontal render
+     * of the same object after setOrientation(BAR_RADIAL). */
+    fastchart_reset_image_map_areas(base);
+
     fastchart_draw_frame(t, base, &plot, &pal);
     fastchart_draw_title(t, base, &plot, &pal);
 

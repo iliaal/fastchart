@@ -120,7 +120,7 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
 
     fastchart_rect price_pane = plot;
     fastchart_rect volume_pane = { 0, 0, 0, 0 };
-    fastchart_rect indicator_panes[3] = {{0,0,0,0},{0,0,0,0},{0,0,0,0}};
+    fastchart_rect indicator_panes[FASTCHART_MAX_INDICATOR_PANES] = {{0,0,0,0}};
 
     {
         int total_h = plot.y1 - plot.y0;

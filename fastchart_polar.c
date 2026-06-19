@@ -127,9 +127,12 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
                 /* libgd arc angles are clockwise with 0° at 3-o'clock;
                  * our angles are CCW math angles. Convert by negating
                  * and adding 360 so the renderer draws the wedge oriented
-                 * the same way as the line/area branch. */
-                int gd_a = (int)((360.0 - a1)) % 360;
-                int gd_b = (int)((360.0 - a0)) % 360;
+                 * the same way as the line/area branch. fmod first so a
+                 * finite-but-large user angle can't overflow the int cast
+                 * (float-cast-overflow UB); it bounds the value to
+                 * (-360, 360) and the < 0 adjust normalizes the rest. */
+                int gd_a = (int)fmod(360.0 - a1, 360.0);
+                int gd_b = (int)fmod(360.0 - a0, 360.0);
                 if (gd_a < 0) gd_a += 360;
                 if (gd_b < 0) gd_b += 360;
                 if (gd_b <= gd_a) gd_b += 360;

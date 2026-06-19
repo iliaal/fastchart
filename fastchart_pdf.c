@@ -47,10 +47,15 @@ static ssize_t fc_pdf_output_cb(void *ctx, const void *data, size_t len)
 static bool fc_pdf_error_cb(pdfio_file_t *pdf, const char *message, void *data)
 {
 	(void)pdf;
-	(void)message;
+	/* pdfio invokes this for warnings as well as errors; its contract is
+	 * to return true (continue) for non-fatal "WARNING:"-prefixed
+	 * messages and false only for real errors. Treating a recoverable
+	 * warning as fatal aborts the content stream and fails an otherwise
+	 * valid render. */
+	int is_warning = message && !strncmp(message, "WARNING:", 8);
 	fc_pdf_state *st = (fc_pdf_state *)data;
-	if (st) st->err = 1;
-	return false; /* stop on first error */
+	if (!is_warning && st) st->err = 1;
+	return is_warning;
 }
 
 /* y-down (fastchart) -> y-up (PDF). */
