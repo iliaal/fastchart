@@ -884,6 +884,17 @@ final class BarChart extends Chart
 
 final class PieChart extends Chart
 {
+    /**
+     * Slice data, in either of two shapes: an associative
+     * `{label => value}` map, or a list of dicts
+     * `['label' => string, 'value' => float, 'color' => int, 'radius' => float]`
+     * where `color` and `radius` are optional. Supplying a positive
+     * `radius` on any slice switches the chart to a variable-radius
+     * (rose) pie: each slice keeps its value-proportional angle, but its
+     * outer radius scales with `radius` (normalised to the largest,
+     * floored so small slices stay visible). Slices without a `radius`
+     * draw at the full radius.
+     */
     public function setSlices(array $slices): static {}
     public function setDonutHoleRatio(float $ratio): static {}
 

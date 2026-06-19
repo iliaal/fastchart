@@ -146,6 +146,7 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
             kept[n_kept].idx_label[0] = '\0';
             kept[n_kept].value = other_sum;
             kept[n_kept].color_rgb = -1;
+            kept[n_kept].radius_value = 0.0;
             n_kept++;
         }
         for (int i = 0; i < n_kept; i++) slices[i] = kept[i];
@@ -224,6 +225,20 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
         double s_deg = floor(start_deg);
         double e_deg = ceil(start_deg + sweep);
 
+        /* Variable-radius (rose) pie: scale this slice's outer radius
+         * by its radius metric, normalised to the largest. A 0.35 floor
+         * keeps the smallest slices visible; slices without a metric
+         * (e.g. the aggregated "Other" bucket) draw at full radius. */
+        int slice_radius = radius;
+        if (self->pie_variable_radius && self->pie_max_radius_value > 0.0 &&
+            slices[i].radius_value > 0.0) {
+            double frac = slices[i].radius_value / self->pie_max_radius_value;
+            if (frac < 0.35) frac = 0.35;
+            if (frac > 1.0)  frac = 1.0;
+            slice_radius = (int)((double)radius * frac);
+            if (slice_radius < 2) slice_radius = 2;
+        }
+
         /* Image-map poly per slice: center + 5 sample points along
          * the arc gives a 6-vertex wedge approximation that captures
          * the slice's clickable area well enough for HTML imagemaps. */
@@ -234,8 +249,8 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
         for (int k = 0; k < 6 && poly_n + 1 < FASTCHART_IMAGE_MAP_MAX_COORDS; k++) {
             double t_frac = (double)k / 5.0;
             double th = (s_deg + (e_deg - s_deg) * t_frac) * M_PI / 180.0;
-            poly_xy[poly_n++] = cx + (int)((double)radius * cos(th));
-            poly_xy[poly_n++] = cy + (int)((double)radius * sin(th));
+            poly_xy[poly_n++] = cx + (int)((double)slice_radius * cos(th));
+            poly_xy[poly_n++] = cy + (int)((double)slice_radius * sin(th));
         }
         fastchart_push_image_map_poly((fastchart_obj *)self, i,
                                        poly_xy, poly_n);
@@ -261,24 +276,24 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
         /* Drop shadow underneath this slice (no-op when chart has
          * no shadow configured). */
         fastchart_shadow_filled_arc(t, (fastchart_obj *)self,
-                                    slice_cx, slice_cy, diameter,
+                                    slice_cx, slice_cy, slice_radius * 2,
                                     (int)s_deg, (int)e_deg);
 
         /* Emit a filled wedge via the target arc primitive; outline
          * with a thin stroke along the same sweep. */
-        fastchart_target_arc(t, slice_cx, slice_cy, radius, radius,
+        fastchart_target_arc(t, slice_cx, slice_cy, slice_radius, slice_radius,
                              s_deg, e_deg, color, 1, 0);
-        fastchart_target_arc(t, slice_cx, slice_cy, radius, radius,
+        fastchart_target_arc(t, slice_cx, slice_cy, slice_radius, slice_radius,
                              s_deg, e_deg, edge_handle, 0, 1);
         double rs = s_deg * M_PI / 180.0;
         double re = e_deg * M_PI / 180.0;
         fastchart_target_line(t, slice_cx, slice_cy,
-            slice_cx + (int)((double)radius * cos(rs)),
-            slice_cy + (int)((double)radius * sin(rs)),
+            slice_cx + (int)((double)slice_radius * cos(rs)),
+            slice_cy + (int)((double)slice_radius * sin(rs)),
             edge_handle, 1, FASTCHART_DASH_SOLID);
         fastchart_target_line(t, slice_cx, slice_cy,
-            slice_cx + (int)((double)radius * cos(re)),
-            slice_cy + (int)((double)radius * sin(re)),
+            slice_cx + (int)((double)slice_radius * cos(re)),
+            slice_cy + (int)((double)slice_radius * sin(re)),
             edge_handle, 1, FASTCHART_DASH_SOLID);
         start_deg += sweep;
     }
