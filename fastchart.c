@@ -986,6 +986,8 @@ static void fastchart_pie_init_extras(fastchart_pie_obj *o)
     o->explode_count = 0;
     o->pie_start_deg = 0.0;
     o->pie_end_deg = 360.0;
+    o->pie_variable_radius = false;
+    o->pie_max_radius_value = 0.0;
     o->ring_count = 0;
 }
 static void fastchart_pie_release_extras(fastchart_pie_obj *o)
@@ -5572,6 +5574,8 @@ ZEND_METHOD(FastChart_PieChart, setSlices)
     }
     self->slice_count = 0;
     self->total = 0.0;
+    self->pie_variable_radius = false;
+    self->pie_max_radius_value = 0.0;
 
     HashTable *ht = Z_ARRVAL_P(data_zv);
     int n = (int)zend_hash_num_elements(ht);
@@ -5654,6 +5658,22 @@ ZEND_METHOD(FastChart_PieChart, setSlices)
                 zend_long c = Z_LVAL_P(color_zv);
                 if (c >= 0 && c <= 0xFFFFFF) {
                     self->slices[slot].color_rgb = (int)c;
+                }
+            }
+            /* Optional "radius" metric drives variable-radius (rose)
+             * pies: the slice keeps its value-proportional angle but
+             * its outer radius scales with this second number. */
+            zval *radius_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
+                                                 "radius", sizeof("radius") - 1);
+            if (radius_zv) {
+                double rv;
+                if (fastchart_zval_to_double(radius_zv, &rv) == 0 &&
+                    isfinite(rv) && rv > 0.0) {
+                    self->slices[slot].radius_value = rv;
+                    self->pie_variable_radius = true;
+                    if (rv > self->pie_max_radius_value) {
+                        self->pie_max_radius_value = rv;
+                    }
                 }
             }
             self->total += d;
