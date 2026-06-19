@@ -737,6 +737,7 @@ static void fastchart_series_dup_label(fastchart_series_t *out, const char *src)
 
 static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int flags)
 {
+    ZVAL_DEREF(series_zv);  /* tolerate a foreach-by-ref outer bucket */
     if (Z_TYPE_P(series_zv) != IS_ARRAY) return -1;
     HashTable *ht = Z_ARRVAL_P(series_zv);
     HashTable *data_ht = NULL;
@@ -746,18 +747,21 @@ static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int 
 
     /* Allow either { 'data' => [...], ... } or a flat numeric list. */
     zval *data_key = zend_hash_str_find(ht, "data", sizeof("data") - 1);
+    if (data_key) ZVAL_DEREF(data_key);
     if (data_key && Z_TYPE_P(data_key) == IS_ARRAY) {
         data_ht = Z_ARRVAL_P(data_key);
         zval *label_zv = zend_hash_str_find(ht, "label", sizeof("label") - 1);
         label = fastchart_label_or_null(label_zv);
         if (flags & FC_SERIES_F_COLORS) {
             zval *colors_zv = zend_hash_str_find(ht, "colors", sizeof("colors") - 1);
+            if (colors_zv) ZVAL_DEREF(colors_zv);
             if (colors_zv && Z_TYPE_P(colors_zv) == IS_ARRAY) {
                 colors_ht = Z_ARRVAL_P(colors_zv);
             }
         }
         if (flags & FC_SERIES_F_RIGHTAXIS) {
             zval *axis_zv = zend_hash_str_find(ht, "axis", sizeof("axis") - 1);
+            if (axis_zv) ZVAL_DEREF(axis_zv);
             /* zend_string_equals_literal is length-aware: rejects
              * "right\0junk" that strcmp would accept. */
             right_axis = (axis_zv && Z_TYPE_P(axis_zv) == IS_STRING &&
@@ -787,6 +791,7 @@ static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int 
         out->values_max = emalloc((size_t)n * sizeof(double));
         for (int i = 0; i < n; i++) {
             zval *v = zend_hash_index_find(data_ht, i);
+            if (v) ZVAL_DEREF(v);
             double lo = NAN, hi = NAN;
             if (v && Z_TYPE_P(v) == IS_ARRAY) {
                 HashTable *pair = Z_ARRVAL_P(v);
@@ -809,6 +814,7 @@ static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int 
         for (int i = 0; i < n; i++) {
             zval *v = zend_hash_index_find(data_ht, i);
             double d;
+            if (v) ZVAL_DEREF(v);
             if (!v || Z_TYPE_P(v) == IS_NULL) {
                 out->values[i] = NAN;
             } else if (fastchart_zval_to_double(v, &d) == 0) {
@@ -834,6 +840,7 @@ static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int 
         for (int i = 0; i < n; i++) {
             zval *cv = zend_hash_index_find(colors_ht, i);
             zend_long c = -1;
+            if (cv) ZVAL_DEREF(cv);
             if (cv && Z_TYPE_P(cv) == IS_LONG) c = Z_LVAL_P(cv);
             out->point_colors[i] = (c >= 0 && c <= 0xFFFFFF) ? c : -1;
         }
@@ -859,9 +866,11 @@ static int fastchart_collect_series_into(zval *arr, fastchart_series_t *out,
     /* Multi-series detection: first element is an array with a 'data'
      * key. Single-series fallback: the input is itself the values. */
     zval *first = zend_hash_index_find(ht, 0);
+    if (first) ZVAL_DEREF(first);  /* tolerate foreach-by-ref buckets */
     bool is_multi = false;
     if (first && Z_TYPE_P(first) == IS_ARRAY) {
         zval *dk = zend_hash_str_find(Z_ARRVAL_P(first), "data", sizeof("data") - 1);
+        if (dk) ZVAL_DEREF(dk);
         if (dk && Z_TYPE_P(dk) == IS_ARRAY) is_multi = true;
     }
 
@@ -2128,6 +2137,7 @@ static fastchart_pack_node *fastchart_pack_build(HashTable *ht, int depth,
     node->label = lbl ? estrdup(lbl) : NULL;
 
     zval *zc = zend_hash_str_find(ht, "color", sizeof("color") - 1);
+    if (zc) ZVAL_DEREF(zc);
     if (zc && Z_TYPE_P(zc) == IS_LONG) {
         zend_long c = Z_LVAL_P(zc);
         if (c >= 0 && c <= 0xFFFFFF) node->color_rgb = (int)c;
@@ -2140,6 +2150,7 @@ static fastchart_pack_node *fastchart_pack_build(HashTable *ht, int depth,
     }
 
     zval *zch = zend_hash_str_find(ht, "children", sizeof("children") - 1);
+    if (zch) ZVAL_DEREF(zch);
     if (zch && Z_TYPE_P(zch) == IS_ARRAY) {
         HashTable *cht = Z_ARRVAL_P(zch);
         int cn = zend_hash_num_elements(cht);
@@ -2155,6 +2166,7 @@ static fastchart_pack_node *fastchart_pack_build(HashTable *ht, int depth,
             zval *e;
             ZEND_HASH_FOREACH_VAL(cht, e) {
                 if (kept >= cn || *count >= FASTCHART_MAX_PACK_NODES) break;
+                if (e) ZVAL_DEREF(e);
                 if (Z_TYPE_P(e) != IS_ARRAY) continue;
                 fastchart_pack_node *child =
                     fastchart_pack_build(Z_ARRVAL_P(e), depth + 1, count, overflow);
@@ -2653,6 +2665,7 @@ ZEND_METHOD(FastChart_Chart, setCategoryLabels)
     zval *lv;
     ZEND_HASH_FOREACH_VAL(ht, lv) {
         if (idx >= n) break;
+        ZVAL_DEREF(lv);
         if (Z_TYPE_P(lv) == IS_STRING) {
             zend_string *zs = Z_STR_P(lv);
             const char *src = ZSTR_VAL(zs);
@@ -2745,6 +2758,7 @@ ZEND_METHOD(FastChart_Chart, setSeriesColors)
     zval *v;
     ZEND_HASH_FOREACH_VAL(ht, v) {
         if (n >= 8) break;
+        if (v) ZVAL_DEREF(v);
         if (Z_TYPE_P(v) != IS_LONG) {
             zend_type_error("FastChart\\Chart::setSeriesColors() expects a list of 24-bit RGB ints");
             RETURN_THROWS();
@@ -3739,6 +3753,7 @@ static int fastchart_parse_error_bars(zval *errs, uint32_t cap,
     ZEND_HASH_FOREACH_VAL(ht, ev) {
         if (idx >= n) break;
         double l = NAN, h = NAN;
+        if (ev) ZVAL_DEREF(ev);
         if (Z_TYPE_P(ev) == IS_ARRAY) {
             zval *zlo = zend_hash_index_find(Z_ARRVAL_P(ev), 0);
             zval *zhi = zend_hash_index_find(Z_ARRVAL_P(ev), 1);
@@ -3803,6 +3818,7 @@ ZEND_METHOD(FastChart_ScatterChart, setErrorBars)
 static int fastchart_parse_scatter_point(zval *pair, fastchart_scatter_point *out,
                                          int series_idx)
 {
+    ZVAL_DEREF(pair);
     if (Z_TYPE_P(pair) != IS_ARRAY) return -1;
     HashTable *p = Z_ARRVAL_P(pair);
     zval *zx = zend_hash_index_find(p, 0);
@@ -3819,6 +3835,7 @@ static int fastchart_parse_scatter_point(zval *pair, fastchart_scatter_point *ou
     out->tooltip = NULL;
 
     zval *zh = zend_hash_str_find(p, "href", sizeof("href") - 1);
+    if (zh) ZVAL_DEREF(zh);
     if (zh && Z_TYPE_P(zh) == IS_STRING) {
         if (memchr(Z_STRVAL_P(zh), 0, Z_STRLEN_P(zh)) == NULL) {
             size_t len = Z_STRLEN_P(zh);
@@ -3827,6 +3844,7 @@ static int fastchart_parse_scatter_point(zval *pair, fastchart_scatter_point *ou
         }
     }
     zval *zt = zend_hash_str_find(p, "tooltip", sizeof("tooltip") - 1);
+    if (zt) ZVAL_DEREF(zt);
     if (zt && Z_TYPE_P(zt) == IS_STRING) {
         if (memchr(Z_STRVAL_P(zt), 0, Z_STRLEN_P(zt)) == NULL) {
             size_t len = Z_STRLEN_P(zt);
@@ -3835,6 +3853,7 @@ static int fastchart_parse_scatter_point(zval *pair, fastchart_scatter_point *ou
         }
     }
     zval *zc = zend_hash_str_find(p, "color", sizeof("color") - 1);
+    if (zc) ZVAL_DEREF(zc);
     if (zc && Z_TYPE_P(zc) == IS_LONG) {
         zend_long c = Z_LVAL_P(zc);
         if (c >= 0 && c <= 0xFFFFFF) out->color_rgb = (int)c;
@@ -3878,9 +3897,11 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints)
 
     /* Detect multi-series: first element is dict with 'data' key. */
     zval *first = zend_hash_index_find(ht, 0);
+    if (first) ZVAL_DEREF(first);  /* tolerate foreach-by-ref buckets */
     bool is_multi = false;
     if (first && Z_TYPE_P(first) == IS_ARRAY) {
         zval *dk = zend_hash_str_find(Z_ARRVAL_P(first), "data", sizeof("data") - 1);
+        if (dk) ZVAL_DEREF(dk);
         if (dk && Z_TYPE_P(dk) == IS_ARRAY) is_multi = true;
     }
 
@@ -3891,9 +3912,11 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints)
         int s = 0;
         ZEND_HASH_FOREACH_VAL(ht, series_zv) {
             if (s >= FASTCHART_MAX_SCATTER_SERIES) break;
+            if (series_zv) ZVAL_DEREF(series_zv);
             if (Z_TYPE_P(series_zv) != IS_ARRAY) continue;
             zval *dk = zend_hash_str_find(Z_ARRVAL_P(series_zv),
                                           "data", sizeof("data") - 1);
+            if (dk) ZVAL_DEREF(dk);
             if (!dk || Z_TYPE_P(dk) != IS_ARRAY) continue;
             total_pts += (int)zend_hash_num_elements(Z_ARRVAL_P(dk));
             s++;
@@ -3912,9 +3935,11 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints)
         int s = 0;
         ZEND_HASH_FOREACH_VAL(ht, series_zv) {
             if (s >= FASTCHART_MAX_SCATTER_SERIES) break;
+            if (series_zv) ZVAL_DEREF(series_zv);
             if (Z_TYPE_P(series_zv) != IS_ARRAY) continue;
             zval *dk = zend_hash_str_find(Z_ARRVAL_P(series_zv),
                                           "data", sizeof("data") - 1);
+            if (dk) ZVAL_DEREF(dk);
             if (!dk || Z_TYPE_P(dk) != IS_ARRAY) continue;
 
             zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(series_zv),
@@ -4053,6 +4078,7 @@ ZEND_METHOD(FastChart_GaugeChart, setZones)
     zval *z;
     ZEND_HASH_FOREACH_VAL(ht, z) {
         if (n >= FASTCHART_MAX_GAUGE_ZONES) break;
+        if (z) ZVAL_DEREF(z);
         if (Z_TYPE_P(z) != IS_ARRAY) continue;
         zval *zf = zend_hash_str_find(Z_ARRVAL_P(z), "from", sizeof("from") - 1);
         zval *zt = zend_hash_str_find(Z_ARRVAL_P(z), "to",   sizeof("to")   - 1);
@@ -4062,6 +4088,7 @@ ZEND_METHOD(FastChart_GaugeChart, setZones)
         if (fastchart_zval_to_double(zf, &f) != 0) continue;
         if (fastchart_zval_to_double(zt, &t) != 0) continue;
         int color_rgb = -1;
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG &&
             Z_LVAL_P(zc) >= 0 && Z_LVAL_P(zc) <= 0xFFFFFF) {
             color_rgb = (int)Z_LVAL_P(zc);
@@ -4872,6 +4899,7 @@ ZEND_METHOD(FastChart_PolarChart, addVectors)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (staged >= incoming) break;   /* cap reached — drop the rest */
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) {
             efree(staging);
             zend_type_error("FastChart\\PolarChart::addVectors() expects each entry to be an array");
@@ -4889,6 +4917,7 @@ ZEND_METHOD(FastChart_PolarChart, addVectors)
             RETURN_THROWS();
         }
         int color_rgb = -1;
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             long c = (long)Z_LVAL_P(zc);
             if (c < -1 || c > 0xFFFFFF) {
@@ -5006,16 +5035,19 @@ ZEND_METHOD(FastChart_Chart, addOverlaySeries)
     if (opts) {
         zval *opt;
         opt = zend_hash_str_find(opts, "color", sizeof("color") - 1);
+        if (opt) ZVAL_DEREF(opt);
         if (opt && Z_TYPE_P(opt) == IS_LONG) {
             zend_long c = Z_LVAL_P(opt);
             if (c >= 0 && c <= 0xFFFFFF) add_assoc_long(&entry, "color", c);
         }
         opt = zend_hash_str_find(opts, "thickness", sizeof("thickness") - 1);
+        if (opt) ZVAL_DEREF(opt);
         if (opt && Z_TYPE_P(opt) == IS_LONG) {
             zend_long t = Z_LVAL_P(opt);
             if (t >= 1 && t <= 16) add_assoc_long(&entry, "thickness", t);
         }
         opt = zend_hash_str_find(opts, "axis", sizeof("axis") - 1);
+        if (opt) ZVAL_DEREF(opt);
         if (opt && Z_TYPE_P(opt) == IS_STRING) {
             add_assoc_str(&entry, "axis", zend_string_copy(Z_STR_P(opt)));
         }
@@ -5060,6 +5092,7 @@ ZEND_METHOD(FastChart_PieChart, setOtherThreshold)
  * or any required cell is non-numeric / non-finite. */
 static int fastchart_parse_candle(zval *row, fastchart_candle *out)
 {
+    ZVAL_DEREF(row);
     if (Z_TYPE_P(row) != IS_ARRAY) return -1;
     HashTable *r = Z_ARRVAL_P(row);
     if (zend_hash_num_elements(r) < 5) return -1;
@@ -5232,6 +5265,7 @@ ZEND_METHOD(FastChart_StockChart, setVolumeColors)
     for (int i = 0; i < n; i++) {
         zval *cv = zend_hash_index_find(ht, i);
         zend_long c = -1;
+        if (cv) ZVAL_DEREF(cv);
         if (cv && Z_TYPE_P(cv) == IS_LONG) c = Z_LVAL_P(cv);
         parsed[i] = (c >= 0 && c <= 0xFFFFFF) ? (int)c : -1;
     }
@@ -5357,6 +5391,7 @@ static void fastchart_parse_pie_slices(HashTable *ht,
         zend_ulong h;
         zval *v;
         ZEND_HASH_FOREACH_KEY_VAL(ht, h, k, v) {
+            if (v) ZVAL_DEREF(v);
             (void)h;
             if (!k || (Z_TYPE_P(v) != IS_LONG && Z_TYPE_P(v) != IS_DOUBLE)) {
                 shape_assoc = 0;
@@ -5370,6 +5405,7 @@ static void fastchart_parse_pie_slices(HashTable *ht,
         zend_ulong h;
         zval *v;
         ZEND_HASH_FOREACH_KEY_VAL(ht, h, k, v) {
+            if (v) ZVAL_DEREF(v);
             (void)h;
             if (slot >= n) break;
             double d;
@@ -5392,6 +5428,7 @@ static void fastchart_parse_pie_slices(HashTable *ht,
         zval *entry;
         ZEND_HASH_FOREACH_VAL(ht, entry) {
             if (slot >= n) break;
+            if (entry) ZVAL_DEREF(entry);
             if (Z_TYPE_P(entry) != IS_ARRAY) continue;
             zval *value_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
                                                 "value", sizeof("value") - 1);
@@ -5414,6 +5451,7 @@ static void fastchart_parse_pie_slices(HashTable *ht,
             slices[slot].color_rgb = -1;
             zval *color_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
                                                 "color", sizeof("color") - 1);
+            if (color_zv) ZVAL_DEREF(color_zv);
             if (color_zv && Z_TYPE_P(color_zv) == IS_LONG) {
                 zend_long c = Z_LVAL_P(color_zv);
                 if (c >= 0 && c <= 0xFFFFFF) {
@@ -5462,6 +5500,7 @@ ZEND_METHOD(FastChart_PieChart, setRings)
     zval *ring_zv;
     ZEND_HASH_FOREACH_VAL(ht, ring_zv) {
         if (self->ring_count >= FASTCHART_MAX_PIE_RINGS) break;
+        if (ring_zv) ZVAL_DEREF(ring_zv);
         if (Z_TYPE_P(ring_zv) != IS_ARRAY) continue;
         fastchart_pie_slice *slices;
         int count;
@@ -5593,6 +5632,7 @@ ZEND_METHOD(FastChart_PieChart, setSlices)
         zend_ulong h;
         zval *v;
         ZEND_HASH_FOREACH_KEY_VAL(ht, h, k, v) {
+            if (v) ZVAL_DEREF(v);
             (void)h;
             if (!k || (Z_TYPE_P(v) != IS_LONG && Z_TYPE_P(v) != IS_DOUBLE)) {
                 shape_assoc = 0;
@@ -5606,6 +5646,7 @@ ZEND_METHOD(FastChart_PieChart, setSlices)
         zend_ulong h;
         zval *v;
         ZEND_HASH_FOREACH_KEY_VAL(ht, h, k, v) {
+            if (v) ZVAL_DEREF(v);
             (void)h;
             if (slot >= n) break;
             double d;
@@ -5629,6 +5670,7 @@ ZEND_METHOD(FastChart_PieChart, setSlices)
         zval *entry;
         ZEND_HASH_FOREACH_VAL(ht, entry) {
             if (slot >= n) break;
+            if (entry) ZVAL_DEREF(entry);
             if (Z_TYPE_P(entry) != IS_ARRAY) continue;
             zval *value_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
                                                 "value", sizeof("value") - 1);
@@ -5652,6 +5694,7 @@ ZEND_METHOD(FastChart_PieChart, setSlices)
             self->slices[slot].color_rgb = -1;
             zval *color_zv = zend_hash_str_find(Z_ARRVAL_P(entry),
                                                 "color", sizeof("color") - 1);
+            if (color_zv) ZVAL_DEREF(color_zv);
             if (color_zv && Z_TYPE_P(color_zv) == IS_LONG) {
                 zend_long c = Z_LVAL_P(color_zv);
                 if (c >= 0 && c <= 0xFFFFFF) {
@@ -6390,6 +6433,7 @@ ZEND_METHOD(FastChart_Chart, setImageMap)
     int idx = 0;
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) {
             idx++;
             continue;
@@ -6402,10 +6446,12 @@ ZEND_METHOD(FastChart_Chart, setImageMap)
          * downstream consumer (or copy-buffer) sees the full PHP
          * string. Mirrors the policy ScatterChart::setPoints applies
          * to per-point href/tooltip. */
+        if (zh) ZVAL_DEREF(zh);
         if (zh && Z_TYPE_P(zh) == IS_STRING && Z_STRLEN_P(zh) > 0
             && memchr(Z_STRVAL_P(zh), 0, Z_STRLEN_P(zh)) == NULL) {
             self->image_map_entries[idx].href = fc_strdup_opt(Z_STRVAL_P(zh));
         }
+        if (zt) ZVAL_DEREF(zt);
         if (zt && Z_TYPE_P(zt) == IS_STRING && Z_STRLEN_P(zt) > 0
             && memchr(Z_STRVAL_P(zt), 0, Z_STRLEN_P(zt)) == NULL) {
             self->image_map_entries[idx].tooltip = fc_strdup_opt(Z_STRVAL_P(zt));
@@ -6694,6 +6740,7 @@ static int fastchart_parse_grid(zval *arr, fastchart_grid *out, const char *wher
     int cols = 0;
     zval *row;
     ZEND_HASH_FOREACH_VAL(ht, row) {
+        if (row) ZVAL_DEREF(row);
         if (Z_TYPE_P(row) != IS_ARRAY) continue;
         int rlen = (int)zend_hash_num_elements(Z_ARRVAL_P(row));
         if (rlen > cols) cols = rlen;
@@ -6721,6 +6768,7 @@ static int fastchart_parse_grid(zval *arr, fastchart_grid *out, const char *wher
     out->cols = cols;
     int ri = 0;
     ZEND_HASH_FOREACH_VAL(ht, row) {
+        if (row) ZVAL_DEREF(row);
         if (Z_TYPE_P(row) != IS_ARRAY) {
             for (int j = 0; j < cols; j++) out->cells[ri * cols + j] = NAN;
             ri++;
@@ -6808,6 +6856,7 @@ ZEND_METHOD(FastChart_GanttChart, setTasks)
     zval *t;
     ZEND_HASH_FOREACH_VAL(ht, t) {
         if (slot >= n) break;
+        if (t) ZVAL_DEREF(t);
         if (Z_TYPE_P(t) != IS_ARRAY) continue;
         HashTable *th = Z_ARRVAL_P(t);
         zval *zs = zend_hash_str_find(th, "start", 5);
@@ -6831,15 +6880,18 @@ ZEND_METHOD(FastChart_GanttChart, setTasks)
         out->name = fc_strdup_opt(fastchart_label_or_null(zn));
 
         zval *zc = zend_hash_str_find(th, "color", 5);
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) out->color_rgb = (int)c;
         }
         zval *zm = zend_hash_str_find(th, "milestone", 9);
+        if (zm) ZVAL_DEREF(zm);
         out->is_milestone =
             (zm && (Z_TYPE_P(zm) == IS_TRUE ||
                     (Z_TYPE_P(zm) == IS_LONG && Z_LVAL_P(zm) != 0)));
         zval *zd = zend_hash_str_find(th, "depends", 7);
+        if (zd) ZVAL_DEREF(zd);
         if (zd && Z_TYPE_P(zd) == IS_ARRAY) {
             uint32_t udn = zend_hash_num_elements(Z_ARRVAL_P(zd));
             if (udn > FASTCHART_MAX_GANTT_DEPS) udn = FASTCHART_MAX_GANTT_DEPS;
@@ -6850,6 +6902,7 @@ ZEND_METHOD(FastChart_GanttChart, setTasks)
                 zval *dv;
                 ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(zd), dv) {
                     if (k >= dn) break;
+                    if (dv) ZVAL_DEREF(dv);
                     if (Z_TYPE_P(dv) == IS_LONG) {
                         /* Validate against the int range before
                          * narrowing. 0..INT_MAX is the legal index
@@ -6898,9 +6951,11 @@ ZEND_METHOD(FastChart_RadarChart, setSeries)
     if (zend_hash_num_elements(ht) == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
     zval *first = zend_hash_index_find(ht, 0);
+    if (first) ZVAL_DEREF(first);  /* tolerate foreach-by-ref buckets */
     bool is_multi = false;
     if (first && Z_TYPE_P(first) == IS_ARRAY) {
         zval *d = zend_hash_str_find(Z_ARRVAL_P(first), "data", sizeof("data") - 1);
+        if (d) ZVAL_DEREF(d);
         if (d && Z_TYPE_P(d) == IS_ARRAY) is_multi = true;
     }
 
@@ -6931,8 +6986,10 @@ ZEND_METHOD(FastChart_RadarChart, setSeries)
         zval *s_zv;
         ZEND_HASH_FOREACH_VAL(ht, s_zv) {
             if (self->n_series >= FASTCHART_MAX_RADAR_SERIES) break;
+            if (s_zv) ZVAL_DEREF(s_zv);
             if (Z_TYPE_P(s_zv) != IS_ARRAY) continue;
             zval *d = zend_hash_str_find(Z_ARRVAL_P(s_zv), "data", sizeof("data") - 1);
+            if (d) ZVAL_DEREF(d);
             if (!d || Z_TYPE_P(d) != IS_ARRAY) continue;
             fastchart_radar_series *slot = &self->series[self->n_series];
             RADAR_PARSE_VALUES(slot, Z_ARRVAL_P(d));
@@ -6940,6 +6997,7 @@ ZEND_METHOD(FastChart_RadarChart, setSeries)
             slot->label = fc_strdup_opt(fastchart_label_or_null(l));
             zval *c = zend_hash_str_find(Z_ARRVAL_P(s_zv), "color", sizeof("color") - 1);
             slot->color_rgb = -1;
+            if (c) ZVAL_DEREF(c);
             if (c && Z_TYPE_P(c) == IS_LONG) {
                 zend_long cc = Z_LVAL_P(c);
                 if (cc >= 0 && cc <= 0xFFFFFF) slot->color_rgb = (int)cc;
@@ -6981,9 +7039,11 @@ ZEND_METHOD(FastChart_PolarChart, setSeries)
     if (zend_hash_num_elements(ht) == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
     zval *first = zend_hash_index_find(ht, 0);
+    if (first) ZVAL_DEREF(first);  /* tolerate foreach-by-ref buckets */
     bool is_multi = false;
     if (first && Z_TYPE_P(first) == IS_ARRAY) {
         zval *d = zend_hash_str_find(Z_ARRVAL_P(first), "data", sizeof("data") - 1);
+        if (d) ZVAL_DEREF(d);
         if (d && Z_TYPE_P(d) == IS_ARRAY) is_multi = true;
     }
 
@@ -6999,6 +7059,7 @@ ZEND_METHOD(FastChart_PolarChart, setSeries)
             int _k = 0;                                                  \
             zval *_pv;                                                    \
             ZEND_HASH_FOREACH_VAL(_dh, _pv) {                             \
+                if (_pv) ZVAL_DEREF(_pv);                                 \
                 if (Z_TYPE_P(_pv) != IS_ARRAY) continue;                  \
                 zval *_za = zend_hash_index_find(Z_ARRVAL_P(_pv), 0);     \
                 zval *_zr = zend_hash_index_find(Z_ARRVAL_P(_pv), 1);     \
@@ -7023,8 +7084,10 @@ ZEND_METHOD(FastChart_PolarChart, setSeries)
         zval *s;
         ZEND_HASH_FOREACH_VAL(ht, s) {
             if (self->n_series >= FASTCHART_MAX_POLAR_SERIES) break;
+            if (s) ZVAL_DEREF(s);
             if (Z_TYPE_P(s) != IS_ARRAY) continue;
             zval *d = zend_hash_str_find(Z_ARRVAL_P(s), "data", sizeof("data") - 1);
+            if (d) ZVAL_DEREF(d);
             if (!d || Z_TYPE_P(d) != IS_ARRAY) continue;
             fastchart_polar_series *slot = &self->series[self->n_series];
             POLAR_PARSE_DATA(slot, Z_ARRVAL_P(d));
@@ -7032,6 +7095,7 @@ ZEND_METHOD(FastChart_PolarChart, setSeries)
             slot->label = fc_strdup_opt(fastchart_label_or_null(l));
             zval *c = zend_hash_str_find(Z_ARRVAL_P(s), "color", sizeof("color") - 1);
             slot->color_rgb = -1;
+            if (c) ZVAL_DEREF(c);
             if (c && Z_TYPE_P(c) == IS_LONG) {
                 zend_long cc = Z_LVAL_P(c);
                 if (cc >= 0 && cc <= 0xFFFFFF) slot->color_rgb = (int)cc;
@@ -7077,6 +7141,7 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxes)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (slot >= n) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eh = Z_ARRVAL_P(entry);
         fastchart_boxplot_entry *out = &self->entries[slot];
@@ -7104,6 +7169,7 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxes)
             zval *zlabel = zend_hash_str_find(eh, "label", 5);
             out->label = fc_strdup_opt(fastchart_label_or_null(zlabel));
             zval *zout = zend_hash_str_find(eh, "outliers", 8);
+            if (zout) ZVAL_DEREF(zout);
             if (zout && Z_TYPE_P(zout) == IS_ARRAY) {
                 uint32_t uon = zend_hash_num_elements(Z_ARRVAL_P(zout));
                 if (uon > FASTCHART_MAX_OUTLIERS) uon = FASTCHART_MAX_OUTLIERS;
@@ -7171,6 +7237,7 @@ ZEND_METHOD(FastChart_BubbleChart, setPoints)
     zval *p;
     ZEND_HASH_FOREACH_VAL(ht, p) {
         if (slot >= n) break;
+        if (p) ZVAL_DEREF(p);
         if (Z_TYPE_P(p) != IS_ARRAY) continue;
         HashTable *t = Z_ARRVAL_P(p);
         zval *zx = zend_hash_index_find(t, 0);
@@ -7187,6 +7254,7 @@ ZEND_METHOD(FastChart_BubbleChart, setPoints)
         self->points[slot].size = ds;
         self->points[slot].color_rgb = -1;
         zval *zc = zend_hash_index_find(t, 3);
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) self->points[slot].color_rgb = (int)c;
@@ -7389,6 +7457,7 @@ ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
     if (opts) {
         zval *opt;
         opt = zend_hash_str_find(opts, "color", sizeof("color") - 1);
+        if (opt) ZVAL_DEREF(opt);
         if (opt && Z_TYPE_P(opt) == IS_LONG) {
             zend_long c = Z_LVAL_P(opt);
             if (c >= 0 && c <= 0xFFFFFF) {
@@ -8417,6 +8486,7 @@ ZEND_METHOD(FastChart_Treemap, setItems)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (idx >= n) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
 
@@ -8436,6 +8506,7 @@ ZEND_METHOD(FastChart_Treemap, setItems)
          * labels are dropped (rendered text would terminate at the
          * NUL anyway). */
         zval *zl = zend_hash_str_find(eht, "label", sizeof("label") - 1);
+        if (zl) ZVAL_DEREF(zl);
         if (zl && Z_TYPE_P(zl) == IS_STRING) {
             size_t len = Z_STRLEN_P(zl);
             const char *s = Z_STRVAL_P(zl);
@@ -8450,6 +8521,7 @@ ZEND_METHOD(FastChart_Treemap, setItems)
          * defaults to palette pick. */
         parsed[idx].color_rgb = -1;
         zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) parsed[idx].color_rgb = (int)c;
@@ -8507,6 +8579,7 @@ ZEND_METHOD(FastChart_Funnel, setStages)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (idx >= n) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
 
@@ -8517,6 +8590,7 @@ ZEND_METHOD(FastChart_Funnel, setStages)
         parsed[idx].value = v;
 
         zval *zl = zend_hash_str_find(eht, "label", sizeof("label") - 1);
+        if (zl) ZVAL_DEREF(zl);
         if (zl && Z_TYPE_P(zl) == IS_STRING) {
             size_t len = Z_STRLEN_P(zl);
             const char *s = Z_STRVAL_P(zl);
@@ -8529,6 +8603,7 @@ ZEND_METHOD(FastChart_Funnel, setStages)
 
         parsed[idx].color_rgb = -1;
         zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) parsed[idx].color_rgb = (int)c;
@@ -8594,6 +8669,7 @@ ZEND_METHOD(FastChart_Waterfall, setBars)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (idx >= n) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
 
@@ -8605,6 +8681,7 @@ ZEND_METHOD(FastChart_Waterfall, setBars)
 
         parsed[idx].kind = FASTCHART_WF_DELTA;
         zval *zk = zend_hash_str_find(eht, "kind", sizeof("kind") - 1);
+        if (zk) ZVAL_DEREF(zk);
         if (zk && Z_TYPE_P(zk) == IS_STRING) {
             /* Length-aware compare: "totalXYZ" must NOT match
              * "total" via strncmp prefix, otherwise typos silently
@@ -8619,6 +8696,7 @@ ZEND_METHOD(FastChart_Waterfall, setBars)
         }
 
         zval *zl = zend_hash_str_find(eht, "label", sizeof("label") - 1);
+        if (zl) ZVAL_DEREF(zl);
         if (zl && Z_TYPE_P(zl) == IS_STRING) {
             size_t len = Z_STRLEN_P(zl);
             const char *s = Z_STRVAL_P(zl);
@@ -8764,6 +8842,7 @@ ZEND_METHOD(FastChart_LinearMeter, setZones)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (idx >= FASTCHART_MAX_METER_ZONES) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         double from, to;
@@ -8777,6 +8856,7 @@ ZEND_METHOD(FastChart_LinearMeter, setZones)
         self->zones[idx].to = to;
         self->zones[idx].color_rgb = -1;
         zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) self->zones[idx].color_rgb = (int)c;
@@ -8858,6 +8938,7 @@ ZEND_METHOD(FastChart_BulletChart, setBands)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (idx >= FASTCHART_MAX_METER_ZONES) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         double from, to;
@@ -8871,6 +8952,7 @@ ZEND_METHOD(FastChart_BulletChart, setBands)
         self->bands[idx].to   = to;
         self->bands[idx].color_rgb = -1;
         zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) self->bands[idx].color_rgb = (int)c;
@@ -8922,6 +9004,7 @@ ZEND_METHOD(FastChart_ParetoChart, setBars)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (kept >= n) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
@@ -8935,6 +9018,7 @@ ZEND_METHOD(FastChart_ParetoChart, setBars)
             zend_hash_str_find(eht, "label", sizeof("label") - 1));
         parsed[kept].label = lbl ? estrdup(lbl) : NULL;
         zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) parsed[kept].color_rgb = (int)c;
@@ -9117,6 +9201,7 @@ static int fastchart_sunburst_build_rec(
         zend_hash_str_find(ht, "label", sizeof("label") - 1));
     self->label = lbl ? estrdup(lbl) : NULL;
     zval *zc = zend_hash_str_find(ht, "color", sizeof("color") - 1);
+    if (zc) ZVAL_DEREF(zc);
     if (zc && Z_TYPE_P(zc) == IS_LONG) {
         zend_long c = Z_LVAL_P(zc);
         if (c >= 0 && c <= 0xFFFFFF) self->color_rgb = (int)c;
@@ -9131,6 +9216,7 @@ static int fastchart_sunburst_build_rec(
 
     /* Recurse into children. */
     zval *zch = zend_hash_str_find(ht, "children", sizeof("children") - 1);
+    if (zch) ZVAL_DEREF(zch);
     if (zch && Z_TYPE_P(zch) == IS_ARRAY) {
         HashTable *cht = Z_ARRVAL_P(zch);
         if (zend_hash_num_elements(cht) > 0) {
@@ -9138,6 +9224,7 @@ static int fastchart_sunburst_build_rec(
             int kept = 0;
             zval *ce;
             ZEND_HASH_FOREACH_VAL(cht, ce) {
+                if (ce) ZVAL_DEREF(ce);
                 if (Z_TYPE_P(ce) != IS_ARRAY) continue;
                 if (fastchart_sunburst_build_rec(
                         Z_ARRVAL_P(ce), nodes, n, cap,
@@ -9255,6 +9342,7 @@ ZEND_METHOD(FastChart_SankeyChart, setNodes)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (kept >= n) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) {
             parsed[kept].label = NULL;
             parsed[kept].color_rgb = -1;
@@ -9267,6 +9355,7 @@ ZEND_METHOD(FastChart_SankeyChart, setNodes)
         parsed[kept].label = lbl ? estrdup(lbl) : NULL;
         parsed[kept].color_rgb = -1;
         zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) parsed[kept].color_rgb = (int)c;
@@ -9299,12 +9388,15 @@ ZEND_METHOD(FastChart_SankeyChart, setLinks)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (kept >= n) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         zval *zf = zend_hash_str_find(eht, "from",  sizeof("from")  - 1);
         zval *zt = zend_hash_str_find(eht, "to",    sizeof("to")    - 1);
         zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
         if (!zf || !zt || !zv) continue;
+        ZVAL_DEREF(zf);
+        ZVAL_DEREF(zt);
         if (Z_TYPE_P(zf) != IS_LONG || Z_TYPE_P(zt) != IS_LONG) continue;
         zend_long from = Z_LVAL_P(zf), to = Z_LVAL_P(zt);
         double val;
@@ -9496,12 +9588,14 @@ static void fastchart_pyramid_parse_side(zval *arr, fastchart_pyramid_side *side
     side->label = lbl ? estrdup(lbl) : NULL;
 
     zval *zc = zend_hash_str_find(ht, "color", sizeof("color") - 1);
+    if (zc) ZVAL_DEREF(zc);
     if (zc && Z_TYPE_P(zc) == IS_LONG) {
         zend_long c = Z_LVAL_P(zc);
         if (c >= 0 && c <= 0xFFFFFF) side->color_rgb = (int)c;
     }
 
     zval *zd = zend_hash_str_find(ht, "data", sizeof("data") - 1);
+    if (zd) ZVAL_DEREF(zd);
     if (!zd || Z_TYPE_P(zd) != IS_ARRAY) return;
     HashTable *dht = Z_ARRVAL_P(zd);
     int n = zend_hash_num_elements(dht);
@@ -9610,6 +9704,7 @@ ZEND_METHOD(FastChart_ViolinPlot, setGroups)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (kept >= n) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         const char *lbl = fastchart_label_or_null(
@@ -9617,11 +9712,13 @@ ZEND_METHOD(FastChart_ViolinPlot, setGroups)
         parsed[kept].label = lbl ? estrdup(lbl) : NULL;
         parsed[kept].color_rgb = -1;
         zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) parsed[kept].color_rgb = (int)c;
         }
         zval *zv = zend_hash_str_find(eht, "values", sizeof("values") - 1);
+        if (zv) ZVAL_DEREF(zv);
         if (zv && Z_TYPE_P(zv) == IS_ARRAY) {
             HashTable *vht = Z_ARRVAL_P(zv);
             int vn = zend_hash_num_elements(vht);
@@ -9804,6 +9901,7 @@ ZEND_METHOD(FastChart_VennDiagram, setSets)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (kept >= 3) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         const char *lbl = fastchart_label_or_null(
@@ -9811,6 +9909,7 @@ ZEND_METHOD(FastChart_VennDiagram, setSets)
         self->sets[kept].label = lbl ? estrdup(lbl) : NULL;
         self->sets[kept].color_rgb = -1;
         zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) self->sets[kept].color_rgb = (int)c;
@@ -9843,15 +9942,19 @@ ZEND_METHOD(FastChart_VennDiagram, setIntersections)
     int kept = 0;
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         zval *zset = zend_hash_str_find(eht, "sets", sizeof("sets") - 1);
         zval *zsz  = zend_hash_str_find(eht, "size", sizeof("size") - 1);
+        if (zset) ZVAL_DEREF(zset);
         if (!zset || Z_TYPE_P(zset) != IS_ARRAY || !zsz) continue;
         HashTable *sht = Z_ARRVAL_P(zset);
         if (zend_hash_num_elements(sht) != 2) continue;
         zval *za = zend_hash_index_find(sht, 0);
         zval *zb = zend_hash_index_find(sht, 1);
+        if (za) ZVAL_DEREF(za);
+        if (zb) ZVAL_DEREF(zb);
         if (!za || !zb || Z_TYPE_P(za) != IS_LONG || Z_TYPE_P(zb) != IS_LONG) continue;
         zend_long a = Z_LVAL_P(za), b = Z_LVAL_P(zb);
         if (a < 0 || a >= self->set_count || b < 0 || b >= self->set_count || a == b) {
@@ -9924,6 +10027,7 @@ ZEND_METHOD(FastChart_WordCloud, setWords)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (kept >= n) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         const char *txt = fastchart_label_or_null(
@@ -9940,6 +10044,7 @@ ZEND_METHOD(FastChart_WordCloud, setWords)
         parsed[kept].weight = weight;
         parsed[kept].color_rgb = -1;
         zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) parsed[kept].color_rgb = (int)c;
@@ -9997,6 +10102,7 @@ ZEND_METHOD(FastChart_SerpentineTimeline, setEvents)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (kept >= n) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         const char *lbl = fastchart_label_or_null(
@@ -10007,6 +10113,7 @@ ZEND_METHOD(FastChart_SerpentineTimeline, setEvents)
         parsed[kept].date = dat ? estrdup(dat) : NULL;
         parsed[kept].color_rgb = -1;
         zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) parsed[kept].color_rgb = (int)c;
@@ -10176,9 +10283,11 @@ ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (kept >= n) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         zval *zsegs = zend_hash_str_find(eht, "segments", sizeof("segments") - 1);
+        if (zsegs) ZVAL_DEREF(zsegs);
         if (!zsegs || Z_TYPE_P(zsegs) != IS_ARRAY) continue;
         HashTable *sht = Z_ARRVAL_P(zsegs);
         int sn = zend_hash_num_elements(sht);
@@ -10190,6 +10299,7 @@ ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
         zval *se;
         ZEND_HASH_FOREACH_VAL(sht, se) {
             if (skept >= sn) break;
+            if (se) ZVAL_DEREF(se);
             if (Z_TYPE_P(se) != IS_ARRAY) continue;
             HashTable *seh = Z_ARRVAL_P(se);
             zval *zv = zend_hash_str_find(seh, "value", sizeof("value") - 1);
@@ -10204,6 +10314,7 @@ ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
                 zend_hash_str_find(seh, "label", sizeof("label") - 1));
             segs[skept].label = lbl ? estrdup(lbl) : NULL;
             zval *zc = zend_hash_str_find(seh, "color", sizeof("color") - 1);
+            if (zc) ZVAL_DEREF(zc);
             if (zc && Z_TYPE_P(zc) == IS_LONG) {
                 zend_long c = Z_LVAL_P(zc);
                 if (c >= 0 && c <= 0xFFFFFF) segs[skept].color_rgb = (int)c;
@@ -10269,6 +10380,7 @@ ZEND_METHOD(FastChart_VectorChart, setVectors)
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (kept >= n) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         zval *zx = zend_hash_str_find(eht, "x",  sizeof("x")  - 1);
@@ -10294,6 +10406,7 @@ ZEND_METHOD(FastChart_VectorChart, setVectors)
         parsed[kept].dy = dy;
         parsed[kept].color_rgb = -1;
         zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) parsed[kept].color_rgb = (int)c;
