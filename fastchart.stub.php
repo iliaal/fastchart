@@ -1784,6 +1784,38 @@ final class CirclePacking extends Chart
 }
 
 /**
+ * Dendrogram: a hierarchy drawn as a node-link tree. Shares CirclePacking's
+ * nested-node input shape, but lays nodes out by depth (root to leaves) with
+ * parent-to-child edges, the classic cluster/linkage view.
+ */
+final class Dendrogram extends Chart
+{
+    /** setStyle(): straight diagonal parent-child edges (default). */
+    const int STYLE_TREE = 0;
+    /** setStyle(): right-angle (elbow) edges, the dendrogram convention. */
+    const int STYLE_ELBOW = 1;
+    /** setOrientation(): root at top, depth grows downward (default). */
+    const int ORIENT_TOP = 0;
+    /** setOrientation(): root at left, depth grows rightward. */
+    const int ORIENT_LEFT = 1;
+
+    /**
+     * Root node of the hierarchy. Each node:
+     * `['label' => string?, 'color' => int?, 'value' => number?,
+     *   'children' => [ ...nodes ]]`. Nesting is capped at 24 levels and
+     * 2048 total nodes, same as CirclePacking.
+     */
+    public function setHierarchy(array $root): static {}
+
+    /** Edge style: STYLE_TREE (diagonal) or STYLE_ELBOW (right-angle). */
+    public function setStyle(int $style): static {}
+
+    /** Layout direction: ORIENT_TOP (top-down) or ORIENT_LEFT (left-right). */
+    public function setOrientation(int $mode): static {}
+
+}
+
+/**
  * Pictogram (pictorial fraction): a grid of unit icons where a value's
  * share of a total is shown by filling that fraction of the icons left
  * to right; the boundary icon is partially filled so fractional values

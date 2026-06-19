@@ -185,6 +185,7 @@ if test "$PHP_FASTCHART" != "no"; then
     fastchart_venn.c \
     fastchart_wordcloud.c \
     fastchart_serpentine.c \
+    fastchart_dendrogram.c \
     fastchart_effects.c \
     fastchart_encoder.c \
     fastchart_rasterize.c \

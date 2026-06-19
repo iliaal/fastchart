@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: f45a2961fbb6442b3f02e3311fa838bc6ab7e0b0 */
+ * Stub hash: 41cd358adfadef613dae889fbb5c7b12f65a9796 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -606,6 +606,12 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_CirclePacking_setHierarchy arginfo_class_FastChart_SunburstChart_setHierarchy
 
+#define arginfo_class_FastChart_Dendrogram_setHierarchy arginfo_class_FastChart_SunburstChart_setHierarchy
+
+#define arginfo_class_FastChart_Dendrogram_setStyle arginfo_class_FastChart_Chart_setLineStyle
+
+#define arginfo_class_FastChart_Dendrogram_setOrientation arginfo_class_FastChart_Chart_setLineInterpolation
+
 #define arginfo_class_FastChart_Pictogram_setValue arginfo_class_FastChart_GaugeChart_setValue
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Pictogram_setTotal, 0, 1, IS_STATIC, 0)
@@ -887,6 +893,9 @@ ZEND_METHOD(FastChart_PopulationPyramid, setLeftSeries);
 ZEND_METHOD(FastChart_PopulationPyramid, setRightSeries);
 ZEND_METHOD(FastChart_ViolinPlot, setGroups);
 ZEND_METHOD(FastChart_CirclePacking, setHierarchy);
+ZEND_METHOD(FastChart_Dendrogram, setHierarchy);
+ZEND_METHOD(FastChart_Dendrogram, setStyle);
+ZEND_METHOD(FastChart_Dendrogram, setOrientation);
 ZEND_METHOD(FastChart_Pictogram, setValue);
 ZEND_METHOD(FastChart_Pictogram, setTotal);
 ZEND_METHOD(FastChart_Pictogram, setIconCount);
@@ -1228,6 +1237,13 @@ static const zend_function_entry class_FastChart_ViolinPlot_methods[] = {
 
 static const zend_function_entry class_FastChart_CirclePacking_methods[] = {
 	ZEND_ME(FastChart_CirclePacking, setHierarchy, arginfo_class_FastChart_CirclePacking_setHierarchy, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_FastChart_Dendrogram_methods[] = {
+	ZEND_ME(FastChart_Dendrogram, setHierarchy, arginfo_class_FastChart_Dendrogram_setHierarchy, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Dendrogram, setStyle, arginfo_class_FastChart_Dendrogram_setStyle, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_Dendrogram, setOrientation, arginfo_class_FastChart_Dendrogram_setOrientation, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -2071,6 +2087,40 @@ static zend_class_entry *register_class_FastChart_CirclePacking(zend_class_entry
 
 	INIT_NS_CLASS_ENTRY(ce, "FastChart", "CirclePacking", class_FastChart_CirclePacking_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_FastChart_Dendrogram(zend_class_entry *class_entry_FastChart_Chart)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "FastChart", "Dendrogram", class_FastChart_Dendrogram_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	zval const_STYLE_TREE_value;
+	ZVAL_LONG(&const_STYLE_TREE_value, 0);
+	zend_string *const_STYLE_TREE_name = zend_string_init_interned("STYLE_TREE", sizeof("STYLE_TREE") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_STYLE_TREE_name, &const_STYLE_TREE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_STYLE_TREE_name);
+
+	zval const_STYLE_ELBOW_value;
+	ZVAL_LONG(&const_STYLE_ELBOW_value, 1);
+	zend_string *const_STYLE_ELBOW_name = zend_string_init_interned("STYLE_ELBOW", sizeof("STYLE_ELBOW") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_STYLE_ELBOW_name, &const_STYLE_ELBOW_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_STYLE_ELBOW_name);
+
+	zval const_ORIENT_TOP_value;
+	ZVAL_LONG(&const_ORIENT_TOP_value, 0);
+	zend_string *const_ORIENT_TOP_name = zend_string_init_interned("ORIENT_TOP", sizeof("ORIENT_TOP") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_ORIENT_TOP_name, &const_ORIENT_TOP_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_ORIENT_TOP_name);
+
+	zval const_ORIENT_LEFT_value;
+	ZVAL_LONG(&const_ORIENT_LEFT_value, 1);
+	zend_string *const_ORIENT_LEFT_name = zend_string_init_interned("ORIENT_LEFT", sizeof("ORIENT_LEFT") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_ORIENT_LEFT_name, &const_ORIENT_LEFT_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_ORIENT_LEFT_name);
 
 	return class_entry;
 }
