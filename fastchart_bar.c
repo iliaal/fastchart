@@ -22,6 +22,7 @@
 #include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_effects.h"
+#include "fastchart_text.h"
 
 /* Emit one filled bar rect, honoring chart-wide drop shadow and
  * gradient settings. Shadow paints first (so the main shape overlays
@@ -58,6 +59,8 @@ static int bar_per_point_color(zend_long *point_colors, int idx, int fallback,
 
 static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
                                            fastchart_target_t *t);
+static int fastchart_bar_render_radial(fastchart_bar_obj *self,
+                                       fastchart_target_t *t);
 
 /* Data-range scan shared by the vertical and horizontal bar render
  * paths. Walks the series array three different ways depending on
@@ -127,6 +130,9 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
     }
     if (self->bar_orientation == FASTCHART_BAR_HORIZONTAL) {
         return fastchart_bar_render_horizontal(self, t);
+    }
+    if (self->bar_orientation == FASTCHART_BAR_RADIAL) {
+        return fastchart_bar_render_radial(self, t);
     }
     fastchart_series_t *series = self->series;
     int n_series = self->n_series;
@@ -701,5 +707,125 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
             fastchart_blit_icon(t, ic, px, py);
         }
     }
+    return 0;
+}
+
+/* Radial-bar (circular bar / "race track") render path. Categories
+ * become concentric rings (category 0 outermost); each bar is a thick
+ * arc whose angular length encodes the value, swept clockwise from 12
+ * o'clock. The peak value across all series maps to a near-full circle
+ * (a small gap keeps the ring start readable). Multiple series stack as
+ * concentric sub-bands within each category's ring. A faint full-circle
+ * track sits behind each bar so short bars read against the scale. */
+static int fastchart_bar_render_radial(fastchart_bar_obj *self,
+                                       fastchart_target_t *t)
+{
+    fastchart_series_t *series = self->series;
+    int n_series = self->n_series;
+    int n_categories = self->max_len;
+
+    /* Peak value sets the angular full-scale. */
+    double vmax = 0.0;
+    for (int s = 0; s < n_series; s++) {
+        for (int i = 0; i < series[s].len; i++) {
+            double v = series[s].values[i];
+            if (isfinite(v) && v > vmax) vmax = v;
+        }
+    }
+    if (!(vmax > 0.0)) {
+        zend_throw_error(NULL,
+            "FastChart\\BarChart::draw(): radial mode requires at least one positive value");
+        return -1;
+    }
+
+    fastchart_rect plot;
+    fastchart_compute_layout((fastchart_obj *)self, t, 0, 0, NULL, 0, &plot);
+
+    fastchart_palette pal;
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
+
+    fastchart_obj *base = (fastchart_obj *)self;
+    fastchart_draw_frame(t, base, &plot, &pal);
+    fastchart_draw_title(t, base, &plot, &pal);
+
+    int cx = (plot.x0 + plot.x1) / 2;
+    int cy = (plot.y0 + plot.y1) / 2;
+    int avail_w = plot.x1 - plot.x0;
+    int avail_h = plot.y1 - plot.y0;
+    int max_r = (avail_w < avail_h ? avail_w : avail_h) / 2 - 12;
+    if (max_r < 30) max_r = 30;
+    int inner_r = max_r / 6;
+
+    int cats = n_categories > 0 ? n_categories : 1;
+    double bandw = (double)(max_r - inner_r) / (double)cats;
+    int subc = n_series > 0 ? n_series : 1;
+    double sub_thick = bandw / (double)subc;
+
+    /* A peak bar sweeps 330 deg; the 30 deg gap keeps the 12-o'clock
+     * start visible. Clockwise from -90 (SVG y grows downward, so a
+     * positive sweep is clockwise on screen). */
+    const double full_sweep = 330.0;
+    const double start_deg = -90.0;
+
+    int track = fastchart_target_color(t, 0xd8, 0xd4, 0xcc, 110);
+
+    for (int c = 0; c < n_categories; c++) {
+        double cat_outer = (double)max_r - (double)c * bandw;
+        for (int s = 0; s < n_series; s++) {
+            double v = (c < series[s].len) ? series[s].values[c] : NAN;
+            if (!isfinite(v) || v < 0.0) v = 0.0;
+            double arc_r = cat_outer - ((double)s + 0.5) * sub_thick;
+            if (arc_r < 1.0) arc_r = 1.0;
+            int thick = (int)(sub_thick * 0.7);
+            if (thick < 1) thick = 1;
+            int color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+
+            fastchart_target_arc(t, cx, cy, (int)arc_r, (int)arc_r,
+                                 start_deg, start_deg + 359.9,
+                                 track, 0, thick);
+            double sweep = full_sweep * (v / vmax);
+            if (sweep > 0.5) {
+                fastchart_target_arc(t, cx, cy, (int)arc_r, (int)arc_r,
+                                     start_deg, start_deg + sweep,
+                                     color, 0, thick);
+            }
+        }
+    }
+
+    /* Category labels just left of each ring's 12-o'clock start. */
+    const char *font = fastchart_resolve_font(base, FC_FONT_LABEL);
+    double fbase = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    double fsize = fastchart_resolve_font_size(base, FC_FONT_LABEL, fbase);
+    if (font && base->category_labels) {
+        for (int c = 0; c < n_categories; c++) {
+            const char *label = (c < base->n_category_labels)
+                ? base->category_labels[c] : NULL;
+            if (!label) continue;
+            double cat_center = (double)max_r - ((double)c + 0.5) * bandw;
+            int lx = cx - 6;
+            int ly = cy - (int)cat_center + (int)(fsize * 0.35);
+            fastchart_text_draw(t, font, fsize, pal.text,
+                                lx, ly, FASTCHART_ALIGN_RIGHT, label, NULL, 0);
+        }
+    }
+
+    if (n_series >= 2) {
+        int legend_colors[FASTCHART_MAX_SERIES];
+        const char *legend_labels[FASTCHART_MAX_SERIES];
+        int legend_count = 0;
+        for (int s = 0; s < n_series; s++) {
+            if (!series[s].label) continue;
+            legend_colors[legend_count] = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+            legend_labels[legend_count] = series[s].label;
+            legend_count++;
+        }
+        if (legend_count > 0) {
+            fastchart_draw_legend(t, base, &plot, &pal,
+                                  legend_count, legend_colors, legend_labels);
+        }
+    }
+
+    fastchart_draw_text_annotations(t, base, &pal);
     return 0;
 }

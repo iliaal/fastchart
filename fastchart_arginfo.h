@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: cac02e539d6c2eeb959da325ddddf164057f424f */
+ * Stub hash: ac894dfef6f20dbf553e0c15bec6b979392205f0 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -1805,6 +1805,12 @@ static zend_class_entry *register_class_FastChart_BarChart(zend_class_entry *cla
 	zend_string *const_BAR_HORIZONTAL_name = zend_string_init_interned("BAR_HORIZONTAL", sizeof("BAR_HORIZONTAL") - 1, 1);
 	zend_declare_typed_class_constant(class_entry, const_BAR_HORIZONTAL_name, &const_BAR_HORIZONTAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
 	zend_string_release(const_BAR_HORIZONTAL_name);
+
+	zval const_BAR_RADIAL_value;
+	ZVAL_LONG(&const_BAR_RADIAL_value, 2);
+	zend_string *const_BAR_RADIAL_name = zend_string_init_interned("BAR_RADIAL", sizeof("BAR_RADIAL") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_BAR_RADIAL_name, &const_BAR_RADIAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_BAR_RADIAL_name);
 
 	zval const_BAR_STYLE_BAR_value;
 	ZVAL_LONG(&const_BAR_STYLE_BAR_value, 0);

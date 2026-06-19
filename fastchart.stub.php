@@ -833,6 +833,7 @@ final class BarChart extends Chart
     /** Orientation for setOrientation(). */
     public const int BAR_VERTICAL   = 0;
     public const int BAR_HORIZONTAL = 1;
+    public const int BAR_RADIAL     = 2;
 
     /** Glyph style for setBarStyle(). */
     public const int BAR_STYLE_BAR      = 0;
@@ -859,7 +860,11 @@ final class BarChart extends Chart
      * draws bars running left-to-right with categories along the Y
      * axis -- useful when category labels are long. All other bar
      * features (stacking, floating, per-point colors, value labels)
-     * carry over with X/Y semantics swapped.
+     * carry over with X/Y semantics swapped. BAR_RADIAL draws a
+     * circular ("race track") bar chart: each category is a concentric
+     * ring (category 0 outermost) and its bar is a thick arc swept
+     * clockwise from 12 o'clock, the peak value reaching a near-full
+     * circle. Multiple series stack as concentric sub-bands.
      */
     public function setOrientation(int $orientation): static {}
 
