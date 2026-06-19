@@ -32,6 +32,60 @@ static inline double area_read_value(const fastchart_series_t *s, int i)
     return s->values[i];
 }
 
+/* Densify an area layer's top boundary to follow the chart's
+ * line_interpolation, so a smooth or stepped area traces the same
+ * curve as the equivalent line. raw[] holds the n per-category
+ * vertices already in pixel space (area folds gaps to 0, so every
+ * category is a vertex); writes at most cap points into out[] and
+ * returns the count. The shapes mirror the line renderer's
+ * polyline_pass: a right-angle corner per segment for the STEP_*
+ * modes, Catmull-Rom sampling for SMOOTH. Callers invoke it only for
+ * the non-linear modes; LINEAR keeps the original vertex-for-vertex
+ * fill path untouched. */
+static int area_densify(int interp, const gdPoint *raw, int n,
+                        gdPoint *out, int cap)
+{
+    int m = 0;
+    if (n <= 0 || cap <= 0) return 0;
+    out[m++] = raw[0];
+    if (interp == FASTCHART_INTERP_STEP_AFTER ||
+        interp == FASTCHART_INTERP_STEP_BEFORE) {
+        bool after = (interp == FASTCHART_INTERP_STEP_AFTER);
+        for (int i = 1; i < n && m + 2 <= cap; i++) {
+            gdPoint corner;
+            if (after) { corner.x = raw[i].x;     corner.y = raw[i - 1].y; }
+            else       { corner.x = raw[i - 1].x; corner.y = raw[i].y;     }
+            out[m++] = corner;
+            out[m++] = raw[i];
+        }
+        return m;
+    }
+    /* SMOOTH: Catmull-Rom with the same adaptive sub-segment count as
+     * the line renderer (~one sub-segment per 4 px, clamped to 2..20). */
+    for (int i = 0; i < n - 1 && m < cap; i++) {
+        int p0i = (i > 0) ? i - 1 : i;
+        int p3i = (i + 2 < n) ? i + 2 : i + 1;
+        int dx = raw[i + 1].x - raw[i].x;
+        int dy = raw[i + 1].y - raw[i].y;
+        if (dx < 0) dx = -dx;
+        if (dy < 0) dy = -dy;
+        int subdiv = (dx + dy) / 4;
+        if (subdiv < 2)  subdiv = 2;
+        if (subdiv > 20) subdiv = 20;
+        for (int k = 1; k <= subdiv && m < cap; k++) {
+            double tt = (double)k / (double)subdiv;
+            int x, y;
+            fastchart_catmull_point(raw[p0i].x, raw[p0i].y,
+                                    raw[i].x, raw[i].y,
+                                    raw[i + 1].x, raw[i + 1].y,
+                                    raw[p3i].x, raw[p3i].y,
+                                    tt, &x, &y);
+            out[m].x = x; out[m].y = y; m++;
+        }
+    }
+    return m;
+}
+
 int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t *t)
 {
     if (self->n_series == 0) {
@@ -215,6 +269,14 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
     int edge_handle = self->edge_color >= 0
         ? fastchart_target_color_rgb(t, (int)self->edge_color) : -1;
 
+    /* Smooth / stepped fills follow the line interpolation. Band and
+     * stream are special envelope shapes; they stay linear. */
+    int interp = (int)self->line_interpolation;
+    bool curve = !band && !stream &&
+                 (interp == FASTCHART_INTERP_SMOOTH ||
+                  interp == FASTCHART_INTERP_STEP_AFTER ||
+                  interp == FASTCHART_INTERP_STEP_BEFORE);
+
     /* Build filled polygons. For stacked, accumulate per-category
      * sums; each series's polygon spans [prev_cum, prev_cum + v].
      * For non-stacked overlay, each series's polygon spans
@@ -312,6 +374,61 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             int series_handle = pal.series[s % FASTCHART_PALETTE_SERIES_N];
             int n_pts = 0;
 
+            if (curve) {
+                /* Curved layer: densify both the top (cum + v) and the
+                 * bottom (cum) boundaries with the same interpolation so
+                 * adjacent layers tile without gaps. stream_off is 0
+                 * here — stream excludes the curve path. */
+                int vcap = max_len * 21 + 8;
+                gdPoint *rawt = emalloc((size_t)max_len * sizeof(gdPoint));
+                gdPoint *rawb = emalloc((size_t)max_len * sizeof(gdPoint));
+                gdPoint *dt = emalloc((size_t)vcap * sizeof(gdPoint));
+                gdPoint *db = emalloc((size_t)vcap * sizeof(gdPoint));
+                for (int i = 0; i < max_len; i++) {
+                    double v = area_read_value(&series[s], i);
+                    if (isnan(v)) v = 0;
+                    int x = fastchart_x_categorical_center(&plot, i, max_len);
+                    rawt[i].x = x;
+                    rawt[i].y = fastchart_y_to_pixel(cum[i] + v, rng, &plot);
+                    rawb[i].x = x;
+                    rawb[i].y = fastchart_y_to_pixel(cum[i], rng, &plot);
+                }
+                int dnt = area_densify(interp, rawt, max_len, dt, vcap);
+                int dnb = area_densify(interp, rawb, max_len, db, vcap);
+                if (dnt >= 2 && dnb >= 2) {
+                    int fcap = dnt + dnb;
+                    gdPoint *fp = emalloc((size_t)fcap * sizeof(gdPoint));
+                    int fn = 0;
+                    for (int i = 0; i < dnt; i++) fp[fn++] = dt[i];
+                    for (int i = dnb - 1; i >= 0; i--) fp[fn++] = db[i];
+                    fastchart_obj *base = (fastchart_obj *)self;
+                    if (base->gradient_from >= 0 && base->gradient_to >= 0) {
+                        fastchart_target_gradient_polygon(t, fp, fn,
+                            (uint32_t)base->gradient_from,
+                            (uint32_t)base->gradient_to,
+                            (int)base->gradient_dir);
+                    } else {
+                        fastchart_target_polygon(t, fp, fn, series_handle, 1, 0);
+                    }
+                    if (edge_handle >= 0) {
+                        fastchart_target_polygon(t, fp, fn, edge_handle, 0, 1);
+                    }
+                    efree(fp);
+                }
+                for (int i = 1; i < dnt; i++) {
+                    fastchart_target_line(t, dt[i - 1].x, dt[i - 1].y,
+                                          dt[i].x, dt[i].y, pal.border, 1,
+                                          FASTCHART_DASH_SOLID);
+                }
+                for (int i = 0; i < max_len; i++) {
+                    double v = area_read_value(&series[s], i);
+                    if (isnan(v)) v = 0;
+                    cum[i] += v;
+                }
+                efree(rawt); efree(rawb); efree(dt); efree(db);
+                continue;
+            }
+
             /* Top edge: left to right at cum + v (+ stream centering). */
             for (int i = 0; i < max_len && n_pts < 2048; i++) {
                 double v = area_read_value(&series[s], i);
@@ -382,6 +499,52 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             int alpha_byte = 255 - alpha * 2;
             if (alpha_byte < 0) alpha_byte = 0;
             int alpha_handle = fastchart_target_color(t, r, g, b, alpha_byte);
+
+            if (curve) {
+                /* Curved fill: densified top edge, then a straight
+                 * baseline back to close the polygon. */
+                int vcap = max_len * 21 + 8;
+                gdPoint *raw = emalloc((size_t)max_len * sizeof(gdPoint));
+                gdPoint *dens = emalloc((size_t)vcap * sizeof(gdPoint));
+                for (int i = 0; i < max_len; i++) {
+                    double v = area_read_value(&series[s], i);
+                    if (isnan(v)) v = 0;
+                    raw[i].x = fastchart_x_categorical_center(&plot, i, max_len);
+                    raw[i].y = fastchart_y_to_pixel(v, rng, &plot);
+                }
+                int dn = area_densify(interp, raw, max_len, dens, vcap);
+                if (dn >= 2) {
+                    int fcap = dn + 2;
+                    gdPoint *fp = emalloc((size_t)fcap * sizeof(gdPoint));
+                    int fn = 0;
+                    for (int i = 0; i < dn; i++) fp[fn++] = dens[i];
+                    fp[fn].x = dens[dn - 1].x; fp[fn].y = zero_y; fn++;
+                    fp[fn].x = dens[0].x;      fp[fn].y = zero_y; fn++;
+                    fastchart_obj *base = (fastchart_obj *)self;
+                    if (base->gradient_from >= 0 && base->gradient_to >= 0) {
+                        uint32_t a = (uint32_t)alpha_byte & 0xFFu;
+                        uint32_t grad_from =
+                            (a << 24) | ((uint32_t)base->gradient_from & 0xFFFFFFu);
+                        uint32_t grad_to =
+                            (a << 24) | ((uint32_t)base->gradient_to   & 0xFFFFFFu);
+                        fastchart_target_gradient_polygon(t, fp, fn,
+                            grad_from, grad_to, (int)base->gradient_dir);
+                    } else {
+                        fastchart_target_polygon(t, fp, fn, alpha_handle, 1, 0);
+                    }
+                    if (edge_handle >= 0) {
+                        fastchart_target_polygon(t, fp, fn, edge_handle, 0, 1);
+                    }
+                    efree(fp);
+                }
+                for (int i = 1; i < dn; i++) {
+                    fastchart_target_line(t, dens[i - 1].x, dens[i - 1].y,
+                                          dens[i].x, dens[i].y, base_handle, 2,
+                                          FASTCHART_DASH_SOLID);
+                }
+                efree(raw); efree(dens);
+                continue;
+            }
 
             int n_pts = 0;
             for (int i = 0; i < max_len && n_pts < 2048; i++) {

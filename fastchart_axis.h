@@ -333,6 +333,15 @@ void fastchart_draw_polyline(fastchart_target_t *t, fastchart_obj *chart,
                              const fastchart_pt *pts, int n,
                              int color, int thickness, bool antialiased);
 
+/* Sample the Catmull-Rom spline segment p1->p2 at parameter t in
+ * [0,1], with p0 and p3 as the surrounding control points; writes the
+ * rounded pixel coords through the ox and oy out-params. Shared by the
+ * line and area renderers so a smooth area's top edge matches a smooth
+ * line. */
+void fastchart_catmull_point(int p0x, int p0y, int p1x, int p1y,
+                             int p2x, int p2y, int p3x, int p3y,
+                             double t, int *ox, int *oy);
+
 /* Draw a numeric value label above (x, y) -- typically used by the
  * setShowValues() rendering path. Picks the value font + size and
  * applies the chart's value_format (default "%g"). No-op if the
