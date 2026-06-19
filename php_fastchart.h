@@ -366,6 +366,16 @@ typedef struct {
 
 #define FASTCHART_MAX_SLICES 32
 
+/* One concentric ring of a nested-donut pie. Each ring owns its own
+ * slice array (same ownership rules as the flat pie). */
+typedef struct {
+    fastchart_pie_slice *slices;       /* owned */
+    int count;
+    double total;
+} fastchart_pie_ring;
+
+#define FASTCHART_MAX_PIE_RINGS 8
+
 /* Pre-computed clickable area for getImageMap. The renderer fills
  * this after pixel-mapping; getImageMap walks the array to emit
  * <area> tags without re-running the coordinate math.
@@ -522,6 +532,7 @@ typedef struct {
     bool bar_floating;
     bool stacked;
     zend_long bar_orientation;   /* FASTCHART_BAR_VERTICAL | FASTCHART_BAR_HORIZONTAL */
+    zend_long bar_style;         /* FASTCHART_BAR_STYLE_BAR | _LOLLIPOP | _DUMBBELL */
     fastchart_series_t series[FASTCHART_MAX_SERIES];
     int n_series;
     int max_len;
@@ -540,6 +551,10 @@ typedef struct {
     double donut_hole_ratio;
     zend_long *explode;                /* owned, parallel to slices; 0 = no offset */
     int explode_count;
+    double pie_start_deg;              /* sweep window start; 0 with end 360 = full pie */
+    double pie_end_deg;
+    fastchart_pie_ring rings[FASTCHART_MAX_PIE_RINGS]; /* nested-donut; ring_count 0 = flat */
+    int ring_count;
     zend_object std;
 } fastchart_pie_obj;
 
@@ -802,6 +817,7 @@ typedef struct {
     zend_string *gauge_value_format;
     fastchart_gauge_zone *zones;
     int n_zones;
+    zend_long gauge_style;       /* FASTCHART_GAUGE_STYLE_NEEDLE | _SOLID */
     zend_object std;
 } fastchart_gauge_obj;
 
@@ -1301,6 +1317,18 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 /* BarChart orientation. */
 #define FASTCHART_BAR_VERTICAL   0
 #define FASTCHART_BAR_HORIZONTAL 1
+
+/* BarChart glyph style. BAR = filled rect (default); LOLLIPOP = thin
+ * stem + circle at the value; DUMBBELL = connector between the
+ * floating [min,max] pair with a circle at each end. */
+#define FASTCHART_BAR_STYLE_BAR      0
+#define FASTCHART_BAR_STYLE_LOLLIPOP 1
+#define FASTCHART_BAR_STYLE_DUMBBELL 2
+
+/* GaugeChart dial style. NEEDLE = pointer + hub (default); SOLID =
+ * filled value arc in the zone color, no needle. */
+#define FASTCHART_GAUGE_STYLE_NEEDLE 0
+#define FASTCHART_GAUGE_STYLE_SOLID  1
 
 /* Pie label position extends LABEL_INSIDE/OUTSIDE/NONE. */
 #define FASTCHART_LABEL_LEFT  3

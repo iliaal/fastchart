@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 21e2703359d18b73d705c49284dd214743e9e62d */
+ * Stub hash: cac02e539d6c2eeb959da325ddddf164057f424f */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -316,6 +316,8 @@ ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_BarChart_setStacked arginfo_class_FastChart_AreaChart_setStacked
 
+#define arginfo_class_FastChart_BarChart_setBarStyle arginfo_class_FastChart_Chart_setLineStyle
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_BarChart_setOrientation, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, orientation, IS_LONG, 0)
 ZEND_END_ARG_INFO()
@@ -331,6 +333,16 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_PieChart_setDonutHoleRatio, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, ratio, IS_DOUBLE, 0)
 ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_PieChart_setRings, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, rings, IS_ARRAY, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_PieChart_setStartAngle, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, degrees, IS_DOUBLE, 0)
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_PieChart_setEndAngle arginfo_class_FastChart_PieChart_setStartAngle
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_PieChart_setExplode, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, offsets, IS_ARRAY, 0)
@@ -472,6 +484,8 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_GaugeChart_setZones, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, zones, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
+
+#define arginfo_class_FastChart_GaugeChart_setStyle arginfo_class_FastChart_Chart_setLineStyle
 
 #define arginfo_class_FastChart_GaugeChart_setValueFormat arginfo_class_FastChart_Chart_setYAxisLabelFormat
 
@@ -827,11 +841,15 @@ ZEND_METHOD(FastChart_AreaChart, setBandMode);
 ZEND_METHOD(FastChart_AreaChart, setStreamMode);
 ZEND_METHOD(FastChart_BarChart, setSeries);
 ZEND_METHOD(FastChart_BarChart, setStacked);
+ZEND_METHOD(FastChart_BarChart, setBarStyle);
 ZEND_METHOD(FastChart_BarChart, setOrientation);
 ZEND_METHOD(FastChart_BarChart, setStackMode);
 ZEND_METHOD(FastChart_BarChart, setFloating);
 ZEND_METHOD(FastChart_PieChart, setSlices);
 ZEND_METHOD(FastChart_PieChart, setDonutHoleRatio);
+ZEND_METHOD(FastChart_PieChart, setRings);
+ZEND_METHOD(FastChart_PieChart, setStartAngle);
+ZEND_METHOD(FastChart_PieChart, setEndAngle);
 ZEND_METHOD(FastChart_PieChart, setExplode);
 ZEND_METHOD(FastChart_PieChart, setSliceLabelPosition);
 ZEND_METHOD(FastChart_PieChart, setSliceLabelFormat);
@@ -872,6 +890,7 @@ ZEND_METHOD(FastChart_SurfaceChart, setShowCellValues);
 ZEND_METHOD(FastChart_GaugeChart, setValue);
 ZEND_METHOD(FastChart_GaugeChart, setRange);
 ZEND_METHOD(FastChart_GaugeChart, setZones);
+ZEND_METHOD(FastChart_GaugeChart, setStyle);
 ZEND_METHOD(FastChart_GaugeChart, setValueFormat);
 ZEND_METHOD(FastChart_GanttChart, setTasks);
 ZEND_METHOD(FastChart_GanttChart, setTimeRange);
@@ -1073,6 +1092,7 @@ static const zend_function_entry class_FastChart_AreaChart_methods[] = {
 static const zend_function_entry class_FastChart_BarChart_methods[] = {
 	ZEND_ME(FastChart_BarChart, setSeries, arginfo_class_FastChart_BarChart_setSeries, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_BarChart, setStacked, arginfo_class_FastChart_BarChart_setStacked, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_BarChart, setBarStyle, arginfo_class_FastChart_BarChart_setBarStyle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_BarChart, setOrientation, arginfo_class_FastChart_BarChart_setOrientation, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_BarChart, setStackMode, arginfo_class_FastChart_BarChart_setStackMode, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_BarChart, setFloating, arginfo_class_FastChart_BarChart_setFloating, ZEND_ACC_PUBLIC)
@@ -1082,6 +1102,9 @@ static const zend_function_entry class_FastChart_BarChart_methods[] = {
 static const zend_function_entry class_FastChart_PieChart_methods[] = {
 	ZEND_ME(FastChart_PieChart, setSlices, arginfo_class_FastChart_PieChart_setSlices, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PieChart, setDonutHoleRatio, arginfo_class_FastChart_PieChart_setDonutHoleRatio, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_PieChart, setRings, arginfo_class_FastChart_PieChart_setRings, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_PieChart, setStartAngle, arginfo_class_FastChart_PieChart_setStartAngle, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_PieChart, setEndAngle, arginfo_class_FastChart_PieChart_setEndAngle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PieChart, setExplode, arginfo_class_FastChart_PieChart_setExplode, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PieChart, setSliceLabelPosition, arginfo_class_FastChart_PieChart_setSliceLabelPosition, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_PieChart, setSliceLabelFormat, arginfo_class_FastChart_PieChart_setSliceLabelFormat, ZEND_ACC_PUBLIC)
@@ -1146,6 +1169,7 @@ static const zend_function_entry class_FastChart_GaugeChart_methods[] = {
 	ZEND_ME(FastChart_GaugeChart, setValue, arginfo_class_FastChart_GaugeChart_setValue, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_GaugeChart, setRange, arginfo_class_FastChart_GaugeChart_setRange, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_GaugeChart, setZones, arginfo_class_FastChart_GaugeChart_setZones, ZEND_ACC_PUBLIC)
+	ZEND_ME(FastChart_GaugeChart, setStyle, arginfo_class_FastChart_GaugeChart_setStyle, ZEND_ACC_PUBLIC)
 	ZEND_ME(FastChart_GaugeChart, setValueFormat, arginfo_class_FastChart_GaugeChart_setValueFormat, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
@@ -1782,6 +1806,24 @@ static zend_class_entry *register_class_FastChart_BarChart(zend_class_entry *cla
 	zend_declare_typed_class_constant(class_entry, const_BAR_HORIZONTAL_name, &const_BAR_HORIZONTAL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
 	zend_string_release(const_BAR_HORIZONTAL_name);
 
+	zval const_BAR_STYLE_BAR_value;
+	ZVAL_LONG(&const_BAR_STYLE_BAR_value, 0);
+	zend_string *const_BAR_STYLE_BAR_name = zend_string_init_interned("BAR_STYLE_BAR", sizeof("BAR_STYLE_BAR") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_BAR_STYLE_BAR_name, &const_BAR_STYLE_BAR_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_BAR_STYLE_BAR_name);
+
+	zval const_BAR_STYLE_LOLLIPOP_value;
+	ZVAL_LONG(&const_BAR_STYLE_LOLLIPOP_value, 1);
+	zend_string *const_BAR_STYLE_LOLLIPOP_name = zend_string_init_interned("BAR_STYLE_LOLLIPOP", sizeof("BAR_STYLE_LOLLIPOP") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_BAR_STYLE_LOLLIPOP_name, &const_BAR_STYLE_LOLLIPOP_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_BAR_STYLE_LOLLIPOP_name);
+
+	zval const_BAR_STYLE_DUMBBELL_value;
+	ZVAL_LONG(&const_BAR_STYLE_DUMBBELL_value, 2);
+	zend_string *const_BAR_STYLE_DUMBBELL_name = zend_string_init_interned("BAR_STYLE_DUMBBELL", sizeof("BAR_STYLE_DUMBBELL") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_BAR_STYLE_DUMBBELL_name, &const_BAR_STYLE_DUMBBELL_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_BAR_STYLE_DUMBBELL_name);
+
 	return class_entry;
 }
 
@@ -1869,6 +1911,18 @@ static zend_class_entry *register_class_FastChart_GaugeChart(zend_class_entry *c
 
 	INIT_NS_CLASS_ENTRY(ce, "FastChart", "GaugeChart", class_FastChart_GaugeChart_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_FastChart_Chart, ZEND_ACC_FINAL);
+
+	zval const_STYLE_NEEDLE_value;
+	ZVAL_LONG(&const_STYLE_NEEDLE_value, 0);
+	zend_string *const_STYLE_NEEDLE_name = zend_string_init_interned("STYLE_NEEDLE", sizeof("STYLE_NEEDLE") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_STYLE_NEEDLE_name, &const_STYLE_NEEDLE_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_STYLE_NEEDLE_name);
+
+	zval const_STYLE_SOLID_value;
+	ZVAL_LONG(&const_STYLE_SOLID_value, 1);
+	zend_string *const_STYLE_SOLID_name = zend_string_init_interned("STYLE_SOLID", sizeof("STYLE_SOLID") - 1, 1);
+	zend_declare_typed_class_constant(class_entry, const_STYLE_SOLID_name, &const_STYLE_SOLID_value, ZEND_ACC_PUBLIC, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(const_STYLE_SOLID_name);
 
 	return class_entry;
 }

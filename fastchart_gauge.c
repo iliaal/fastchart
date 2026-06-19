@@ -102,7 +102,35 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
      * (right). Zones are pre-parsed into typed C state by setZones. */
     int default_color = pal.series[0];
 
-    if (self->zones && self->n_zones > 0) {
+    int is_solid = self->gauge_style == FASTCHART_GAUGE_STYLE_SOLID;
+
+    if (is_solid) {
+        /* Solid style: a progress arc filled from min to the value in
+         * the color of the zone the value falls in (or the default
+         * color), over a grid-colored background ring. No needle. */
+        fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.grid, 1, 0);
+        double frac = (mx > mn) ? (v - mn) / (mx - mn) : 0.0;
+        if (frac < 0) frac = 0;
+        if (frac > 1) frac = 1;
+        int fill_color = default_color;
+        if (self->zones && self->n_zones > 0) {
+            for (int i = 0; i < self->n_zones; i++) {
+                const fastchart_gauge_zone *zn = &self->zones[i];
+                if (v >= zn->from && v <= zn->to) {
+                    if (zn->color_rgb >= 0) {
+                        fill_color = fastchart_target_color_rgb(t, zn->color_rgb);
+                    }
+                    break;
+                }
+            }
+        }
+        int start = 180;
+        int end = 180 + (int)(frac * 180);
+        if (end > start) {
+            fastchart_target_arc(t, cx, cy, radius, radius,
+                                 (double)start, (double)end, fill_color, 1, 0);
+        }
+    } else if (self->zones && self->n_zones > 0) {
         /* Background fill (a thin ring, drawn as a fat arc). */
         fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.grid, 1, 0);
         for (int i = 0; i < self->n_zones; i++) {
@@ -150,25 +178,28 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
     /* Outer arc edge in border color. */
     fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.border, 0, 1);
 
-    /* Needle. gauge_value_to_deg returns 180 (value=min) to 0 (value=max),
-     * which is the standard math angle (CCW from +x axis): 180=left,
-     * 90=up, 0=right. Screen y points down, so we negate the sine. */
-    double aV = gauge_value_to_deg(v, mn, mx);
-    double rad = aV * M_PI / 180.0;
-    int nx = cx + (int)((double)(radius - 6) * cos(rad));
-    int ny = cy - (int)((double)(radius - 6) * sin(rad));
-    /* Needle thickness scales with gauge size — visible on a 1200x800
-     * canvas, not dominant on a 480x320 one. SVG renderers AA at the
-     * layer level so the thick stroke suffices. */
-    double needle_thickness = (double)diameter / 200.0 + 2.0;
-    if (needle_thickness < 3.0) needle_thickness = 3.0;
-    fastchart_target_line(t, cx, cy, nx, ny,
-                          pal.text, (int)needle_thickness, FASTCHART_DASH_SOLID);
+    /* Needle + hub (NEEDLE style only; SOLID shows the fill arc
+     * instead). gauge_value_to_deg returns 180 (value=min) to 0
+     * (value=max), the standard math angle (CCW from +x axis):
+     * 180=left, 90=up, 0=right. Screen y points down, so negate sine. */
+    if (!is_solid) {
+        double aV = gauge_value_to_deg(v, mn, mx);
+        double rad = aV * M_PI / 180.0;
+        int nx = cx + (int)((double)(radius - 6) * cos(rad));
+        int ny = cy - (int)((double)(radius - 6) * sin(rad));
+        /* Needle thickness scales with gauge size — visible on a
+         * 1200x800 canvas, not dominant on a 480x320 one. SVG renderers
+         * AA at the layer level so the thick stroke suffices. */
+        double needle_thickness = (double)diameter / 200.0 + 2.0;
+        if (needle_thickness < 3.0) needle_thickness = 3.0;
+        fastchart_target_line(t, cx, cy, nx, ny,
+                              pal.text, (int)needle_thickness, FASTCHART_DASH_SOLID);
 
-    /* Hub: scale with diameter so it doesn't look tiny on a large canvas. */
-    int hub = diameter / 60;
-    if (hub < 8) hub = 8;
-    fastchart_target_ellipse(t, cx, cy, hub / 2, hub / 2, pal.text, 1, 0);
+        /* Hub: scale with diameter so it isn't tiny on a large canvas. */
+        int hub = diameter / 60;
+        if (hub < 8) hub = 8;
+        fastchart_target_ellipse(t, cx, cy, hub / 2, hub / 2, pal.text, 1, 0);
+    }
 
     /* Center value label. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);

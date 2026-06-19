@@ -28,8 +28,88 @@
 #include "fastchart_text.h"
 #include "fastchart_effects.h"
 
+/* Nested-donut render: each setRings() ring becomes a concentric band.
+ * Rings are drawn outermost-first as full disks so each inner ring
+ * overpaints the previous one's center, leaving a clean annulus per
+ * ring. ring[0] is the innermost band. */
+static int fastchart_pie_render_rings(fastchart_pie_obj *self,
+                                      fastchart_target_t *t)
+{
+    int ring_count = self->ring_count;
+
+    fastchart_rect plot;
+    fastchart_compute_layout((fastchart_obj *)self, t, 0, 0, NULL, 0, &plot);
+
+    fastchart_palette pal;
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
+
+    fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
+
+    fastchart_reset_image_map_areas((fastchart_obj *)self);
+
+    int cx = (plot.x0 + plot.x1) / 2;
+    int cy = (plot.y0 + plot.y1) / 2;
+    int avail_w = (plot.x1 - plot.x0);
+    int avail_h = (plot.y1 - plot.y0);
+    int diameter = (avail_w < avail_h ? avail_w : avail_h) - 60;
+    if (diameter < 40) diameter = 40;
+    int radius = diameter / 2;
+
+    int edge_handle = self->edge_color >= 0
+        ? fastchart_target_color_rgb(t, (int)self->edge_color)
+        : pal.border;
+
+    /* Outermost (highest index) first so inner rings overpaint it. */
+    for (int r = ring_count - 1; r >= 0; r--) {
+        fastchart_pie_ring *ring = &self->rings[r];
+        if (ring->count == 0 || ring->total <= 0.0) continue;
+        int ring_radius = (int)((double)radius * (double)(r + 1) / (double)ring_count);
+        if (ring_radius < 2) ring_radius = 2;
+
+        double start_deg = -90.0;
+        for (int i = 0; i < ring->count; i++) {
+            double sweep = 360.0 * (ring->slices[i].value / ring->total);
+            int color = ring->slices[i].color_rgb >= 0
+                ? fastchart_target_color_rgb(t, ring->slices[i].color_rgb)
+                : pal.series[i % FASTCHART_PALETTE_SERIES_N];
+            double s_deg = floor(start_deg);
+            double e_deg = ceil(start_deg + sweep);
+            fastchart_target_arc(t, cx, cy, ring_radius, ring_radius,
+                                 s_deg, e_deg, color, 1, 0);
+            fastchart_target_arc(t, cx, cy, ring_radius, ring_radius,
+                                 s_deg, e_deg, edge_handle, 0, 1);
+            start_deg += sweep;
+        }
+    }
+
+    /* Separator rings: redraw each band boundary as a thin circle so
+     * adjacent rings read as distinct even with similar palette hues. */
+    for (int r = 0; r < ring_count; r++) {
+        int ring_radius = (int)((double)radius * (double)(r + 1) / (double)ring_count);
+        fastchart_target_ellipse(t, cx, cy, ring_radius, ring_radius,
+                                 edge_handle, 0, 1);
+    }
+
+    /* Optional center hole, sized off the innermost band. */
+    double donut = self->donut_hole_ratio;
+    if (donut > 0) {
+        int inner = (int)((double)radius / (double)ring_count);
+        int hole = (int)((double)inner * donut);
+        if (hole < 2) hole = 2;
+        fastchart_target_ellipse(t, cx, cy, hole, hole, pal.plot_bg, 1, 0);
+    }
+
+    fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
+    return 0;
+}
+
 int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *t)
 {
+    if (self->ring_count > 0) {
+        return fastchart_pie_render_rings(self, t);
+    }
     if (self->slice_count == 0) {
         zend_throw_error(NULL,
             "FastChart\\PieChart::draw() requires setSlices() with one or more positive values");
@@ -123,9 +203,23 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
 	}
 
 	int radius = diameter / 2;
-    double start_deg = -90.0;  /* 12 o'clock */
+
+    /* Sweep window from setStartAngle/setEndAngle. Default 0..360 maps
+     * to a full pie starting at 12 o'clock (-90). A narrower window
+     * (e.g. 0..180) draws a semi-circle, rotated by the start offset.
+     * A degenerate or oversized span falls back to the full circle. */
+    double pie_span = self->pie_end_deg - self->pie_start_deg;
+    double pie_base;
+    if (!(pie_span > 0.0) || pie_span > 360.0) {
+        pie_span = 360.0;
+        pie_base = -90.0;
+    } else {
+        pie_base = -90.0 + self->pie_start_deg;
+    }
+
+    double start_deg = pie_base;
     for (int i = 0; i < n_slices; i++) {
-        double sweep = 360.0 * (slices[i].value / total);
+        double sweep = pie_span * (slices[i].value / total);
         int color = slice_colors[i];
         double s_deg = floor(start_deg);
         double e_deg = ceil(start_deg + sweep);
@@ -217,9 +311,9 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
         double inside_r = (diameter / 2.0) * inside_frac;
         double outside_r = (diameter / 2.0) + 14.0;
 
-        start_deg = -90.0;
+        start_deg = pie_base;
         for (int i = 0; i < n_slices; i++) {
-            double sweep = 360.0 * (slices[i].value / total);
+            double sweep = pie_span * (slices[i].value / total);
             if (sweep < 4.0) { start_deg += sweep; continue; }
 
             double mid_rad = (start_deg + sweep / 2.0) * M_PI / 180.0;
