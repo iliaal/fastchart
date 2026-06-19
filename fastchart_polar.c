@@ -30,6 +30,18 @@
  * 512 silently dropped half of an at-cap series. */
 #define MAX_POLAR_POINTS FASTCHART_MAX_POLAR_POINTS
 
+/* Cap a scaled pixel radius before the float-to-int cast. setMaxRadius()
+ * may be set far below the data radii, so radius*r/rmax can exceed INT_MAX
+ * and the (int) cast would be float-cast-overflow UB. Data past a few plot
+ * radii is off-canvas anyway, so saturate instead. */
+static double polar_clamp_radius(double rr, double radius)
+{
+    double lim = radius * 8.0;
+    if (rr > lim) return lim;
+    if (rr < -lim) return -lim;
+    return rr;
+}
+
 int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target_t *t)
 {
     if (self->n_series == 0) {
@@ -110,7 +122,8 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
                     : a0 + 360.0 / (double)upto;
                 double r = series[s].radii[i];
                 if (r <= 0) continue;
-                int rr_px = (int)((double)radius * r / rmax);
+                int rr_px = (int)polar_clamp_radius((double)radius * r / rmax,
+                                                    (double)radius);
                 /* libgd arc angles are clockwise with 0° at 3-o'clock;
                  * our angles are CCW math angles. Convert by negating
                  * and adding 360 so the renderer draws the wedge oriented
@@ -139,7 +152,7 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
             double a = series[s].angles[i];
             double r = series[s].radii[i];
             double rad = a * M_PI / 180.0;
-            double rr = radius * r / rmax;
+            double rr = polar_clamp_radius(radius * r / rmax, radius);
             raw[n_raw].x = cx + (int)(rr * cos(rad));
             raw[n_raw].y = cy - (int)(rr * sin(rad));
             n_raw++;
@@ -238,8 +251,8 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
             const fastchart_polar_vector *v = &self->vectors[i];
             double a0 = v->angle * M_PI / 180.0;
             double a1 = v->angle_to * M_PI / 180.0;
-            double r0 = radius * v->radius    / rmax;
-            double r1 = radius * v->radius_to / rmax;
+            double r0 = polar_clamp_radius(radius * v->radius    / rmax, radius);
+            double r1 = polar_clamp_radius(radius * v->radius_to / rmax, radius);
             int x0 = cx + (int)(r0 * cos(a0));
             int y0 = cy - (int)(r0 * sin(a0));
             int x1 = cx + (int)(r1 * cos(a1));

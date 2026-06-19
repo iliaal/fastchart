@@ -39,6 +39,18 @@ static inline double radar_read_d(const fastchart_radar_series *s, int i)
     return (d < 0 || isnan(d)) ? 0.0 : d;
 }
 
+/* Cap a scaled pixel radius before the float-to-int cast. setMaxValue()
+ * may be set far below the data, so radius*v/dmax can exceed INT_MAX and
+ * the (int) cast would be float-cast-overflow UB. Data past a few plot
+ * radii is off-canvas anyway, so saturate instead. */
+static double radar_clamp_radius(double rr, double radius)
+{
+    double lim = radius * 8.0;
+    if (rr > lim) return lim;
+    if (rr < -lim) return -lim;
+    return rr;
+}
+
 int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target_t *t)
 {
     if (self->n_series == 0) {
@@ -156,7 +168,8 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
         gdPoint poly[MAX_RADAR_AXES];
         for (int i = 0; i < n_axes; i++) {
             double v = radar_read_d(&series[s], i);
-            double rr = (double)radius * v / dmax;
+            double rr = radar_clamp_radius((double)radius * v / dmax,
+                                           (double)radius);
             poly[i].x = cx + (int)(rr * cos_a[i]);
             poly[i].y = cy + (int)(rr * sin_a[i]);
         }
