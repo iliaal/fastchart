@@ -16,7 +16,7 @@
  * the example bootstrap, the test suite, and the gallery generators
  * all probe the same distro paths. */
 
-require_once __DIR__ . '/../tests/_font_candidates.inc.php';
+require_once __DIR__ . '/../tests/_font_candidates.inc';
 
 $font = fc_pick_font();
 $dpi  = 200;
@@ -1427,6 +1427,331 @@ PHP,
                 ['href' => '/reports/2026q3', 'tooltip' => 'Q3: $21.7M'],
                 ['href' => '/reports/2026q4', 'tooltip' => 'Q4: $25.3M'],
             ]);
+    },
+];
+
+$cases[] = [
+    'label' => '34. ArcDiagram — module dependencies',
+    'ref'   => 'docs/examples/57_arc_diagram.php',
+    'code'  => <<<'PHP'
+(new FastChart\ArcDiagram(720, 320))
+    ->setTitle('Module dependencies')
+    ->setNodes([
+        ['label' => 'cli', 'color' => 0x6C8EBF], ['label' => 'config'],
+        ['label' => 'core', 'color' => 0xD79B00], ['label' => 'render'],
+        ['label' => 'codec', 'color' => 0x9673A6], ['label' => 'io'],
+    ])
+    ->setLinks([
+        ['from' => 0, 'to' => 1, 'value' => 3], ['from' => 0, 'to' => 2, 'value' => 6],
+        ['from' => 2, 'to' => 3, 'value' => 5], ['from' => 3, 'to' => 4, 'value' => 4],
+        ['from' => 4, 'to' => 5, 'value' => 2], ['from' => 3, 'to' => 1, 'value' => 1],
+    ])
+    ->setOrientation(FastChart\ArcDiagram::ORIENT_SPLIT);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\ArcDiagram(720, 320))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Module dependencies')
+            ->setNodes([
+                ['label' => 'cli', 'color' => 0x6C8EBF], ['label' => 'config'],
+                ['label' => 'core', 'color' => 0xD79B00], ['label' => 'render'],
+                ['label' => 'codec', 'color' => 0x9673A6], ['label' => 'io'],
+            ])
+            ->setLinks([
+                ['from' => 0, 'to' => 1, 'value' => 3], ['from' => 0, 'to' => 2, 'value' => 6],
+                ['from' => 2, 'to' => 3, 'value' => 5], ['from' => 3, 'to' => 4, 'value' => 4],
+                ['from' => 4, 'to' => 5, 'value' => 2], ['from' => 3, 'to' => 1, 'value' => 1],
+            ])
+            ->setOrientation(FastChart\ArcDiagram::ORIENT_SPLIT);
+    },
+];
+
+$cases[] = [
+    'label' => '35. ChordDiagram — commuter flow between districts',
+    'ref'   => 'docs/examples/58_chord_diagram.php',
+    'code'  => <<<'PHP'
+(new FastChart\ChordDiagram(560, 560))
+    ->setTitle('Commuter flow between districts')
+    ->setNodes([
+        ['label' => 'Centre', 'color' => 0xCC4444], ['label' => 'North', 'color' => 0x4477CC],
+        ['label' => 'East', 'color' => 0x44AA88], ['label' => 'West', 'color' => 0xD79B00],
+    ])
+    ->setLinks([
+        ['from' => 0, 'to' => 1, 'value' => 18], ['from' => 0, 'to' => 2, 'value' => 12],
+        ['from' => 0, 'to' => 3, 'value' => 15], ['from' => 1, 'to' => 2, 'value' => 6],
+        ['from' => 2, 'to' => 3, 'value' => 9], ['from' => 1, 'to' => 3, 'value' => 4],
+    ])
+    ->setPadAngle(3.0);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\ChordDiagram(560, 560))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Commuter flow between districts')
+            ->setNodes([
+                ['label' => 'Centre', 'color' => 0xCC4444], ['label' => 'North', 'color' => 0x4477CC],
+                ['label' => 'East', 'color' => 0x44AA88], ['label' => 'West', 'color' => 0xD79B00],
+            ])
+            ->setLinks([
+                ['from' => 0, 'to' => 1, 'value' => 18], ['from' => 0, 'to' => 2, 'value' => 12],
+                ['from' => 0, 'to' => 3, 'value' => 15], ['from' => 1, 'to' => 2, 'value' => 6],
+                ['from' => 2, 'to' => 3, 'value' => 9], ['from' => 1, 'to' => 3, 'value' => 4],
+            ])
+            ->setPadAngle(3.0);
+    },
+];
+
+$cases[] = [
+    'label' => '36. NetworkChart — force-directed collaboration graph',
+    'ref'   => 'docs/examples/59_network.php',
+    'code'  => <<<'PHP'
+(new FastChart\NetworkChart(640, 520))
+    ->setTitle('Team collaboration graph')
+    ->setNodes([
+        ['label' => 'Ana', 'color' => 0x6C8EBF], ['label' => 'Ben', 'color' => 0x6C8EBF],
+        ['label' => 'Cy', 'color' => 0x6C8EBF], ['label' => 'Dee', 'color' => 0x6C8EBF],
+        ['label' => 'Eve', 'color' => 0xD79B00],
+        ['label' => 'Fin', 'color' => 0x82B366], ['label' => 'Gus', 'color' => 0x82B366],
+        ['label' => 'Hana', 'color' => 0x82B366],
+    ])
+    ->setLinks([
+        ['from' => 0, 'to' => 1, 'value' => 3], ['from' => 0, 'to' => 2, 'value' => 2],
+        ['from' => 1, 'to' => 3, 'value' => 2], ['from' => 2, 'to' => 3, 'value' => 1],
+        ['from' => 3, 'to' => 4, 'value' => 4], ['from' => 4, 'to' => 5, 'value' => 4],
+        ['from' => 5, 'to' => 6, 'value' => 2], ['from' => 5, 'to' => 7, 'value' => 3],
+        ['from' => 6, 'to' => 7, 'value' => 2],
+    ])
+    ->setSeed(7)->setIterations(400);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\NetworkChart(640, 520))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Team collaboration graph')
+            ->setNodes([
+                ['label' => 'Ana', 'color' => 0x6C8EBF], ['label' => 'Ben', 'color' => 0x6C8EBF],
+                ['label' => 'Cy', 'color' => 0x6C8EBF], ['label' => 'Dee', 'color' => 0x6C8EBF],
+                ['label' => 'Eve', 'color' => 0xD79B00],
+                ['label' => 'Fin', 'color' => 0x82B366], ['label' => 'Gus', 'color' => 0x82B366],
+                ['label' => 'Hana', 'color' => 0x82B366],
+            ])
+            ->setLinks([
+                ['from' => 0, 'to' => 1, 'value' => 3], ['from' => 0, 'to' => 2, 'value' => 2],
+                ['from' => 1, 'to' => 3, 'value' => 2], ['from' => 2, 'to' => 3, 'value' => 1],
+                ['from' => 3, 'to' => 4, 'value' => 4], ['from' => 4, 'to' => 5, 'value' => 4],
+                ['from' => 5, 'to' => 6, 'value' => 2], ['from' => 5, 'to' => 7, 'value' => 3],
+                ['from' => 6, 'to' => 7, 'value' => 2],
+            ])
+            ->setSeed(7)->setIterations(400);
+    },
+];
+
+$cases[] = [
+    'label' => '37. PopulationPyramid — age and sex breakdown',
+    'ref'   => 'docs/examples/60_population_pyramid.php',
+    'code'  => <<<'PHP'
+(new FastChart\PopulationPyramid(680, 460))
+    ->setTitle('Population by age and sex (%)')
+    ->setCategories(['0-9','10-19','20-29','30-39','40-49','50-59','60-69','70+'])
+    ->setLeftSeries(['label' => 'Male', 'color' => 0x3366CC,
+        'data' => [6.1, 6.4, 7.2, 7.0, 6.3, 5.4, 3.9, 2.6]])
+    ->setRightSeries(['label' => 'Female', 'color' => 0xCC3366,
+        'data' => [5.8, 6.1, 6.9, 6.8, 6.2, 5.6, 4.3, 3.4]]);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\PopulationPyramid(680, 460))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Population by age and sex (%)')
+            ->setCategories(['0-9', '10-19', '20-29', '30-39', '40-49', '50-59', '60-69', '70+'])
+            ->setLeftSeries(['label' => 'Male', 'color' => 0x3366CC,
+                'data' => [6.1, 6.4, 7.2, 7.0, 6.3, 5.4, 3.9, 2.6]])
+            ->setRightSeries(['label' => 'Female', 'color' => 0xCC3366,
+                'data' => [5.8, 6.1, 6.9, 6.8, 6.2, 5.6, 4.3, 3.4]]);
+    },
+];
+
+$cases[] = [
+    'label' => '38. ViolinPlot — request latency distribution',
+    'ref'   => 'docs/examples/61_violin.php',
+    'code'  => <<<'PHP'
+/* $samples() draws deterministic gaussian values (Box-Muller, fixed seed). */
+(new FastChart\ViolinPlot(680, 420))
+    ->setTitle('Request latency by service (ms)')
+    ->setGroups([
+        ['label' => 'auth', 'color' => 0x44AA88, 'values' => $samples(48, 9, 240)],
+        ['label' => 'catalog', 'color' => 0x6C8EBF, 'values' => $samples(72, 6, 240)],
+        ['label' => 'search', 'color' => 0xD79B00, 'values' => $samples(60, 16, 200)],
+    ]);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        mt_srand(20260618);
+        $samples = function (float $mu, float $sd, int $n): array {
+            $v = [];
+            for ($i = 0; $i < $n; $i++) {
+                $u1 = (mt_rand() + 1) / (mt_getrandmax() + 1);
+                $u2 = (mt_rand() + 1) / (mt_getrandmax() + 1);
+                $v[] = $mu + $sd * sqrt(-2 * log($u1)) * cos(2 * M_PI * $u2);
+            }
+            return $v;
+        };
+        return (new FastChart\ViolinPlot(680, 420))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Request latency by service (ms)')
+            ->setGroups([
+                ['label' => 'auth', 'color' => 0x44AA88, 'values' => $samples(48, 9, 240)],
+                ['label' => 'catalog', 'color' => 0x6C8EBF, 'values' => $samples(72, 6, 240)],
+                ['label' => 'search', 'color' => 0xD79B00, 'values' => $samples(60, 16, 200)],
+            ]);
+    },
+];
+
+$cases[] = [
+    'label' => '39. CirclePacking — source size by package',
+    'ref'   => 'docs/examples/62_circle_packing.php',
+    'code'  => <<<'PHP'
+(new FastChart\CirclePacking(560, 560))
+    ->setTitle('Source size by package (LOC)')
+    ->setHierarchy(['label' => 'src', 'children' => [
+        ['label' => 'render', 'color' => 0x6C8EBF, 'children' => [
+            ['label' => 'svg', 'value' => 34], ['label' => 'target', 'value' => 40],
+            ['label' => 'text', 'value' => 12]]],
+        ['label' => 'charts', 'color' => 0x82B366, 'children' => [
+            ['label' => 'line', 'value' => 9], ['label' => 'bar', 'value' => 30],
+            ['label' => 'stock', 'value' => 39], ['label' => 'pie', 'value' => 13]]],
+        ['label' => 'codec', 'color' => 0xD79B00, 'children' => [
+            ['label' => 'png', 'value' => 16], ['label' => 'webp', 'value' => 8]]],
+    ]]);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\CirclePacking(560, 560))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Source size by package (LOC)')
+            ->setHierarchy(['label' => 'src', 'children' => [
+                ['label' => 'render', 'color' => 0x6C8EBF, 'children' => [
+                    ['label' => 'svg', 'value' => 34], ['label' => 'target', 'value' => 40],
+                    ['label' => 'text', 'value' => 12]]],
+                ['label' => 'charts', 'color' => 0x82B366, 'children' => [
+                    ['label' => 'line', 'value' => 9], ['label' => 'bar', 'value' => 30],
+                    ['label' => 'stock', 'value' => 39], ['label' => 'pie', 'value' => 13]]],
+                ['label' => 'codec', 'color' => 0xD79B00, 'children' => [
+                    ['label' => 'png', 'value' => 16], ['label' => 'webp', 'value' => 8]]],
+            ]]);
+    },
+];
+
+$cases[] = [
+    'label' => '40. Pictogram — pictorial fraction',
+    'ref'   => 'docs/examples/63_pictogram.php',
+    'code'  => <<<'PHP'
+(new FastChart\Pictogram(560, 280))
+    ->setTitle('73% of users enabled 2FA')
+    ->setTotal(100)->setValue(73)
+    ->setIconCount(100)->setColumns(10)
+    ->setShape(FastChart\Pictogram::SHAPE_PERSON)
+    ->setFillColor(0x2E7D32)->setEmptyColor(0xD7DCE0);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\Pictogram(560, 280))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('73% of users enabled 2FA')
+            ->setTotal(100)->setValue(73)
+            ->setIconCount(100)->setColumns(10)
+            ->setShape(FastChart\Pictogram::SHAPE_PERSON)
+            ->setFillColor(0x2E7D32)->setEmptyColor(0xD7DCE0);
+    },
+];
+
+$cases[] = [
+    'label' => '41. VennDiagram — skill overlap across roles',
+    'ref'   => 'docs/examples/64_venn.php',
+    'code'  => <<<'PHP'
+(new FastChart\VennDiagram(560, 480))
+    ->setTitle('Skill overlap across roles')
+    ->setSets([
+        ['label' => 'Backend', 'size' => 120, 'color' => 0xCC4444],
+        ['label' => 'Frontend', 'size' => 100, 'color' => 0x4477CC],
+        ['label' => 'DevOps', 'size' => 80, 'color' => 0x44AA88],
+    ])
+    ->setIntersections([
+        ['sets' => [0, 1], 'size' => 30], ['sets' => [0, 2], 'size' => 28],
+        ['sets' => [1, 2], 'size' => 18],
+    ]);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\VennDiagram(560, 480))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Skill overlap across roles')
+            ->setSets([
+                ['label' => 'Backend', 'size' => 120, 'color' => 0xCC4444],
+                ['label' => 'Frontend', 'size' => 100, 'color' => 0x4477CC],
+                ['label' => 'DevOps', 'size' => 80, 'color' => 0x44AA88],
+            ])
+            ->setIntersections([
+                ['sets' => [0, 1], 'size' => 30], ['sets' => [0, 2], 'size' => 28],
+                ['sets' => [1, 2], 'size' => 18],
+            ]);
+    },
+];
+
+$cases[] = [
+    'label' => '42. WordCloud — issue tags by frequency',
+    'ref'   => 'docs/examples/65_wordcloud.php',
+    'code'  => <<<'PHP'
+(new FastChart\WordCloud(680, 420))
+    ->setTitle('Issue tags by frequency')
+    ->setWords([
+        ['text' => 'rendering', 'weight' => 42, 'color' => 0x2266CC],
+        ['text' => 'performance', 'weight' => 38], ['text' => 'svg', 'weight' => 31, 'color' => 0xD79B00],
+        ['text' => 'memory', 'weight' => 28], ['text' => 'fonts', 'weight' => 24, 'color' => 0x82B366],
+        ['text' => 'webp', 'weight' => 19], ['text' => 'api', 'weight' => 22],
+        ['text' => 'docs', 'weight' => 16], ['text' => 'build', 'weight' => 14, 'color' => 0x9673A6],
+        ['text' => 'tests', 'weight' => 18], ['text' => 'pdf', 'weight' => 11],
+        ['text' => 'color', 'weight' => 13], ['text' => 'axis', 'weight' => 9],
+        ['text' => 'legend', 'weight' => 7],
+    ]);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\WordCloud(680, 420))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Issue tags by frequency')
+            ->setWords([
+                ['text' => 'rendering', 'weight' => 42, 'color' => 0x2266CC],
+                ['text' => 'performance', 'weight' => 38], ['text' => 'svg', 'weight' => 31, 'color' => 0xD79B00],
+                ['text' => 'memory', 'weight' => 28], ['text' => 'fonts', 'weight' => 24, 'color' => 0x82B366],
+                ['text' => 'webp', 'weight' => 19], ['text' => 'api', 'weight' => 22],
+                ['text' => 'docs', 'weight' => 16], ['text' => 'build', 'weight' => 14, 'color' => 0x9673A6],
+                ['text' => 'tests', 'weight' => 18], ['text' => 'pdf', 'weight' => 11],
+                ['text' => 'color', 'weight' => 13], ['text' => 'axis', 'weight' => 9],
+                ['text' => 'legend', 'weight' => 7],
+            ]);
+    },
+];
+
+$cases[] = [
+    'label' => '43. SerpentineTimeline — release roadmap',
+    'ref'   => 'docs/examples/66_serpentine_timeline.php',
+    'code'  => <<<'PHP'
+(new FastChart\SerpentineTimeline(720, 420))
+    ->setTitle('Release roadmap')
+    ->setEvents([
+        ['label' => 'Kickoff', 'date' => 'Jan', 'color' => 0x6C8EBF],
+        ['label' => 'Prototype', 'date' => 'Feb'], ['label' => 'Alpha', 'date' => 'Mar', 'color' => 0xD79B00],
+        ['label' => 'Beta', 'date' => 'May'], ['label' => 'RC', 'date' => 'Jun', 'color' => 0x82B366],
+        ['label' => 'GA', 'date' => 'Jul'], ['label' => 'v1.1', 'date' => 'Sep'],
+        ['label' => 'v1.2', 'date' => 'Nov', 'color' => 0x9673A6],
+    ])
+    ->setColumns(4);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\SerpentineTimeline(720, 420))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Release roadmap')
+            ->setEvents([
+                ['label' => 'Kickoff', 'date' => 'Jan', 'color' => 0x6C8EBF],
+                ['label' => 'Prototype', 'date' => 'Feb'], ['label' => 'Alpha', 'date' => 'Mar', 'color' => 0xD79B00],
+                ['label' => 'Beta', 'date' => 'May'], ['label' => 'RC', 'date' => 'Jun', 'color' => 0x82B366],
+                ['label' => 'GA', 'date' => 'Jul'], ['label' => 'v1.1', 'date' => 'Sep'],
+                ['label' => 'v1.2', 'date' => 'Nov', 'color' => 0x9673A6],
+            ])
+            ->setColumns(4);
     },
 ];
 

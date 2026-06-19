@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Ten new chart classes, taking the catalog from 26 to 36, all under the
+  `FastChart\` namespace and rendering through the existing
+  SVG-canonical pipeline (SVG / PNG / JPEG / WebP):
+  - **Graph family** over a shared `setNodes()` / `setLinks()` data model:
+    `ArcDiagram` (semicircular link arcs on a baseline, `ORIENT_UP` /
+    `_DOWN` / `_SPLIT`), `ChordDiagram` (radial node arcs with bezier
+    ribbons, `setPadAngle()`), and `NetworkChart` (force-directed
+    Fruchterman-Reingold layout; deterministic via `setSeed()` /
+    `setIterations()`).
+  - **Statistical:** `PopulationPyramid` (back-to-back diverging bars,
+    `setCategories()` / `setLeftSeries()` / `setRightSeries()`) and
+    `ViolinPlot` (gaussian KDE with Silverman bandwidth and median tick,
+    `setGroups()`).
+  - **Hierarchy:** `CirclePacking` (nested value-sized circles,
+    `setHierarchy()`).
+  - **Infographic:** `Pictogram` (fractional icon fill via clip;
+    `SHAPE_SQUARE` / `_CIRCLE` / `_PERSON`), `VennDiagram` (2–3 sets with
+    numerically area-fitted overlaps, `setSets()` / `setIntersections()`),
+    `WordCloud` (deterministic weighted spiral placement, `setWords()`),
+    and `SerpentineTimeline` (boustrophedon event path, `setEvents()`).
+
+### Fixed
+
+- Gallery generators (`scripts/build-v1-gallery.php`,
+  `scripts/build-readme-gallery.php`): corrected a stale `require` of
+  `tests/_font_candidates.inc.php` left behind when the helper was
+  renamed to `tests/_font_candidates.inc`.
+
 ## [1.3.0] - 2026-06-16
 
 ### Added
