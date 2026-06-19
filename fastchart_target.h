@@ -271,6 +271,13 @@ void fastchart_target_polygon(fastchart_target_t *t,
                                const fastchart_point_t *pts, int n,
                                int color, int fill, int thickness);
 
+/* Open stroked path through n points (no closing edge, no fill). For SVG
+ * this is one <polyline> element rather than n-1 <line> elements, which
+ * matters for curves sampled into many segments (e.g. chord links). */
+void fastchart_target_polyline(fastchart_target_t *t,
+                                const fastchart_point_t *pts, int n,
+                                int color, int thickness);
+
 void fastchart_target_arc(fastchart_target_t *t,
                            int cx, int cy, int rx, int ry,
                            double start_deg, double end_deg,

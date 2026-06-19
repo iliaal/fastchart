@@ -383,6 +383,29 @@ void fc_svg_emit_polygon(smart_str *buf,
     FC_APPENDS(buf, "/>\n");
 }
 
+void fc_svg_emit_polyline(smart_str *buf,
+                           const int *xs, const int *ys, int n,
+                           uint32_t rgba, int thickness)
+{
+    if (n < 2) return;
+    FC_APPENDS(buf, "<polyline points=\"");
+    for (int i = 0; i < n; i++) {
+        if (i) smart_str_appendc(buf, ' ');
+        smart_str_append_long(buf, xs[i]);
+        smart_str_appendc(buf, ',');
+        smart_str_append_long(buf, ys[i]);
+    }
+    FC_APPENDS(buf, "\" fill=\"none\" stroke=\"");
+    fc_svg_fmt_color(buf, rgba);
+    smart_str_appendc(buf, '"');
+    if (thickness > 1) {
+        FC_APPENDS(buf, " stroke-width=\"");
+        smart_str_append_long(buf, thickness);
+        smart_str_appendc(buf, '"');
+    }
+    FC_APPENDS(buf, "/>\n");
+}
+
 void fc_svg_emit_ellipse(smart_str *buf,
                           double cx, double cy, double rx, double ry,
                           uint32_t rgba, int fill, int thickness)

@@ -212,11 +212,10 @@ int fastchart_chord_render_to_target(fastchart_chord_obj *self, fastchart_target
             int thickness = (int)(1.0 + (lk->value / max_val) * 8.0);
             if (thickness < 1) thickness = 1;
             int stroke = fastchart_target_color(t, cr, cg, cb, 200);
-            for (int s = 0; s + 1 < n; s++) {
-                fastchart_target_line(t, poly[s].x, poly[s].y,
-                                      poly[s + 1].x, poly[s + 1].y,
-                                      stroke, thickness, FASTCHART_DASH_SOLID);
-            }
+            /* One <polyline> per link instead of n-1 <line> elements: at
+             * the link cap this is the difference between a few thousand
+             * SVG elements and a few hundred thousand. */
+            fastchart_target_polyline(t, poly, n, stroke, thickness);
         }
     }
 
