@@ -89,6 +89,10 @@ static inline double chart_dpi_scale(const fastchart_obj *chart,
 
 int fastchart_zval_to_double(zval *zv, double *out)
 {
+    /* A value pulled from a user array can be an IS_REFERENCE wrapper
+     * (e.g. the array was walked with `foreach ($a as &$v)`); deref so
+     * the scalar check sees the referenced number, not the reference. */
+    ZVAL_DEREF(zv);
     switch (Z_TYPE_P(zv)) {
         case IS_DOUBLE:
             if (!isfinite(Z_DVAL_P(zv))) return -1;
@@ -108,6 +112,7 @@ int fastchart_zval_to_double(zval *zv, double *out)
  * 2038 round-trip correctly on every PHP-supported platform. */
 int fastchart_zval_to_long(zval *zv, zend_long *out)
 {
+    ZVAL_DEREF(zv);
     switch (Z_TYPE_P(zv)) {
         case IS_LONG:
             *out = Z_LVAL_P(zv);
@@ -1157,9 +1162,12 @@ static void format_tick_label(double value, double step, char *out, size_t out_n
 void fastchart_format_tick_label_user(double value, const zend_string *fmt,
                                       char *out, size_t out_n)
 {
-    /* Trust the user's sprintf string; we already rejected embedded
-     * NULs at setter time. The callers always pass a small fixed
-     * buffer so a runaway format truncates rather than overruns. */
+    /* The user's format string was validated at setter time by
+     * fastchart_validate_double_format(): it rejects dangerous
+     * conversions (%n, %s), length modifiers, multiple conversions, and
+     * excessive width/precision, and embedded NULs, leaving only a
+     * single safe floating-point conversion. Callers also pass a small
+     * fixed buffer, so a wide format truncates rather than overruns. */
     snprintf(out, out_n, ZSTR_VAL(fmt), value);
 }
 

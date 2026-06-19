@@ -4,6 +4,15 @@
 
 namespace FastChart;
 
+/**
+ * Chart objects carry their entire state in a native C struct, not in
+ * PHP properties. Dynamic properties would be silently dropped from
+ * every render, and serialize() would emit a state-less husk that
+ * unserializes into a blank chart. Forbid both so misuse fails loudly.
+ *
+ * @strict-properties
+ * @not-serializable
+ */
 abstract class Chart
 {
     public const int THEME_LIGHT = 0;
@@ -768,6 +777,7 @@ abstract class Chart
     public function getImageMapAreas(): array {}
 }
 
+/** @strict-properties */
 final class LineChart extends Chart
 {
     public function setSeries(array $series): static {}
@@ -785,6 +795,7 @@ final class LineChart extends Chart
 
 }
 
+/** @strict-properties */
 final class AreaChart extends Chart
 {
     /**
@@ -828,6 +839,7 @@ final class AreaChart extends Chart
 
 }
 
+/** @strict-properties */
 final class BarChart extends Chart
 {
     /** Orientation for setOrientation(). */
@@ -887,6 +899,7 @@ final class BarChart extends Chart
 
 }
 
+/** @strict-properties */
 final class PieChart extends Chart
 {
     /**
@@ -954,6 +967,7 @@ final class PieChart extends Chart
 
 }
 
+/** @strict-properties */
 final class ScatterChart extends Chart
 {
     public function setPoints(array $points): static {}
@@ -979,6 +993,7 @@ final class ScatterChart extends Chart
 
 }
 
+/** @strict-properties */
 final class StockChart extends Chart
 {
     /** Moving-average kind passed to addMovingAverage(). */
@@ -1190,6 +1205,7 @@ final class StockChart extends Chart
 /**
  * Spider / radar chart. Each axis radiates from the center; one
  * polygon per series threads its values across all axes.
+  * @strict-properties
  */
 final class RadarChart extends Chart
 {
@@ -1215,6 +1231,7 @@ final class RadarChart extends Chart
 /**
  * Bubble chart. Each point is `[x, y, size]`, optionally
  * `[x, y, size, color]`. Size is a positive radius in pixels.
+  * @strict-properties
  */
 final class BubbleChart extends Chart
 {
@@ -1225,6 +1242,7 @@ final class BubbleChart extends Chart
  * Surface / heatmap. Data is a 2D array (rows of columns) of numeric
  * values. Each cell is colored by its value via a configurable color
  * ramp.
+  * @strict-properties
  */
 final class SurfaceChart extends Chart
 {
@@ -1244,6 +1262,7 @@ final class SurfaceChart extends Chart
 /**
  * Gauge / dial readout: a single value within `[min, max]`, drawn as
  * a 180° arc with a needle. Optional colored zones partition the arc.
+  * @strict-properties
  */
 final class GaugeChart extends Chart
 {
@@ -1285,6 +1304,7 @@ final class GaugeChart extends Chart
  * start and end timestamp, an optional color, and an optional list
  * of dependency-task indices that draw an arrow from the dependency
  * task's end to this task's start.
+  * @strict-properties
  */
 final class GanttChart extends Chart
 {
@@ -1311,6 +1331,7 @@ final class GanttChart extends Chart
  * Box-and-whisker plot. Each category renders a box from Q1..Q3
  * with a median line and whiskers extending to the min/max, plus
  * optional outlier dots.
+  * @strict-properties
  */
 final class BoxPlot extends Chart
 {
@@ -1332,6 +1353,7 @@ final class BoxPlot extends Chart
 /**
  * Polar plot: continuous angular coordinate (radar's parent shape).
  * Points are `[angle_deg, radius]` and connect into a polygon.
+  * @strict-properties
  */
 final class PolarChart extends Chart
 {
@@ -1390,6 +1412,7 @@ final class PolarChart extends Chart
  * Contour plot: isolines drawn through a 2D grid of values.
  * Each level produces a closed-or-open curve where the grid value
  * equals that level (marching-squares algorithm).
+  * @strict-properties
  */
 final class ContourChart extends Chart
 {
@@ -1418,6 +1441,7 @@ final class ContourChart extends Chart
  * The squarify algorithm (Bruls / Huijsen / van Wijk) optimises
  * cell aspect ratios so cells stay close to square. Items with
  * non-positive `value` are silently dropped at setItems().
+  * @strict-properties
  */
 final class Treemap extends Chart
 {
@@ -1444,6 +1468,7 @@ final class Treemap extends Chart
  * Funnel chart: descending stacked horizontal trapezoids. Each
  * stage's width is proportional to its value relative to the
  * largest stage. Common use: conversion funnels, drop-off rates.
+  * @strict-properties
  */
 final class Funnel extends Chart
 {
@@ -1492,6 +1517,7 @@ final class Funnel extends Chart
  * step-change attribution. Each bar starts at the prior cumulative
  * and runs to cumulative + value, except `'kind' => 'total'` which
  * renders an absolute bar from zero.
+  * @strict-properties
  */
 final class Waterfall extends Chart
 {
@@ -1516,6 +1542,7 @@ final class Waterfall extends Chart
  * from `ContourChart` (which interpolates isolines through the same
  * input shape); heatmap colours each cell directly from a low/high
  * ramp, optionally writing the cell value inside.
+  * @strict-properties
  */
 final class Heatmap extends Chart
 {
@@ -1540,6 +1567,7 @@ final class Heatmap extends Chart
  * vocabulary as `GaugeChart`, rotated to a horizontal or vertical
  * bar. Useful for compact status / capacity readouts where a
  * round gauge is too tall.
+  * @strict-properties
  */
 final class LinearMeter extends Chart
 {
@@ -1575,6 +1603,7 @@ final class LinearMeter extends Chart
  * qualitative background bands and a target tick mark. Designed as
  * a compact replacement for radial gauges in dashboards. Range,
  * bands, and value units all share one scalar axis.
+  * @strict-properties
  */
 final class BulletChart extends Chart
 {
@@ -1612,6 +1641,7 @@ final class BulletChart extends Chart
  * overlay on a secondary axis. The convention is bars sorted high
  * to low at setBars() time; the cumulative line crosses 80% near
  * the few categories that explain most of the total ("80/20 rule").
+  * @strict-properties
  */
 final class ParetoChart extends Chart
 {
@@ -1643,6 +1673,7 @@ final class ParetoChart extends Chart
  * Seven day-of-week rows × N week columns; cells colored on a
  * low → high ramp like `Heatmap::setColorRamp()`. Useful for
  * activity charts, attendance, daily metrics.
+  * @strict-properties
  */
 final class CalendarHeatmap extends Chart
 {
@@ -1666,6 +1697,7 @@ final class CalendarHeatmap extends Chart
  * Sunburst (radial hierarchical donut): nested rings where each
  * ring is a level of the hierarchy and each slice's angular span is
  * proportional to its value. Children always sum to their parent.
+  * @strict-properties
  */
 final class SunburstChart extends Chart
 {
@@ -1684,6 +1716,7 @@ final class SunburstChart extends Chart
  * ribbons whose width is proportional to flow value. Suitable for
  * energy / cost / user-flow attribution where source → sink shares
  * matter more than absolute counts.
+  * @strict-properties
  */
 final class SankeyChart extends Chart
 {
@@ -1710,6 +1743,7 @@ final class SankeyChart extends Chart
  * endpoints. Shares the node/link data model with SankeyChart. Good
  * for showing relationships in a 1D ordering (sequence adjacency,
  * call graphs, co-occurrence) where a full network layout is overkill.
+  * @strict-properties
  */
 final class ArcDiagram extends Chart
 {
@@ -1753,6 +1787,7 @@ final class ArcDiagram extends Chart
  * centre. Shares the node/link data model with SankeyChart. Good for
  * dense any-to-any relationship matrices (migration flows, trade,
  * co-occurrence) where a left-to-right Sankey would tangle.
+  * @strict-properties
  */
 final class ChordDiagram extends Chart
 {
@@ -1812,6 +1847,7 @@ final class ChordDiagram extends Chart
  * PRNG and the iteration count is fixed, so identical input + `setSeed()`
  * + `setIterations()` always produce identical output. Change the seed
  * to explore alternative settled arrangements of the same graph.
+  * @strict-properties
  */
 final class NetworkChart extends Chart
 {
@@ -1855,6 +1891,7 @@ final class NetworkChart extends Chart
  * axis, the other right; category labels sit in the centre. The classic
  * demographic age/sex pyramid, also useful for any back-to-back
  * comparison of two groups across the same categories.
+  * @strict-properties
  */
 final class PopulationPyramid extends Chart
 {
@@ -1886,6 +1923,7 @@ final class PopulationPyramid extends Chart
  * the violin silhouette, with the median marked. Bandwidth follows
  * Silverman's rule. Shows distribution shape (modes, skew, spread) that
  * a box plot's five-number summary hides.
+  * @strict-properties
  */
 final class ViolinPlot extends Chart
 {
@@ -1904,6 +1942,7 @@ final class ViolinPlot extends Chart
  * sized so area tracks `value`; each parent is the enclosing circle of
  * its packed children. A compact, space-filling alternative to a treemap
  * for part-of-whole hierarchies.
+  * @strict-properties
  */
 final class CirclePacking extends Chart
 {
@@ -1922,6 +1961,7 @@ final class CirclePacking extends Chart
  * Dendrogram: a hierarchy drawn as a node-link tree. Shares CirclePacking's
  * nested-node input shape, but lays nodes out by depth (root to leaves) with
  * parent-to-child edges, the classic cluster/linkage view.
+  * @strict-properties
  */
 final class Dendrogram extends Chart
 {
@@ -1955,6 +1995,7 @@ final class Dendrogram extends Chart
  * nested-node input shape; each depth level is a band, and a node's span is
  * subdivided among its children in proportion to their leaf-value sums.
  * ORIENT_VERTICAL is the icicle variant (depth grows downward).
+  * @strict-properties
  */
 final class Partition extends Chart
 {
@@ -1981,6 +2022,7 @@ final class Partition extends Chart
  * share of a total is shown by filling that fraction of the icons left
  * to right; the boundary icon is partially filled so fractional values
  * read precisely. The "7 in 10 people" infographic style.
+  * @strict-properties
  */
 final class Pictogram extends Chart
 {
@@ -2023,6 +2065,7 @@ final class Pictogram extends Chart
  * area matches the requested intersection; circles blend through
  * translucent fills. Capped at 3 sets — exact area-proportional layout
  * has no general solution beyond that.
+  * @strict-properties
  */
 final class VennDiagram extends Chart
 {
@@ -2058,6 +2101,7 @@ final class VennDiagram extends Chart
  * collide with an already-placed word. Layout is deterministic. Word
  * orientation is selectable via setOrientation(): horizontal, vertical,
  * or ORIENT_MIXED.
+  * @strict-properties
  */
 final class WordCloud extends Chart
 {
@@ -2091,6 +2135,7 @@ final class WordCloud extends Chart
  * each line (boustrophedon), so the connecting path snakes back and
  * forth and a long ordered sequence fits a compact rectangle. Good for
  * roadmaps, process steps, and chronologies.
+  * @strict-properties
  */
 final class SerpentineTimeline extends Chart
 {
@@ -2116,6 +2161,7 @@ final class SerpentineTimeline extends Chart
  * within each column are proportional to component values. Reads
  * the entire data set as a percent breakdown both horizontally and
  * vertically.
+  * @strict-properties
  */
 final class MarimekkoChart extends Chart
 {
@@ -2134,6 +2180,7 @@ final class MarimekkoChart extends Chart
  * with a (dx, dy) component pair; arrows render at the anchor
  * pointing in the (dx, dy) direction with length proportional to
  * magnitude. Optional color ramp drives arrow color from magnitude.
+  * @strict-properties
  */
 final class VectorChart extends Chart
 {
@@ -2162,6 +2209,10 @@ final class VectorChart extends Chart
  *
  * Symbol does not extend `Chart`; the two hierarchies share no state
  * (axes, palettes, plot rect, font cache do not apply to symbologies).
+ * Like Chart, all state lives in a native C struct.
+ *
+ * @strict-properties
+ * @not-serializable
  */
 abstract class Symbol
 {
@@ -2291,6 +2342,7 @@ abstract class Barcode extends Symbol
  * length; mod-103 checksum is appended automatically. ISO/IEC 15417.
  *
  * Default canvas size when `setSize()` is not called: 300x80.
+  * @strict-properties
  */
 final class Code128 extends Barcode
 {
@@ -2319,6 +2371,7 @@ final class Code128 extends Barcode
  * embedded NULs) but produce QR symbols that decode back to garbage
  * or unspecified bytes. If you need to encode arbitrary binary data,
  * base64-encode upstream and decode after scan.
+  * @strict-properties
  */
 final class QrCode extends Symbol
 {

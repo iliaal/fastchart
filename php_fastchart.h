@@ -1370,6 +1370,7 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
  * carry an explicit length) is what we're guarding against. */
 static inline const char *fastchart_label_or_null(const zval *zv)
 {
+    if (zv && Z_TYPE_P(zv) == IS_REFERENCE) zv = Z_REFVAL_P(zv);
     if (!zv || Z_TYPE_P(zv) != IS_STRING) return NULL;
     if (memchr(Z_STRVAL_P(zv), 0, Z_STRLEN_P(zv)) != NULL) return NULL;
     return Z_STRVAL_P(zv);

@@ -63,6 +63,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Array data setters now accept arrays carrying PHP references. A series,
+  point, slice, link, or hierarchy array that had been walked with
+  `foreach ($a as &$v)` (which leaves `IS_REFERENCE` buckets) previously
+  failed to parse — silently dropping values or throwing "found no
+  numeric values". The shared scalar converters, the string/label
+  reader, and every parser's array/string structure checks now
+  dereference user buckets first.
+
+### Changed
+
+- `Chart` and `Symbol` objects (and all their subclasses) now forbid
+  dynamic properties (`@strict-properties`) and serialization
+  (`@not-serializable`). Their state lives in a native C struct, so a
+  stray property assignment was silently dropped from every render and
+  `serialize()` emitted a state-less husk; both now fail loudly.
+
+### Fixed
+
 - `Funnel::setStyle(STYLE_CONE)` left thin white crescents between
   bands: each band's front-facing arcs were depthed from the band's
   average half-width, so a shared boundary got two mismatched arc

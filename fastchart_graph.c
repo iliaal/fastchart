@@ -39,6 +39,7 @@ int fastchart_graph_parse_nodes(zval *arr, int max,
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (kept >= n) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) {
             parsed[kept].label = NULL;
             parsed[kept].color_rgb = -1;
@@ -51,6 +52,7 @@ int fastchart_graph_parse_nodes(zval *arr, int max,
         parsed[kept].label = lbl ? estrdup(lbl) : NULL;
         parsed[kept].color_rgb = -1;
         zval *zc = zend_hash_str_find(eht, "color", sizeof("color") - 1);
+        if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) parsed[kept].color_rgb = (int)c;
@@ -79,12 +81,15 @@ int fastchart_graph_parse_links(zval *arr, int node_count, int max,
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (kept >= n) break;
+        if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
         zval *zf = zend_hash_str_find(eht, "from",  sizeof("from")  - 1);
         zval *zt = zend_hash_str_find(eht, "to",    sizeof("to")    - 1);
         zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
         if (!zf || !zt || !zv) continue;
+        ZVAL_DEREF(zf);
+        ZVAL_DEREF(zt);
         if (Z_TYPE_P(zf) != IS_LONG || Z_TYPE_P(zt) != IS_LONG) continue;
         zend_long from = Z_LVAL_P(zf), to = Z_LVAL_P(zt);
         double val;
