@@ -150,9 +150,13 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
             /* CONE bands must share an exact boundary y with the next
              * band so their front-facing arcs coincide. The 1px inset
              * that keeps flat PYRAMID trapezoids from overlapping would
-             * leave a white crescent between cone bands, so skip it. */
+             * leave a white crescent between cone bands, so skip it. The
+             * yb<=yt bump is likewise pyramid-only: a sub-pixel band
+             * would otherwise move its bottom arc off the next band's
+             * top boundary (a 1px overlap). Since y_bot >= y_top, a cone
+             * band with yb==yt is a harmless flat lens that still tiles. */
             yb = (int)(y_bot + 0.5) - (cone ? 0 : 1);
-            if (yb <= yt) yb = yt + 1;
+            if (!cone && yb <= yt) yb = yt + 1;
             half_top = (int)(max_half * (y_top - y0) / total_h + 0.5);
             half_bot = (int)(max_half * (y_bot - y0) / total_h + 0.5);
             v_top = self->stages[i].value;

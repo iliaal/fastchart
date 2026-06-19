@@ -60,6 +60,24 @@ echo "stacked_smooth_valid: ", valid($stkSm) ? "yes" : "no", "\n";
 echo "stacked_smooth_polys_2: ", (substr_count($stkSm, '<polygon') === 2 ? "yes" : "no"), "\n";
 echo "stacked_smooth_differs: ", ($stkSm !== $stkLin) ? "yes" : "no", "\n";
 
+/* Degenerate single-category data: the densified curve needs >=2 points
+ * to fill, so a 1-point SMOOTH/STEP area has no band to draw. It must
+ * still render valid SVG without throwing (matching the linear path),
+ * not crash on the empty densify. */
+$one_ok = true;
+foreach ([FastChart\Chart::INTERP_SMOOTH, FastChart\Chart::INTERP_STEP_AFTER,
+          FastChart\Chart::INTERP_STEP_BEFORE] as $mode) {
+    try {
+        $svg = (new FastChart\AreaChart(300, 200))
+            ->setSeries([['data' => [5]]])
+            ->setLineInterpolation($mode)->renderSvg();
+        if (!valid($svg)) $one_ok = false;
+    } catch (\Throwable $e) {
+        $one_ok = false;
+    }
+}
+echo "single_category_no_throw: ", $one_ok ? "yes" : "no", "\n";
+
 echo "ok\n";
 ?>
 --EXPECT--
@@ -72,4 +90,5 @@ stepA_ne_stepB: yes
 stacked_smooth_valid: yes
 stacked_smooth_polys_2: yes
 stacked_smooth_differs: yes
+single_category_no_throw: yes
 ok
