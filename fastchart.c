@@ -7787,6 +7787,347 @@ ZEND_METHOD(FastChart_StockChart, addParabolicSAR)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+ZEND_METHOD(FastChart_StockChart, addVWAP)
+{
+    zend_long color = -1;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(color)
+    ZEND_PARSE_PARAMETERS_END();
+    int color_rgb = (color >= 0 && color <= 0xFFFFFF) ? (int)color : -1;
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self,
+        "FastChart\\StockChart::addVWAP()", &n);
+    if (!c) RETURN_THROWS();
+
+    /* Cumulative VWAP: running sum(typical*volume)/sum(volume), typical =
+     * (high+low+close)/3. With no usable volume, fall back to the
+     * cumulative typical-price average so the line is still meaningful. */
+    int any_vol = 0;
+    for (int i = 0; i < n; i++) {
+        if (c[i].has_volume && c[i].volume > 0) { any_vol = 1; break; }
+    }
+    double *out = emalloc((size_t)n * sizeof(double));
+    double cum_pv = 0, cum_v = 0, cum_tp = 0;
+    for (int i = 0; i < n; i++) {
+        double tp = (c[i].high + c[i].low + c[i].close) / 3.0;
+        cum_tp += tp;
+        if (any_vol) {
+            double v = (c[i].has_volume && c[i].volume > 0) ? c[i].volume : 0.0;
+            cum_pv += tp * v;
+            cum_v  += v;
+            out[i] = cum_v > 0 ? cum_pv / cum_v : tp;
+        } else {
+            out[i] = cum_tp / (double)(i + 1);
+        }
+    }
+
+    if (push_price_overlay(self, FASTCHART_OVERLAY_VWAP, out, NULL, NULL, n, color_rgb) != 0) {
+        zend_value_error(
+            "FastChart\\StockChart::addVWAP() exceeds the price-overlay cap of %d",
+            FASTCHART_MAX_PRICE_OVERLAYS);
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_StockChart, addZigZag)
+{
+    double threshold = 5.0;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_DOUBLE(threshold)
+    ZEND_PARSE_PARAMETERS_END();
+    if (!isfinite(threshold) || threshold <= 0.0) threshold = 5.0;
+    if (threshold > 100.0) threshold = 100.0;
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self,
+        "FastChart\\StockChart::addZigZag()", &n);
+    if (!c) RETURN_THROWS();
+
+    /* Percentage ZigZag on close: track the running extreme in the
+     * current leg; when price reverses by >= threshold% of the extreme,
+     * confirm the extreme as a pivot and flip direction. Non-pivot bars
+     * stay NaN and the draw connects pivot to pivot. */
+    double thr = threshold / 100.0;
+    double *out = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) out[i] = NAN;
+    out[0] = c[0].close;
+    int dir = 0, ext_idx = 0;
+    double ext = c[0].close;
+    for (int i = 1; i < n; i++) {
+        double px = c[i].close;
+        if (dir == 1) {
+            if (px > ext) { ext = px; ext_idx = i; }
+            else if (ext > 0.0 && (ext - px) >= ext * thr) {
+                out[ext_idx] = ext; dir = -1; ext = px; ext_idx = i;
+            }
+        } else if (dir == -1) {
+            if (px < ext) { ext = px; ext_idx = i; }
+            else if (ext > 0.0 && (px - ext) >= ext * thr) {
+                out[ext_idx] = ext; dir = 1; ext = px; ext_idx = i;
+            }
+        } else {
+            if (px > ext) { ext = px; ext_idx = i; dir = 1; }
+            else if (px < ext) { ext = px; ext_idx = i; dir = -1; }
+        }
+    }
+    out[ext_idx] = ext;   /* final running extreme is a pivot */
+
+    if (push_price_overlay(self, FASTCHART_OVERLAY_ZIGZAG, out, NULL, NULL, n, -1) != 0) {
+        zend_value_error(
+            "FastChart\\StockChart::addZigZag() exceeds the price-overlay cap of %d",
+            FASTCHART_MAX_PRICE_OVERLAYS);
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+/* Shared period validation for the single-arg pane indicators below. */
+static int stock_pane_period(zend_long period, int n, const char *method)
+{
+    if (period < 2 || period > FASTCHART_MAX_INDICATOR_VALUES) {
+        zend_value_error("%s period must be in [2, %d]",
+                         method, FASTCHART_MAX_INDICATOR_VALUES);
+        return -1;
+    }
+    if ((int)period >= n) {
+        zend_value_error("%s period (%d) must be < candle count (%d)",
+                         method, (int)period, n);
+        return -1;
+    }
+    return 0;
+}
+
+ZEND_METHOD(FastChart_StockChart, addATR)
+{
+    zend_long period = 14;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(period)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self,
+        "FastChart\\StockChart::addATR()", &n);
+    if (!c) RETURN_THROWS();
+    if (stock_pane_period(period, n, "FastChart\\StockChart::addATR()") != 0)
+        RETURN_THROWS();
+
+    /* Wilder's ATR: TR = max(h-l, |h-prevClose|, |l-prevClose|), then a
+     * Wilder-smoothed average of TR over `period`. */
+    int p = (int)period;
+    double *tr = emalloc((size_t)n * sizeof(double));
+    tr[0] = c[0].high - c[0].low;
+    for (int i = 1; i < n; i++) {
+        double hl = c[i].high - c[i].low;
+        double hc = fabs(c[i].high - c[i - 1].close);
+        double lc = fabs(c[i].low - c[i - 1].close);
+        double m = hl > hc ? hl : hc;
+        tr[i] = m > lc ? m : lc;
+    }
+    double *out = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) out[i] = NAN;
+    double sum = 0;
+    for (int i = 0; i < p; i++) sum += tr[i];
+    double atr = sum / (double)p;
+    out[p - 1] = atr;
+    for (int i = p; i < n; i++) {
+        atr = (atr * (double)(p - 1) + tr[i]) / (double)p;
+        out[i] = atr;
+    }
+    efree(tr);
+
+    char name[32];
+    snprintf(name, sizeof(name), "ATR(%d)", p);
+    if (push_indicator_pane(self, name, out, n, false, 0.0, true, 0.0, false, 0.0) != 0) {
+        zend_value_error(
+            "FastChart\\StockChart::addATR() exceeds the indicator-pane cap of %d",
+            FASTCHART_MAX_INDICATOR_PANES);
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_StockChart, addCCI)
+{
+    zend_long period = 20;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(period)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self,
+        "FastChart\\StockChart::addCCI()", &n);
+    if (!c) RETURN_THROWS();
+    if (stock_pane_period(period, n, "FastChart\\StockChart::addCCI()") != 0)
+        RETURN_THROWS();
+
+    /* CCI = (typical - SMA(typical)) / (0.015 * mean-abs-deviation). */
+    int p = (int)period;
+    double *tp = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) tp[i] = (c[i].high + c[i].low + c[i].close) / 3.0;
+    double *out = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) out[i] = NAN;
+    for (int i = p - 1; i < n; i++) {
+        double sum = 0;
+        for (int j = i - p + 1; j <= i; j++) sum += tp[j];
+        double sma = sum / (double)p;
+        double mad = 0;
+        for (int j = i - p + 1; j <= i; j++) mad += fabs(tp[j] - sma);
+        mad /= (double)p;
+        out[i] = mad > 0.0 ? (tp[i] - sma) / (0.015 * mad) : 0.0;
+    }
+    efree(tp);
+
+    char name[32];
+    snprintf(name, sizeof(name), "CCI(%d)", p);
+    if (push_indicator_pane(self, name, out, n, true, 0.0, false, 0.0, false, 0.0) != 0) {
+        zend_value_error(
+            "FastChart\\StockChart::addCCI() exceeds the indicator-pane cap of %d",
+            FASTCHART_MAX_INDICATOR_PANES);
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_StockChart, addWilliamsR)
+{
+    zend_long period = 14;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(period)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self,
+        "FastChart\\StockChart::addWilliamsR()", &n);
+    if (!c) RETURN_THROWS();
+    if (stock_pane_period(period, n, "FastChart\\StockChart::addWilliamsR()") != 0)
+        RETURN_THROWS();
+
+    /* Williams %R = -100 * (highestHigh - close) / (highestHigh - lowestLow). */
+    int p = (int)period;
+    double *out = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) out[i] = NAN;
+    for (int i = p - 1; i < n; i++) {
+        double hh = c[i - p + 1].high, ll = c[i - p + 1].low;
+        for (int j = i - p + 2; j <= i; j++) {
+            if (c[j].high > hh) hh = c[j].high;
+            if (c[j].low < ll)  ll = c[j].low;
+        }
+        double denom = hh - ll;
+        out[i] = denom > 0.0 ? -100.0 * (hh - c[i].close) / denom : -50.0;
+    }
+
+    char name[32];
+    snprintf(name, sizeof(name), "%%R(%d)", p);
+    if (push_indicator_pane(self, name, out, n, true, -50.0, true, -100.0, true, 0.0) != 0) {
+        zend_value_error(
+            "FastChart\\StockChart::addWilliamsR() exceeds the indicator-pane cap of %d",
+            FASTCHART_MAX_INDICATOR_PANES);
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_StockChart, addStdDev)
+{
+    zend_long period = 20;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(period)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self,
+        "FastChart\\StockChart::addStdDev()", &n);
+    if (!c) RETURN_THROWS();
+    if (stock_pane_period(period, n, "FastChart\\StockChart::addStdDev()") != 0)
+        RETURN_THROWS();
+
+    /* Rolling population standard deviation of close, sliding-window O(n). */
+    int p = (int)period;
+    double *out = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) out[i] = NAN;
+    double sum = 0, sum_sq = 0;
+    for (int i = 0; i < p; i++) {
+        sum += c[i].close;
+        sum_sq += c[i].close * c[i].close;
+    }
+    for (int i = p - 1; i < n; i++) {
+        if (i >= p) {
+            double drop = c[i - p].close, add = c[i].close;
+            sum += add - drop;
+            sum_sq += add * add - drop * drop;
+        }
+        double mean = sum / (double)p;
+        double var = sum_sq / (double)p - mean * mean;
+        if (var < 0) var = 0;
+        out[i] = sqrt(var);
+    }
+
+    char name[32];
+    snprintf(name, sizeof(name), "StdDev(%d)", p);
+    if (push_indicator_pane(self, name, out, n, false, 0.0, true, 0.0, false, 0.0) != 0) {
+        zend_value_error(
+            "FastChart\\StockChart::addStdDev() exceeds the indicator-pane cap of %d",
+            FASTCHART_MAX_INDICATOR_PANES);
+        RETURN_THROWS();
+    }
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_StockChart, addAroon)
+{
+    zend_long period = 25;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(period)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
+    int n = 0;
+    fastchart_candle *c = stock_require_candles(self,
+        "FastChart\\StockChart::addAroon()", &n);
+    if (!c) RETURN_THROWS();
+    if (stock_pane_period(period, n, "FastChart\\StockChart::addAroon()") != 0)
+        RETURN_THROWS();
+
+    /* Aroon Up/Down over the trailing period+1 window: 100 * (period -
+     * barsSinceExtreme) / period. The most recent extreme wins on ties. */
+    int p = (int)period;
+    double *up = emalloc((size_t)n * sizeof(double));
+    double *dn = emalloc((size_t)n * sizeof(double));
+    for (int i = 0; i < n; i++) up[i] = dn[i] = NAN;
+    for (int i = p; i < n; i++) {
+        int hh_idx = i - p, ll_idx = i - p;
+        double hh = c[i - p].high, ll = c[i - p].low;
+        for (int j = i - p; j <= i; j++) {
+            if (c[j].high >= hh) { hh = c[j].high; hh_idx = j; }
+            if (c[j].low  <= ll) { ll = c[j].low;  ll_idx = j; }
+        }
+        up[i] = 100.0 * (double)(p - (i - hh_idx)) / (double)p;
+        dn[i] = 100.0 * (double)(p - (i - ll_idx)) / (double)p;
+    }
+
+    char name[32];
+    snprintf(name, sizeof(name), "Aroon(%d)", p);
+    if (push_indicator_pane(self, name, up, n, false, 0.0, true, 0.0, true, 100.0) != 0) {
+        efree(dn);
+        zend_value_error(
+            "FastChart\\StockChart::addAroon() exceeds the indicator-pane cap of %d",
+            FASTCHART_MAX_INDICATOR_PANES);
+        RETURN_THROWS();
+    }
+    fastchart_indicator_pane *pane = &self->indicator_panes[self->indicator_pane_count - 1];
+    pane->values2 = dn;
+    pane->color2_rgb = -1;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 ZEND_METHOD(FastChart_Treemap, setItems)
 {
     zval *items;

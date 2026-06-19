@@ -611,6 +611,35 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                 int y = fastchart_y_to_pixel(ov->a[i], &yrange, &price_pane);
                 fastchart_target_ellipse(t, x, y, 2, 2, color, 1, 0);
             }
+        } else if (ov->kind == FASTCHART_OVERLAY_VWAP) {
+            /* One connected line; NaN warm-up breaks the line. */
+            int prev_x = 0, prev_y = 0, has_prev = 0;
+            for (int i = 0; i < ov->n; i++) {
+                if (isnan(ov->a[i])) { has_prev = 0; continue; }
+                int x = fastchart_x_time_to_pixel(&price_pane,
+                                                  candles[i].ts, t_min, t_max);
+                int y = fastchart_y_to_pixel(ov->a[i], &yrange, &price_pane);
+                if (has_prev) {
+                    fastchart_target_line(t, prev_x, prev_y, x, y,
+                                          color, 2, FASTCHART_DASH_SOLID);
+                }
+                prev_x = x; prev_y = y; has_prev = 1;
+            }
+        } else if (ov->kind == FASTCHART_OVERLAY_ZIGZAG) {
+            /* Pivot line: NaN marks non-pivot bars, so connect each
+             * pivot to the next WITHOUT breaking across the gaps. */
+            int prev_x = 0, prev_y = 0, has_prev = 0;
+            for (int i = 0; i < ov->n; i++) {
+                if (isnan(ov->a[i])) continue;
+                int x = fastchart_x_time_to_pixel(&price_pane,
+                                                  candles[i].ts, t_min, t_max);
+                int y = fastchart_y_to_pixel(ov->a[i], &yrange, &price_pane);
+                if (has_prev) {
+                    fastchart_target_line(t, prev_x, prev_y, x, y,
+                                          color, 2, FASTCHART_DASH_SOLID);
+                }
+                prev_x = x; prev_y = y; has_prev = 1;
+            }
         }
     }
 

@@ -24,7 +24,7 @@ for ($i = 0; $i < 60; $i++) {
 /* Each indicator should produce a render that differs from a
  * baseline render with no indicators — proves the pane lands and
  * draws. Only one indicator at a time so we don't blow the
- * 3-pane cap when stacking. */
+ * 6-pane cap when stacking. */
 function render_with(array $rows, ?string $kind, $arg = null): string {
     $c = (new FastChart\StockChart(560, 360))->setOhlcv($rows);
     if ($kind === 'rsi') $c->addRSI($arg ?? 14);
@@ -56,18 +56,21 @@ try {
     echo "rsi_period_eq_n: ValueError\n";
 }
 
-/* Pane cap: 3 panes max. addOBV after two existing panes still
- * fits; a fourth must reject. */
+/* Pane cap: 6 panes max. Six indicator panes fit; a seventh must
+ * reject. */
 try {
     (new FastChart\StockChart(560, 360))
         ->setOhlcv($rows)
         ->addRSI(14)
         ->addMomentum(10)
         ->addROC(10)
-        ->addOBV();
-    echo "fourth_pane: no throw (unexpected)\n";
+        ->addOBV()
+        ->addATR(14)
+        ->addCCI(20)
+        ->addWilliamsR(14);
+    echo "seventh_pane: no throw (unexpected)\n";
 } catch (\ValueError $e) {
-    echo "fourth_pane: ValueError\n";
+    echo "seventh_pane: ValueError\n";
 }
 ?>
 --EXPECT--
@@ -77,4 +80,4 @@ roc_renders: yes
 obv_renders: yes
 rsi_no_ohlcv: throws
 rsi_period_eq_n: ValueError
-fourth_pane: ValueError
+seventh_pane: ValueError
