@@ -92,6 +92,7 @@ zend_class_entry *fastchart_pictogram_ce;
 zend_class_entry *fastchart_venn_diagram_ce;
 zend_class_entry *fastchart_word_cloud_ce;
 zend_class_entry *fastchart_serpentine_timeline_ce;
+zend_class_entry *fastchart_dendrogram_ce;
 zend_class_entry *fastchart_symbol_ce;
 zend_class_entry *fastchart_barcode_ce;
 zend_class_entry *fastchart_code128_ce;
@@ -206,6 +207,7 @@ static zend_object_handlers fastchart_pictogram_handlers;
 static zend_object_handlers fastchart_venn_handlers;
 static zend_object_handlers fastchart_wordcloud_handlers;
 static zend_object_handlers fastchart_serpentine_handlers;
+static zend_object_handlers fastchart_dendrogram_handlers;
 
 /* Base lifecycle. Operates on the common-initial-sequence layout —
  * any fastchart_X_obj* aliases as fastchart_obj* for these reads /
@@ -2275,6 +2277,24 @@ static void fastchart_serpentine_addref_extras(fastchart_serpentine_obj *o)
     }
 }
 
+static void fastchart_dendrogram_init_extras(fastchart_dendrogram_obj *o)
+{
+    o->root = NULL;
+    o->node_count = 0;
+    o->style = FASTCHART_DENDRO_STYLE_TREE;
+    o->orientation = FASTCHART_DENDRO_ORIENT_TOP;
+}
+static void fastchart_dendrogram_release_extras(fastchart_dendrogram_obj *o)
+{
+    fastchart_pack_free(o->root);
+    o->root = NULL;
+    o->node_count = 0;
+}
+static void fastchart_dendrogram_addref_extras(fastchart_dendrogram_obj *o)
+{
+    o->root = fastchart_pack_clone(o->root);
+}
+
 /* Generates the create / free / clone trio for one chart class.
  * The handlers struct must already exist in static scope; MINIT
  * memcpy's std_object_handlers into it and sets offset / dtor. */
@@ -2346,6 +2366,7 @@ FASTCHART_DEFINE_LIFECYCLE(pictogram, fastchart_pictogram_obj)
 FASTCHART_DEFINE_LIFECYCLE(venn,      fastchart_venn_obj)
 FASTCHART_DEFINE_LIFECYCLE(wordcloud, fastchart_wordcloud_obj)
 FASTCHART_DEFINE_LIFECYCLE(serpentine, fastchart_serpentine_obj)
+FASTCHART_DEFINE_LIFECYCLE(dendrogram, fastchart_dendrogram_obj)
 
 /* Common locations for a sans-serif TTF that ships by default on the
  * platforms PIE supports. Probed in order; the first existing path
@@ -5670,7 +5691,9 @@ static int dispatch_svg_render(fastchart_obj *self, zend_class_entry *ce, fastch
         return fastchart_wordcloud_render_to_target((fastchart_wordcloud_obj *)self, t);
     if (ce == fastchart_serpentine_timeline_ce)
         return fastchart_serpentine_render_to_target((fastchart_serpentine_obj *)self, t);
-    /* All 36 chart families are wired above. Reaching this branch
+    if (ce == fastchart_dendrogram_ce)
+        return fastchart_dendrogram_render_to_target((fastchart_dendrogram_obj *)self, t);
+    /* All 37 chart families are wired above. Reaching this branch
      * means dispatch was invoked on a class entry the Chart base
      * doesn't acknowledge — defensive, should never happen. */
     zend_throw_error(NULL,
@@ -9372,6 +9395,66 @@ ZEND_METHOD(FastChart_SerpentineTimeline, setColumns)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+/* --- Dendrogram ----------------------------------------------------- */
+
+ZEND_METHOD(FastChart_Dendrogram, setHierarchy)
+{
+    zval *root;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_ARRAY(root)
+    ZEND_PARSE_PARAMETERS_END();
+
+    fastchart_dendrogram_obj *self = Z_FASTCHART_DENDROGRAM_OBJ_P(ZEND_THIS);
+
+    int count = 0, overflow = 0;
+    fastchart_pack_node *built =
+        fastchart_pack_build(Z_ARRVAL_P(root), 0, &count, &overflow);
+
+    /* Reuse CirclePacking's parser: build into a temporary tree and only
+     * adopt it on full success; reject pathological nesting at the setter
+     * rather than truncating silently (see CR-003). */
+    if (overflow) {
+        fastchart_pack_free(built);
+        zend_throw_error(NULL,
+            "FastChart\\Dendrogram::setHierarchy(): hierarchy nesting "
+            "exceeds the supported depth (max %d)", FASTCHART_MAX_PACK_DEPTH);
+        RETURN_THROWS();
+    }
+
+    fastchart_pack_free(self->root);
+    self->root = built;
+    self->node_count = count;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Dendrogram, setStyle)
+{
+    zend_long s;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(s)
+    ZEND_PARSE_PARAMETERS_END();
+    if (s < FASTCHART_DENDRO_STYLE_TREE || s > FASTCHART_DENDRO_STYLE_ELBOW) {
+        s = FASTCHART_DENDRO_STYLE_TREE;
+    }
+    fastchart_dendrogram_obj *self = Z_FASTCHART_DENDROGRAM_OBJ_P(ZEND_THIS);
+    self->style = s;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
+ZEND_METHOD(FastChart_Dendrogram, setOrientation)
+{
+    zend_long m;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(m)
+    ZEND_PARSE_PARAMETERS_END();
+    if (m < FASTCHART_DENDRO_ORIENT_TOP || m > FASTCHART_DENDRO_ORIENT_LEFT) {
+        m = FASTCHART_DENDRO_ORIENT_TOP;
+    }
+    fastchart_dendrogram_obj *self = Z_FASTCHART_DENDROGRAM_OBJ_P(ZEND_THIS);
+    self->orientation = m;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 /* --- MarimekkoChart ------------------------------------------------- */
 
 ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
@@ -9618,6 +9701,7 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
     FASTCHART_INIT_HANDLERS(venn,      fastchart_venn_obj);
     FASTCHART_INIT_HANDLERS(wordcloud, fastchart_wordcloud_obj);
     FASTCHART_INIT_HANDLERS(serpentine, fastchart_serpentine_obj);
+    FASTCHART_INIT_HANDLERS(dendrogram, fastchart_dendrogram_obj);
     /* Symbol family handlers. Same pattern as the chart classes; the
      * lifecycle macro in fastchart_symbol.c emits the create / free /
      * clone trio with external linkage so this MINIT can wire them in. */
@@ -9755,6 +9839,9 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
 
     fastchart_serpentine_timeline_ce = register_class_FastChart_SerpentineTimeline(fastchart_chart_ce);
     fastchart_serpentine_timeline_ce->create_object = fastchart_serpentine_create_object;
+
+    fastchart_dendrogram_ce = register_class_FastChart_Dendrogram(fastchart_chart_ce);
+    fastchart_dendrogram_ce->create_object = fastchart_dendrogram_create_object;
 
     /* Symbol family. Parallel hierarchy to Chart: Symbol (abstract)
      * → Barcode (abstract, 1D) and Symbol → QrCode (final, 2D).

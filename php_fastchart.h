@@ -145,6 +145,7 @@ extern zend_class_entry *fastchart_pictogram_ce;
 extern zend_class_entry *fastchart_venn_diagram_ce;
 extern zend_class_entry *fastchart_word_cloud_ce;
 extern zend_class_entry *fastchart_serpentine_timeline_ce;
+extern zend_class_entry *fastchart_dendrogram_ce;
 
 /* Symbol family (1D/2D codes). Parallel hierarchy to Chart: the slim
  * fastchart_symbol_obj base shares none of FASTCHART_BASE_FIELDS, since
@@ -1073,6 +1074,23 @@ typedef struct {
     zend_object std;
 } fastchart_circlepack_obj;
 
+/* Dendrogram: a node-link hierarchy tree. Reuses the same parsed
+ * fastchart_pack_node tree as CirclePacking; only the layout/draw pass
+ * differs (tidy-tree placement + parent-child edges). */
+#define FASTCHART_DENDRO_STYLE_TREE   0   /* straight diagonal edges */
+#define FASTCHART_DENDRO_STYLE_ELBOW  1   /* right-angle (dendrogram) edges */
+#define FASTCHART_DENDRO_ORIENT_TOP   0   /* root at top, depth grows down */
+#define FASTCHART_DENDRO_ORIENT_LEFT  1   /* root at left, depth grows right */
+
+typedef struct {
+    FASTCHART_BASE_FIELDS
+    fastchart_pack_node *root;
+    int node_count;
+    zend_long style;       /* FASTCHART_DENDRO_STYLE_* */
+    zend_long orientation; /* FASTCHART_DENDRO_ORIENT_* */
+    zend_object std;
+} fastchart_dendrogram_obj;
+
 /* Pictogram icon shapes. */
 #define FASTCHART_PICTO_SHAPE_SQUARE  0
 #define FASTCHART_PICTO_SHAPE_CIRCLE  1
@@ -1187,6 +1205,7 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define Z_FASTCHART_VENN_OBJ_P(zv)       ((fastchart_venn_obj *)Z_FASTCHART_OBJ_P(zv))
 #define Z_FASTCHART_WORDCLOUD_OBJ_P(zv)  ((fastchart_wordcloud_obj *)Z_FASTCHART_OBJ_P(zv))
 #define Z_FASTCHART_SERPENTINE_OBJ_P(zv) ((fastchart_serpentine_obj *)Z_FASTCHART_OBJ_P(zv))
+#define Z_FASTCHART_DENDROGRAM_OBJ_P(zv) ((fastchart_dendrogram_obj *)Z_FASTCHART_OBJ_P(zv))
 
 #define FASTCHART_DEFAULT_WIDTH      800
 #define FASTCHART_DEFAULT_HEIGHT     600
@@ -1374,6 +1393,8 @@ int fastchart_venn_render_to_target(fastchart_venn_obj *self,
 int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self,
                                           struct fastchart_target *t);
 int fastchart_serpentine_render_to_target(fastchart_serpentine_obj *self,
+                                           struct fastchart_target *t);
+int fastchart_dendrogram_render_to_target(fastchart_dendrogram_obj *self,
                                            struct fastchart_target *t);
 
 /* --- Symbol family (1D/2D codes) ----------------------------------
