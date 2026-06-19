@@ -1774,5 +1774,147 @@ PHP,
     },
 ];
 
+$cases[] = [
+    'label' => '44. Dendrogram — chart taxonomy tree',
+    'ref'   => 'docs/examples/67_dendrogram.php',
+    'code'  => <<<'PHP'
+(new FastChart\Dendrogram(640, 480))
+    ->setTitle('Chart taxonomy')
+    ->setStyle(FastChart\Dendrogram::STYLE_ELBOW)
+    ->setHierarchy(['label' => 'charts', 'children' => [
+        ['label' => 'cartesian', 'color' => 0x6C8EBF, 'children' => [
+            ['label' => 'line'], ['label' => 'bar'], ['label' => 'area']]],
+        ['label' => 'radial', 'color' => 0x82B366, 'children' => [
+            ['label' => 'radar'], ['label' => 'polar'], ['label' => 'gauge']]],
+        ['label' => 'hierarchy', 'color' => 0xD79B00, 'children' => [
+            ['label' => 'treemap'], ['label' => 'sunburst'], ['label' => 'pack']]],
+    ]]);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\Dendrogram(640, 480))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Chart taxonomy')
+            ->setStyle(FastChart\Dendrogram::STYLE_ELBOW)
+            ->setHierarchy(['label' => 'charts', 'children' => [
+                ['label' => 'cartesian', 'color' => 0x6C8EBF, 'children' => [
+                    ['label' => 'line'], ['label' => 'bar'], ['label' => 'area']]],
+                ['label' => 'radial', 'color' => 0x82B366, 'children' => [
+                    ['label' => 'radar'], ['label' => 'polar'], ['label' => 'gauge']]],
+                ['label' => 'hierarchy', 'color' => 0xD79B00, 'children' => [
+                    ['label' => 'treemap'], ['label' => 'sunburst'], ['label' => 'pack']]],
+            ]]);
+    },
+];
+
+$cases[] = [
+    'label' => '45. Partition — icicle of source size',
+    'ref'   => 'docs/examples/68_partition.php',
+    'code'  => <<<'PHP'
+(new FastChart\Partition(640, 420))
+    ->setTitle('Source size by package (LOC)')
+    ->setOrientation(FastChart\Partition::ORIENT_VERTICAL)
+    ->setHierarchy(['label' => 'src', 'children' => [
+        ['label' => 'render', 'color' => 0x6C8EBF, 'children' => [
+            ['label' => 'svg', 'value' => 34], ['label' => 'target', 'value' => 40],
+            ['label' => 'text', 'value' => 12]]],
+        ['label' => 'charts', 'color' => 0x82B366, 'children' => [
+            ['label' => 'bar', 'value' => 30], ['label' => 'stock', 'value' => 39],
+            ['label' => 'pie', 'value' => 13]]],
+        ['label' => 'codec', 'color' => 0xD79B00, 'children' => [
+            ['label' => 'png', 'value' => 16], ['label' => 'webp', 'value' => 8]]],
+    ]]);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\Partition(640, 420))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Source size by package (LOC)')
+            ->setOrientation(FastChart\Partition::ORIENT_VERTICAL)
+            ->setHierarchy(['label' => 'src', 'children' => [
+                ['label' => 'render', 'color' => 0x6C8EBF, 'children' => [
+                    ['label' => 'svg', 'value' => 34], ['label' => 'target', 'value' => 40],
+                    ['label' => 'text', 'value' => 12]]],
+                ['label' => 'charts', 'color' => 0x82B366, 'children' => [
+                    ['label' => 'bar', 'value' => 30], ['label' => 'stock', 'value' => 39],
+                    ['label' => 'pie', 'value' => 13]]],
+                ['label' => 'codec', 'color' => 0xD79B00, 'children' => [
+                    ['label' => 'png', 'value' => 16], ['label' => 'webp', 'value' => 8]]],
+            ]]);
+    },
+];
+
+$cases[] = [
+    'label' => '46. AreaChart — smooth stacked fill',
+    'ref'   => 'docs/examples/69_area_smooth.php',
+    'code'  => <<<'PHP'
+(new FastChart\AreaChart(640, 360))
+    ->setTitle('Monthly active users (smoothed)')
+    ->setCategoryLabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'])
+    ->setLineInterpolation(FastChart\Chart::INTERP_SMOOTH)
+    ->setSeries([
+        ['label' => 'web',    'data' => [32, 48, 41, 60, 55, 72, 68, 80]],
+        ['label' => 'mobile', 'data' => [18, 24, 30, 28, 39, 44, 52, 61]],
+    ]);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\AreaChart(640, 360))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Monthly active users (smoothed)')
+            ->setCategoryLabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'])
+            ->setLineInterpolation(FastChart\Chart::INTERP_SMOOTH)
+            ->setSeries([
+                ['label' => 'web',    'data' => [32, 48, 41, 60, 55, 72, 68, 80]],
+                ['label' => 'mobile', 'data' => [18, 24, 30, 28, 39, 44, 52, 61]],
+            ]);
+    },
+];
+
+$cases[] = [
+    'label' => '47. PieChart — variable-radius (rose)',
+    'ref'   => 'docs/examples/70_rose_pie.php',
+    'code'  => <<<'PHP'
+(new FastChart\PieChart(560, 460))
+    ->setTitle('Regional revenue (radius = growth %)')
+    ->setSlices([
+        ['label' => 'North', 'value' => 20, 'radius' => 42, 'color' => 0x6C8EBF],
+        ['label' => 'South', 'value' => 20, 'radius' => 88, 'color' => 0x82B366],
+        ['label' => 'East',  'value' => 20, 'radius' => 64, 'color' => 0xD79B00],
+        ['label' => 'West',  'value' => 20, 'radius' => 30, 'color' => 0xB85450],
+        ['label' => 'Intl',  'value' => 20, 'radius' => 75, 'color' => 0x9673A6],
+    ]);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\PieChart(560, 460))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Regional revenue (radius = growth %)')
+            ->setSlices([
+                ['label' => 'North', 'value' => 20, 'radius' => 42, 'color' => 0x6C8EBF],
+                ['label' => 'South', 'value' => 20, 'radius' => 88, 'color' => 0x82B366],
+                ['label' => 'East',  'value' => 20, 'radius' => 64, 'color' => 0xD79B00],
+                ['label' => 'West',  'value' => 20, 'radius' => 30, 'color' => 0xB85450],
+                ['label' => 'Intl',  'value' => 20, 'radius' => 75, 'color' => 0x9673A6],
+            ]);
+    },
+];
+
+$cases[] = [
+    'label' => '48. BarChart — radial (circular) bars',
+    'ref'   => 'docs/examples/71_radial_bar.php',
+    'code'  => <<<'PHP'
+(new FastChart\BarChart(520, 520))
+    ->setTitle('Quarterly completion (%)')
+    ->setCategoryLabels(['Design', 'Build', 'Test', 'Docs', 'Ship'])
+    ->setOrientation(FastChart\BarChart::BAR_RADIAL)
+    ->setSeries([['label' => 'done', 'data' => [95, 80, 62, 48, 30]]]);
+PHP,
+    'build' => function () use ($font, $dpi) {
+        return (new FastChart\BarChart(520, 520))
+            ->setFontPath($font)->setDpi($dpi)
+            ->setTitle('Quarterly completion (%)')
+            ->setCategoryLabels(['Design', 'Build', 'Test', 'Docs', 'Ship'])
+            ->setOrientation(FastChart\BarChart::BAR_RADIAL)
+            ->setSeries([['label' => 'done', 'data' => [95, 80, 62, 48, 30]]]);
+    },
+];
+
 
 return ['font' => $font, 'dpi' => $dpi, 'cases' => $cases];
