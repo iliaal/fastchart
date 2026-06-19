@@ -305,8 +305,10 @@ Iteration count via `FC_BENCH_ITERS` (default 50). Bench source at
   [`ArcDiagram`](docs/examples/57_arc_diagram.png),
   [`ChordDiagram`](docs/examples/58_chord_diagram.png),
   [`NetworkChart`](docs/examples/59_network.png) (force-directed,
-  deterministic seeded layout), `Dendrogram` (node-link hierarchy tree,
-  straight or elbow edges), `Partition` (rectangular hierarchy / icicle).
+  deterministic seeded layout),
+  [`Dendrogram`](docs/examples/67_dendrogram.png) (node-link hierarchy tree,
+  straight or elbow edges),
+  [`Partition`](docs/examples/68_partition.png) (rectangular hierarchy / icicle).
   `ChordDiagram` also has a `STYLE_DIRECTED` mode (arrowhead ribbons).
 - **Statistical:**
   [`PopulationPyramid`](docs/examples/60_population_pyramid.png)
