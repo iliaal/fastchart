@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Two more chart classes, taking the catalog from 36 to 38: `Dendrogram`
+  (a hierarchy drawn as a node-link tree, with `STYLE_TREE` / `STYLE_ELBOW`
+  edges and top-down or left-right orientation) and `Partition` (a
+  rectangular hierarchy subdivision, with `ORIENT_VERTICAL` giving the
+  icicle layout). Both reuse the `setHierarchy()` data model.
+- New chart-variant modes on existing classes:
+  - `ChordDiagram::setStyle(STYLE_DIRECTED)` — ribbons with an arrowhead at
+    each link's target, marking flow direction.
+  - `AreaChart::setStreamMode()` — a centered stacked silhouette
+    (stream graph / ThemeRiver).
+  - `GaugeChart::setStyle(STYLE_SOLID)` — a radial progress-fill arc instead
+    of a needle.
+  - `PieChart::setStartAngle()` / `setEndAngle()` (semi-circle and partial
+    pies) and `setRings()` (concentric nested-donut bands).
+  - `BarChart::setBarStyle(BAR_STYLE_LOLLIPOP)` (stem + bullet) and
+    `BAR_STYLE_DUMBBELL` (paired bullets on floating data).
+- Seven new `StockChart` indicators: `addVWAP()` and `addZigZag()` price
+  overlays, plus `addATR()`, `addCCI()`, `addWilliamsR()`, `addAroon()`
+  (two-series), and `addStdDev()` panes. The price-overlay cap rose to 6
+  and the indicator-pane cap to 6.
 - Ten new chart classes, taking the catalog from 26 to 36, all under the
   `FastChart\` namespace and rendering through the existing
   SVG-canonical pipeline (SVG / PNG / JPEG / WebP):
