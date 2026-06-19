@@ -250,11 +250,22 @@ static void polyline_pass(fastchart_target_t *t, fastchart_obj *chart,
         for (int i = 0; i < n; i++) {
             if (!pts[i].valid) { prev_valid = false; continue; }
             if (prev_valid) {
-                int corner_y = after ? prev_y : pts[i].y;
-                poly_seg(t, prev_x, prev_y, pts[i].x, corner_y,
-                         color_handle, thickness, dash, aa_gd_color);
-                poly_seg(t, pts[i].x, corner_y, pts[i].x, pts[i].y,
-                         color_handle, thickness, dash, aa_gd_color);
+                if (after) {
+                    /* STEP_AFTER: hold prev_y forward to the new x, then
+                     * jump. Corner at (cur_x, prev_y). */
+                    poly_seg(t, prev_x, prev_y, pts[i].x, prev_y,
+                             color_handle, thickness, dash, aa_gd_color);
+                    poly_seg(t, pts[i].x, prev_y, pts[i].x, pts[i].y,
+                             color_handle, thickness, dash, aa_gd_color);
+                } else {
+                    /* STEP_BEFORE: jump to the new y at the previous x,
+                     * then hold across to the new x. Corner at
+                     * (prev_x, cur_y). */
+                    poly_seg(t, prev_x, prev_y, prev_x, pts[i].y,
+                             color_handle, thickness, dash, aa_gd_color);
+                    poly_seg(t, prev_x, pts[i].y, pts[i].x, pts[i].y,
+                             color_handle, thickness, dash, aa_gd_color);
+                }
             }
             prev_x = pts[i].x; prev_y = pts[i].y; prev_valid = true;
         }

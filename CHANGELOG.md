@@ -63,6 +63,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `LineChart::setLineInterpolation(INTERP_STEP_BEFORE)` drew a plain
+  diagonal instead of a staircase: the step corner used the new point's
+  x for both segments, collapsing the mode to linear. It now jumps to
+  the new value at the previous x and holds across, mirroring
+  `INTERP_STEP_AFTER`.
 - Gallery generators (`scripts/build-v1-gallery.php`,
   `scripts/build-readme-gallery.php`): corrected a stale `require` of
   `tests/_font_candidates.inc.php` left behind when the helper was
