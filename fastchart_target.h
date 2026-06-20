@@ -111,7 +111,6 @@ typedef struct fastchart_text_overlay {
  * same primitives; target.c routes them to fastchart_pdf.c. */
 #define FASTCHART_TARGET_PDF  2
 
-#define FASTCHART_TARGET_MAX_COLORS  512
 #define FASTCHART_TARGET_CLIP_DEPTH  8
 #define FASTCHART_TARGET_FONT_CACHE  4
 
@@ -172,9 +171,12 @@ typedef struct fastchart_target {
         } pdf;
     } u;
 
-    /* Shared color table. handle = index. */
-    uint32_t color_rgba[FASTCHART_TARGET_MAX_COLORS];  /* 0xAARRGGBB */
+    /* Shared color table. handle = index. Grown on demand (ramp-heavy
+     * charts — heatmap / treemap / word cloud — can allocate many more
+     * than a small fixed cap) and freed in fastchart_target_release(). */
+    uint32_t *color_rgba;  /* 0xAARRGGBB */
     int n_colors;
+    int color_cap;
 
     /* SVG clip stack (active clipPath ids, top = current). Sized for
      * the deepest nesting any chart family uses (currently 2). */

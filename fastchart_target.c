@@ -130,8 +130,11 @@ int fastchart_target_color(fastchart_target_t *t, int r, int g, int b, int a)
     for (int i = 0; i < t->n_colors; i++) {
         if (t->color_rgba[i] == key) return i;
     }
-    if (t->n_colors >= FASTCHART_TARGET_MAX_COLORS) {
-        return t->n_colors - 1;  /* defensive: reuse last slot */
+    if (t->n_colors >= t->color_cap) {
+        int new_cap = t->color_cap ? t->color_cap * 2 : 64;
+        t->color_rgba = erealloc(t->color_rgba,
+                                 (size_t)new_cap * sizeof(*t->color_rgba));
+        t->color_cap = new_cap;
     }
     int idx = t->n_colors++;
     t->color_rgba[idx] = key;
@@ -639,6 +642,12 @@ void fastchart_target_release(fastchart_target_t *t)
     }
     t->n_text_overlays = 0;
     t->cap_text_overlays = 0;
+    if (t->color_rgba) {
+        efree(t->color_rgba);
+        t->color_rgba = NULL;
+    }
+    t->n_colors = 0;
+    t->color_cap = 0;
 }
 
 /* ============================================================ *

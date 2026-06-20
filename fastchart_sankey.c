@@ -39,15 +39,19 @@ typedef struct {
 } sankey_node_layout;
 
 /* Compute per-node topological layer: longest path from any source.
- * Sources (no incoming) sit at layer 0. */
-static void fastchart_sankey_compute_layers(
+ * Sources (no incoming) sit at layer 0. Returns 0 on success, -1 if the
+ * graph contains a cycle (the longest-path relaxation never converges). */
+static int fastchart_sankey_compute_layers(
     const fastchart_sankey_link *links, int link_count,
     sankey_node_layout *L, int node_count, int *max_layer_out)
 {
     for (int i = 0; i < node_count; i++) L[i].layer = 0;
-    /* Iterate until stable. With a DAG this converges in
-     * node_count passes; with cycles we cap at node_count and let
-     * back-edges land on the latest stable assignment. */
+    /* A DAG's longest path has at most node_count-1 edges, so the
+     * relaxation reaches a fixed point within node_count passes. If the
+     * node_count-th pass still changes something, a cycle keeps promoting
+     * layers indefinitely — reject rather than emit an order-dependent,
+     * backward-ribbon layout. */
+    int converged = 0;
     for (int pass = 0; pass < node_count; pass++) {
         int changed = 0;
         for (int e = 0; e < link_count; e++) {
@@ -57,13 +61,15 @@ static void fastchart_sankey_compute_layers(
                 changed = 1;
             }
         }
-        if (!changed) break;
+        if (!changed) { converged = 1; break; }
     }
+    if (!converged) return -1;
     int mx = 0;
     for (int i = 0; i < node_count; i++) {
         if (L[i].layer > mx) mx = L[i].layer;
     }
     *max_layer_out = mx;
+    return 0;
 }
 
 /* Cubic Bezier path between two attachment points, expressed as a
@@ -147,8 +153,13 @@ int fastchart_sankey_render_to_target(fastchart_sankey_obj *self, fastchart_targ
 
     sankey_node_layout *L = ecalloc(self->node_count, sizeof(*L));
     int max_layer = 0;
-    fastchart_sankey_compute_layers(
-        self->links, self->link_count, L, self->node_count, &max_layer);
+    if (fastchart_sankey_compute_layers(
+            self->links, self->link_count, L, self->node_count, &max_layer) != 0) {
+        efree(L);
+        zend_throw_error(NULL,
+            "FastChart\\SankeyChart::draw() requires an acyclic flow graph");
+        return -1;
+    }
     for (int e = 0; e < self->link_count; e++) {
         L[self->links[e].from].out_total += self->links[e].value;
         L[self->links[e].to].in_total    += self->links[e].value;

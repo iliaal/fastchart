@@ -240,7 +240,17 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
         fastchart_value_range_apply_override((fastchart_obj *)self, &range_l);
     }
     if (n_right > 0) {
-        fastchart_value_range_compute(dmin_r, dmax_r, 6, &range_r);
+        if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
+            /* Match the primary axis: a log chart maps the secondary
+             * series on a log scale too, and rejects non-positive data. */
+            if (dmin_r <= 0 ||
+                fastchart_value_range_compute_log(dmin_r, dmax_r, &range_r) != 0) {
+                zend_value_error("FastChart\\AreaChart::draw(): log Y-axis requires strictly-positive data");
+                return -1;
+            }
+        } else {
+            fastchart_value_range_compute(dmin_r, dmax_r, 6, &range_r);
+        }
     }
 
     fastchart_rect plot;
@@ -307,7 +317,10 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
         int n_pts = 0;
         for (int i = 0; i < max_len && n_pts < 2048; i++) {
             double v = area_read_value(&series[0], i);
-            if (isnan(v)) v = 0;
+            /* On a log axis 0 is unrepresentable and maps to the plot
+             * bottom; fold gaps to the fill anchor (range min) instead so
+             * the band doesn't dive to the baseline at a gap. */
+            if (isnan(v)) v = range_l.log_scale ? range_l.min : 0.0;
             int x = fastchart_x_categorical_center(&plot, i, max_len);
             int y = fastchart_y_to_pixel(v, &range_l, &plot);
             poly[n_pts].x = x; poly[n_pts].y = y;
@@ -315,7 +328,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
         }
         for (int i = max_len - 1; i >= 0 && n_pts < 2 * 2048; i--) {
             double v = area_read_value(&series[1], i);
-            if (isnan(v)) v = 0;
+            if (isnan(v)) v = range_l.log_scale ? range_l.min : 0.0;
             int x = fastchart_x_categorical_center(&plot, i, max_len);
             int y = fastchart_y_to_pixel(v, &range_l, &plot);
             poly[n_pts].x = x; poly[n_pts].y = y;
@@ -508,7 +521,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 gdPoint *dens = emalloc((size_t)vcap * sizeof(gdPoint));
                 for (int i = 0; i < max_len; i++) {
                     double v = area_read_value(&series[s], i);
-                    if (isnan(v)) v = 0;
+                    if (isnan(v)) v = rng->log_scale ? rng->min : 0.0;
                     raw[i].x = fastchart_x_categorical_center(&plot, i, max_len);
                     raw[i].y = fastchart_y_to_pixel(v, rng, &plot);
                 }
@@ -549,7 +562,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             int n_pts = 0;
             for (int i = 0; i < max_len && n_pts < 2048; i++) {
                 double v = area_read_value(&series[s], i);
-                if (isnan(v)) v = 0;
+                if (isnan(v)) v = rng->log_scale ? rng->min : 0.0;
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
                 int y = fastchart_y_to_pixel(v, rng, &plot);
                 poly[n_pts].x = x; poly[n_pts].y = y;

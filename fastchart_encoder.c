@@ -119,6 +119,15 @@ static int fc_enc_pack_rgba_to_rgb_neon(const uint8_t *src, uint8_t *dst,
 }
 #endif
 
+/* Prewarm the SSSE3 capability cache at module load so the lazy
+ * first-call branch in fc_enc_cpu_has_ssse3() can't race under ZTS. */
+void fastchart_encoder_init(void)
+{
+#ifdef FC_ENC_HAVE_X86_SIMD
+	(void)fc_enc_cpu_has_ssse3();
+#endif
+}
+
 void fastchart_pixels_init(fastchart_pixels_t *pix, int w, int h)
 {
 	pix->rgba = NULL;

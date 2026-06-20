@@ -131,6 +131,14 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
 
     /* Bars. Equal-width slots, small gap between bars. */
     int slot_w = (plot_x1 - plot_x0) / self->bar_count;
+    /* Integer slot width collapses to 0 when the plot is narrower than
+     * the bar count, stacking every bar at the same x. Reject instead of
+     * emitting a misleading chart, matching the margin check above. */
+    if (slot_w < 1) {
+        zend_throw_error(NULL,
+            "FastChart\\ParetoChart::draw() canvas is too narrow for the number of bars");
+        return -1;
+    }
     int gap = slot_w / 8;
     if (gap < 1) gap = 1;
     int bar_w = slot_w - 2 * gap;

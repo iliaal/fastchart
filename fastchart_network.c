@@ -60,9 +60,12 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
     fastchart_target_get_dims(t, &W, &H);
     fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
 
-    if (self->node_count <= 0 || self->link_count <= 0) {
+    /* Node-only graphs are valid (isolated/disconnected nodes); the
+     * edge loops below all no-op cleanly at link_count == 0. Only nodes
+     * are required. */
+    if (self->node_count <= 0) {
         zend_throw_error(NULL,
-            "FastChart\\NetworkChart::draw() requires both setNodes() and setLinks()");
+            "FastChart\\NetworkChart::draw() requires setNodes()");
         return -1;
     }
 

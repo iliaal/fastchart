@@ -70,8 +70,6 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
     }
     if (xmax <= xmin) xmax = xmin + 1.0;
     if (ymax <= ymin) ymax = ymin + 1.0;
-    double dxr = xmax - xmin;
-    double dyr = ymax - ymin;
 
     fastchart_value_range xr, yr;
     fastchart_value_range_compute(xmin, xmax, 5, &xr);
@@ -160,10 +158,13 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
         double scale = mag_max > 0 ? mag / mag_max : 0.0;
         double len = scale * cap_px;
         if (len < 1.5) continue;
-        double axu = (xmax > xmin)
-            ? (self->vectors[i].x - xmin) / dxr : 0.5;
-        double ayu = (ymax > ymin)
-            ? (self->vectors[i].y - ymin) / dyr : 0.5;
+        /* Anchor arrows against the displayed (nice) axis range so they
+         * line up with the grid ticks and labels, not the raw data
+         * min/max. */
+        double axu = (xr.max > xr.min)
+            ? (self->vectors[i].x - xr.min) / (xr.max - xr.min) : 0.5;
+        double ayu = (yr.max > yr.min)
+            ? (self->vectors[i].y - yr.min) / (yr.max - yr.min) : 0.5;
         int ax = anchor_x0 + (int)(axu * (anchor_x1 - anchor_x0));
         int ay = anchor_y1 - (int)(ayu * (anchor_y1 - anchor_y0));
         double ang = atan2(self->vectors[i].dy, self->vectors[i].dx);

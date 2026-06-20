@@ -252,24 +252,10 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
             if (slice_radius < 2) slice_radius = 2;
         }
 
-        /* Image-map poly per slice: center + 5 sample points along
-         * the arc gives a 6-vertex wedge approximation that captures
-         * the slice's clickable area well enough for HTML imagemaps. */
-        int poly_xy[FASTCHART_IMAGE_MAP_MAX_COORDS];
-        int poly_n = 0;
-        poly_xy[poly_n++] = cx;
-        poly_xy[poly_n++] = cy;
-        for (int k = 0; k < 6 && poly_n + 1 < FASTCHART_IMAGE_MAP_MAX_COORDS; k++) {
-            double t_frac = (double)k / 5.0;
-            double th = (s_deg + (e_deg - s_deg) * t_frac) * M_PI / 180.0;
-            poly_xy[poly_n++] = cx + (int)((double)slice_radius * cos(th));
-            poly_xy[poly_n++] = cy + (int)((double)slice_radius * sin(th));
-        }
-        fastchart_push_image_map_poly((fastchart_obj *)self, i,
-                                       poly_xy, poly_n);
-
         /* Explode this slice radially outward by `offset` pixels
-         * along its mid-angle. Slices not mentioned stay at center. */
+         * along its mid-angle. Slices not mentioned stay at center.
+         * Computed before the image-map poly so the clickable area
+         * tracks the exploded slice rather than its un-offset origin. */
         int slice_cx = cx, slice_cy = cy;
         if (explode && i < explode_count) {
             zend_long off = explode[i];
@@ -285,6 +271,22 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
                 slice_cy = cy + (int)((double)off * sin(mid_rad));
             }
         }
+
+        /* Image-map poly per slice: center + 5 sample points along
+         * the arc gives a 6-vertex wedge approximation that captures
+         * the slice's clickable area well enough for HTML imagemaps. */
+        int poly_xy[FASTCHART_IMAGE_MAP_MAX_COORDS];
+        int poly_n = 0;
+        poly_xy[poly_n++] = slice_cx;
+        poly_xy[poly_n++] = slice_cy;
+        for (int k = 0; k < 6 && poly_n + 1 < FASTCHART_IMAGE_MAP_MAX_COORDS; k++) {
+            double t_frac = (double)k / 5.0;
+            double th = (s_deg + (e_deg - s_deg) * t_frac) * M_PI / 180.0;
+            poly_xy[poly_n++] = slice_cx + (int)((double)slice_radius * cos(th));
+            poly_xy[poly_n++] = slice_cy + (int)((double)slice_radius * sin(th));
+        }
+        fastchart_push_image_map_poly((fastchart_obj *)self, i,
+                                       poly_xy, poly_n);
 
         /* Drop shadow underneath this slice (no-op when chart has
          * no shadow configured). */

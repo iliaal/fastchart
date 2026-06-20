@@ -75,13 +75,21 @@ static void fc_init_inv_alpha(void)
 	fc_inv_alpha_ready = 1;
 }
 
+#ifdef FC_HAVE_X86_SIMD
+static int fc_cpu_has_ssse3(void);
+#endif
+
 /* Fill the LUT once at module load. After this, fc_inv_alpha_ready is
  * already 1 before any request thread runs, so the lazy first-call branch
  * in fastchart_rasterize_doc is never taken concurrently — closing the
- * ZTS data race on the unsynchronised ready flag. */
+ * ZTS data race on the unsynchronised ready flag. The SSSE3 capability
+ * cache is prewarmed here for the same reason. */
 void fastchart_rasterize_init(void)
 {
 	fc_init_inv_alpha();
+#ifdef FC_HAVE_X86_SIMD
+	(void)fc_cpu_has_ssse3();
+#endif
 }
 
 #ifdef FC_HAVE_X86_SIMD

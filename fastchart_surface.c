@@ -74,10 +74,10 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
     if (plot_w < 50) plot_w = 50;
     if (plot_h < 50) plot_h = 50;
 
-    int cell_w = plot_w / cols;
-    int cell_h = plot_h / rows;
-    if (cell_w < 1) cell_w = 1;
-    if (cell_h < 1) cell_h = 1;
+    /* Cell boundaries are derived from the normalized plot span (not a
+     * clamped integer cell size) so a dense grid whose column/row count
+     * exceeds the plot's pixel extent stays inside the plot rect instead
+     * of drawing the trailing cells off-canvas. */
 
     /* Draw grid cells. A 256-entry color LUT keyed on the
      * normalized cell value is allocated once instead of per-cell.
@@ -110,10 +110,11 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
             if (idx < 0) idx = 0; else if (idx > 255) idx = 255;
             int color = color_lut[idx];
             int rgb = rgb_lut[idx];
-            int x0 = margin_x + x_idx * cell_w;
-            int y0 = top + y_idx * cell_h;
-            int x1 = x0 + cell_w - 1;
-            int y1 = y0 + cell_h - 1;
+            int x0 = margin_x + x_idx * plot_w / cols;
+            int y0 = top + y_idx * plot_h / rows;
+            int x1 = margin_x + (x_idx + 1) * plot_w / cols - 1;
+            int y1 = top + (y_idx + 1) * plot_h / rows - 1;
+            if (x1 < x0 || y1 < y0) continue;  /* grid denser than pixels */
             fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
             if (edge_handle >= 0) {
                 fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1,
@@ -142,8 +143,8 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
     }
 
     /* Outer frame around the heatmap. */
-    int frame_x1 = margin_x + cols * cell_w - 1;
-    int frame_y1 = top + rows * cell_h - 1;
+    int frame_x1 = margin_x + plot_w - 1;
+    int frame_y1 = top + plot_h - 1;
     if (self->border_sides & FASTCHART_BORDER_TOP)
         fastchart_target_line(t, margin_x, top, frame_x1, top, pal.border, 1, FASTCHART_DASH_SOLID);
     if (self->border_sides & FASTCHART_BORDER_BOTTOM)
