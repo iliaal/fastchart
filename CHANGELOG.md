@@ -86,6 +86,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of rendering them opaque (requires `--with-pdfio`).
 - SSSE3 capability detection is resolved at module start-up, closing a benign
   first-call data race under ZTS.
+- `Waterfall` rotated x-axis labels (`setXAxisLabelAngle`) reserve bottom margin
+  from the actual bar labels instead of overflowing the canvas.
+- `Waterfall::setBars()` caps value magnitude so extreme inputs can't overflow
+  the running cumulative into negative-height rectangles.
+- `WordCloud` honors `setTransparentBackground(true)` instead of always painting
+  an opaque canvas.
 
 ## [1.3.0] - 2026-06-16
 
