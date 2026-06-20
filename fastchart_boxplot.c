@@ -47,7 +47,15 @@ int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_ta
     }
 
     fastchart_value_range range;
-    fastchart_value_range_compute(dmin, dmax, 6, &range);
+    if (((fastchart_obj *)self)->y_axis_scale == FASTCHART_SCALE_LOG) {
+        if (dmin <= 0.0 ||
+            fastchart_value_range_compute_log(dmin, dmax, &range) != 0) {
+            zend_value_error("FastChart\\BoxPlot::draw(): log Y-axis requires strictly-positive data");
+            return -1;
+        }
+    } else {
+        fastchart_value_range_compute(dmin, dmax, 6, &range);
+    }
     fastchart_value_range_apply_override((fastchart_obj *)self, &range);
 
     fastchart_rect plot;

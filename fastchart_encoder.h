@@ -36,6 +36,10 @@ typedef struct {
 	int      dpi;         /* 0 = don't write density metadata; else stamps pHYs/density */
 } fastchart_pixels_t;
 
+/* One-time module-load init: prewarms the SSSE3 capability cache so
+ * its lazy first-call branch can't race under ZTS. */
+void fastchart_encoder_init(void);
+
 /* Allocate an empty pixel buffer. rgba is set to NULL and must be
  * filled by the rasterizer before encoding. */
 void fastchart_pixels_init(fastchart_pixels_t *pix, int w, int h);

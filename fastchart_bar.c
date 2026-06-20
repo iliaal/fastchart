@@ -144,8 +144,12 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
     if (stack_layer && n_series > 1) stacked = true;
     bool floating = self->bar_floating;
 
+    /* STACK_LAYER draws each series independently from the baseline, so
+     * the Y range must be the per-series extent, not the stacked sum.
+     * Keep `stacked` for the render/sub-count logic but compute the
+     * range with stacked semantics off in layered mode. */
     double dmin = 0, dmax = 0;
-    if (bar_compute_range(self, stacked, floating, &dmin, &dmax) != 0) {
+    if (bar_compute_range(self, stacked && !stack_layer, floating, &dmin, &dmax) != 0) {
         zend_throw_error(NULL,
             "FastChart\\BarChart::draw() found no numeric values in the series");
         return -1;
@@ -445,8 +449,12 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
     if (stack_layer && n_series > 1) stacked = true;
     bool floating = self->bar_floating;
 
+    /* STACK_LAYER draws each series independently from the baseline, so
+     * the Y range must be the per-series extent, not the stacked sum.
+     * Keep `stacked` for the render/sub-count logic but compute the
+     * range with stacked semantics off in layered mode. */
     double dmin = 0, dmax = 0;
-    if (bar_compute_range(self, stacked, floating, &dmin, &dmax) != 0) {
+    if (bar_compute_range(self, stacked && !stack_layer, floating, &dmin, &dmax) != 0) {
         zend_throw_error(NULL,
             "FastChart\\BarChart::draw() found no numeric values in the series");
         return -1;
@@ -567,9 +575,27 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
                 int y0 = slot_top + s * sub_h + sub_inset;
                 int y1 = y0 + draw_h - 1;
                 if (y1 > slot_top + slot_inner - 1) y1 = slot_top + slot_inner - 1;
-                bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
-                if (edge_handle >= 0) {
-                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                if (self->bar_style == FASTCHART_BAR_STYLE_DUMBBELL) {
+                    /* Horizontal connector across the [min,max] pair with a
+                     * filled circle at each end (vertical dumbbell, X/Y
+                     * swapped). */
+                    int y_center = (y0 + y1) / 2;
+                    int bullet_r = draw_h / 2;
+                    if (bullet_r < 3) bullet_r = 3;
+                    if (bullet_r > 12) bullet_r = 12;
+                    fastchart_target_line(t, x0, y_center, x1, y_center,
+                                          color, 2, FASTCHART_DASH_SOLID);
+                    fastchart_target_ellipse(t, x0, y_center, bullet_r, bullet_r, color, 1, 0);
+                    fastchart_target_ellipse(t, x1, y_center, bullet_r, bullet_r, color, 1, 0);
+                    if (edge_handle >= 0) {
+                        fastchart_target_ellipse(t, x0, y_center, bullet_r, bullet_r, edge_handle, 0, 1);
+                        fastchart_target_ellipse(t, x1, y_center, bullet_r, bullet_r, edge_handle, 0, 1);
+                    }
+                } else {
+                    bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
+                    if (edge_handle >= 0) {
+                        fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                    }
                 }
             }
         } else if (stack_layer && n_series > 1) {
@@ -628,11 +654,27 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
                 int y1 = y0 + draw_h - 1;
                 if (y1 > slot_top + slot_inner - 1) y1 = slot_top + slot_inner - 1;
 
-                int x0 = x_v < zero_x ? x_v : zero_x;
-                int x1 = x_v < zero_x ? zero_x : x_v;
-                bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
-                if (edge_handle >= 0) {
-                    fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                if (self->bar_style == FASTCHART_BAR_STYLE_LOLLIPOP) {
+                    /* Horizontal stem from the zero baseline to the value
+                     * with a filled circle bullet at the value (vertical
+                     * lollipop, X/Y swapped). */
+                    int y_center = (y0 + y1) / 2;
+                    int bullet_r = draw_h / 2;
+                    if (bullet_r < 3) bullet_r = 3;
+                    if (bullet_r > 12) bullet_r = 12;
+                    fastchart_target_line(t, zero_x, y_center, x_v, y_center,
+                                          color, 2, FASTCHART_DASH_SOLID);
+                    fastchart_target_ellipse(t, x_v, y_center, bullet_r, bullet_r, color, 1, 0);
+                    if (edge_handle >= 0) {
+                        fastchart_target_ellipse(t, x_v, y_center, bullet_r, bullet_r, edge_handle, 0, 1);
+                    }
+                } else {
+                    int x0 = x_v < zero_x ? x_v : zero_x;
+                    int x1 = x_v < zero_x ? zero_x : x_v;
+                    bar_emit_filled_rect(t, (fastchart_obj *)self, x0, y0, x1, y1, color);
+                    if (edge_handle >= 0) {
+                        fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, edge_handle, 0, 1);
+                    }
                 }
             }
         }

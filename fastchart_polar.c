@@ -30,6 +30,12 @@
  * 512 silently dropped half of an at-cap series. */
 #define MAX_POLAR_POINTS FASTCHART_MAX_POLAR_POINTS
 
+/* Catmull-Rom samples emitted per raw segment in smooth mode. The
+ * subdivided buffer holds up to MAX_POLAR_POINTS * this + 1 points, so
+ * it is heap-allocated per series rather than reusing the raw-input cap
+ * (which silently truncated smoothed series past 128 segments). */
+#define POLAR_SMOOTH_SUBDIV 8
+
 /* Cap a scaled pixel radius before the float-to-int cast. setMaxRadius()
  * may be set far below the data radii, so radius*r/rmax can exceed INT_MAX
  * and the (int) cast would be float-cast-overflow UB. Data past a few plot
@@ -168,11 +174,12 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
          * end-segments reuse their own endpoint as the missing
          * neighbour. SUBDIV=8 per segment gives a visually smooth
          * curve without flooding the polygon buffer. */
-        gdPoint poly[MAX_POLAR_POINTS];
-        int n_pts = 0;
         bool smooth = (self->polar_interp == FASTCHART_INTERP_SMOOTH && n_raw >= 3);
+        int poly_cap = smooth ? n_raw * POLAR_SMOOTH_SUBDIV + 1 : n_raw;
+        gdPoint *poly = emalloc((size_t)poly_cap * sizeof(*poly));
+        int n_pts = 0;
         if (smooth) {
-            enum { SUBDIV = 8 };
+            enum { SUBDIV = POLAR_SMOOTH_SUBDIV };
             int segs = self->polar_filled ? n_raw : n_raw - 1;
             for (int i = 0; i < segs; i++) {
                 int i1 = i;
@@ -199,20 +206,20 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
                                    + 4 * raw[i2].y - raw[i3].y) * t2
                                 + (-raw[i0].y + 3 * raw[i1].y
                                    - 3 * raw[i2].y + raw[i3].y) * t3);
-                    if (n_pts < MAX_POLAR_POINTS) {
+                    if (n_pts < poly_cap) {
                         poly[n_pts].x = (int)(x + 0.5);
                         poly[n_pts].y = (int)(y + 0.5);
                         n_pts++;
                     }
                 }
             }
-            if (!self->polar_filled && n_pts < MAX_POLAR_POINTS) {
+            if (!self->polar_filled && n_pts < poly_cap) {
                 poly[n_pts++] = raw[n_raw - 1];
             }
         } else {
             for (int i = 0; i < n_raw; i++) poly[n_pts++] = raw[i];
         }
-        if (n_pts < 2) continue;
+        if (n_pts < 2) { efree(poly); continue; }
 
         if (self->polar_filled && n_pts >= 3) {
             uint32_t rgba = fastchart_target_color_to_rgba(t, color);
@@ -243,6 +250,7 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
             legend_labels[legend_count] = series[s].label;
             legend_count++;
         }
+        efree(poly);
     }
 
     /* Vector overlay: each entry is drawn as a line segment from

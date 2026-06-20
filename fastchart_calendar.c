@@ -137,11 +137,20 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
             "FastChart\\CalendarHeatmap::draw() canvas is too small for the date range");
         return -1;
     }
+    /* avail_w / n_weeks fits the columns by construction; the previous
+     * 4px *minimum* clamp could push that back up past grid_x1, drawing
+     * the trailing weeks off canvas. Only reject when the span can't fit
+     * even one pixel per week, and let wide spans use sub-4px cells. */
     int cell_size = avail_w / n_weeks;
+    if (cell_size < 1) {
+        zend_throw_error(NULL,
+            "FastChart\\CalendarHeatmap::draw() canvas is too narrow for the date range");
+        return -1;
+    }
     int row_size  = avail_h / 7;
     if (row_size < cell_size) cell_size = row_size;
     if (cell_size > 18) cell_size = 18;
-    if (cell_size < 4) cell_size = 4;
+    if (cell_size < 1) cell_size = 1;
     int cell_pad = cell_size > 6 ? 1 : 0;
 
     /* Colors. */

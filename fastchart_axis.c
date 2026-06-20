@@ -733,6 +733,14 @@ int fastchart_value_range_compute_log(double dmin, double dmax,
      * recompute log10(min)/log10(max) on every call. */
     out->log_min = log10(out->min);
     out->log_span = log10(out->max) - out->log_min;
+    /* A subnormal positive dmin (e.g. 5e-324) passes the dmin > 0 guard
+     * but pow(10, floor(log10(dmin))) underflows to 0.0, making log_min
+     * -Inf and log_span +Inf. Those poison the per-point frac (NaN) which
+     * then reaches the (int) cast in y/x_to_pixel. Reject the underflow
+     * here so the caller takes its strictly-positive value-error path. */
+    if (out->min <= 0.0 || !isfinite(out->log_min) || !isfinite(out->log_span)) {
+        return -1;
+    }
     out->n_ticks = 0;
 
     for (double e = lo;
@@ -2189,6 +2197,10 @@ void fastchart_draw_horizontal_bar_annotations(fastchart_target_t *t, fastchart_
             /* Category-axis annotation: horizontal screen line at
              * y=category-center. v is a fractional category index. */
             if (n_categories <= 0) continue;
+            /* Bound before the cast: v is finite-checked at the setter but
+             * not magnitude-bounded, so a finite-but-extreme index would
+             * make the (int) conversion UB. Mirror v_pos_categorical. */
+            if (!isfinite(v) || v < -0.5 || v >= (double)n_categories) continue;
             int idx = (int)floor(v + 0.5);
             if (idx < 0 || idx >= n_categories) continue;
             int y = fastchart_y_categorical_center(plot, idx, n_categories);

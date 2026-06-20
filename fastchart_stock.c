@@ -134,7 +134,20 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                 : sub_share;
             if (sub_h_each < 24) sub_h_each = 24;
             int total_sub_h = sub_h_each * sub_count + gap * sub_count;
+            /* The 24px floor can exceed the 60% cap when several panes
+             * share a short canvas, pushing the price pane to negative
+             * height and the subpanes above plot.y0. Shrink the panes to
+             * preserve a minimum price-pane height, then clamp so the
+             * price pane can never invert. */
+            int min_price_h = 40;
+            if (total_sub_h > total_h - min_price_h) {
+                int avail = total_h - min_price_h - gap * sub_count;
+                sub_h_each = avail / sub_count;
+                if (sub_h_each < 1) sub_h_each = 1;
+                total_sub_h = sub_h_each * sub_count + gap * sub_count;
+            }
             price_pane.y1 = plot.y1 - total_sub_h;
+            if (price_pane.y1 < plot.y0) price_pane.y1 = plot.y0;
 
             int cur_y = price_pane.y1 + gap;
             int slot = 0;

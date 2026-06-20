@@ -33,7 +33,15 @@ struct fc_pdf_state {
 	pdfio_stream_t *st;
 	smart_str      *out;   /* borrowed; output callback appends here */
 	double          h;     /* page height, for the y-down -> y-up flip */
+	double          pw;    /* page width, for the canvas-bg capture below */
 	int             err;   /* sticky: set by the pdfio error callback */
+	/* This pdfio build exposes no transparency / ExtGState API (no
+	 * /ca|/CA), so per-element alpha is flattened against the page
+	 * background captured from the chart's first full-canvas fill. Real
+	 * layered transparency isn't representable; single-layer translucent
+	 * fills over the background composite correctly. */
+	uint32_t        bg;    /* 0xAARRGGBB; default opaque white */
+	int             bg_set;
 };
 
 /* pdfio streams document bytes through this callback as it writes. */
@@ -63,14 +71,35 @@ static inline double FY(const fc_pdf_state *s, double y) { return s->h - y; }
 
 static inline double cc(uint32_t v) { return (double)v / 255.0; }
 
+/* Flatten a translucent 0xAARRGGBB onto the page background. Alpha byte
+ * 255 (opaque) and 0 (legacy bare-RGB, also opaque) pass through. */
+static uint32_t fc_pdf_flatten(const fc_pdf_state *s, uint32_t rgba)
+{
+	uint32_t a = (rgba >> 24) & 0xFF;
+	if (a == 0u || a == 0xFFu) return rgba;
+	double af = (double)a / 255.0;
+	double br = (double)((s->bg >> 16) & 0xFF);
+	double bg = (double)((s->bg >>  8) & 0xFF);
+	double bb = (double)( s->bg        & 0xFF);
+	double fr = (double)((rgba >> 16) & 0xFF);
+	double fg = (double)((rgba >>  8) & 0xFF);
+	double fb = (double)( rgba        & 0xFF);
+	uint32_t r = (uint32_t)(fr * af + br * (1.0 - af) + 0.5);
+	uint32_t g = (uint32_t)(fg * af + bg * (1.0 - af) + 0.5);
+	uint32_t b = (uint32_t)(fb * af + bb * (1.0 - af) + 0.5);
+	return 0xFF000000u | (r << 16) | (g << 8) | b;
+}
+
 static void set_fill(fc_pdf_state *s, uint32_t rgba)
 {
+	rgba = fc_pdf_flatten(s, rgba);
 	pdfioContentSetFillColorDeviceRGB(s->st,
 	    cc((rgba >> 16) & 0xFF), cc((rgba >> 8) & 0xFF), cc(rgba & 0xFF));
 }
 
 static void set_stroke(fc_pdf_state *s, uint32_t rgba, int thickness, int dash)
 {
+	rgba = fc_pdf_flatten(s, rgba);
 	pdfioContentSetStrokeColorDeviceRGB(s->st,
 	    cc((rgba >> 16) & 0xFF), cc((rgba >> 8) & 0xFF), cc(rgba & 0xFF));
 	pdfioContentSetLineWidth(s->st, thickness > 0 ? (double)thickness : 1.0);
@@ -92,6 +121,8 @@ fc_pdf_state *fc_pdf_doc_open(smart_str *out, int width, int height)
 	fc_pdf_state *s = ecalloc(1, sizeof(*s));
 	s->out = out;
 	s->h   = (double)height;
+	s->pw  = (double)width;
+	s->bg  = 0xFFFFFFFFu;  /* opaque white until the canvas fill is seen */
 
 	pdfio_rect_t media = { 0.0, 0.0, (double)width, (double)height };
 	/* Pass media as the crop box too: with a NULL crop box pdfio stamps
@@ -146,6 +177,14 @@ void fc_pdf_emit_rect(fc_pdf_state *s, double x, double y,
 	 * FY(y+h). */
 	pdfioContentPathRect(s->st, x, FY(s, y + h), w, h);
 	if (fill) {
+		/* Capture the chart's opaque full-canvas fill as the background
+		 * that later translucent fills composite against. */
+		uint32_t a = (rgba >> 24) & 0xFF;
+		if (!s->bg_set && (a == 0xFFu || a == 0u) &&
+		    x <= 0.5 && y <= 0.5 && w >= s->pw - 1.0 && h >= s->h - 1.0) {
+			s->bg = 0xFF000000u | (rgba & 0x00FFFFFFu);
+			s->bg_set = 1;
+		}
 		set_fill(s, rgba);
 		pdfioContentFill(s->st, false);
 	} else {

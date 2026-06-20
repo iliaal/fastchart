@@ -4085,16 +4085,18 @@ ZEND_METHOD(FastChart_GaugeChart, setZones)
         zval *zc = zend_hash_str_find(Z_ARRVAL_P(z), "color", sizeof("color") - 1);
         double f, t;
         if (!zf || !zt) continue;
-        if (fastchart_zval_to_double(zf, &f) != 0) continue;
-        if (fastchart_zval_to_double(zt, &t) != 0) continue;
+        if (fastchart_zval_to_double(zf, &f) != 0 || !isfinite(f)) continue;
+        if (fastchart_zval_to_double(zt, &t) != 0 || !isfinite(t)) continue;
         int color_rgb = -1;
         if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG &&
             Z_LVAL_P(zc) >= 0 && Z_LVAL_P(zc) <= 0xFFFFFF) {
             color_rgb = (int)Z_LVAL_P(zc);
         }
-        out[n].from = f;
-        out[n].to = t;
+        /* Normalize reversed bounds so every renderer branch (notably the
+         * solid-style raw containment test) sees from <= to. */
+        out[n].from = f < t ? f : t;
+        out[n].to   = f < t ? t : f;
         out[n].color_rgb = color_rgb;
         n++;
     } ZEND_HASH_FOREACH_END();
@@ -6304,6 +6306,7 @@ static void fastchart_render_to_svg(INTERNAL_FUNCTION_PARAMETERS, int fragment_o
                                (int)self->svg_text_mode);
 
     if (dispatch_svg_render(self, Z_OBJCE_P(ZEND_THIS), &t) != 0 || EG(exception)) {
+        fastchart_target_release(&t);
         smart_str_free(&buf);
         RETURN_THROWS();
     }
@@ -6313,6 +6316,7 @@ static void fastchart_render_to_svg(INTERNAL_FUNCTION_PARAMETERS, int fragment_o
         fc_svg_emit_doc_close(&buf);
     }
     smart_str_0(&buf);
+    fastchart_target_release(&t);
 
     if (!buf.s) {
         zend_throw_error(NULL, "FastChart: SVG renderer produced no output");
@@ -6577,12 +6581,14 @@ static void fastchart_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS, zend_stri
                                (int)self->svg_text_mode);
 
     if (dispatch_svg_render(self, Z_OBJCE_P(ZEND_THIS), &t) != 0 || EG(exception)) {
+        fastchart_target_release(&t);
         smart_str_free(&buf);
         RETURN_THROWS();
     }
     fc_svg_emit_g_close(&buf);
     fc_svg_emit_doc_close(&buf);
     smart_str_0(&buf);
+    fastchart_target_release(&t);
 
     if (!buf.s) {
         zend_throw_error(NULL, "FastChart: SVG renderer produced no output");
@@ -8586,7 +8592,8 @@ ZEND_METHOD(FastChart_Funnel, setStages)
         zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
         if (!zv) continue;
         double v;
-        if (fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) || v <= 0) continue;
+        if (fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) || v <= 0 ||
+            v > FASTCHART_MAX_DATA_MAG) continue;
         parsed[idx].value = v;
 
         zval *zl = zend_hash_str_find(eht, "label", sizeof("label") - 1);
@@ -8793,7 +8800,7 @@ ZEND_METHOD(FastChart_LinearMeter, setRange)
         Z_PARAM_DOUBLE(mn)
         Z_PARAM_DOUBLE(mx)
     ZEND_PARSE_PARAMETERS_END();
-    if (!isfinite(mn) || !isfinite(mx) || mx <= mn) {
+    if (!isfinite(mn) || !isfinite(mx) || mx <= mn || !isfinite(mx - mn)) {
         zend_value_error("FastChart\\LinearMeter::setRange() requires finite min < max");
         RETURN_THROWS();
     }
@@ -8892,7 +8899,7 @@ ZEND_METHOD(FastChart_BulletChart, setRange)
         Z_PARAM_DOUBLE(mn)
         Z_PARAM_DOUBLE(mx)
     ZEND_PARSE_PARAMETERS_END();
-    if (!isfinite(mn) || !isfinite(mx) || mx <= mn) {
+    if (!isfinite(mn) || !isfinite(mx) || mx <= mn || !isfinite(mx - mn)) {
         zend_value_error("FastChart\\BulletChart::setRange() requires finite min < max");
         RETURN_THROWS();
     }
@@ -10443,8 +10450,10 @@ ZEND_METHOD(FastChart_VectorChart, setColorRamp)
 PHP_MINIT_FUNCTION(fastchart)
 {
     /* Pre-warm the rasterizer's un-premultiply LUT now, while we are
-     * single-threaded, so the lazy first-call init can't race under ZTS. */
+     * single-threaded, so the lazy first-call init can't race under ZTS.
+     * Same for the encoder's SSSE3 capability cache. */
     fastchart_rasterize_init();
+    fastchart_encoder_init();
 
     /* Per-class handlers init. Each handlers struct gets its own
      * std offset matching its per-type struct layout, plus the

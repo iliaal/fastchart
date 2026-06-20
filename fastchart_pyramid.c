@@ -94,13 +94,16 @@ int fastchart_pyramid_render_to_target(fastchart_pyramid_obj *self, fastchart_ta
     double half_w = (plot_w - center_gap) / 2.0;
     if (half_w < 1.0) half_w = 1.0;
 
-    /* Shared value scale across both sides. */
+    /* Shared value scale across both sides. Only the first cat_count
+     * entries of each side are ever drawn, so values beyond that must
+     * not influence the scale (an oversized trailing value would
+     * otherwise collapse every visible bar). */
     double max_val = 0.0;
-    for (int i = 0; i < self->left.n; i++) {
+    for (int i = 0; i < self->left.n && i < self->cat_count; i++) {
         double v = self->left.data[i];
         if (isfinite(v) && v > max_val) max_val = v;
     }
-    for (int i = 0; i < self->right.n; i++) {
+    for (int i = 0; i < self->right.n && i < self->cat_count; i++) {
         double v = self->right.data[i];
         if (isfinite(v) && v > max_val) max_val = v;
     }

@@ -50,6 +50,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   staircase instead of collapsing to a diagonal.
 - Gallery generators no longer `require` the renamed
   `tests/_font_candidates.inc.php`.
+- Hardened several `double`-to-`int` casts on extreme but finite input
+  (NaN / Inf / overflow): `Funnel::setStages()` magnitude cap, log-axis
+  subnormal minima, horizontal-bar category annotations, `BubbleChart` X
+  mapping, and `LinearMeter` / `BulletChart::setRange()` non-finite spans now
+  reject or clamp instead of risking undefined behavior.
+- `GaugeChart` solid-style zones honor reversed `{from > to}` bounds, matching
+  the needle renderer.
+- `PieChart` exploded slices place their image-map hot-spot over the offset
+  wedge instead of the un-exploded centre.
+- `StockChart` keeps the price pane from collapsing to negative height when
+  several indicator panes share a short canvas.
+- `PolarChart` smooth (Catmull-Rom) series no longer silently truncate past
+  ~128 segments.
+- `PopulationPyramid` scales bars only over the drawn categories, so a stray
+  trailing value past the category count no longer collapses the visible bars.
+- `BarChart` `STACK_LAYER` scales by the per-series extent rather than the
+  stacked sum (which halved layered heights); horizontal `BAR_STYLE_LOLLIPOP`
+  and `BAR_STYLE_DUMBBELL` now render instead of falling back to plain bars.
+- Multi-line text measurement propagates FreeType failures instead of
+  returning understated bounds.
+- `SurfaceChart` dense grids stay inside the plot rect; `CalendarHeatmap`
+  fits wide date spans with smaller cells and rejects only spans too wide for
+  one pixel per week; `ParetoChart` rejects a canvas too narrow for its bar
+  count instead of stacking every bar at one x.
+- `BoxPlot` honors `setYAxisScale(SCALE_LOG)`; `AreaChart` scales the
+  secondary Y axis as log too (rejecting non-positive right-axis data) and no
+  longer drops log-axis gaps to the baseline.
+- `NetworkChart` renders node-only graphs (no links required); `SankeyChart`
+  rejects cyclic flow graphs with a clear error; `VennDiagram` draws
+  fully-overlapping sets as concentric circles instead of a separated triad.
+- The shared color table grows on demand instead of aliasing every color past
+  512 distinct entries to a single handle.
+- PDF output composites translucent fills against the page background instead
+  of rendering them opaque (requires `--with-pdfio`).
+- SSSE3 capability detection is resolved at module start-up, closing a benign
+  first-call data race under ZTS.
 
 ## [1.3.0] - 2026-06-16
 

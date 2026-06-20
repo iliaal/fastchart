@@ -385,6 +385,7 @@ static void fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAMETERS,
                                (int)self->svg_text_mode);
 
     if (dispatch_symbol_svg_render(self, ce, &t) != 0 || EG(exception)) {
+        fastchart_target_release(&t);
         smart_str_free(&buf);
         RETURN_THROWS();
     }
@@ -394,6 +395,7 @@ static void fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAMETERS,
         fc_svg_emit_doc_close(&buf);
     }
     smart_str_0(&buf);
+    fastchart_target_release(&t);
 
     if (!buf.s) {
         zend_throw_error(NULL, "FastChart: SVG renderer produced no output");
@@ -435,12 +437,14 @@ static void fastchart_symbol_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS,
                                (int)self->svg_text_mode);
 
     if (dispatch_symbol_svg_render(self, ce, &t) != 0 || EG(exception)) {
+        fastchart_target_release(&t);
         smart_str_free(&buf);
         RETURN_THROWS();
     }
     fc_svg_emit_g_close(&buf);
     fc_svg_emit_doc_close(&buf);
     smart_str_0(&buf);
+    fastchart_target_release(&t);
 
     if (!buf.s) {
         zend_throw_error(NULL, "FastChart: SVG renderer produced no output");

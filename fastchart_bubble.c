@@ -147,9 +147,7 @@ int fastchart_bubble_render_to_target(fastchart_bubble_obj *self, fastchart_targ
     }
 
     for (int i = 0; i < collected; i++) {
-        double xfrac = (xrange.max - xrange.min) > 0
-            ? (pts[i].x - xrange.min) / (xrange.max - xrange.min) : 0.5;
-        int px = plot.x0 + (int)(xfrac * (plot.x1 - plot.x0));
+        int px = fastchart_x_to_pixel(pts[i].x, &xrange, &plot);
         int py = fastchart_y_to_pixel(pts[i].y, &yrange, &plot);
         double sfrac = smax > 0 ? sqrt(pts[i].size / smax) : 0.5;
         int rad = (int)(r_max * sfrac);

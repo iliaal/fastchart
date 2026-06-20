@@ -293,10 +293,17 @@ int fastchart_text_measure(fastchart_target_t *t,
             n_lines++;
             if (len > 0) {
                 int w = 0, h = 0;
-                if (fc_ft_measure(font_path, font_size, dpi, p, len, &w, &h) == 0) {
-                    if (w > max_w) max_w = w;
-                    if (first_h == 0) first_h = h;
+                if (fc_ft_measure(font_path, font_size, dpi, p, len, &w, &h) != 0) {
+                    /* Mirror the single-line path: a measurement failure
+                     * must surface, not be silently skipped with stale
+                     * bounds (callers reserve layout from out_w/out_h). */
+                    if (err_buf && err_buf_n) {
+                        snprintf(err_buf, err_buf_n, "FreeType measure failed");
+                    }
+                    return -1;
                 }
+                if (w > max_w) max_w = w;
+                if (first_h == 0) first_h = h;
             }
             if (!end) break;
             p = end + 1;

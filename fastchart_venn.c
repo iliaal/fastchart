@@ -141,6 +141,14 @@ int fastchart_venn_render_to_target(fastchart_venn_obj *self, fastchart_target_t
                 cy[2] = sqrt(y2);
                 infeasible = 0;
             }
+        } else {
+            /* d01 ~ 0: sets 0 and 1 fully overlap (co-located at the
+             * origin). Keep them concentric and place set 2 at its solved
+             * distance, so genuine full-overlap input renders as nested
+             * circles instead of being scattered into a separated triad. */
+            cx[2] = d02;
+            cy[2] = 0.0;
+            infeasible = 0;
         }
         if (infeasible) {
             /* Symmetric placement so all three sets stay visible; the
