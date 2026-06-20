@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-20
+
 ### Added
 
 - `Dendrogram` and `Partition` chart classes (catalog 36 to 38): a
@@ -1123,7 +1125,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.3.0...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.4.0...HEAD
+[1.4.0]: https://github.com/iliaal/fastchart/releases/tag/1.4.0
 [1.3.0]: https://github.com/iliaal/fastchart/releases/tag/1.3.0
 [1.2.0]: https://github.com/iliaal/fastchart/releases/tag/1.2.0
 [1.1.6]: https://github.com/iliaal/fastchart/releases/tag/1.1.6
