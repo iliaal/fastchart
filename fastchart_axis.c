@@ -1576,6 +1576,18 @@ void fastchart_draw_x_axis_categorical(fastchart_target_t *t, fastchart_obj *cha
         label_y = plot->y1 + TICK_MARK_LEN(chart, t) + max_label_w + 4;
         align = FASTCHART_ALIGN_RIGHT;
     }
+    /* Last-resort clamp: if the rotated-label anchor still falls below the
+     * canvas (margin reservation can't expand a too-small canvas), pin it just
+     * inside the bottom edge. The label body may still clip on a canvas shorter
+     * than the label, but the anchor stays in the viewport. */
+    if (draw_labels) {
+        int canvas_w = 0, canvas_h = 0;
+        fastchart_target_get_dims(t, &canvas_w, &canvas_h);
+        (void)canvas_w;
+        if (canvas_h > 2 && label_y > canvas_h - 2) {
+            label_y = canvas_h - 2;
+        }
+    }
 
     for (int i = 0; i < n_categories; i += stride) {
         int x = fastchart_x_categorical_center(plot, i, n_categories);

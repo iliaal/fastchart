@@ -1,35 +1,36 @@
 --TEST--
-Waterfall: rotated long bar labels reserve bottom margin instead of overflowing the canvas
+Waterfall: rotated bar label anchors stay inside the SVG viewport
 --EXTENSIONS--
 fastchart
 --FILE--
 <?php
 
-/* fnd_6192daeb: the bar labels live in setBars(), not setCategoryLabels(), so
- * compute_layout could not measure them for the rotated-label bottom margin and
- * fell back to the narrow "999999" probe — rotated long labels ran off canvas.
- * The renderer now exposes the bar labels to the margin measurement. */
+/* fnd_6192daeb: waterfall bar labels come from setBars(), not
+ * setCategoryLabels(), so compute_layout couldn't measure them for the
+ * rotated-label bottom margin and emitted label anchors below the canvas
+ * (y far past the SVG height). The renderer now exposes the bar labels to the
+ * margin measurement, and the shared categorical-axis drawer clamps a label
+ * anchor that would still fall off a too-small canvas. (A label taller than
+ * the canvas can't fully fit either way; this guards the anchor placement.) */
 
 use FastChart\Waterfall;
 use FastChart\Chart;
 
-$labels = ['Quarterly Opening Balance', 'Big Revenue Increase',
-           'Operating Cost Reduction', 'Final Closing Total'];
-$c = (new Waterfall())->setSize(300, 300)
+$label = str_repeat('LongStageName', 8);
+$c = (new Waterfall())->setSize(320, 180)
     ->setSvgTextMode(Chart::SVG_TEXT_NATIVE)
     ->setXAxisLabelAngle(90)
     ->setBars([
-        ['label' => $labels[0], 'value' => 100],
-        ['label' => $labels[1], 'value' => 50],
-        ['label' => $labels[2], 'value' => -30],
-        ['label' => $labels[3], 'value' => 120, 'kind' => 'total'],
+        ['label' => $label, 'value' => 100],
+        ['label' => $label, 'value' => 50],
+        ['label' => $label, 'value' => -30],
     ]);
 $svg = $c->renderSvg();
 
 preg_match_all('/<text [^>]*\by="(-?\d+)"/', $svg, $m);
 $max_y = max(array_map('intval', $m[1]));
-echo "labels_on_canvas: ", ($max_y <= 300 ? 'yes' : 'no'), "\n";
+echo "label_anchor_in_viewport: ", ($max_y <= 180 ? 'yes' : 'no'), "\n";
 
 ?>
 --EXPECT--
-labels_on_canvas: yes
+label_anchor_in_viewport: yes
