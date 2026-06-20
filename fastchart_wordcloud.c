@@ -46,7 +46,12 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
 
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
-    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
+    /* Skip the opaque canvas fill when transparent output was requested,
+     * mirroring fastchart_draw_frame() (this renderer draws its own
+     * canvas instead of calling draw_frame). */
+    if (!self->transparent_bg) {
+        fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
+    }
 
     if (self->word_count <= 0) {
         zend_throw_error(NULL,

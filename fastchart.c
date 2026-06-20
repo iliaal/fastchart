@@ -8683,7 +8683,8 @@ ZEND_METHOD(FastChart_Waterfall, setBars)
         zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
         if (!zv) continue;
         double v;
-        if (fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v)) continue;
+        if (fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) ||
+            fabs(v) > FASTCHART_MAX_DATA_MAG) continue;
         parsed[idx].value = v;
 
         parsed[idx].kind = FASTCHART_WF_DELTA;

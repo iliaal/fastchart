@@ -81,7 +81,20 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
      * long stage names don't clip on the bottom. */
     const char **labels = ecalloc((size_t)n, sizeof(const char *));
     for (int i = 0; i < n; i++) labels[i] = self->bars[i].label;
+    /* Expose the bar labels to the layout's x-axis margin reservation so a
+     * rotated long label (setXAxisLabelAngle) reserves enough bottom margin
+     * instead of overflowing the canvas. The labels come from setBars(), not
+     * setCategoryLabels(), so compute_layout can't see them otherwise.
+     * draw_x_axis_categorical() below receives the labels explicitly;
+     * category_labels is borrowed only for the measurement, then restored so
+     * nothing else (or the dtor) treats the borrowed array as owned. */
+    char **saved_cat = ((fastchart_obj *)self)->category_labels;
+    int saved_cat_n = ((fastchart_obj *)self)->n_category_labels;
+    ((fastchart_obj *)self)->category_labels = (char **)labels;
+    ((fastchart_obj *)self)->n_category_labels = n;
     fastchart_compute_layout((fastchart_obj *)self, t, 1, 1, NULL, 0, &plot);
+    ((fastchart_obj *)self)->category_labels = saved_cat;
+    ((fastchart_obj *)self)->n_category_labels = saved_cat_n;
 
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
