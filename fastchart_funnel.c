@@ -201,14 +201,14 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
              * (sin >= 0 dips below yt). */
             for (int s = 0; s <= ARC_N; s++) {
                 double th = M_PI - (double)s * M_PI / ARC_N;
-                band[k].x = cx + (int)(half_top * cos(th) + 0.5);
+                band[k].x = cx + (int)lround(half_top * cos(th));
                 band[k].y = yt + (int)(ring_h_top * sin(th) + 0.5);
                 k++;
             }
             /* Bottom arc: θ from 0 (right) → π (left). */
             for (int s = 0; s <= ARC_N; s++) {
                 double th = (double)s * M_PI / ARC_N;
-                band[k].x = cx + (int)(half_bot * cos(th) + 0.5);
+                band[k].x = cx + (int)lround(half_bot * cos(th));
                 band[k].y = yb + (int)(ring_h_bot * sin(th) + 0.5);
                 k++;
             }

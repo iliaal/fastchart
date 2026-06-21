@@ -2362,6 +2362,8 @@ static void fastchart_partition_addref_extras(fastchart_partition_obj *o)
  * The handlers struct must already exist in static scope; MINIT
  * memcpy's std_object_handlers into it and sets offset / dtor. */
 #define FASTCHART_DEFINE_LIFECYCLE(name, T)                                      \
+    ZEND_STATIC_ASSERT(sizeof(T) == offsetof(T, std) + sizeof(zend_object),      \
+        "std must be the last member of " #T " for the offsetof-based clone");   \
     static zend_object *fastchart_##name##_create_object(zend_class_entry *ce)   \
     {                                                                            \
         T *intern = zend_object_alloc(sizeof(T), ce);                            \
@@ -8503,7 +8505,8 @@ ZEND_METHOD(FastChart_Treemap, setItems)
         zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
         if (!zv) continue;
         double v;
-        if (fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) || v <= 0) {
+        if (fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) || v <= 0 ||
+            v > FASTCHART_MAX_DATA_MAG) {
             continue;
         }
         parsed[idx].value = v;

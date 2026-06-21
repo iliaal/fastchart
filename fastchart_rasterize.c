@@ -203,6 +203,7 @@ static void fc_unpremul_row_scalar(const unsigned char *src,
 int fastchart_svg_get_intrinsic_dims(const char *svg, size_t svg_len,
                                      int *out_w, int *out_h)
 {
+	if (svg_len > (size_t)INT_MAX) return -1;
 	plutosvg_document_t *doc =
 	    plutosvg_document_load_from_data(svg, (int)svg_len, -1, -1,
 	                                     NULL, NULL);
@@ -330,6 +331,7 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
 	pix->w = target_w;
 	pix->h = target_h;
 	pix->has_alpha = 1;  /* plutovg returns premultiplied BGRA */
+	if (svg_len > (size_t)INT_MAX) return -1;
 
 	plutosvg_document_t *doc =
 	    plutosvg_document_load_from_data(svg, (int)svg_len, -1, -1,
@@ -353,6 +355,7 @@ int fastchart_rasterize_svg_with_text(const char *svg, size_t svg_len,
 	pix->w = target_w;
 	pix->h = target_h;
 	pix->has_alpha = 1;
+	if (svg_len > (size_t)INT_MAX) return -1;
 
 	plutosvg_document_t *doc =
 	    plutosvg_document_load_from_data(svg, (int)svg_len, -1, -1,
@@ -381,6 +384,7 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 	pix->has_alpha = 1;
 	if (out_w) *out_w = 0;
 	if (out_h) *out_h = 0;
+	if (svg_len > (size_t)INT_MAX) return -2;
 
 	plutosvg_document_t *doc =
 	    plutosvg_document_load_from_data(svg, (int)svg_len, -1, -1,

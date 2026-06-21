@@ -33,9 +33,13 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-/* Local: append a NUL-terminated literal to buf. Avoids one strlen
- * per call vs smart_str_appends. */
-#define FC_APPENDS(buf, s) smart_str_appendl((buf), (s), sizeof(s) - 1)
+/* Local: append a string literal to buf. Avoids one strlen per call vs
+ * smart_str_appends. The `"" s ""` concatenation only compiles when s is
+ * a string literal, so a stray pointer arg (whose sizeof would be the
+ * pointer width, silently truncating) is a build error rather than a
+ * runtime bug. */
+#define FC_APPENDS(buf, s) \
+	smart_str_appendl((buf), "" s "", sizeof("" s "") - 1)
 
 /* snprintf("%f", ...) honours LC_NUMERIC, so under a comma-decimal
  * locale (de_DE, fr_FR, ...) it emits "12,5". A comma is SVG's own

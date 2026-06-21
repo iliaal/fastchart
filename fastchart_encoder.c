@@ -267,15 +267,20 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 	unsigned char * volatile jpeg_buf = NULL;
 	unsigned long            jpeg_sz  = 0;
 	uint8_t       * volatile rgb_row  = NULL;
+	/* Gate the destroy on a completed create: if jpeg_create_compress
+	 * itself longjmps (struct/version mismatch), cinfo.mem is still
+	 * uninitialized and jpeg_destroy_compress must not run on it. */
+	volatile int created = 0;
 
 	if (setjmp(err.jmp)) {
-		jpeg_destroy_compress(&cinfo);
+		if (created) jpeg_destroy_compress(&cinfo);
 		if (jpeg_buf) free(jpeg_buf);
 		if (rgb_row)  efree(rgb_row);
 		return -1;
 	}
 
 	jpeg_create_compress(&cinfo);
+	created = 1;
 	/* The cast strips the `volatile` qualifier on jpeg_buf for the
 	 * libjpeg API (which takes a plain `unsigned char **`). volatile
 	 * here governs how the compiler optimizes our own access across

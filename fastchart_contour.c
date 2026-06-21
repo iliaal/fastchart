@@ -205,8 +205,8 @@ int fastchart_contour_render_to_target(fastchart_contour_obj *self, fastchart_ta
                  *
                  * top fractional col = t_cross(v00, v01, L), row 0
                  * right: row = t_cross(v01, v11, L), col 1
-                 * bottom: col = 1 - t_cross(v10, v11, L), row 1
-                 * left: row = 1 - t_cross(v00, v10, L), col 0
+                 * bottom: col = t_cross(v10, v11, L), row 1
+                 * left: row = t_cross(v00, v10, L), col 0
                  */
                 int p_top_x, p_top_y;
                 int p_right_x, p_right_y;
