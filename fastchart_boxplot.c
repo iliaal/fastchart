@@ -23,7 +23,6 @@
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 
-#define MAX_BOXES   64
 #define MAX_OUTLIER 32
 
 int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_target_t *t)

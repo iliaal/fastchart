@@ -176,8 +176,10 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
         }
     }
 
-    /* Cells: walk every day from grid_start to last; index into
-     * self->days via binary search (data is sorted). */
+    /* Cells: walk every day from grid_start to last. self->days is
+     * sorted and the outer day loop is monotonically increasing, so a
+     * single forward scan of data_idx (amortized linear, never reset)
+     * lands each cell on its entry — cheaper than per-cell bsearch. */
     int data_idx = 0;
     for (int w = 0; w < n_weeks; w++) {
         for (int r = 0; r < 7; r++) {

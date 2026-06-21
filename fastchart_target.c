@@ -664,7 +664,11 @@ void fastchart_target_clip_push(fastchart_target_t *t,
         return;
     }
 #endif
-    int id = t->u.svg.next_clip_id++;
+    /* Saturate rather than overflow: signed wrap is UB, and a wrapped
+     * negative id would emit an invalid NCName. Unreachable in practice
+     * (2^31 clips in one document exhausts memory first). */
+    int id = t->u.svg.next_clip_id;
+    if (t->u.svg.next_clip_id < INT_MAX) t->u.svg.next_clip_id++;
     if (t->clip_depth < FASTCHART_TARGET_CLIP_DEPTH) {
         t->clip_stack[t->clip_depth++] = id;
     }
@@ -940,7 +944,8 @@ void fastchart_target_gradient_rect(fastchart_target_t *t,
         return;
     }
 #endif
-    int id = t->u.svg.next_grad_id++;
+    int id = t->u.svg.next_grad_id;
+    if (t->u.svg.next_grad_id < INT_MAX) t->u.svg.next_grad_id++;
     fc_svg_emit_gradient_rect(t->u.svg.buf, id, x, y, w, h,
                                from_rgb, to_rgb, dir);
 }
@@ -970,7 +975,8 @@ void fastchart_target_gradient_polygon(fastchart_target_t *t,
         return;
     }
 #endif
-    int id = t->u.svg.next_grad_id++;
+    int id = t->u.svg.next_grad_id;
+    if (t->u.svg.next_grad_id < INT_MAX) t->u.svg.next_grad_id++;
     fc_svg_emit_gradient_polygon(t->u.svg.buf, id, xs, ys, n,
                                   from_rgb, to_rgb, dir);
     if (n > 256) { efree(xs); efree(ys); }
