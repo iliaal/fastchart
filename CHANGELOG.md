@@ -9,19 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `Treemap::setItems()` now caps values at `FASTCHART_MAX_DATA_MAG`,
-  matching Funnel/Waterfall/Pareto. Two near-`DBL_MAX` values could
-  overflow the area total to `+Inf` and collapse every cell.
-- `Funnel` cone arcs round symmetrically (`lround`), removing a 1px
-  left/right asymmetry where negative `cos` truncated toward zero.
-
-### Changed
-
-- Hardening: per-function `INT_MAX` length guards in the SVG rasterizer,
-  saturating clip/gradient id counters, a `created` flag gating
-  `jpeg_destroy_compress` if `jpeg_create_compress` fails, and a
-  string-literal-only `FC_APPENDS`. Stale comments and a dead `MAX_BOXES`
-  define removed.
+- `Treemap::setItems()` caps values at `FASTCHART_MAX_DATA_MAG`, so two
+  near-`DBL_MAX` values can't overflow the total to `+Inf` and blank the chart.
+- `Funnel::setStyle(STYLE_CONE)` arcs round symmetrically (`lround`),
+  fixing a 1px left/right asymmetry.
+- Hardened latent overflow paths: `INT_MAX` guards in the SVG rasterizer,
+  saturating clip/gradient ids, and a guarded `jpeg_destroy_compress`.
 
 ## [1.4.0] - 2026-06-20
 
