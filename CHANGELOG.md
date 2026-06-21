@@ -19,8 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Hardening: per-function `INT_MAX` length guards in the SVG rasterizer,
   saturating clip/gradient id counters, a `created` flag gating
-  `jpeg_destroy_compress` if `jpeg_create_compress` fails, a compile-time
-  assert that `std` is the last lifecycle-struct member, and a
+  `jpeg_destroy_compress` if `jpeg_create_compress` fails, and a
   string-literal-only `FC_APPENDS`. Stale comments and a dead `MAX_BOXES`
   define removed.
 
