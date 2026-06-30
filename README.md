@@ -173,8 +173,8 @@ makes labels appear in the rasterized output.
 
 PDF is a second vector format, available when the extension is built
 with `--with-pdfio` (it links a system [pdfio](https://www.msweet.org/pdfio);
-off by default). Chart bodies emit PDF path operators directly — no
-rasterization — so every chart class renders as sharp vector output:
+off by default). Chart bodies emit PDF path operators directly, no
+rasterization, so every chart class renders as sharp vector output:
 
 ```php
 $pdf = $chart->renderPdf();              // PDF document bytes
