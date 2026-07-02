@@ -128,7 +128,7 @@ int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self, fa
         int px = bar_x0 + (int)(frac * (bar_x1 - bar_x0));
         fastchart_target_line(t, px, bar_y0 - 4, px, bar_y1 + 4,
                               pal.text, 2, FASTCHART_DASH_SOLID);
-        gdPoint tri[3] = {
+        fastchart_point_t tri[3] = {
             { px - 6, bar_y0 - 10 },
             { px + 6, bar_y0 - 10 },
             { px,     bar_y0 - 2  },
@@ -138,7 +138,7 @@ int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self, fa
         int py = bar_y1 - (int)(frac * (bar_y1 - bar_y0));
         fastchart_target_line(t, bar_x0 - 4, py, bar_x1 + 4, py,
                               pal.text, 2, FASTCHART_DASH_SOLID);
-        gdPoint tri[3] = {
+        fastchart_point_t tri[3] = {
             { bar_x1 + 10, py - 6 },
             { bar_x1 + 10, py + 6 },
             { bar_x1 + 2,  py     },

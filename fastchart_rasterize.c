@@ -22,14 +22,6 @@
 #include <stdint.h>
 #include <string.h>
 
-/* Defined in fastchart_target.c — declared here to avoid pulling all
- * of fastchart_target.h's FT_Library + glyph-cache surface into this
- * file's public API surface. */
-extern void fastchart_apply_text_overlays(void *plutovg_surface,
-                                           int logical_w, int logical_h,
-                                           const fastchart_text_overlay_t *overlays,
-                                           int n_overlays);
-
 /* x86 SSSE3 worker fns carry __attribute__((target("ssse3"))); runtime
  * dispatch detects the feature via raw CPUID (__get_cpuid from
  * <cpuid.h>), NOT __builtin_cpu_supports. The builtin pulls in libgcc's
@@ -200,76 +192,25 @@ static void fc_unpremul_row_scalar(const unsigned char *src,
 	}
 }
 
-int fastchart_svg_get_intrinsic_dims(const char *svg, size_t svg_len,
-                                     int *out_w, int *out_h)
-{
-	if (svg_len > (size_t)INT_MAX) return -1;
-	plutosvg_document_t *doc =
-	    plutosvg_document_load_from_data(svg, (int)svg_len, -1, -1,
-	                                     NULL, NULL);
-	if (!doc) return -1;
-
-	float w = plutosvg_document_get_width(doc);
-	float h = plutosvg_document_get_height(doc);
-	plutosvg_document_destroy(doc);
-
-	/* plutosvg returns -1 when the document declares percentage
-	 * dimensions without a container, or 0 when it has neither
-	 * width/height nor viewBox. Either is "unresolvable" for our
-	 * purposes — fastchart doesn't carry an outer viewport. */
-	if (!isfinite(w) || !isfinite(h) || w <= 0 || h <= 0) return -1;
-
-	/* Bound the float BEFORE the cast — (int)f is UB per C11 6.3.1.4
-	 * when f is outside the representable int range. A pathological
-	 * SVG with width="1e10" would otherwise produce INT_MIN on x86
-	 * (happens to fail the iw <= 0 check) or a trap on other ABIs.
-	 *
-	 * We use INT_MAX (not FC_IMAGE_MAX_DIM) as the guard so the
-	 * downstream per-axis cap check at the caller still fires with
-	 * the user-friendly "exceed cap" message for normal-but-too-
-	 * large dimensions like width=50000. This bound is strictly for
-	 * UB avoidance on truly absurd inputs.
-	 *
-	 * >= because (float)INT_MAX rounds UP to 2^31 (INT_MAX itself is
-	 * not representable in float): `>` would admit w == 2147483648.0f
-	 * and the cast below would be the very UB this guard exists to
-	 * prevent. The next float down, 2147483520.0f, casts cleanly. */
-	if (w >= (float)INT_MAX || h >= (float)INT_MAX) return -1;
-
-	int iw = (int)(w + 0.5f);
-	int ih = (int)(h + 0.5f);
-	if (iw <= 0 || ih <= 0) return -1;
-
-	*out_w = iw;
-	*out_h = ih;
-	return 0;
-}
-
 /* Render an already-loaded plutosvg document into pix. Owns the
  * surface (destroys it); does NOT own the document. Returns 0 on
  * success, -1 on rasterize failure.
  *
- * If overlays/n_overlays is set, applies deferred text overlays
- * (opt #7) to the surface between plutosvg_render and un-premultiply.
- * logical_w/logical_h are the SVG document's intrinsic viewport
- * dimensions used to compute the logical->physical scale for text
- * positioning. */
+ * pix->rgba MUST be pre-allocated by the caller with capacity
+ * target_w * target_h * 4 BEFORE any vendor (malloc'd) state is
+ * created: a request-memory allocation inside this window would let a
+ * memory_limit bailout longjmp past the vendor destroys and leak the
+ * surface (up to 256 MB) persistently — malloc memory the Zend
+ * allocator never counts or reclaims. This function performs no Zend
+ * allocation. */
 static int fastchart_rasterize_doc(plutosvg_document_t *doc,
                                     int target_w, int target_h,
-                                    int logical_w, int logical_h,
-                                    const fastchart_text_overlay_t *overlays,
-                                    int n_overlays,
                                     fastchart_pixels_t *pix)
 {
 	plutovg_surface_t *surf =
 	    plutosvg_document_render_to_surface(doc, NULL, target_w, target_h,
 	                                        NULL, NULL, NULL);
 	if (!surf) return -1;
-
-	if (n_overlays > 0 && overlays) {
-		fastchart_apply_text_overlays(surf, logical_w, logical_h,
-		                               overlays, n_overlays);
-	}
 
 	pix->w = target_w;
 	pix->h = target_h;
@@ -278,6 +219,13 @@ static int fastchart_rasterize_doc(plutosvg_document_t *doc,
 	int sw = plutovg_surface_get_width(surf);
 	int sh = plutovg_surface_get_height(surf);
 	if (sw != target_w || sh != target_h) {
+		/* Defensive: plutosvg renders at the requested size, but the
+		 * caller's buffer is sized target_w * target_h — reject rather
+		 * than overrun if that invariant ever breaks. */
+		if ((size_t)sw * (size_t)sh > (size_t)target_w * (size_t)target_h) {
+			plutovg_surface_destroy(surf);
+			return -1;
+		}
 		pix->w = sw;
 		pix->h = sh;
 	}
@@ -285,10 +233,7 @@ static int fastchart_rasterize_doc(plutosvg_document_t *doc,
 	const unsigned char *src = plutovg_surface_get_data(surf);
 	int                  stride = plutovg_surface_get_stride(surf);
 
-	size_t bytes = (size_t)pix->w * pix->h * 4;
-	pix->rgba = emalloc(bytes);
-
-	if (!fc_inv_alpha_ready) fc_init_inv_alpha();
+		if (!fc_inv_alpha_ready) fc_init_inv_alpha();
 
 	/* Two-stage un-premultiply:
 	 *   - opaque-row SIMD shuffle for runs of all-FF alpha (fastchart's
@@ -332,40 +277,27 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
 	pix->h = target_h;
 	pix->has_alpha = 1;  /* plutovg returns premultiplied BGRA */
 	if (svg_len > (size_t)INT_MAX) return -1;
+	if (target_w <= 0 || target_h <= 0) return -1;
+
+	/* Destination first — see fastchart_rasterize_doc's no-Zend-alloc
+	 * contract for the vendor-state window. */
+	pix->rgba = safe_emalloc((size_t)target_w * (size_t)target_h, 4, 0);
 
 	plutosvg_document_t *doc =
 	    plutosvg_document_load_from_data(svg, (int)svg_len, -1, -1,
 	                                     NULL, NULL);
-	if (!doc) return -1;
+	if (!doc) {
+		efree(pix->rgba);
+		pix->rgba = NULL;
+		return -1;
+	}
 
-	int rc = fastchart_rasterize_doc(doc, target_w, target_h,
-	                                  0, 0, NULL, 0, pix);
+	int rc = fastchart_rasterize_doc(doc, target_w, target_h, pix);
 	plutosvg_document_destroy(doc);
-	return rc;
-}
-
-int fastchart_rasterize_svg_with_text(const char *svg, size_t svg_len,
-                                       int target_w, int target_h,
-                                       int logical_w, int logical_h,
-                                       const fastchart_text_overlay_t *overlays,
-                                       int n_overlays,
-                                       fastchart_pixels_t *pix)
-{
-	pix->rgba = NULL;
-	pix->w = target_w;
-	pix->h = target_h;
-	pix->has_alpha = 1;
-	if (svg_len > (size_t)INT_MAX) return -1;
-
-	plutosvg_document_t *doc =
-	    plutosvg_document_load_from_data(svg, (int)svg_len, -1, -1,
-	                                     NULL, NULL);
-	if (!doc) return -1;
-
-	int rc = fastchart_rasterize_doc(doc, target_w, target_h,
-	                                  logical_w, logical_h,
-	                                  overlays, n_overlays, pix);
-	plutosvg_document_destroy(doc);
+	if (rc != 0) {
+		efree(pix->rgba);
+		pix->rgba = NULL;
+	}
 	return rc;
 }
 
@@ -394,8 +326,9 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 	float w = plutosvg_document_get_width(doc);
 	float h = plutosvg_document_get_height(doc);
 	/* >= : (float)INT_MAX rounds up to 2^31, which `>` would admit
-	 * straight into the UB (int) cast below. See the matching guard
-	 * in fastchart_svg_get_intrinsic_dims. */
+	 * straight into the UB (int) cast below. (plutosvg returns -1 for
+	 * percentage dims without a container, 0 when neither width/height
+	 * nor viewBox exists — both are "unresolvable" here.) */
 	if (!isfinite(w) || !isfinite(h) || w <= 0 || h <= 0
 	    || w >= (float)INT_MAX || h >= (float)INT_MAX) {
 		plutosvg_document_destroy(doc);
@@ -416,7 +349,22 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 		return -3;
 	}
 
-	int rc = fastchart_rasterize_doc(doc, iw, ih, 0, 0, NULL, 0, pix);
+	/* Dims are only known post-parse, so the destination cannot be
+	 * pre-allocated ahead of the document like fastchart_rasterize_svg
+	 * does. Guard the allocation instead: a memory_limit bailout here
+	 * would otherwise leak the malloc'd document persistently. */
+	int rc;
+	zend_try {
+		pix->rgba = safe_emalloc((size_t)iw * (size_t)ih, 4, 0);
+		rc = fastchart_rasterize_doc(doc, iw, ih, pix);
+	} zend_catch {
+		plutosvg_document_destroy(doc);
+		zend_bailout();
+	} zend_end_try();
 	plutosvg_document_destroy(doc);
+	if (rc != 0) {
+		efree(pix->rgba);
+		pix->rgba = NULL;
+	}
 	return (rc == 0) ? 0 : -4;
 }

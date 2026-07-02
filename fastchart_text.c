@@ -55,26 +55,10 @@ static int fc_ft_measure(const char *font_path, double size_pt, int dpi,
     long total_w_64 = 0;
     const unsigned char *p = (const unsigned char *)text;
     const unsigned char *end = p + text_len;
-    while (p < end) {
-        unsigned cp;
-        if (*p < 0x80) { cp = *p++; }
-        else if ((*p & 0xE0) == 0xC0 && (end - p) >= 2) {
-            cp = ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
-            p += 2;
-        } else if ((*p & 0xF0) == 0xE0 && (end - p) >= 3) {
-            cp = ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
-            p += 3;
-        } else if ((*p & 0xF8) == 0xF0 && (end - p) >= 4) {
-            /* 4-byte sequence covers U+10000 and above — emoji, CJK
-             * extensions, mathematical alphanumeric symbols. Without
-             * this branch a non-BMP codepoint contributed 0 to the
-             * measured width and chart layout reservations came up
-             * systematically narrow for any label containing emoji. */
-            cp = ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12)
-               | ((p[2] & 0x3F) << 6)  |  (p[3] & 0x3F);
-            p += 4;
-        } else { p++; continue; }
-
+    uint32_t cp;
+    /* Shared walker: invalid bytes measure as U+FFFD with a real
+     * advance, matching what the SVG/PDF emitters will draw. */
+    while ((p = fc_utf8_next_cp(p, end, &cp)) != NULL) {
         FT_UInt gi = FT_Get_Char_Index(face, cp);
         if (FT_Load_Glyph(face, gi, FT_LOAD_NO_BITMAP | FT_LOAD_NO_HINTING))
             continue;

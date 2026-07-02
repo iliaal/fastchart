@@ -26,7 +26,7 @@
 #include <math.h>
 
 /* Match the public setter cap so accepted data renders end-to-end.
- * 1024 gdPoint = 8 KB on the stack, well within budget. The previous
+ * 1024 fastchart_point_t = 8 KB on the stack, well within budget. The previous
  * 512 silently dropped half of an at-cap series. */
 #define MAX_POLAR_POINTS FASTCHART_MAX_POLAR_POINTS
 
@@ -155,7 +155,7 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
             continue;
         }
 
-        gdPoint raw[MAX_POLAR_POINTS];
+        fastchart_point_t raw[MAX_POLAR_POINTS];
         int n_raw = 0;
         for (int i = 0; i < upto; i++) {
             double a = series[s].angles[i];
@@ -179,7 +179,7 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
          * curve without flooding the polygon buffer. */
         bool smooth = (self->polar_interp == FASTCHART_INTERP_SMOOTH && n_raw >= 3);
         int poly_cap = smooth ? n_raw * POLAR_SMOOTH_SUBDIV + 1 : n_raw;
-        gdPoint *poly = emalloc((size_t)poly_cap * sizeof(*poly));
+        fastchart_point_t *poly = emalloc((size_t)poly_cap * sizeof(*poly));
         int n_pts = 0;
         if (smooth) {
             enum { SUBDIV = POLAR_SMOOTH_SUBDIV };

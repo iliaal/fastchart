@@ -34,6 +34,7 @@ typedef struct {
 	int      h;
 	int      has_alpha;   /* 0 = opaque (RGB output OK); 1 = real alpha present */
 	int      dpi;         /* 0 = don't write density metadata; else stamps pHYs/density */
+	int      png_level;   /* zlib compression level 0..9; -1 = library default (6) */
 } fastchart_pixels_t;
 
 /* One-time module-load init: prewarms the SSSE3 capability cache so

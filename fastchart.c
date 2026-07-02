@@ -307,6 +307,7 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
      * default), JPEG quality 88 (the eval-validated sweet spot). */
     b->svg_text_mode = FASTCHART_SVG_TEXT_PATHS;
     b->jpeg_quality = 88;
+    b->png_compression_level = -1;
     b->webp_mode    = FASTCHART_WEBP_DRAWING;
 
     b->font_path = fastchart_default_font_path
@@ -500,6 +501,7 @@ static fastchart_image_map_area *fc_image_map_push(fastchart_obj *b, int idx)
 	memset(a, 0, sizeof(*a));
 	a->href    = b->image_map_entries[idx].href;
 	a->tooltip = b->image_map_entries[idx].tooltip;
+	a->orig_index = idx;
     return a;
 }
 
@@ -786,14 +788,22 @@ static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int 
     out->point_colors = NULL;
     if (n == 0) return 0;
 
+    /* Data arrays iterate in hash order with a position counter, NOT by
+     * probing packed indexes 0..n-1: an array with holes (array_filter,
+     * unset) has no index i for some i < n, and the probe read that as
+     * an intentional null gap — silently corrupting the series (and
+     * dropping the tail values) even under strict mode. */
     if (flags & FC_SERIES_F_FLOATING) {
         out->values = emalloc((size_t)n * sizeof(double));
         out->values_max = emalloc((size_t)n * sizeof(double));
-        for (int i = 0; i < n; i++) {
-            zval *v = zend_hash_index_find(data_ht, i);
-            if (v) ZVAL_DEREF(v);
+        int i = 0;
+        zval *v;
+        ZEND_HASH_FOREACH_VAL(data_ht, v) {
+            if (i >= n) break;
+            ZVAL_DEREF(v);
             double lo = NAN, hi = NAN;
-            if (v && Z_TYPE_P(v) == IS_ARRAY) {
+            int parsed = 0;
+            if (Z_TYPE_P(v) == IS_ARRAY) {
                 HashTable *pair = Z_ARRVAL_P(v);
                 zval *zlo = zend_hash_index_find(pair, 0);
                 zval *zhi = zend_hash_index_find(pair, 1);
@@ -803,19 +813,35 @@ static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int 
                         fastchart_zval_to_double(zhi, &h) == 0) {
                         if (l > h) { double t = l; l = h; h = t; }
                         lo = l; hi = h;
+                        parsed = 1;
                     }
                 }
             }
+            if (!parsed && Z_TYPE_P(v) != IS_NULL
+                && (flags & FC_SERIES_F_STRICT)) {
+                zend_type_error("FastChart strict mode: floating series "
+                                "entries must be [low, high] pairs or null");
+                if (out->label) { efree(out->label); out->label = NULL; }
+                efree(out->values);
+                efree(out->values_max);
+                out->values = NULL;
+                out->values_max = NULL;
+                out->len = 0;
+                return -1;
+            }
             out->values[i] = lo;
             out->values_max[i] = hi;
-        }
+            i++;
+        } ZEND_HASH_FOREACH_END();
     } else {
         out->values = emalloc((size_t)n * sizeof(double));
-        for (int i = 0; i < n; i++) {
-            zval *v = zend_hash_index_find(data_ht, i);
+        int i = 0;
+        zval *v;
+        ZEND_HASH_FOREACH_VAL(data_ht, v) {
+            if (i >= n) break;
             double d;
-            if (v) ZVAL_DEREF(v);
-            if (!v || Z_TYPE_P(v) == IS_NULL) {
+            ZVAL_DEREF(v);
+            if (Z_TYPE_P(v) == IS_NULL) {
                 out->values[i] = NAN;
             } else if (fastchart_zval_to_double(v, &d) == 0) {
                 out->values[i] = d;
@@ -832,18 +858,23 @@ static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int 
             } else {
                 out->values[i] = NAN;
             }
-        }
+            i++;
+        } ZEND_HASH_FOREACH_END();
     }
 
     if (colors_ht) {
         out->point_colors = emalloc((size_t)n * sizeof(zend_long));
-        for (int i = 0; i < n; i++) {
-            zval *cv = zend_hash_index_find(colors_ht, i);
+        for (int i = 0; i < n; i++) out->point_colors[i] = -1;
+        int i = 0;
+        zval *cv;
+        ZEND_HASH_FOREACH_VAL(colors_ht, cv) {
+            if (i >= n) break;
             zend_long c = -1;
-            if (cv) ZVAL_DEREF(cv);
-            if (cv && Z_TYPE_P(cv) == IS_LONG) c = Z_LVAL_P(cv);
+            ZVAL_DEREF(cv);
+            if (Z_TYPE_P(cv) == IS_LONG) c = Z_LVAL_P(cv);
             out->point_colors[i] = (c >= 0 && c <= 0xFFFFFF) ? c : -1;
-        }
+            i++;
+        } ZEND_HASH_FOREACH_END();
     }
     return 0;
 }
@@ -863,9 +894,16 @@ static int fastchart_collect_series_into(zval *arr, fastchart_series_t *out,
     int n = (int)zend_hash_num_elements(ht);
     if (n == 0) return 0;
 
-    /* Multi-series detection: first element is an array with a 'data'
-     * key. Single-series fallback: the input is itself the values. */
-    zval *first = zend_hash_index_find(ht, 0);
+    /* Multi-series detection: FIRST element (in hash order — index 0
+     * may not exist after unset/array_filter) is an array with a
+     * 'data' key. Single-series fallback: the input is itself the
+     * values. */
+    zval *first = NULL;
+    zval *scan;
+    ZEND_HASH_FOREACH_VAL(ht, scan) {
+        first = scan;
+        break;
+    } ZEND_HASH_FOREACH_END();
     if (first) ZVAL_DEREF(first);  /* tolerate foreach-by-ref buckets */
     bool is_multi = false;
     if (first && Z_TYPE_P(first) == IS_ARRAY) {
@@ -877,11 +915,22 @@ static int fastchart_collect_series_into(zval *arr, fastchart_series_t *out,
     if (is_multi) {
         zval *series_zv;
         ZEND_HASH_FOREACH_VAL(ht, series_zv) {
-            if (*out_n >= FASTCHART_MAX_SERIES) break;
+            if (*out_n >= FASTCHART_MAX_SERIES) {
+                /* Mirrors the per-series points cap: silently dropping
+                 * series 9+ hid data with no signal to the caller. */
+                zend_value_error("FastChart accepts at most %d series; got %d",
+                                 FASTCHART_MAX_SERIES, n);
+                return -1;
+            }
             if (fastchart_parse_series(series_zv, &out[*out_n], flags) != 0) {
                 /* Strict-mode TypeError leaves an exception pending;
                  * propagate it instead of silently skipping. */
                 if (EG(exception)) return -1;
+                if (flags & FC_SERIES_F_STRICT) {
+                    zend_type_error("FastChart strict mode: each series "
+                                    "entry must be an array");
+                    return -1;
+                }
                 continue;
             }
             if (out[*out_n].len > *out_max_len) *out_max_len = out[*out_n].len;
@@ -3895,8 +3944,16 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints)
     int n_input = (int)zend_hash_num_elements(ht);
     if (n_input == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
-    /* Detect multi-series: first element is dict with 'data' key. */
-    zval *first = zend_hash_index_find(ht, 0);
+    /* Detect multi-series: first element (in hash order — index 0 may
+     * not exist after unset/array_filter) is dict with 'data' key. */
+    zval *first = NULL;
+    {
+        zval *scan;
+        ZEND_HASH_FOREACH_VAL(ht, scan) {
+            first = scan;
+            break;
+        } ZEND_HASH_FOREACH_END();
+    }
     if (first) ZVAL_DEREF(first);  /* tolerate foreach-by-ref buckets */
     bool is_multi = false;
     if (first && Z_TYPE_P(first) == IS_ARRAY) {
@@ -4212,6 +4269,21 @@ ZEND_METHOD(FastChart_Chart, setJpegQuality)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+ZEND_METHOD(FastChart_Chart, setPngCompressionLevel)
+{
+    zend_long level;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_LONG(level)
+    ZEND_PARSE_PARAMETERS_END();
+    if (level < 0 || level > 9) {
+        zend_value_error("FastChart\\Chart::setPngCompressionLevel() must be in [0, 9]");
+        RETURN_THROWS();
+    }
+    fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    self->png_compression_level = level;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
+
 ZEND_METHOD(FastChart_Chart, setWebpMode)
 {
     zend_long mode;
@@ -4308,9 +4380,7 @@ static int fastchart_svg_to_pixels(
     zend_string *svg, const char *method_name,
     fastchart_pixels_t *pix)
 {
-    pix->rgba = NULL;
-    pix->w = 0;
-    pix->h = 0;
+    fastchart_pixels_init(pix, 0, 0);
 
     if (ZSTR_LEN(svg) == 0 || ZSTR_LEN(svg) > FC_SVG_MAX_BYTES) {
         zend_value_error(
@@ -4755,11 +4825,10 @@ ZEND_METHOD(FastChart_Chart, getImageMapAreas)
         }
         add_assoc_zval(&entry, "coords", &coords_arr);
 
-        add_assoc_long(&entry, "index", /* best effort: we don't store the original idx
-                                         * separately in the area, but the order is the
-                                         * render order which matches the set* index.
-                                         * For now use the area slot as a stable ordinal. */
-                       (zend_long)i);
+        /* The stub documents 'index' as the position in the original
+         * setSeries/setSlices/setPoints — the area slot ordinal drifts
+         * from it as soon as one entry is skipped (no href, NaN point). */
+        add_assoc_long(&entry, "index", (zend_long)a->orig_index);
 
         add_assoc_string(&entry, "href", (char*)href);
 
@@ -6138,10 +6207,21 @@ static int fastchart_chart_render_to_buf(fastchart_obj *self,
         return -1;
     }
 
-    /* Stable raster path: SVG (PATHS + text defer) -> plutosvg parse +
-     * plutovg raster at physical size -> encode. An experimental direct
-     * plutovg canvas path (bypass SVG, immediate text, SIMD unpremul) was
-     * fully prototyped with measurement harness on
+    /* libwebp hard-caps each dimension at WEBP_MAX_DIMENSION (16383),
+     * one below fastchart's own physical cap — reject up front instead
+     * of paying for the SVG build + rasterization and then failing with
+     * a generic encoder error. */
+    if (format == 2 && (alloc_w > 16383 || alloc_h > 16383)) {
+        zend_throw_error(NULL,
+            "%s: physical dimensions %dx%d (logical size x dpi/96) exceed "
+            "WebP's 16383-pixel per-dimension limit", where, alloc_w, alloc_h);
+        return -1;
+    }
+
+    /* Stable raster path: SVG -> plutosvg parse + plutovg raster at
+     * physical size -> encode. An experimental direct plutovg canvas
+     * path (bypass SVG, immediate text, SIMD unpremul) was fully
+     * prototyped with measurement harness on
      * spike/direct-plutovg-raster-optimization for future review & analysis
      * (per review plan "P1.2" + "verify or discard" gate; -O2 runs and
      * all tweak states are on that branch only). */
@@ -6156,10 +6236,6 @@ static int fastchart_chart_render_to_buf(fastchart_obj *self,
                                (int)self->width, (int)self->height,
                                (int)self->dpi,
                                FASTCHART_SVG_TEXT_PATHS);
-    /* Opt #7: defer text emission. PATHS-mode text is recorded on the
-     * target and applied to the rasterized surface via plutovg after
-     * plutosvg parses + renders the (now much smaller) non-text SVG. */
-    fastchart_target_enable_text_defer(&t);
 
     if (dispatch_svg_render(self, ce, &t) != 0 || EG(exception)) {
         fastchart_target_release(&t);
@@ -6176,22 +6252,21 @@ static int fastchart_chart_render_to_buf(fastchart_obj *self,
         return -1;
     }
 
-    /* Rasterize at physical dims, apply deferred text overlays. */
+    /* Rasterize at physical dims. */
     fastchart_pixels_t pix;
     fastchart_pixels_init(&pix, alloc_w, alloc_h);
     pix.dpi = (int)self->dpi;
-    if (fastchart_rasterize_svg_with_text(
+    pix.png_level = (int)self->png_compression_level;
+    if (fastchart_rasterize_svg(
             ZSTR_VAL(svg_buf.s), ZSTR_LEN(svg_buf.s),
-            alloc_w, alloc_h,
-            (int)self->width, (int)self->height,
-            t.text_overlays, t.n_text_overlays, &pix) != 0) {
+            alloc_w, alloc_h, &pix) != 0) {
         fastchart_target_release(&t);
         smart_str_free(&svg_buf);
         zend_throw_error(NULL, "FastChart: plutovg rasterization failed");
         return -1;
     }
     zend_string_release(svg_buf.s);  /* SVG source no longer needed */
-    fastchart_target_release(&t);   /* overlay strings copied; can free now */
+    fastchart_target_release(&t);
 
     int rc = -1;
     switch (format) {
@@ -6285,7 +6360,8 @@ ZEND_METHOD(FastChart_Chart, renderWebp)
  * viewport. DPI still flows into layout (margins / label padding) and
  * into FreeType measurement so an SVG and PNG of the same chart pick
  * the same label widths. */
-static void fastchart_render_to_svg(INTERNAL_FUNCTION_PARAMETERS, int fragment_only)
+static void fastchart_render_to_svg(INTERNAL_FUNCTION_PARAMETERS, int fragment_only,
+                                    zend_string *id_prefix)
 {
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (self->width <= 0 || self->height <= 0) {
@@ -6304,6 +6380,11 @@ static void fastchart_render_to_svg(INTERNAL_FUNCTION_PARAMETERS, int fragment_o
                                (int)self->width, (int)self->height,
                                (int)self->dpi,
                                (int)self->svg_text_mode);
+    if (id_prefix && ZSTR_LEN(id_prefix) > 0) {
+        /* Validated by the caller; sized to the id_ns field. */
+        memcpy(t.u.svg.id_ns, ZSTR_VAL(id_prefix), ZSTR_LEN(id_prefix));
+        t.u.svg.id_ns[ZSTR_LEN(id_prefix)] = '\0';
+    }
 
     if (dispatch_svg_render(self, Z_OBJCE_P(ZEND_THIS), &t) != 0 || EG(exception)) {
         fastchart_target_release(&t);
@@ -6331,13 +6412,44 @@ static void fastchart_render_to_svg(INTERNAL_FUNCTION_PARAMETERS, int fragment_o
 ZEND_METHOD(FastChart_Chart, renderSvg)
 {
     ZEND_PARSE_PARAMETERS_NONE();
-    fastchart_render_to_svg(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+    fastchart_render_to_svg(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0, NULL);
 }
 
 ZEND_METHOD(FastChart_Chart, drawSvgFragment)
 {
-    ZEND_PARSE_PARAMETERS_NONE();
-    fastchart_render_to_svg(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+    zend_string *id_prefix = NULL;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_STR_OR_NULL(id_prefix)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (id_prefix && ZSTR_LEN(id_prefix) > 0) {
+        /* The prefix lands verbatim in XML id attributes: constrain it
+         * to a short NCName-safe alphabet so a caller can't break the
+         * host document's markup. 16 chars also fits the target's
+         * fixed id_ns buffer. */
+        if (ZSTR_LEN(id_prefix) > 16) {
+            zend_value_error("FastChart\\Chart::drawSvgFragment() $idPrefix "
+                             "must be at most 16 characters");
+            RETURN_THROWS();
+        }
+        const char *s = ZSTR_VAL(id_prefix);
+        if (!((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z') || s[0] == '_')) {
+            zend_value_error("FastChart\\Chart::drawSvgFragment() $idPrefix "
+                             "must start with a letter or underscore");
+            RETURN_THROWS();
+        }
+        for (size_t i = 0; i < ZSTR_LEN(id_prefix); i++) {
+            char c = s[i];
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                  (c >= '0' && c <= '9') || c == '_' || c == '-')) {
+                zend_value_error("FastChart\\Chart::drawSvgFragment() $idPrefix "
+                                 "may only contain [A-Za-z0-9_-]");
+                RETURN_THROWS();
+            }
+        }
+    }
+    fastchart_render_to_svg(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1, id_prefix);
 }
 
 /* Vector PDF. Like renderSvg, dimensions are the LOGICAL setSize()
@@ -6373,7 +6485,19 @@ static int fastchart_chart_render_to_pdf(fastchart_obj *self,
         return -1;
     }
 
-    if (dispatch_svg_render(self, ce, &t) != 0 || EG(exception)) {
+    /* The pdfio output callback appends into request memory, so a
+     * memory_limit bailout anywhere in the dispatch would longjmp past
+     * the close and leak the malloc'd pdfio document graph. Abort
+     * (close without flushing into request memory) before re-bailing. */
+    volatile int dispatch_rc;
+    zend_try {
+        dispatch_rc = dispatch_svg_render(self, ce, &t);
+    } zend_catch {
+        fastchart_target_pdf_abort(&t);
+        zend_bailout();
+    } zend_end_try();
+
+    if (dispatch_rc != 0 || EG(exception)) {
         fastchart_target_pdf_finish(&t);
         fastchart_target_release(&t);
         smart_str_free(out_buf);
@@ -6956,7 +7080,14 @@ ZEND_METHOD(FastChart_RadarChart, setSeries)
     HashTable *ht = Z_ARRVAL_P(arr);
     if (zend_hash_num_elements(ht) == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
-    zval *first = zend_hash_index_find(ht, 0);
+    zval *first = NULL;
+    {
+        zval *scan;
+        ZEND_HASH_FOREACH_VAL(ht, scan) {
+            first = scan;
+            break;
+        } ZEND_HASH_FOREACH_END();
+    }
     if (first) ZVAL_DEREF(first);  /* tolerate foreach-by-ref buckets */
     bool is_multi = false;
     if (first && Z_TYPE_P(first) == IS_ARRAY) {
@@ -7044,7 +7175,14 @@ ZEND_METHOD(FastChart_PolarChart, setSeries)
     HashTable *ht = Z_ARRVAL_P(arr);
     if (zend_hash_num_elements(ht) == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
-    zval *first = zend_hash_index_find(ht, 0);
+    zval *first = NULL;
+    {
+        zval *scan;
+        ZEND_HASH_FOREACH_VAL(ht, scan) {
+            first = scan;
+            break;
+        } ZEND_HASH_FOREACH_END();
+    }
     if (first) ZVAL_DEREF(first);  /* tolerate foreach-by-ref buckets */
     bool is_multi = false;
     if (first && Z_TYPE_P(first) == IS_ARRAY) {

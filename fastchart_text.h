@@ -54,4 +54,33 @@ int fastchart_text_measure(fastchart_target_t *t,
                            int *out_w, int *out_h,
                            char *err_buf, size_t err_buf_n);
 
+/* Shared UTF-8 next-codepoint walker for every text consumer
+ * (measurement, SVG glyph emitter, PDF glyph emitter). One definition
+ * so the copies cannot drift: an earlier inline copy in the measurer
+ * SKIPPED invalid bytes (0 width) while the emitters substituted
+ * U+FFFD with a real advance — layout under-reserved on exactly the
+ * malformed input the walkers exist to survive. Truncated / invalid
+ * sequences yield U+FFFD and advance one byte; returns NULL at end. */
+static zend_always_inline const unsigned char *fc_utf8_next_cp(
+    const unsigned char *p, const unsigned char *end, uint32_t *out_cp)
+{
+	if (p >= end) return NULL;
+	if (*p < 0x80) { *out_cp = *p; return p + 1; }
+	if ((*p & 0xE0) == 0xC0 && p + 1 < end) {
+		*out_cp = ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+		return p + 2;
+	}
+	if ((*p & 0xF0) == 0xE0 && p + 2 < end) {
+		*out_cp = ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+		return p + 3;
+	}
+	if ((*p & 0xF8) == 0xF0 && p + 3 < end) {
+		*out_cp = ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12)
+		       | ((p[2] & 0x3F) << 6)  |  (p[3] & 0x3F);
+		return p + 4;
+	}
+	*out_cp = 0xFFFD;
+	return p + 1;
+}
+
 #endif /* FASTCHART_TEXT_H */

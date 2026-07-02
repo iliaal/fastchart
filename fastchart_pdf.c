@@ -24,6 +24,7 @@
 #include "fastchart_target.h"
 #include "php_fastchart.h"
 #include "fastchart_pdf.h"
+#include "fastchart_text.h"
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -35,6 +36,7 @@ struct fc_pdf_state {
 	double          h;     /* page height, for the y-down -> y-up flip */
 	double          pw;    /* page width, for the canvas-bg capture below */
 	int             err;   /* sticky: set by the pdfio error callback */
+	int             aborted; /* 1 = drop output bytes (bailout unwind) */
 	/* This pdfio build exposes no transparency / ExtGState API (no
 	 * /ca|/CA), so per-element alpha is flattened against the page
 	 * background captured from the chart's first full-canvas fill. Real
@@ -44,11 +46,16 @@ struct fc_pdf_state {
 	int             bg_set;
 };
 
-/* pdfio streams document bytes through this callback as it writes. */
+/* pdfio streams document bytes through this callback as it writes.
+ * When the state is aborted (memory_limit bailout unwind), bytes are
+ * swallowed instead of appended: smart_str_appendl could re-enter the
+ * bailout from inside the cleanup path. */
 static ssize_t fc_pdf_output_cb(void *ctx, const void *data, size_t len)
 {
-	smart_str *out = (smart_str *)ctx;
-	smart_str_appendl(out, (const char *)data, len);
+	fc_pdf_state *s = (fc_pdf_state *)ctx;
+	if (!s->aborted) {
+		smart_str_appendl(s->out, (const char *)data, len);
+	}
 	return (ssize_t)len;
 }
 
@@ -128,7 +135,7 @@ fc_pdf_state *fc_pdf_doc_open(smart_str *out, int width, int height)
 	/* Pass media as the crop box too: with a NULL crop box pdfio stamps
 	 * a default A4/Letter CropBox, which clips our page in viewers that
 	 * honor CropBox over MediaBox (Acrobat, Chrome, print pipelines). */
-	s->pdf = pdfioFileCreateOutput(fc_pdf_output_cb, out, NULL, &media, &media,
+	s->pdf = pdfioFileCreateOutput(fc_pdf_output_cb, s, NULL, &media, &media,
 	                                fc_pdf_error_cb, s);
 	if (!s->pdf) { efree(s); return NULL; }
 
@@ -147,6 +154,16 @@ int fc_pdf_doc_close(fc_pdf_state *s)
 	if (s->pdf) { if (!pdfioFileClose(s->pdf)) err = 1; }
 	efree(s);
 	return err ? -1 : 0;
+}
+
+/* Bailout-unwind teardown: releases every malloc'd pdfio object without
+ * touching request memory beyond the state itself — the output callback
+ * swallows the close-time flush. */
+void fc_pdf_doc_abort(fc_pdf_state *s)
+{
+	if (!s) return;
+	s->aborted = 1;
+	(void)fc_pdf_doc_close(s);
 }
 
 int fc_pdf_height(const fc_pdf_state *s) { return s ? (int)s->h : 0; }
@@ -306,30 +323,8 @@ void fc_pdf_emit_arc(fc_pdf_state *s, double cx, double cy,
 
 /* ---- text as path -------------------------------------------------- */
 
-/* Local UTF-8 walker (the SVG one is static in fastchart_svg.c). Returns
- * the next cursor, NULL at end; *cp gets the codepoint. */
-static const unsigned char *fc_pdf_utf8_next(const unsigned char *p,
-                                              const unsigned char *e,
-                                              uint32_t *cp)
-{
-	if (p >= e) return NULL;
-	if (*p < 0x80) { *cp = *p; return p + 1; }
-	if ((*p & 0xE0) == 0xC0 && p + 1 < e) {
-		*cp = ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
-		return p + 2;
-	}
-	if ((*p & 0xF0) == 0xE0 && p + 2 < e) {
-		*cp = ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
-		return p + 3;
-	}
-	if ((*p & 0xF8) == 0xF0 && p + 3 < e) {
-		*cp = ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12)
-		    | ((p[2] & 0x3F) << 6) | (p[3] & 0x3F);
-		return p + 4;
-	}
-	*cp = 0xFFFD;
-	return p + 1;
-}
+/* UTF-8 walking goes through fc_utf8_next_cp (fastchart_text.h). */
+#define fc_pdf_utf8_next fc_utf8_next_cp
 
 /* Replay one cached glyph into the current path. Glyph pts are y-down
  * pixel coords local to the baseline origin; we work in a local frame

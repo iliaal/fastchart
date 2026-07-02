@@ -77,7 +77,13 @@ static inline time_t fc_timegm(struct tm *tm)
 static inline double chart_dpi_scale(const fastchart_obj *chart,
                                       const fastchart_target_t *t)
 {
-    if (t && t->kind == FASTCHART_TARGET_SVG) return 1.0;
+    /* Every vector target is DPI-invariant (both from_svg and from_pdf
+     * stamp dpi = 96 and document why); only the raster path scales
+     * margins with the physical pixel density. Scaling PDF margins
+     * while its page and font sizes stay logical inflated the reserved
+     * margins 2x at setDpi(200). */
+    if (t && (t->kind == FASTCHART_TARGET_SVG ||
+              t->kind == FASTCHART_TARGET_PDF)) return 1.0;
     return chart->dpi > 96 ? (double)chart->dpi / 96.0 : 1.0;
 }
 
@@ -357,7 +363,7 @@ void fastchart_draw_marker(fastchart_target_t *t, int x, int y,
                                   color, 1, 0);
             break;
         case FASTCHART_MARKER_DIAMOND: {
-            gdPoint pts[4] = {
+            fastchart_point_t pts[4] = {
                 { x,        y - half },
                 { x + half, y        },
                 { x,        y + half },
@@ -451,6 +457,14 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
     const char *title_font = fastchart_resolve_font(chart, FC_FONT_TITLE);
     const char *axis_font  = fastchart_resolve_font(chart, FC_FONT_AXIS);
     double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    /* Per-role sizes: the draw paths honor set{Title,Axis}Font size
+     * overrides via fastchart_resolve_font_size, so layout must reserve
+     * with the same sizes — measuring with the base size leaves an
+     * oversized title clipping off-canvas and oversized axis labels
+     * overrunning the reserved margins into the plot. */
+    double title_size      = fastchart_resolve_font_size(chart, FC_FONT_TITLE, size * 1.4);
+    double axis_size       = fastchart_resolve_font_size(chart, FC_FONT_AXIS,  size);
+    double axis_title_size = fastchart_resolve_font_size(chart, FC_FONT_AXIS,  size * 1.1);
 
     /* Thumbnail mode suppresses every label / title / tick text, so
      * reserving margin for them just shrinks the plot for no reason.
@@ -461,12 +475,12 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
     /* Title: measure ascender height + a bit of padding. The "999999"
      * probe used for axis labels is cached once below. */
     int probe_w = 0, probe_h = 0;
-    int probe_ok = (axis_font && fastchart_text_measure(t, axis_font, size, "999999",
+    int probe_ok = (axis_font && fastchart_text_measure(t, axis_font, axis_size, "999999",
                                                         &probe_w, &probe_h, NULL, 0) == 0);
 
     if (labels_drawn && chart->title && ZSTR_LEN(chart->title) > 0 && title_font) {
         int th;
-        if (fastchart_text_measure(t, title_font, size * 1.4, ZSTR_VAL(chart->title),
+        if (fastchart_text_measure(t, title_font, title_size, ZSTR_VAL(chart->title),
                                    NULL, &th, NULL, 0) == 0) {
             top += th + title_pad;
         }
@@ -490,7 +504,7 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
             for (int i = 0; i < n_cat_y_labels; i++) {
                 if (!cat_y_labels[i]) continue;
                 int w = 0;
-                if (fastchart_text_measure(t, axis_font, size, cat_y_labels[i],
+                if (fastchart_text_measure(t, axis_font, axis_size, cat_y_labels[i],
                                            &w, NULL, NULL, 0) == 0 && w > widest) {
                     widest = w;
                 }
@@ -504,7 +518,7 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
      * The title's height becomes its visible width after rotation. */
     if (labels_drawn && has_y_axis && chart->y_axis_title && axis_font) {
         int th;
-        if (fastchart_text_measure(t, axis_font, size * 1.1, ZSTR_VAL(chart->y_axis_title),
+        if (fastchart_text_measure(t, axis_font, axis_title_size, ZSTR_VAL(chart->y_axis_title),
                                    NULL, &th, NULL, 0) == 0) {
             left += th + (int)(8 * dpi_scale + 0.5);
         }
@@ -541,7 +555,7 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
                 const char *lbl = chart->category_labels[i];
                 if (!lbl) continue;
                 int w = 0;
-                if (fastchart_text_measure(t, axis_font, size, lbl,
+                if (fastchart_text_measure(t, axis_font, axis_size, lbl,
                                            &w, NULL, NULL, 0) == 0 && w > widest) {
                     widest = w;
                 }
@@ -566,7 +580,7 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
     /* X-axis title: an extra line below the labels. */
     if (labels_drawn && has_x_axis && chart->x_axis_title && axis_font) {
         int th;
-        if (fastchart_text_measure(t, axis_font, size * 1.1, ZSTR_VAL(chart->x_axis_title),
+        if (fastchart_text_measure(t, axis_font, axis_title_size, ZSTR_VAL(chart->x_axis_title),
                                    NULL, &th, NULL, 0) == 0) {
             bottom += th + (int)(6 * dpi_scale + 0.5);
         }
@@ -680,6 +694,14 @@ void fastchart_value_range_apply_override(const fastchart_obj *chart,
 
     if (chart->has_y_interval) {
         double step = chart->y_interval;
+        /* An interval finer than (mx-mn)/(MAX_TICKS-1) used to fill the
+         * 16-tick ladder and stop — packing every gridline into the
+         * bottom slice of the plot and leaving the rest blank. Stride
+         * the interval by the smallest integer multiple that fits so
+         * ticks stay on user-requested values and span the range. */
+        double span = mx - mn;
+        double k = ceil(span / (step * (double)(FASTCHART_MAX_TICKS - 1)));
+        if (k > 1.0 && isfinite(k)) step *= k;
         out->tick_step = step;
         out->n_ticks = 0;
         for (double v = mn;
@@ -693,12 +715,26 @@ void fastchart_value_range_apply_override(const fastchart_obj *chart,
             out->n_ticks = 2;
         }
     } else {
-        /* Re-run the nice-tick generator on the forced bounds. */
+        /* Re-run the nice-tick generator on the forced bounds, keeping
+         * only ticks inside [mn, mx]: the generator rounds outward to
+         * nice values, and an out-of-range tick would be clamped onto
+         * the plot edge by the pixel mapping and drawn there with the
+         * wrong label (e.g. "0" rendered at 0.3's position). */
         fastchart_value_range tmp;
         fastchart_value_range_compute(mn, mx, 6, &tmp);
+        double eps = tmp.tick_step * 1e-9;
         out->tick_step = tmp.tick_step;
-        out->n_ticks = tmp.n_ticks;
-        for (int i = 0; i < tmp.n_ticks; i++) out->ticks[i] = tmp.ticks[i];
+        out->n_ticks = 0;
+        for (int i = 0; i < tmp.n_ticks; i++) {
+            if (tmp.ticks[i] >= mn - eps && tmp.ticks[i] <= mx + eps) {
+                out->ticks[out->n_ticks++] = tmp.ticks[i];
+            }
+        }
+        if (out->n_ticks < 2) {
+            out->ticks[0] = mn;
+            out->ticks[1] = mx;
+            out->n_ticks = 2;
+        }
         /* But preserve the user's literal min/max (not the rounded
          * "nice" version), since the user explicitly asked. */
         out->min = mn;
@@ -1625,7 +1661,8 @@ void fastchart_draw_legend(fastchart_target_t *t, fastchart_obj *chart,
      * font_path but an explicit setLabelFont() must still draw the
      * legend. The earlier `if (!chart->font_path) return;` short-
      * circuited that path. */
-    double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    double base = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
+    double size = fastchart_resolve_font_size(chart, FC_FONT_LABEL, base);
     const char *font = fastchart_resolve_font(chart, FC_FONT_LABEL);
     if (!font) return;
 
@@ -1822,8 +1859,8 @@ void fastchart_draw_overlays_categorical(fastchart_target_t *t, fastchart_obj *c
             /* Sized for every valid point: a fixed cap would truncate the
              * top edge at the head of the series while the bottom edge
              * walks in from the tail, closing a self-crossing polygon. */
-            gdPoint *poly = safe_emalloc((size_t)n_categories,
-                                         2 * sizeof(gdPoint), 0);
+            fastchart_point_t *poly = safe_emalloc((size_t)n_categories,
+                                         2 * sizeof(fastchart_point_t), 0);
             int np = 0;
             for (int i = 0; i < n_categories; i++) {
                 if (!pts[i].valid) continue;
@@ -1901,8 +1938,8 @@ void fastchart_draw_overlays_horizontal_bar(fastchart_target_t *t, fastchart_obj
 
             /* Sized for every valid point — see the categorical helper
              * above for why a fixed cap self-crosses. */
-            gdPoint *poly = safe_emalloc((size_t)n_categories,
-                                         2 * sizeof(gdPoint), 0);
+            fastchart_point_t *poly = safe_emalloc((size_t)n_categories,
+                                         2 * sizeof(fastchart_point_t), 0);
             int np = 0;
             for (int i = 0; i < n_categories; i++) {
                 if (!pts[i].valid) continue;

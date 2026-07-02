@@ -301,10 +301,11 @@ abstract class Chart
 
     /**
      * Overlay an external image at data coordinates on the chart.
-     * Currently honored on `LineChart` (x = fractional category
-     * index, e.g. 2.5 = halfway between the 3rd and 4th category)
-     * and `ScatterChart` (x, y both in data coordinates). Other
-     * chart types silently ignore the call.
+     * Honored on `LineChart` and `AreaChart` (x = fractional category
+     * index, e.g. 2.5 = halfway between the 3rd and 4th category),
+     * `BarChart`, `BoxPlot`, `BubbleChart`, `ScatterChart` (x, y in
+     * data coordinates), and `StockChart` (x = unix timestamp,
+     * y = price). Other chart types silently ignore the call.
      *
      * `$path` is opened at draw time through PHP's stream layer
      * (which enforces `open_basedir` natively); missing or invalid
@@ -634,6 +635,16 @@ abstract class Chart
     public function setJpegQuality(int $quality): static {}
 
     /**
+     * Set the zlib compression level used by `renderPng()` and
+     * `renderToFile('*.png')`. Range 0 (store) to 9 (max); the
+     * default is libpng's own default (6). Chart-shaped content
+     * compresses ~30-40% faster at level 3 for a 13-22% larger
+     * file — a worthwhile trade when PNGs are served once and
+     * discarded.
+     */
+    public function setPngCompressionLevel(int $level): static {}
+
+    /**
      * Select the WebP encoder mode used by `renderWebp()` and
      * `renderToFile('*.webp')`. Pass one of `self::WEBP_DRAWING`
      * (default), `WEBP_PHOTO`, `WEBP_LOSSLESS`, or `WEBP_FAST`. See
@@ -724,10 +735,17 @@ abstract class Chart
      * stitching multiple charts into one caller-managed SVG document.
      * The caller owns the outer viewport / coordinate space.
      *
+     * Gradient and clip-path ids inside a fragment are `fcg1`, `fcc1`,
+     * … per chart; stitching two fragments that both use gradients or
+     * clips into ONE host document therefore collides — chart 2's
+     * `url(#fcg1)` resolves to chart 1's gradient. Pass a distinct
+     * `$idPrefix` per chart (1-16 chars of `[A-Za-z0-9_-]`, starting
+     * with a letter or underscore) to namespace the ids (`a_fcg1`).
+     *
      * Available on every concrete `Chart` subclass — same coverage as
      * `renderSvg()`.
      */
-    public function drawSvgFragment(): string {}
+    public function drawSvgFragment(?string $idPrefix = null): string {}
 
     /**
      * Attach per-data-point href / tooltip metadata. The array is
@@ -752,6 +770,11 @@ abstract class Chart
      * BarChart, poly for PieChart, small rect for LineChart/AreaChart.
      * Map name defaults to 'fastchart'; sanitized to alphanumeric +
      * '-' + '_' so it's safe to inline into an `<img usemap="#...">`.
+     *
+     * Coordinates are in LOGICAL (setSize) pixels. Raster output at
+     * `setDpi()` above 96 is physically larger, so either display the
+     * image at its logical size (`<img width="..." height="...">`) or
+     * scale the coords by dpi/96 before emitting `<area>` tags.
      */
     public function getImageMap(string $name = 'fastchart'): string {}
 
@@ -1776,7 +1799,7 @@ final class ArcDiagram extends Chart
      * Which side of the node baseline link arcs bulge toward.
      * `ORIENT_UP` (default), `ORIENT_DOWN`, or `ORIENT_SPLIT`.
      */
-    public function setOrientation(int $mode): static {}
+    public function setOrientation(int $orientation): static {}
 
 }
 
@@ -1986,7 +2009,7 @@ final class Dendrogram extends Chart
     public function setStyle(int $style): static {}
 
     /** Layout direction: ORIENT_TOP (top-down) or ORIENT_LEFT (left-right). */
-    public function setOrientation(int $mode): static {}
+    public function setOrientation(int $orientation): static {}
 
 }
 
@@ -2013,7 +2036,7 @@ final class Partition extends Chart
     public function setHierarchy(array $root): static {}
 
     /** Layout direction: ORIENT_HORIZONTAL (partition) or ORIENT_VERTICAL (icicle). */
-    public function setOrientation(int $mode): static {}
+    public function setOrientation(int $orientation): static {}
 
 }
 
@@ -2126,7 +2149,7 @@ final class WordCloud extends Chart
      * Word orientation: `ORIENT_HORIZONTAL` (default) or `ORIENT_MIXED`
      * (mix in vertical words). Layout stays deterministic.
      */
-    public function setOrientation(int $mode): static {}
+    public function setOrientation(int $orientation): static {}
 
 }
 

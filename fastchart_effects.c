@@ -33,64 +33,10 @@ int fastchart_lerp_rgb(int from, int to, double t)
     return (r << 16) | (g << 8) | b;
 }
 
-static int gradient_active(const fastchart_obj *chart)
-{
-    return chart->gradient_from >= 0 && chart->gradient_to >= 0;
-}
 
-int fastchart_gradient_filled_rectangle(fastchart_target_t *t,
-                                        fastchart_obj *chart,
-                                        int x0, int y0, int x1, int y1)
-{
-    if (!gradient_active(chart)) return 0;
-    if (x1 < x0) { int tmp = x0; x0 = x1; x1 = tmp; }
-    if (y1 < y0) { int tmp = y0; y0 = y1; y1 = tmp; }
 
-    fastchart_target_gradient_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1,
-                                    (uint32_t)chart->gradient_from,
-                                    (uint32_t)chart->gradient_to,
-                                    (int)chart->gradient_dir);
-    return 1;
-}
 
-int fastchart_gradient_filled_polygon(fastchart_target_t *t,
-                                      fastchart_obj *chart,
-                                      const fastchart_point_t *poly, int n_pts)
-{
-    if (!gradient_active(chart) || n_pts < 3) return 0;
 
-    fastchart_target_gradient_polygon(t, poly, n_pts,
-                                       (uint32_t)chart->gradient_from,
-                                       (uint32_t)chart->gradient_to,
-                                       (int)chart->gradient_dir);
-    return 1;
-}
-
-void fastchart_filled_polygon_aa(fastchart_target_t *t,
-                                 const fastchart_point_t *poly,
-                                 int n_pts, int color)
-{
-    if (n_pts < 3) return;
-    /* SVG renderers anti-alias by default; the target's polygon
-     * primitive carries the fill as-is and the consumer's rasterizer
-     * smooths edges. The dedicated AA-edge pass used by the old
-     * raster helper is unnecessary here. */
-    fastchart_target_polygon(t, poly, n_pts, color, 1, 1);
-}
-
-void fastchart_filled_wedge_aa(fastchart_target_t *t, int cx, int cy,
-                               int diameter, int start_deg, int end_deg,
-                               int color)
-{
-    /* Same AA-by-default reasoning as fastchart_filled_polygon_aa.
-     * The arc primitive emits an SVG <path A> arc which renders
-     * smooth in any consumer. start_deg / end_deg follow the libgd
-     * CCW convention (0 = +x, 3 o'clock). */
-    int radius = diameter / 2;
-    fastchart_target_arc(t, cx, cy, radius, radius,
-                         (double)start_deg, (double)end_deg,
-                         color, 1, 1);
-}
 
 /* Translate the chart's libgd-convention shadow alpha (0..127,
  * 0 = fully opaque, 127 = fully transparent) into the 0..255
@@ -134,26 +80,6 @@ void fastchart_shadow_filled_rectangle(fastchart_target_t *t,
         handle, 1, 0);
 }
 
-void fastchart_shadow_filled_polygon(fastchart_target_t *t,
-                                     fastchart_obj *chart,
-                                     const fastchart_point_t *poly, int n_pts)
-{
-    if (!chart->has_drop_shadow || n_pts < 3) return;
-    int handle = shadow_color_handle(t, chart);
-    if (handle < 0) return;
-    int dx = (int)chart->shadow_dx, dy = (int)chart->shadow_dy;
-    fastchart_point_t stack_pts[256];
-    fastchart_point_t *pts = stack_pts;
-    if (n_pts > 256) {
-        pts = emalloc(sizeof(*pts) * (size_t)n_pts);
-    }
-    for (int i = 0; i < n_pts; i++) {
-        pts[i].x = poly[i].x + dx;
-        pts[i].y = poly[i].y + dy;
-    }
-    fastchart_target_polygon(t, pts, n_pts, handle, 1, 0);
-    if (n_pts > 256) efree(pts);
-}
 
 void fastchart_shadow_filled_arc(fastchart_target_t *t,
                                  fastchart_obj *chart,

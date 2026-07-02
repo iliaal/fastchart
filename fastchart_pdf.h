@@ -47,6 +47,11 @@ fc_pdf_state *fc_pdf_doc_open(smart_str *out, int width, int height);
  * Returns 0 on success, -1 if pdfio reported a write error. */
 int fc_pdf_doc_close(fc_pdf_state *st);
 
+/* Bailout-unwind teardown: sets the aborted flag (output callback drops
+ * the close-time flush instead of appending to request memory) and
+ * closes the document, releasing all malloc'd pdfio state. */
+void fc_pdf_doc_abort(fc_pdf_state *st);
+
 int fc_pdf_height(const fc_pdf_state *st);
 
 /* Primitives. Colors are packed 0xAARRGGBB (alpha currently ignored —
