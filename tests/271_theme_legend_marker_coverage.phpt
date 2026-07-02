@@ -2,6 +2,11 @@
 setTheme / setLegendPosition / setMarkerStyle: rendered effect + validation
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require __DIR__ . '/_font_candidates.inc';
+if (fc_pick_font() === '') die('skip no system font available');
+?>
 --FILE--
 <?php
 /* Coverage gap: the theme, legend-corner, and marker-shape enums had
@@ -13,7 +18,6 @@ use FastChart\LineChart;
 
 require __DIR__ . '/_font_candidates.inc';
 $font = fc_pick_font();
-if ($font === '') die("skip no system font available\n");
 
 function base(): LineChart {
     global $font;
