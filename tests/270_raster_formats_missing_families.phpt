@@ -3,6 +3,11 @@ Raster round-trip for the families test 131 misses: Bullet/Pareto/Calendar/Sunbu
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require __DIR__ . '/_font_candidates.inc';
+if (fc_pick_font() === '') die('skip no system font available');
+?>
 --FILE--
 <?php
 /* Test 131 covers 31 chart families; these seven shipped later (or
@@ -11,7 +16,6 @@ gd
 
 require __DIR__ . '/_font_candidates.inc';
 $font = fc_pick_font();
-if ($font === '') die("skip no system font available\n");
 
 $families = [
     'BulletChart' => fn() => (new FastChart\BulletChart(400, 80))
