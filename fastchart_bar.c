@@ -266,6 +266,7 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
                 int x0 = slot_left + s * sub_w + sub_inset;
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
+                if (x1 < x0) continue;
                 if (self->bar_style == FASTCHART_BAR_STYLE_DUMBBELL) {
                     /* Connector between the [min,max] pair with a filled
                      * circle at each end. */
@@ -346,6 +347,7 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
                 int x0 = slot_left + s * sub_w + sub_inset;
                 int x1 = x0 + draw_w - 1;
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
+                if (x1 < x0) continue;
 
                 if (self->bar_style == FASTCHART_BAR_STYLE_LOLLIPOP) {
                     /* Thin stem from the zero baseline to the value with
@@ -583,6 +585,7 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
                 int y0 = slot_top + s * sub_h + sub_inset;
                 int y1 = y0 + draw_h - 1;
                 if (y1 > slot_top + slot_inner - 1) y1 = slot_top + slot_inner - 1;
+                if (y1 < y0) continue;
                 if (self->bar_style == FASTCHART_BAR_STYLE_DUMBBELL) {
                     /* Horizontal connector across the [min,max] pair with a
                      * filled circle at each end (vertical dumbbell, X/Y
@@ -661,6 +664,7 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
                 int y0 = slot_top + s * sub_h + sub_inset;
                 int y1 = y0 + draw_h - 1;
                 if (y1 > slot_top + slot_inner - 1) y1 = slot_top + slot_inner - 1;
+                if (y1 < y0) continue;
 
                 if (self->bar_style == FASTCHART_BAR_STYLE_LOLLIPOP) {
                     /* Horizontal stem from the zero baseline to the value

@@ -275,6 +275,12 @@ static int fastchart_symbol_render_to_buf(fastchart_symbol_obj *self,
     if (fastchart_resolve_canvas_dims(lw, lh, self->dpi, &alloc_w, &alloc_h) != 0) {
         return -1;
     }
+    if (format == 2 && (alloc_w > 16383 || alloc_h > 16383)) {
+        zend_throw_error(NULL,
+            "%s: physical dimensions %dx%d (logical size x dpi/96) exceed "
+            "WebP's 16383-pixel per-dimension limit", where, alloc_w, alloc_h);
+        return -1;
+    }
 
     smart_str svg_buf = {0};
     fc_svg_emit_doc_open(&svg_buf, (int)lw, (int)lh);
