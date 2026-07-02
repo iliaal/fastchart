@@ -867,18 +867,30 @@ void fc_svg_emit_text_as_path(smart_str *buf,
 
 	if (d.s && ZSTR_LEN(d.s) > 0) {
 		FC_APPENDS(buf, "<g transform=\"translate(");
-		fc_svg_fmt_num(buf, x + shift);
-		smart_str_appendc(buf, ' ');
-		fc_svg_fmt_num(buf, y);
-		smart_str_appendc(buf, ')');
 		if (angle_deg != 0.0) {
 			/* fastchart_text_draw_rotated uses CCW degrees; SVG
-			 * rotate() needs negative degrees. Apply at the post-translated origin
-			 * (the alignment-shifted anchor), matching the existing
-			 * <text> path. */
-			FC_APPENDS(buf, " rotate(");
+			 * rotate() needs negative degrees. Pivot at the anchor
+			 * (x, y) and apply the alignment shift AFTER the rotate,
+			 * along the rotated baseline — matching the <text> path,
+			 * where text-anchor shifts along the glyph run. A
+			 * pre-rotation shift displaces the whole run in unrotated
+			 * space by up to the text width. */
+			fc_svg_fmt_num(buf, x);
+			smart_str_appendc(buf, ' ');
+			fc_svg_fmt_num(buf, y);
+			FC_APPENDS(buf, ") rotate(");
 			fc_svg_fmt_num(buf, -angle_deg);
-			FC_APPENDS(buf, ")");
+			smart_str_appendc(buf, ')');
+			if (shift != 0.0) {
+				FC_APPENDS(buf, " translate(");
+				fc_svg_fmt_num(buf, shift);
+				FC_APPENDS(buf, " 0)");
+			}
+		} else {
+			fc_svg_fmt_num(buf, x + shift);
+			smart_str_appendc(buf, ' ');
+			fc_svg_fmt_num(buf, y);
+			smart_str_appendc(buf, ')');
 		}
 		FC_APPENDS(buf, "\" fill=\"");
 		fc_svg_fmt_color(buf, rgba);

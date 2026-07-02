@@ -552,17 +552,11 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
         if (chart->x_axis_label_angle == 90) {
             needed = x_label_w + tick_mark_len + x_label_pad;
         } else if (chart->x_axis_label_angle == 45) {
-            /* The rotated label's drawing code (line ~1747) places the
-             * baseline-anchor at plot.y1 + tick + 0.707w + 4 so the
-             * RIGHT-END (top of rotated text) clears the plot rect.
-             * From that anchor the text extends UP-LEFT, so the
-             * LEFT-END (bottom of rotated text) sits another 0.707w
-             * below — total descent below plot.y1 ≈ 1.414w + tick + 4.
-             * Reserving only 0.707w (the half-projection) clipped
-             * labels by half their projected height. Mirror the full
-             * geometry so the canvas bottom fits the whole rotated
-             * span. */
-            needed = (int)((double)x_label_w * 1.414) + tick_mark_len + x_label_pad;
+            /* Rotated text ends at its anchor just below the axis and
+             * extends down-left; the vertical span below the plot is
+             * ≈ 0.707 * (label width + ascender). */
+            needed = (int)(((double)x_label_w + probe_h) * 0.707)
+                   + tick_mark_len + x_label_pad;
         } else {
             needed = probe_h + tick_mark_len + x_label_pad;
         }
@@ -1528,27 +1522,6 @@ void fastchart_draw_x_axis_categorical(fastchart_target_t *t, fastchart_obj *cha
         stride *= (int)chart->x_label_stride;
     }
 
-    /* Rotated-label anchor offset: when text is rotated CCW around
-     * the anchor point, the unrotated text extends upward-left (45°)
-     * or fully upward (90°). label_y must clear the rotated label's
-     * top edge, which sits at anchor - label_width * sin(angle).
-     * Measure the longest label that will actually be drawn so the
-     * offset matches reality. Skip measurement entirely when labels
-     * are suppressed (TICK_POINTS / TICK_NONE / thumbnail) — the
-     * earlier unconditional walk burned >1s per render at 4096
-     * categories even though no label would touch the canvas. */
-    int max_label_w = 0;
-    if (angle != 0 && draw_labels && labels) {
-        for (int i = 0; i < n_categories; i += stride) {
-            if (!labels[i]) continue;
-            int w = 0, h = 0;
-            if (fastchart_text_measure(t, font, size, labels[i],
-                                       &w, &h, NULL, 0) == 0 && w > max_label_w) {
-                max_label_w = w;
-            }
-        }
-    }
-
     /* Measure ascender height once at the chart's DPI so the label
      * top sits below plot.y1 + tick. The point-size * 1.2 heuristic
      * undershoots in mixed FreeType configurations and at high DPI,
@@ -1564,16 +1537,19 @@ void fastchart_draw_x_axis_categorical(fastchart_target_t *t, fastchart_obj *cha
                 + (int)(4 * chart_dpi_scale(chart, t));
         align = FASTCHART_ALIGN_CENTER;
     } else if (angle == 45) {
-        /* Push baseline far enough below plot so the rotated label's
-         * top corner clears the plot rect. sin(45°) ≈ 0.707; add a
-         * small constant for visual breathing room. */
-        int rotate_offset = (int)((double)max_label_w * 0.707) + 4;
-        label_y = plot->y1 + TICK_MARK_LEN(chart, t) + rotate_offset;
+        /* Right-aligned rotated text ends at the anchor and extends
+         * down-left into the reserved margin; only the end character's
+         * rotated ascender pokes back up toward the plot, by
+         * sin(45°) * ascender. */
+        label_y = plot->y1 + TICK_MARK_LEN(chart, t)
+                + (int)((double)probe_h_x * 0.707) + 2;
         align = FASTCHART_ALIGN_RIGHT;
     } else { /* 90 */
-        /* Vertical label extends fully upward from anchor by its
-         * pre-rotation horizontal width. */
-        label_y = plot->y1 + TICK_MARK_LEN(chart, t) + max_label_w + 4;
+        /* Vertical label hangs fully downward from the anchor; its
+         * ascender projects horizontally, so only breathing room is
+         * needed below the tick. */
+        label_y = plot->y1 + TICK_MARK_LEN(chart, t)
+                + (int)(4 * chart_dpi_scale(chart, t));
         align = FASTCHART_ALIGN_RIGHT;
     }
     /* Last-resort clamp: if the rotated-label anchor still falls below the
@@ -1843,19 +1819,24 @@ void fastchart_draw_overlays_categorical(fastchart_target_t *t, fastchart_obj *c
              * 80 in libgd 0..127 -> 255 - 80*2 = 95 in 0..255. */
             int alpha_color = fastchart_target_color(t, r, g, b, 95);
 
-            gdPoint poly[2 * 1024];
+            /* Sized for every valid point: a fixed cap would truncate the
+             * top edge at the head of the series while the bottom edge
+             * walks in from the tail, closing a self-crossing polygon. */
+            gdPoint *poly = safe_emalloc((size_t)n_categories,
+                                         2 * sizeof(gdPoint), 0);
             int np = 0;
-            for (int i = 0; i < n_categories && np < 1024; i++) {
+            for (int i = 0; i < n_categories; i++) {
                 if (!pts[i].valid) continue;
                 poly[np].x = pts[i].x; poly[np].y = pts[i].y; np++;
             }
-            for (int i = n_categories - 1; i >= 0 && np < 2 * 1024; i--) {
+            for (int i = n_categories - 1; i >= 0; i--) {
                 if (!pts[i].valid) continue;
                 poly[np].x = pts[i].x; poly[np].y = zero_y; np++;
             }
             if (np >= 3 && alpha_color >= 0) {
                 fastchart_target_polygon(t, poly, np, alpha_color, 1, 0);
             }
+            efree(poly);
         }
 
         fastchart_draw_polyline(t, chart, pts, n_categories,
@@ -1918,19 +1899,23 @@ void fastchart_draw_overlays_horizontal_bar(fastchart_target_t *t, fastchart_obj
             int b = (int)( rgba        & 0xFFu);
             int alpha_color = fastchart_target_color(t, r, g, b, 95);
 
-            gdPoint poly[2 * 1024];
+            /* Sized for every valid point — see the categorical helper
+             * above for why a fixed cap self-crosses. */
+            gdPoint *poly = safe_emalloc((size_t)n_categories,
+                                         2 * sizeof(gdPoint), 0);
             int np = 0;
-            for (int i = 0; i < n_categories && np < 1024; i++) {
+            for (int i = 0; i < n_categories; i++) {
                 if (!pts[i].valid) continue;
                 poly[np].x = pts[i].x; poly[np].y = pts[i].y; np++;
             }
-            for (int i = n_categories - 1; i >= 0 && np < 2 * 1024; i--) {
+            for (int i = n_categories - 1; i >= 0; i--) {
                 if (!pts[i].valid) continue;
                 poly[np].x = zero_x; poly[np].y = pts[i].y; np++;
             }
             if (np >= 3 && alpha_color >= 0) {
                 fastchart_target_polygon(t, poly, np, alpha_color, 1, 0);
             }
+            efree(poly);
         }
 
         fastchart_draw_polyline(t, chart, pts, n_categories,

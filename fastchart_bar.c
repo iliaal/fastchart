@@ -143,6 +143,11 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
     if (self->stack_mode == FASTCHART_STACK_BESIDE) stacked = false;
     if (stack_layer && n_series > 1) stacked = true;
     bool floating = self->bar_floating;
+    /* Floating bars always render side-by-side — the [lo,hi] pair already
+     * encodes each bar's extent, so stacking has no meaning. Left on, the
+     * collapsed sub-slot count pushes every series past the slot edge and
+     * emits negative-width rects (invalid SVG, series invisible). */
+    if (floating) { stacked = false; stack_layer = false; }
 
     /* STACK_LAYER draws each series independently from the baseline, so
      * the Y range must be the per-series extent, not the stacked sum.
@@ -448,6 +453,9 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
     if (self->stack_mode == FASTCHART_STACK_BESIDE) stacked = false;
     if (stack_layer && n_series > 1) stacked = true;
     bool floating = self->bar_floating;
+    /* Floating bars always render side-by-side — see the vertical
+     * renderer for the negative-width failure this prevents. */
+    if (floating) { stacked = false; stack_layer = false; }
 
     /* STACK_LAYER draws each series independently from the baseline, so
      * the Y range must be the per-series extent, not the stacked sum.

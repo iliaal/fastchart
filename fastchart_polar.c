@@ -160,7 +160,10 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
         for (int i = 0; i < upto; i++) {
             double a = series[s].angles[i];
             double r = series[s].radii[i];
-            double rad = a * M_PI / 180.0;
+            /* fmod first, matching the rose branch above: a finite-but-huge
+             * angle overflows a * M_PI to Inf, and cos/sin(Inf) is NaN —
+             * float-cast-overflow UB at the int casts below. */
+            double rad = fmod(a, 360.0) * M_PI / 180.0;
             double rr = polar_clamp_radius(radius * r / rmax, radius);
             raw[n_raw].x = cx + (int)(rr * cos(rad));
             raw[n_raw].y = cy - (int)(rr * sin(rad));
@@ -260,8 +263,11 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
     if (self->vectors && self->n_vectors > 0) {
         for (int i = 0; i < self->n_vectors; i++) {
             const fastchart_polar_vector *v = &self->vectors[i];
-            double a0 = v->angle * M_PI / 180.0;
-            double a1 = v->angle_to * M_PI / 180.0;
+            /* addVectors rejects NaN/Inf, but a finite-but-huge angle still
+             * overflows the M_PI multiply to Inf — fmod first, matching the
+             * series branches, so the int casts below stay defined. */
+            double a0 = fmod(v->angle, 360.0) * M_PI / 180.0;
+            double a1 = fmod(v->angle_to, 360.0) * M_PI / 180.0;
             double r0 = polar_clamp_radius(radius * v->radius    / rmax, radius);
             double r1 = polar_clamp_radius(radius * v->radius_to / rmax, radius);
             int x0 = cx + (int)(r0 * cos(a0));

@@ -162,8 +162,12 @@ int fastchart_contour_render_to_target(fastchart_contour_obj *self, fastchart_ta
                 if (isnan(v00) || isnan(v01) || isnan(v10) || isnan(v11)) continue;
                 double avg = (v00 + v01 + v10 + v11) * 0.25;
                 double tv = (avg - vmin) / span;
+                /* avg can overflow to Inf for finite cells near DBL_MAX and
+                 * span can be Inf for mixed-sign extremes, so tv can be NaN;
+                 * clamp in double space to keep the int cast defined. The
+                 * negated comparison catches NaN. */
+                if (!(tv >= 0.0)) tv = 0.0; else if (tv > 1.0) tv = 1.0;
                 int idx = (int)(tv * 255.0 + 0.5);
-                if (idx < 0) idx = 0; else if (idx > 255) idx = 255;
                 int color = lut[idx];
                 int px0 = x0 + (int)(j * cell_w);
                 int py0 = y0 + (int)(i * cell_h);

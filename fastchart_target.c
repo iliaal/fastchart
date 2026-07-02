@@ -1114,13 +1114,18 @@ void fastchart_apply_text_overlays(void *plutovg_surface,
         else if (o->align == FASTCHART_TARGET_ALIGN_RIGHT) shift = -total_w;
 
         plutovg_canvas_save(canvas);
-        plutovg_canvas_translate(canvas, o->x_logical + shift, o->y_logical);
         if (o->angle_deg != 0.0) {
             /* SVG rotate() is CW; fastchart's chart-side convention is
-             * CCW. Match fc_svg_emit_text_as_path which negates the
-             * angle when emitting <g rotate(...)>. plutovg's rotate
-             * takes radians, CW positive. */
+             * CCW. Match fc_svg_emit_text_as_path: pivot at the anchor,
+             * rotate, then shift along the rotated baseline — a
+             * pre-rotation shift displaces the glyph run in unrotated
+             * space by up to the text width. plutovg's rotate takes
+             * radians, CW positive. */
+            plutovg_canvas_translate(canvas, o->x_logical, o->y_logical);
             plutovg_canvas_rotate(canvas, -o->angle_deg * (M_PI / 180.0));
+            plutovg_canvas_translate(canvas, shift, 0.0);
+        } else {
+            plutovg_canvas_translate(canvas, o->x_logical + shift, o->y_logical);
         }
 
         /* Pass 2: emit path commands per glyph. Cache mutation invalidates

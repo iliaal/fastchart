@@ -109,6 +109,11 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
         if (v > vmax) vmax = v;
     }
     if (vmax <= vmin) vmax = vmin + 1.0;
+    /* vmax - vmin can still be 0.0 (the +1.0 fixup is a no-op at DBL_MAX
+     * magnitudes) or Inf (mixed-sign extremes); either would send NaN
+     * through the frac clamps and into the int casts below. */
+    double vrange = vmax - vmin;
+    if (!isfinite(vrange) || vrange <= 0.0) vrange = 0.0;
 
     int top_pad = 12;
     int title_h = 0;
@@ -193,8 +198,10 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
             int cy = grid_y0 + r * cell_size;
             int color;
             if (data_idx < self->day_count && self->days[data_idx].day == day) {
-                double frac = (self->days[data_idx].value - vmin) / (vmax - vmin);
-                if (frac < 0) frac = 0;
+                double frac = vrange > 0.0
+                    ? (self->days[data_idx].value - vmin) / vrange
+                    : 0.0;
+                if (!(frac >= 0)) frac = 0; /* negated form catches NaN */
                 if (frac > 1) frac = 1;
                 int rr = lr + (int)((hr - lr) * frac);
                 int gg = lg + (int)((hg - lg) * frac);

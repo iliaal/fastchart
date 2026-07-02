@@ -198,8 +198,14 @@ int fastchart_sankey_render_to_target(fastchart_sankey_obj *self, fastchart_targ
     for (int c = 0; c < n_layers; c++) {
         if (col_counts[c] > max_count) max_count = col_counts[c];
     }
-    double px_per_unit = (avail_h - (max_count - 1) * node_gap) / col_max;
-    if (px_per_unit < 0.0) px_per_unit = 1.0;
+    /* Clamp the numerator to 0 instead of falling back to an absolute
+     * 1.0 px/unit scale: the fallback severed the "pixel heights bounded
+     * by avail_h" invariant, so a huge finite link value reached the int
+     * casts below out of int range (float-cast-overflow UB). At 0 the
+     * nodes degrade to their 2px minimum height instead. */
+    double px_avail = avail_h - (max_count - 1) * node_gap;
+    if (px_avail < 0.0) px_avail = 0.0;
+    double px_per_unit = px_avail / col_max;
 
     /* Position nodes column by column, top-aligned. */
     double col_x_step = (double)(plot_x1 - plot_x0) / (n_layers > 1 ? n_layers - 1 : 1);

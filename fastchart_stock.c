@@ -43,7 +43,11 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
 
     zend_long t_min = candles[0].ts;
     zend_long t_max = candles[n - 1].ts;
-    if (t_min == t_max) t_max = t_min + 1;
+    /* Widen away from the saturated edge: t_min + 1 is signed overflow
+     * (UB) when every candle sits at ZEND_LONG_MAX. */
+    if (t_min == t_max) {
+        if (t_max == ZEND_LONG_MAX) t_min--; else t_max++;
+    }
     /* Pad the time domain by half a bar-step on each end so the
      * first and last candles sit inside the plot rect instead of
      * straddling the Y-axis line (left) or running past the right
@@ -859,7 +863,13 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
     if (self->icons && self->n_icons > 0) {
         for (int i = 0; i < self->n_icons; i++) {
             const fastchart_icon *ic = &self->icons[i];
-            zend_long ts = (zend_long)ic->x;
+            /* addIconAt rejects only NaN/Inf; a finite-but-huge x would
+             * make the zend_long cast UB. Clamp like fastchart_axis.c
+             * does — out-of-range icons are off-plot either way. */
+            double ts_d = ic->x;
+            if (ts_d < (double)ZEND_LONG_MIN) ts_d = (double)ZEND_LONG_MIN;
+            else if (ts_d > FASTCHART_LONG_MAX_AS_DOUBLE) ts_d = FASTCHART_LONG_MAX_AS_DOUBLE;
+            zend_long ts = (zend_long)ts_d;
             int px = fastchart_x_time_to_pixel(&price_pane, ts, t_min, t_max);
             int py = fastchart_y_to_pixel(ic->y, &yrange, &price_pane);
             fastchart_blit_icon(t, ic, px, py);
