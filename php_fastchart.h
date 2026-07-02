@@ -624,6 +624,11 @@ typedef struct {
     double *values3;       /* nullable; third line OR histogram series */
     int color3_rgb;        /* -1 = palette pick */
     bool histogram_third;
+    /* Native indicators (RSI/MACD/ATR/...) compute their values from
+     * the candle buffer at add() time; addIndicatorPane() takes
+     * caller-supplied values. setOhlcv() must drop the former (they
+     * are stale against the new candles) but keep the latter. */
+    bool candle_derived;
 } fastchart_indicator_pane;
 
 /* Phase-2 price-pane overlays (Bollinger Bands, Parabolic SAR).

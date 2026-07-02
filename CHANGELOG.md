@@ -93,6 +93,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixing a 1px left/right asymmetry.
 - Hardened latent overflow paths: `INT_MAX` guards in the SVG rasterizer,
   saturating clip/gradient ids, and a guarded `jpeg_destroy_compress`.
+- `StockChart::setOhlcv()` clears native indicator panes (RSI, MACD,
+  ATR, ...) when it replaces the candles, like the Bollinger/SAR
+  overlays; they were computed from the old candles and rendered stale
+  against the new timestamps. Caller-supplied `addIndicatorPane()` data
+  is kept.
+- `Funnel::setStages()` honors `setStrict(true)`: an invalid stage
+  (non-array, or a non-finite/non-positive/too-large value) throws a
+  `TypeError` instead of being silently dropped. The flat style rejects
+  a canvas too short for its stages instead of drawing them off the edge.
+- `AreaChart` stream mode (`setStreamMode(true)`) with only gap/NaN input
+  raises the no-numeric-values error instead of rendering an empty chart.
+- `addOverlaySeries('area')` fills break at gaps: a `null` / non-numeric
+  value splits the translucent fill into separate runs instead of painting
+  straight across the missing category (categorical and horizontal-bar).
+- `BarChart` radial orientation honors per-point `colors`, matching the
+  vertical and horizontal paths.
+- `BubbleChart` renders an all-zero size dimension as minimum-size markers
+  instead of half-maximum bubbles that read as real magnitude.
+- `PopulationPyramid` clamps the center gap to the plot width, so one very
+  long category label degrades to overlap instead of blanking the chart.
+- `ScatterChart` skips the linear trend line when every point shares one x
+  (zero fit denominator) instead of drawing a spurious y=0 line.
+- `LinearMeter` value labels format through a right-sized buffer, so a
+  high-precision format (`%.999f`) is no longer silently truncated.
+- Extended the UB float-cast hardening to more finite-but-extreme paths:
+  `Heatmap` and `SurfaceChart` normalization, `ScatterChart` /
+  `VectorChart` pixel mapping, and the `StockChart` volume bar; a span
+  that overflows to `Inf` now yields a clamped pixel, not `(int)NaN`.
+- The shared UTF-8 walker validates continuation bytes and rejects
+  overlong, surrogate, and out-of-range sequences, substituting one
+  U+FFFD and advancing a single byte, so a lead byte followed by ASCII no
+  longer swallows the next character.
+- `Treemap` skips degenerate cells (`x1 < x0`) that a plot rect smaller
+  than the item count can produce, instead of emitting negative-size rects.
 
 ## [1.4.0] - 2026-06-20
 

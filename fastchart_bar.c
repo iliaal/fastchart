@@ -841,7 +841,9 @@ static int fastchart_bar_render_radial(fastchart_bar_obj *self,
             if (arc_r < 1.0) arc_r = 1.0;
             int thick = (int)(sub_thick * 0.7);
             if (thick < 1) thick = 1;
-            int color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+            int series_color = pal.series[s % FASTCHART_PALETTE_SERIES_N];
+            int color = bar_per_point_color(series[s].point_colors, c,
+                                            series_color, t);
 
             fastchart_target_arc(t, cx, cy, (int)arc_r, (int)arc_r,
                                  start_deg, start_deg + 359.9,

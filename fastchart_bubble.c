@@ -149,7 +149,9 @@ int fastchart_bubble_render_to_target(fastchart_bubble_obj *self, fastchart_targ
     for (int i = 0; i < collected; i++) {
         int px = fastchart_x_to_pixel(pts[i].x, &xrange, &plot);
         int py = fastchart_y_to_pixel(pts[i].y, &yrange, &plot);
-        double sfrac = smax > 0 ? sqrt(pts[i].size / smax) : 0.5;
+        /* No positive size anywhere -> zero scale (tiny markers via the
+         * rad<2 clamp), not half-max, which would misread as magnitude. */
+        double sfrac = smax > 0 ? sqrt(pts[i].size / smax) : 0.0;
         int rad = (int)(r_max * sfrac);
         if (rad < 2) rad = 2;
 

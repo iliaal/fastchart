@@ -5297,9 +5297,7 @@ ZEND_METHOD(FastChart_StockChart, setOhlcv)
      * destructor at fastchart_stock_release_extras: free the parallel
      * arrays, zero the per-overlay state, reset overlay_count. The
      * caller must re-call addBollingerBands / addParabolicSAR to
-     * recompute against the new candles. Indicator panes (RSI, MACD,
-     * etc.) take caller-supplied values, not candle-derived data, so
-     * they are intentionally NOT cleared. */
+     * recompute against the new candles. */
     for (int k = 0; k < self->overlay_count; k++) {
         if (self->overlays[k].a) efree(self->overlays[k].a);
         if (self->overlays[k].b) efree(self->overlays[k].b);
@@ -5310,6 +5308,38 @@ ZEND_METHOD(FastChart_StockChart, setOhlcv)
         self->overlays[k].n = 0;
     }
     self->overlay_count = 0;
+
+    /* Native indicator panes (RSI, MACD, ATR, ...) are computed
+     * eagerly from the candle buffer at add() time and sized to the
+     * old candle count, so replacing the candles leaves them stale
+     * (values from the prior data drawn against the new timestamps).
+     * Drop them exactly as the overlays above; the caller re-adds
+     * against the new candles. Panes fed by addIndicatorPane() carry
+     * caller-supplied values (candle_derived == false) and are kept. */
+    {
+        int kept = 0;
+        for (int k = 0; k < self->indicator_pane_count; k++) {
+            fastchart_indicator_pane *p = &self->indicator_panes[k];
+            if (p->candle_derived) {
+                if (p->name)    efree(p->name);
+                if (p->values)  efree(p->values);
+                if (p->values2) efree(p->values2);
+                if (p->values3) efree(p->values3);
+                continue;
+            }
+            if (kept != k) self->indicator_panes[kept] = *p;
+            kept++;
+        }
+        for (int k = kept; k < self->indicator_pane_count; k++) {
+            fastchart_indicator_pane *p = &self->indicator_panes[k];
+            p->name = NULL;
+            p->values = NULL;
+            p->values2 = NULL;
+            p->values3 = NULL;
+            p->value_count = 0;
+        }
+        self->indicator_pane_count = kept;
+    }
 
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
@@ -7597,6 +7627,7 @@ ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
     p->has_reference = false; p->reference = 0.0;
     p->has_min = false;       p->min = 0.0;
     p->has_max = false;       p->max = 0.0;
+    p->candle_derived = false;
 
     if (opts) {
         zval *opt;
@@ -7653,6 +7684,7 @@ static int push_indicator_pane(fastchart_stock_obj *self,
     p->has_reference = has_reference; p->reference = reference;
     p->has_min = has_min; p->min = min;
     p->has_max = has_max; p->max = max;
+    p->candle_derived = true;
     self->indicator_pane_count++;
     return 0;
 }
@@ -7661,8 +7693,8 @@ static int push_indicator_pane(fastchart_stock_obj *self,
  * to have been called and return the candle pointer + count. The
  * indicators are computed eagerly at add() time, so the candle
  * data must already be present; calling setOhlcv() AFTER an
- * addX() leaves the panes pointing at values from the prior
- * candle set. Documented in the stub. */
+ * addX() drops these candle-derived panes (see setOhlcv), so the
+ * caller re-adds them against the new candles. */
 static fastchart_candle *stock_require_candles(fastchart_stock_obj *self,
                                                const char *method_str,
                                                int *out_n)
@@ -8704,35 +8736,53 @@ ZEND_METHOD(FastChart_Funnel, setStages)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_funnel_obj *self = Z_FASTCHART_FUNNEL_OBJ_P(ZEND_THIS);
+    bool strict = ((fastchart_obj *)self)->strict;
     HashTable *ht = Z_ARRVAL_P(stages);
     uint32_t un = zend_hash_num_elements(ht);
     if (un > FASTCHART_MAX_FUNNEL_STAGES) un = FASTCHART_MAX_FUNNEL_STAGES;
     int n = (int)un;
 
-    if (self->stages) {
-        for (int i = 0; i < self->stage_count; i++) {
-            if (self->stages[i].label) efree(self->stages[i].label);
+    if (n == 0) {
+        if (self->stages) {
+            for (int i = 0; i < self->stage_count; i++) {
+                if (self->stages[i].label) efree(self->stages[i].label);
+            }
+            efree(self->stages);
+            self->stages = NULL;
+            self->stage_count = 0;
         }
-        efree(self->stages);
-        self->stages = NULL;
-        self->stage_count = 0;
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
     }
-    if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
+    /* Parse into a temp so a strict-mode rejection leaves the existing
+     * chart state untouched (mirrors the series setters). */
     fastchart_funnel_stage *parsed = ecalloc((size_t)n, sizeof(*parsed));
     int idx = 0;
+    const char *strict_err = NULL;
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (idx >= n) break;
         if (entry) ZVAL_DEREF(entry);
-        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        if (Z_TYPE_P(entry) != IS_ARRAY) {
+            if (strict) { strict_err = "each stage must be an array"; goto strict_fail; }
+            continue;
+        }
         HashTable *eht = Z_ARRVAL_P(entry);
 
         zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
-        if (!zv) continue;
+        if (!zv) {
+            if (strict) { strict_err = "each stage requires a 'value'"; goto strict_fail; }
+            continue;
+        }
         double v;
         if (fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) || v <= 0 ||
-            v > FASTCHART_MAX_DATA_MAG) continue;
+            v > FASTCHART_MAX_DATA_MAG) {
+            if (strict) {
+                strict_err = "each stage 'value' must be a finite number in (0, max]";
+                goto strict_fail;
+            }
+            continue;
+        }
         parsed[idx].value = v;
 
         zval *zl = zend_hash_str_find(eht, "label", sizeof("label") - 1);
@@ -8761,9 +8811,24 @@ ZEND_METHOD(FastChart_Funnel, setStages)
         efree(parsed);
         RETURN_ZVAL(ZEND_THIS, 1, 0);
     }
+
+    if (self->stages) {
+        for (int i = 0; i < self->stage_count; i++) {
+            if (self->stages[i].label) efree(self->stages[i].label);
+        }
+        efree(self->stages);
+    }
     self->stages = parsed;
     self->stage_count = idx;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
+
+strict_fail:
+    for (int k = 0; k < idx; k++) {
+        if (parsed[k].label) efree(parsed[k].label);
+    }
+    efree(parsed);
+    zend_type_error("FastChart\\Funnel::setStages() strict mode: %s", strict_err);
+    RETURN_THROWS();
 }
 
 ZEND_METHOD(FastChart_Funnel, setStyle)

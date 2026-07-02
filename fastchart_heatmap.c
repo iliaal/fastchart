@@ -35,6 +35,10 @@
 
 static int interp_color(int rgb_lo, int rgb_hi, double t)
 {
+    /* A grid spanning finite extremes (e.g. [-DBL_MAX, DBL_MAX]) makes
+     * the caller's (v-v_min)/(v_max-v_min) evaluate inf/inf = NaN; the
+     * < / > clamps below leave NaN untouched and (int)NaN is UB. */
+    if (!isfinite(t)) t = 0;
     if (t < 0) t = 0;
     if (t > 1) t = 1;
     int r0 = (rgb_lo >> 16) & 0xFF, g0 = (rgb_lo >> 8) & 0xFF, b0 = rgb_lo & 0xFF;

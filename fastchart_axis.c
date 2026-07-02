@@ -844,7 +844,10 @@ int fastchart_frac_to_px(double frac, int lo, int hi)
     /* Clamp before the int cast: callers derive frac from user
      * coordinates that addIconAt rejects only for NaN/Inf, so a
      * finite-but-large value would overflow frac*(hi-lo) past INT_MAX
-     * and make the cast UB (C11 6.3.1.4p1). */
+     * and make the cast UB (C11 6.3.1.4p1). A NaN frac (inf/inf from an
+     * overflowed axis span) passes both comparisons below, so reject it
+     * explicitly first. */
+    if (!isfinite(frac)) frac = 0.0;
     if (frac < 0.0) frac = 0.0;
     if (frac > 1.0) frac = 1.0;
     return lo + (int)(frac * (hi - lo) + 0.5);
@@ -1861,17 +1864,26 @@ void fastchart_draw_overlays_categorical(fastchart_target_t *t, fastchart_obj *c
              * walks in from the tail, closing a self-crossing polygon. */
             fastchart_point_t *poly = safe_emalloc((size_t)n_categories,
                                          2 * sizeof(fastchart_point_t), 0);
-            int np = 0;
-            for (int i = 0; i < n_categories; i++) {
-                if (!pts[i].valid) continue;
-                poly[np].x = pts[i].x; poly[np].y = pts[i].y; np++;
-            }
-            for (int i = n_categories - 1; i >= 0; i--) {
-                if (!pts[i].valid) continue;
-                poly[np].x = pts[i].x; poly[np].y = zero_y; np++;
-            }
-            if (np >= 3 && alpha_color >= 0) {
-                fastchart_target_polygon(t, poly, np, alpha_color, 1, 0);
+            /* Fill each contiguous run of valid points as its own closed
+             * polygon so a null/gap breaks the fill (matching the line
+             * gap) instead of painting straight across the missing
+             * category. */
+            int i = 0;
+            while (i < n_categories) {
+                if (!pts[i].valid) { i++; continue; }
+                int j = i;
+                while (j < n_categories && pts[j].valid) j++;
+                int np = 0;
+                for (int k = i; k < j; k++) {
+                    poly[np].x = pts[k].x; poly[np].y = pts[k].y; np++;
+                }
+                for (int k = j - 1; k >= i; k--) {
+                    poly[np].x = pts[k].x; poly[np].y = zero_y; np++;
+                }
+                if (np >= 3 && alpha_color >= 0) {
+                    fastchart_target_polygon(t, poly, np, alpha_color, 1, 0);
+                }
+                i = j;
             }
             efree(poly);
         }
@@ -1940,17 +1952,24 @@ void fastchart_draw_overlays_horizontal_bar(fastchart_target_t *t, fastchart_obj
              * above for why a fixed cap self-crosses. */
             fastchart_point_t *poly = safe_emalloc((size_t)n_categories,
                                          2 * sizeof(fastchart_point_t), 0);
-            int np = 0;
-            for (int i = 0; i < n_categories; i++) {
-                if (!pts[i].valid) continue;
-                poly[np].x = pts[i].x; poly[np].y = pts[i].y; np++;
-            }
-            for (int i = n_categories - 1; i >= 0; i--) {
-                if (!pts[i].valid) continue;
-                poly[np].x = zero_x; poly[np].y = pts[i].y; np++;
-            }
-            if (np >= 3 && alpha_color >= 0) {
-                fastchart_target_polygon(t, poly, np, alpha_color, 1, 0);
+            /* One closed polygon per contiguous run of valid points so a
+             * gap breaks the fill instead of spanning the missing row. */
+            int i = 0;
+            while (i < n_categories) {
+                if (!pts[i].valid) { i++; continue; }
+                int j = i;
+                while (j < n_categories && pts[j].valid) j++;
+                int np = 0;
+                for (int k = i; k < j; k++) {
+                    poly[np].x = pts[k].x; poly[np].y = pts[k].y; np++;
+                }
+                for (int k = j - 1; k >= i; k--) {
+                    poly[np].x = zero_x; poly[np].y = pts[k].y; np++;
+                }
+                if (np >= 3 && alpha_color >= 0) {
+                    fastchart_target_polygon(t, poly, np, alpha_color, 1, 0);
+                }
+                i = j;
             }
             efree(poly);
         }

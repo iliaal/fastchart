@@ -106,6 +106,10 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
             double v = grid[y_idx * cols + x_idx];
             if (isnan(v)) continue;
             double tv = (v - vmin) / span;
+            /* A grid spanning finite extremes (span overflowed to inf)
+             * yields inf/inf = NaN; the idx clamp is on the int result,
+             * too late to stop (int)NaN UB. Clamp tv finite first. */
+            if (!isfinite(tv)) tv = 0.0;
             int idx = (int)(tv * 255.0 + 0.5);
             if (idx < 0) idx = 0; else if (idx > 255) idx = 255;
             int color = color_lut[idx];

@@ -687,7 +687,13 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
             if (!candles[i].has_volume) continue;
             int x = fastchart_x_time_to_pixel(&volume_pane,
                                               candles[i].ts, t_min, t_max);
-            int top = baseline - (int)((double)vh * candles[i].volume / v_max);
+            /* Normalize before scaling: a raw volume near DBL_MAX makes
+             * vh * volume overflow to Inf, and (int)Inf is UB. */
+            double vfrac = candles[i].volume / v_max;
+            if (!isfinite(vfrac)) vfrac = 0.0;
+            else if (vfrac < 0.0) vfrac = 0.0;
+            else if (vfrac > 1.0) vfrac = 1.0;
+            int top = baseline - (int)((double)vh * vfrac);
 
             int color = candles[i].close >= candles[i].open ? pal.up : pal.down;
             if (vol_colors && i < vcn && vol_colors[i] >= 0) color = vol_colors[i];

@@ -65,20 +65,37 @@ static zend_always_inline const unsigned char *fc_utf8_next_cp(
     const unsigned char *p, const unsigned char *end, uint32_t *out_cp)
 {
 	if (p >= end) return NULL;
-	if (*p < 0x80) { *out_cp = *p; return p + 1; }
-	if ((*p & 0xE0) == 0xC0 && p + 1 < end) {
-		*out_cp = ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
-		return p + 2;
+	unsigned char c0 = p[0];
+	if (c0 < 0x80) { *out_cp = c0; return p + 1; }
+
+	/* Every following byte must be a 10xxxxxx continuation. Without
+	 * that check a lead byte followed by ASCII (e.g. 0xC2 'A') would be
+	 * folded into one bogus codepoint, swallowing the trailing char and
+	 * desyncing measurement from emission. Reject overlong encodings,
+	 * UTF-16 surrogates, and values above U+10FFFF too; on any invalid
+	 * sequence emit U+FFFD and advance exactly one byte. */
+	if ((c0 & 0xE0) == 0xC0 && p + 1 < end
+	    && (p[1] & 0xC0) == 0x80) {
+		uint32_t cp = ((uint32_t)(c0 & 0x1F) << 6) | (p[1] & 0x3F);
+		if (cp >= 0x80) { *out_cp = cp; return p + 2; }
+	} else if ((c0 & 0xF0) == 0xE0 && p + 2 < end
+	    && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) {
+		uint32_t cp = ((uint32_t)(c0 & 0x0F) << 12)
+		            | ((uint32_t)(p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+		if (cp >= 0x800 && (cp < 0xD800 || cp > 0xDFFF)) {
+			*out_cp = cp; return p + 3;
+		}
+	} else if ((c0 & 0xF8) == 0xF0 && p + 3 < end
+	    && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80
+	    && (p[3] & 0xC0) == 0x80) {
+		uint32_t cp = ((uint32_t)(c0 & 0x07) << 18)
+		            | ((uint32_t)(p[1] & 0x3F) << 12)
+		            | ((uint32_t)(p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+		if (cp >= 0x10000 && cp <= 0x10FFFF) {
+			*out_cp = cp; return p + 4;
+		}
 	}
-	if ((*p & 0xF0) == 0xE0 && p + 2 < end) {
-		*out_cp = ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
-		return p + 3;
-	}
-	if ((*p & 0xF8) == 0xF0 && p + 3 < end) {
-		*out_cp = ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12)
-		       | ((p[2] & 0x3F) << 6)  |  (p[3] & 0x3F);
-		return p + 4;
-	}
+
 	*out_cp = 0xFFFD;
 	return p + 1;
 }

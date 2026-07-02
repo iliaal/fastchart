@@ -143,7 +143,7 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
         double frac_x = (xrange.max - xrange.min) > 0
             ? (points[i].x - xrange.min) / (xrange.max - xrange.min)
             : 0.5;
-        int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
+        int px = fastchart_frac_to_px(frac_x, plot.x0, plot.x1);
         int py = fastchart_y_to_pixel(points[i].y, &yrange, &plot);
 
         /* color is a target handle so it flows through fastchart_draw_marker
@@ -222,10 +222,12 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
                 sxy += xn * points[i].y;
             }
             double denom = n * sxx - sx * sx;
-            if (denom != 0.0) {
-                coeffs[1] = (n * sxy - sx * sy) / denom;
-                coeffs[0] = (sy - coeffs[1] * sx) / n;
-            }
+            /* All-equal x (e.g. a vertical scatter) makes denom 0; the
+             * fit is undefined. Skip like the singular-matrix case below
+             * rather than plotting the zero-initialized y=0 line. */
+            if (denom == 0.0 || !isfinite(denom)) goto no_fit;
+            coeffs[1] = (n * sxy - sx * sy) / denom;
+            coeffs[0] = (sy - coeffs[1] * sx) / n;
         } else {
             /* Normal equations for polynomial of degree `deg` in
              * normalized x:
@@ -284,7 +286,7 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
             for (int k = 0; k <= deg; k++) { y += coeffs[k] * xp; xp *= xn; }
             double frac = (xrange.max - xrange.min) > 0
                 ? (x - xrange.min) / (xrange.max - xrange.min) : 0.5;
-            int px = plot.x0 + (int)(frac * (plot.x1 - plot.x0) + 0.5);
+            int px = fastchart_frac_to_px(frac, plot.x0, plot.x1);
             int py = fastchart_y_to_pixel(y, &yrange, &plot);
             if (s > 0) {
                 fastchart_target_line(t, prev_px, prev_py, px, py,

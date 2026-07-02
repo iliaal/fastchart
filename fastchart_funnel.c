@@ -115,6 +115,17 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
             "(width-relative bottom-arc reserve consumed the entire plot height)");
         return -1;
     }
+    /* Flat funnel positions each band at y0 + i*stage_h with a 4px
+     * floor; if the canvas can't hold n bands at that floor the tail
+     * bands would spill below y1 and clip. Reject rather than emit a
+     * truncated chart (mirrors the STYLE_CONE too-short guard above).
+     * PYRAMID/CONE position by cumulative value and stay in bounds. */
+    if (!pyramid && total_h < n * 4) {
+        zend_throw_error(NULL,
+            "FastChart\\Funnel::draw() canvas is too short for %d stages "
+            "(each stage needs at least 4px of height)", n);
+        return -1;
+    }
     int stage_h = total_h / n;
     if (stage_h < 4) stage_h = 4;
     /* CONE shares PYRAMID's triangular layout (cumulative-value y

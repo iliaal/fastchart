@@ -87,6 +87,14 @@ int fastchart_pyramid_render_to_target(fastchart_pyramid_obj *self, fastchart_ta
     int plot_y0 = top_pad + legend_h + 6, plot_y1 = H - 16;
     double plot_w = plot_x1 - plot_x0;
     double plot_h = plot_y1 - plot_y0;
+    /* A single very wide category label could push center_gap past the
+     * plot width, tripping the guard below and blanking the whole chart.
+     * Clamp it to leave at least 20px for the bars (10 per side) so a
+     * long-but-valid label degrades to overlap, not an empty canvas. */
+    if (center_gap > plot_w - 20) {
+        center_gap = (int)plot_w - 20;
+        if (center_gap < 32) center_gap = 32;
+    }
     if (plot_w < center_gap + 20 || plot_h < 10) return 0;
 
     double cxl = W / 2.0 - center_gap / 2.0;   /* inner edge of left bars */
