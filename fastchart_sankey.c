@@ -163,6 +163,13 @@ int fastchart_sankey_render_to_target(fastchart_sankey_obj *self, fastchart_targ
     for (int e = 0; e < self->link_count; e++) {
         L[self->links[e].from].out_total += self->links[e].value;
         L[self->links[e].to].in_total    += self->links[e].value;
+        if (!isfinite(L[self->links[e].from].out_total) ||
+            !isfinite(L[self->links[e].to].in_total)) {
+            efree(L);
+            zend_throw_error(NULL,
+                "FastChart\\SankeyChart::draw() flow total overflow");
+            return -1;
+        }
     }
 
     /* Per-node "size" = max(in, out). Use the largest column total
@@ -174,7 +181,19 @@ int fastchart_sankey_render_to_target(fastchart_sankey_obj *self, fastchart_targ
     for (int i = 0; i < self->node_count; i++) {
         double sz = L[i].in_total > L[i].out_total
             ? L[i].in_total : L[i].out_total;
+        if (!isfinite(sz)) {
+            efree(L); efree(col_totals); efree(col_counts);
+            zend_throw_error(NULL,
+                "FastChart\\SankeyChart::draw() flow total overflow");
+            return -1;
+        }
         col_totals[L[i].layer] += sz;
+        if (!isfinite(col_totals[L[i].layer])) {
+            efree(L); efree(col_totals); efree(col_counts);
+            zend_throw_error(NULL,
+                "FastChart\\SankeyChart::draw() flow total overflow");
+            return -1;
+        }
         col_counts[L[i].layer] += 1;
         if (col_totals[L[i].layer] > col_max) col_max = col_totals[L[i].layer];
     }
@@ -206,6 +225,12 @@ int fastchart_sankey_render_to_target(fastchart_sankey_obj *self, fastchart_targ
     double px_avail = avail_h - (max_count - 1) * node_gap;
     if (px_avail < 0.0) px_avail = 0.0;
     double px_per_unit = px_avail / col_max;
+    if (!isfinite(px_per_unit)) {
+        efree(L); efree(col_totals); efree(col_counts);
+        zend_throw_error(NULL,
+            "FastChart\\SankeyChart::draw() flow total overflow");
+        return -1;
+    }
 
     /* Position nodes column by column, top-aligned. */
     double col_x_step = (double)(plot_x1 - plot_x0) / (n_layers > 1 ? n_layers - 1 : 1);
@@ -217,6 +242,12 @@ int fastchart_sankey_render_to_target(fastchart_sankey_obj *self, fastchart_targ
             double sz = L[i].in_total > L[i].out_total
                 ? L[i].in_total : L[i].out_total;
             double h = sz * px_per_unit;
+            if (!isfinite(h)) {
+                efree(L); efree(col_totals); efree(col_counts);
+                zend_throw_error(NULL,
+                    "FastChart\\SankeyChart::draw() flow total overflow");
+                return -1;
+            }
             if (h < 2) h = 2;
             L[i].y0 = y;
             L[i].height = h;
@@ -234,6 +265,12 @@ int fastchart_sankey_render_to_target(fastchart_sankey_obj *self, fastchart_targ
         sankey_node_layout *src = &L[lk->from];
         sankey_node_layout *dst = &L[lk->to];
         double h = lk->value * px_per_unit;
+        if (!isfinite(h)) {
+            efree(L); efree(col_totals); efree(col_counts);
+            zend_throw_error(NULL,
+                "FastChart\\SankeyChart::draw() flow total overflow");
+            return -1;
+        }
         double sx = plot_x0 + col_x_step * src->layer + node_w;
         double dx = plot_x0 + col_x_step * dst->layer;
         double s_top = src->out_cursor;
