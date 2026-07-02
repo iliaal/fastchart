@@ -127,6 +127,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer swallows the next character.
 - `Treemap` skips degenerate cells (`x1 < x0`) that a plot rect smaller
   than the item count can produce, instead of emitting negative-size rects.
+- `Waterfall` renders a negative TOTAL bar below the zero baseline and
+  extends the y-axis into the negative region, instead of drawing it at
+  its absolute height above zero (a net loss no longer looks like a gain).
 
 ## [1.4.0] - 2026-06-20
 
