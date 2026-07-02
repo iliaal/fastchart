@@ -282,6 +282,10 @@ int fastchart_treemap_render_to_target(fastchart_treemap_obj *self, fastchart_ta
         int ry0 = rects[i].y0;
         int rw = rects[i].x1 - rects[i].x0 + 1;
         int rh = rects[i].y1 - rects[i].y0 + 1;
+        /* A plot rect too small for the item count can leave a cell with
+         * x1 < x0 (or y1 < y0) once the layout area is exhausted; skip
+         * those so no degenerate geometry reaches the target. */
+        if (rw <= 0 || rh <= 0) continue;
         fastchart_target_rect(t, rx0, ry0, rw, rh, cell_color, 1, 0);
         fastchart_target_rect(t, rx0, ry0, rw, rh, pal.border, 0, 1);
 

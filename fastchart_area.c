@@ -201,18 +201,24 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
         /* Center the stack on zero: the symmetric range is [-T/2, +T/2]
          * where T is the tallest per-category total. */
         double max_total = 0.0;
+        int seen_stream_value = 0;
         for (int i = 0; i < max_len; i++) {
             double tot = 0.0;
             for (int s = 0; s < n_series; s++) {
                 double v = area_read_value(&series[s], i);
-                if (!isnan(v) && v > 0.0) tot += v;
+                if (!isnan(v)) {
+                    seen_stream_value = 1;
+                    if (v > 0.0) tot += v;
+                }
             }
             if (tot > max_total) max_total = tot;
         }
         if (max_total <= 0.0) max_total = 1.0;
         dmin_l = -max_total / 2.0;
         dmax_l = max_total / 2.0;
-        seen_l = 1;
+        /* Only mark the axis seen when the input actually held a numeric
+         * value; an all-gap stream must still hit the no-data error. */
+        if (seen_stream_value) seen_l = 1;
     }
     if (!seen_l) {
         zend_throw_error(NULL,

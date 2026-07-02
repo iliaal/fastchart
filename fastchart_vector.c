@@ -165,6 +165,12 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
             ? (self->vectors[i].x - xr.min) / (xr.max - xr.min) : 0.5;
         double ayu = (yr.max > yr.min)
             ? (self->vectors[i].y - yr.min) / (yr.max - yr.min) : 0.5;
+        /* A finite-but-extreme coordinate can land far outside a small
+         * fallback axis range, so axu/ayu overflow the pixel span and
+         * the (int) cast is UB. Drop NaN/Inf, clamp the rest to [0,1]. */
+        if (!isfinite(axu) || !isfinite(ayu)) continue;
+        if (axu < 0.0) axu = 0.0; else if (axu > 1.0) axu = 1.0;
+        if (ayu < 0.0) ayu = 0.0; else if (ayu > 1.0) ayu = 1.0;
         int ax = anchor_x0 + (int)(axu * (anchor_x1 - anchor_x0));
         int ay = anchor_y1 - (int)(ayu * (anchor_y1 - anchor_y0));
         double ang = atan2(self->vectors[i].dy, self->vectors[i].dx);
