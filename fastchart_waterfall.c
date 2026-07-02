@@ -53,14 +53,16 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
     double y_min = 0, y_max = 0;
     for (int i = 0; i < n; i++) {
         if (self->bars[i].kind == FASTCHART_WF_TOTAL) {
-            /* A TOTAL bar is rendered at its absolute height from the
-             * baseline (per the documented contract). fabs keeps a
-             * negative running total (a net-loss subtotal) from being
-             * dropped by the y-range scan below and clamped to the
-             * baseline; cum still carries the signed value forward. */
-            bar_lo[i] = 0;
-            bar_hi[i] = fabs(self->bars[i].value);
-            cum = self->bars[i].value;
+            /* A TOTAL bar is anchored to zero but keeps its sign: a
+             * net-loss subtotal draws from the negative value up to the
+             * baseline (below zero), matching how waterfall charts show
+             * a negative cumulative total. The signed span feeds the
+             * y-range scan below so the axis includes the negative
+             * region; cum carries the signed value forward. */
+            double val = self->bars[i].value;
+            bar_lo[i] = val < 0 ? val : 0;
+            bar_hi[i] = val > 0 ? val : 0;
+            cum = val;
         } else {
             double next = cum + self->bars[i].value;
             bar_lo[i] = cum < next ? cum : next;
