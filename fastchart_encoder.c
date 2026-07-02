@@ -119,12 +119,20 @@ static int fc_enc_pack_rgba_to_rgb_neon(const uint8_t *src, uint8_t *dst,
 }
 #endif
 
-/* Prewarm the SSSE3 capability cache at module load so the lazy
- * first-call branch in fc_enc_cpu_has_ssse3() can't race under ZTS. */
+/* Prewarm the SSSE3 capability cache and format the libwebp version
+ * string at module load so neither lazy first-call path can race
+ * under ZTS. */
+#ifdef HAVE_LIBWEBP
+static void fc_webp_version_init(void);
+#endif
+
 void fastchart_encoder_init(void)
 {
 #ifdef FC_ENC_HAVE_X86_SIMD
 	(void)fc_enc_cpu_has_ssse3();
+#endif
+#ifdef HAVE_LIBWEBP
+	fc_webp_version_init();
 #endif
 }
 
@@ -135,6 +143,7 @@ void fastchart_pixels_init(fastchart_pixels_t *pix, int w, int h)
 	pix->h    = h;
 	pix->has_alpha = 0;
 	pix->dpi  = 0;
+	pix->png_level = -1;
 }
 
 void fastchart_pixels_release(fastchart_pixels_t *pix)
@@ -176,12 +185,32 @@ int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix)
 		png_destroy_write_struct(&png, NULL);
 		return -1;
 	}
+
+	/* png_smart_write appends into the caller's smart_str, so a
+	 * memory_limit bailout can fire inside the live libpng session and
+	 * longjmp past the destroy — leaking the write struct + zlib state
+	 * (malloc'd, invisible to memory_limit) in a long-running worker.
+	 * Release the vendor state before re-entering the bailout. */
+	volatile int rc = 0;
+	zend_try {
+
 	if (setjmp(png_jmpbuf(png))) {
 		png_destroy_write_struct(&png, &info);
-		return -1;
+		rc = -1;
+		goto done;
 	}
 
 	png_set_write_fn(png, out, png_smart_write, png_smart_flush);
+
+	/* Chart output is flat fills and anti-aliased edges, never
+	 * photographic. libpng's default per-row adaptive filtering (try
+	 * all five, keep the best) costs ~40% of the row-write stage here
+	 * for a size difference under half a percent; a fixed UP filter
+	 * keeps the size and drops the search. */
+	png_set_filter(png, 0, PNG_FILTER_UP);
+	if (pix->png_level >= 0) {
+		png_set_compression_level(png, pix->png_level);
+	}
 
 	int color_type = pix->has_alpha ? PNG_COLOR_TYPE_RGB_ALPHA
 	                                : PNG_COLOR_TYPE_RGB;
@@ -212,7 +241,14 @@ int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix)
 	png_write_end(png, info);
 
 	png_destroy_write_struct(&png, &info);
-	return 0;
+done:;
+
+	} zend_catch {
+		png_destroy_write_struct(&png, &info);
+		zend_bailout();
+	} zend_end_try();
+
+	return rc;
 }
 
 int fastchart_have_libpng(void)         { return 1; }
@@ -311,6 +347,14 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 	 * itself longjmps (struct/version mismatch), cinfo.mem is still
 	 * uninitialized and jpeg_destroy_compress must not run on it. */
 	volatile int created = 0;
+	volatile int rc = 0;
+
+	/* The destination callbacks append into the caller's smart_str, so
+	 * a memory_limit bailout can fire mid-session and longjmp past
+	 * jpeg_destroy_compress — with optimize_coding libjpeg is holding
+	 * whole-image coefficient buffers (malloc'd, invisible to
+	 * memory_limit). Release them before re-entering the bailout. */
+	zend_try {
 
 	if (setjmp(err.jmp)) {
 		if (created) jpeg_destroy_compress(&cinfo);
@@ -318,7 +362,8 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 		/* Partial bytes already streamed into `out` are the caller's
 		 * to discard (smart_str_free on the error branch) — same
 		 * convention as the PNG encoder. */
-		return -1;
+		rc = -1;
+		goto done;
 	}
 
 	jpeg_create_compress(&cinfo);
@@ -404,7 +449,14 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 
 	jpeg_finish_compress(&cinfo);
 	jpeg_destroy_compress(&cinfo);
-	return 0;
+done:;
+
+	} zend_catch {
+		if (created) jpeg_destroy_compress(&cinfo);
+		zend_bailout();
+	} zend_end_try();
+
+	return rc;
 }
 
 int fastchart_have_libjpeg(void) { return 1; }
@@ -524,19 +576,36 @@ int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
 		WebPMemoryWriterClear(&writer);
 		return -1;
 	}
-	smart_str_appendl(out, (const char *)writer.mem, writer.size);
+	/* The append can bail on memory_limit with the malloc'd encoded
+	 * file (writer.mem) live — release it before re-entering the
+	 * bailout. */
+	zend_try {
+		smart_str_appendl(out, (const char *)writer.mem, writer.size);
+	} zend_catch {
+		WebPMemoryWriterClear(&writer);
+		zend_bailout();
+	} zend_end_try();
 	WebPMemoryWriterClear(&writer);
 	return 0;
 }
 
 int fastchart_have_libwebp(void) { return 1; }
+
+/* Formatted once at MINIT (fastchart_encoder_init): a per-call
+ * snprintf into the shared static was a benign-but-racy write under
+ * ZTS when two threads hit MINFO concurrently. */
+static char fc_webp_ver[16];
+
+static void fc_webp_version_init(void)
+{
+	int v = WebPGetEncoderVersion();
+	snprintf(fc_webp_ver, sizeof(fc_webp_ver), "%d.%d.%d",
+	         (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF);
+}
+
 const char *fastchart_libwebp_version(void)
 {
-	static char ver[16];
-	int v = WebPGetEncoderVersion();
-	snprintf(ver, sizeof(ver), "%d.%d.%d",
-	         (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF);
-	return ver;
+	return fc_webp_ver;
 }
 #else  /* !HAVE_LIBWEBP */
 int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,

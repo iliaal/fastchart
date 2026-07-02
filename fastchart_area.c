@@ -42,8 +42,8 @@ static inline double area_read_value(const fastchart_series_t *s, int i)
  * modes, Catmull-Rom sampling for SMOOTH. Callers invoke it only for
  * the non-linear modes; LINEAR keeps the original vertex-for-vertex
  * fill path untouched. */
-static int area_densify(int interp, const gdPoint *raw, int n,
-                        gdPoint *out, int cap)
+static int area_densify(int interp, const fastchart_point_t *raw, int n,
+                        fastchart_point_t *out, int cap)
 {
     int m = 0;
     if (n <= 0 || cap <= 0) return 0;
@@ -52,7 +52,7 @@ static int area_densify(int interp, const gdPoint *raw, int n,
         interp == FASTCHART_INTERP_STEP_BEFORE) {
         bool after = (interp == FASTCHART_INTERP_STEP_AFTER);
         for (int i = 1; i < n && m + 2 <= cap; i++) {
-            gdPoint corner;
+            fastchart_point_t corner;
             if (after) { corner.x = raw[i].x;     corner.y = raw[i - 1].y; }
             else       { corner.x = raw[i - 1].x; corner.y = raw[i].y;     }
             out[m++] = corner;
@@ -295,7 +295,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
      * sums; each series's polygon spans [prev_cum, prev_cum + v].
      * For non-stacked overlay, each series's polygon spans
      * [0, v] with translucent fill so layered shapes show through. */
-    gdPoint poly[2 * FASTCHART_MAX_POINTS_PER_SERIES];
+    fastchart_point_t poly[2 * FASTCHART_MAX_POINTS_PER_SERIES];
 
     /* Stream centering offset per category: -total/2, applied to every
      * layer so the stack straddles the zero line. NULL (and a 0 offset)
@@ -397,10 +397,10 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                  * adjacent layers tile without gaps. stream_off is 0
                  * here — stream excludes the curve path. */
                 int vcap = max_len * 21 + 8;
-                gdPoint *rawt = emalloc((size_t)max_len * sizeof(gdPoint));
-                gdPoint *rawb = emalloc((size_t)max_len * sizeof(gdPoint));
-                gdPoint *dt = emalloc((size_t)vcap * sizeof(gdPoint));
-                gdPoint *db = emalloc((size_t)vcap * sizeof(gdPoint));
+                fastchart_point_t *rawt = emalloc((size_t)max_len * sizeof(fastchart_point_t));
+                fastchart_point_t *rawb = emalloc((size_t)max_len * sizeof(fastchart_point_t));
+                fastchart_point_t *dt = emalloc((size_t)vcap * sizeof(fastchart_point_t));
+                fastchart_point_t *db = emalloc((size_t)vcap * sizeof(fastchart_point_t));
                 for (int i = 0; i < max_len; i++) {
                     double v = area_read_value(&series[s], i);
                     if (isnan(v)) v = 0;
@@ -414,7 +414,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 int dnb = area_densify(interp, rawb, max_len, db, vcap);
                 if (dnt >= 2 && dnb >= 2) {
                     int fcap = dnt + dnb;
-                    gdPoint *fp = emalloc((size_t)fcap * sizeof(gdPoint));
+                    fastchart_point_t *fp = emalloc((size_t)fcap * sizeof(fastchart_point_t));
                     int fn = 0;
                     for (int i = 0; i < dnt; i++) fp[fn++] = dt[i];
                     for (int i = dnb - 1; i >= 0; i--) fp[fn++] = db[i];
@@ -521,8 +521,8 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 /* Curved fill: densified top edge, then a straight
                  * baseline back to close the polygon. */
                 int vcap = max_len * 21 + 8;
-                gdPoint *raw = emalloc((size_t)max_len * sizeof(gdPoint));
-                gdPoint *dens = emalloc((size_t)vcap * sizeof(gdPoint));
+                fastchart_point_t *raw = emalloc((size_t)max_len * sizeof(fastchart_point_t));
+                fastchart_point_t *dens = emalloc((size_t)vcap * sizeof(fastchart_point_t));
                 for (int i = 0; i < max_len; i++) {
                     double v = area_read_value(&series[s], i);
                     if (isnan(v)) v = rng->log_scale ? rng->min : 0.0;
@@ -532,7 +532,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 int dn = area_densify(interp, raw, max_len, dens, vcap);
                 if (dn >= 2) {
                     int fcap = dn + 2;
-                    gdPoint *fp = emalloc((size_t)fcap * sizeof(gdPoint));
+                    fastchart_point_t *fp = emalloc((size_t)fcap * sizeof(fastchart_point_t));
                     int fn = 0;
                     for (int i = 0; i < dn; i++) fp[fn++] = dens[i];
                     fp[fn].x = dens[dn - 1].x; fp[fn].y = zero_y; fn++;

@@ -123,7 +123,7 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
 
         if (tasks[i].is_milestone) {
             int s = bar_h;
-            gdPoint diamond[4] = {
+            fastchart_point_t diamond[4] = {
                 { x_end,           row_yc - s/2 },
                 { x_end + s/2,     row_yc       },
                 { x_end,           row_yc + s/2 },

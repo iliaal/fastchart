@@ -107,6 +107,23 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
     wc_box *placed = ecalloc(n, sizeof(*placed));
     int placed_n = 0;
 
+    /* Uniform bucket grid over the canvas: collision candidates come
+     * from the cells a box overlaps instead of the whole placed list,
+     * which went quadratic as the canvas saturated (late words burned
+     * the full spiral budget re-scanning every placed box per step).
+     * Decisions are EXACTLY the full scan's: boxes are inserted
+     * inflated by the 1px collision margin, so any pair that could
+     * satisfy the margin test shares a cell, and the final test below
+     * is the same AABB comparison. */
+    enum { WC_CELL = 32 };
+    int grid_w = W / WC_CELL + 2;
+    int grid_h = H / WC_CELL + 2;
+    int *cell_head = emalloc((size_t)grid_w * grid_h * sizeof(int));
+    memset(cell_head, 0xFF, (size_t)grid_w * grid_h * sizeof(int)); /* -1 */
+    int node_cap = 256, node_n = 0;
+    int *node_box  = emalloc((size_t)node_cap * sizeof(int));
+    int *node_next = emalloc((size_t)node_cap * sizeof(int));
+
     for (int oi = 0; oi < n; oi++) {
         int wi = order[oi];
         const char *text = self->words[wi].text;
@@ -146,11 +163,21 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
                 continue;
             }
             ok = 1;
-            for (int p = 0; p < placed_n; p++) {
-                if (!(cand.x1 < placed[p].x0 - 1 || cand.x0 > placed[p].x1 + 1 ||
-                      cand.y1 < placed[p].y0 - 1 || cand.y0 > placed[p].y1 + 1)) {
-                    ok = 0;
-                    break;
+            int qx0 = (int)cand.x0 / WC_CELL, qx1 = (int)cand.x1 / WC_CELL;
+            int qy0 = (int)cand.y0 / WC_CELL, qy1 = (int)cand.y1 / WC_CELL;
+            if (qx1 >= grid_w) qx1 = grid_w - 1;
+            if (qy1 >= grid_h) qy1 = grid_h - 1;
+            for (int cy2 = qy0; cy2 <= qy1 && ok; cy2++) {
+                for (int cx2 = qx0; cx2 <= qx1 && ok; cx2++) {
+                    for (int ni = cell_head[cy2 * grid_w + cx2];
+                         ni != -1; ni = node_next[ni]) {
+                        int p = node_box[ni];
+                        if (!(cand.x1 < placed[p].x0 - 1 || cand.x0 > placed[p].x1 + 1 ||
+                              cand.y1 < placed[p].y0 - 1 || cand.y0 > placed[p].y1 + 1)) {
+                            ok = 0;
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -160,6 +187,33 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
         placed[placed_n].y0 = by - hh;
         placed[placed_n].x1 = bx + hw;
         placed[placed_n].y1 = by + hh;
+
+        /* Insert into the grid inflated by the collision margin. */
+        {
+            int ix0 = (int)(placed[placed_n].x0 - 1) / WC_CELL;
+            int ix1 = (int)(placed[placed_n].x1 + 1) / WC_CELL;
+            int iy0 = (int)(placed[placed_n].y0 - 1) / WC_CELL;
+            int iy1 = (int)(placed[placed_n].y1 + 1) / WC_CELL;
+            if (ix0 < 0) ix0 = 0;
+            if (iy0 < 0) iy0 = 0;
+            if (ix1 >= grid_w) ix1 = grid_w - 1;
+            if (iy1 >= grid_h) iy1 = grid_h - 1;
+            for (int cy2 = iy0; cy2 <= iy1; cy2++) {
+                for (int cx2 = ix0; cx2 <= ix1; cx2++) {
+                    if (node_n >= node_cap) {
+                        node_cap *= 2;
+                        node_box  = erealloc(node_box,
+                                             (size_t)node_cap * sizeof(int));
+                        node_next = erealloc(node_next,
+                                             (size_t)node_cap * sizeof(int));
+                    }
+                    node_box[node_n]  = placed_n;
+                    node_next[node_n] = cell_head[cy2 * grid_w + cx2];
+                    cell_head[cy2 * grid_w + cx2] = node_n;
+                    node_n++;
+                }
+            }
+        }
         placed_n++;
 
         /* Palette colour keyed on the word's stable index, not its
@@ -189,6 +243,9 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
 
     efree(order);
     efree(placed);
+    efree(cell_head);
+    efree(node_box);
+    efree(node_next);
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
 }

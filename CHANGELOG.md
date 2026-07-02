@@ -7,7 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Chart::setPngCompressionLevel()`: zlib level 0-9 for PNG output;
+  the default stays at libpng's 6.
+- `drawSvgFragment()` takes an optional `$idPrefix` to namespace
+  gradient and clip-path ids, so fragments from several charts can be
+  stitched into one host document without `url(#fcg1)` collisions.
+
+### Changed
+
+- Series arrays with holes (`array_filter()`, `unset()`) compact in
+  key order instead of turning missing indexes into NaN gaps and
+  silently dropping tail values.
+- `setSeries()` throws a `ValueError` past the 8-series cap instead of
+  silently truncating; `setStrict(true)` throws a `TypeError` on
+  non-array series entries and malformed floating pairs (lax mode
+  keeps rendering them as gaps).
+- `getImageMapAreas()` reports each area's `index` as the position in
+  the original `setSeries()`/`setSlices()`/`setPoints()` input, as
+  documented, even when earlier entries were skipped (no href, NaN
+  point).
+- SVG color handles are looked up through a hash table instead of a
+  linear table scan: a 4096-point scatter with per-point colors
+  renders ~6x faster.
+- PNG rows use the fixed UP filter instead of adaptive per-row
+  filtering: a 2000x1500 `renderPng()` completes ~40% faster at
+  effectively unchanged file size.
+- `WordCloud` collision tests are pruned through a spatial bucket
+  grid: ~30% faster at 200 words with byte-identical output.
+- Solid and alpha SVG colors are formatted by dedicated integer
+  emitters instead of `snprintf()`: dense marker-heavy documents emit
+  ~40% faster, byte-identical.
+
 ### Fixed
+
+- An out-of-memory bailout inside a libpng / libjpeg / libwebp /
+  plutovg / pdfio session no longer leaks the library's internal
+  state: raster buffers are allocated before the vendor window opens
+  and each encode session is unwound before the bailout propagates.
+- `setYAxisRange()` no longer draws tick labels outside the forced
+  bounds (a "0" label used to clamp onto the min's pixel row), and an
+  interval finer than the tick ladder strides to span the range
+  instead of packing every gridline at the bottom of the plot.
+- Per-role font-size overrides (title, axis titles, labels, legend)
+  are honored during layout measurement, not only at draw time, so an
+  oversized title no longer overlaps the plot area.
+- PDF output keeps the 96-DPI layout baseline like SVG; `setDpi(200)`
+  previously inflated the reserved margins 2x while page and font
+  sizes stayed logical.
+- `renderWebp()` rejects physical dimensions past WebP's 16383px
+  per-dimension limit before rasterizing, with a message naming the
+  offending size, instead of failing afterwards with a generic
+  encoder error.
+- Invalid UTF-8 bytes measure as U+FFFD, matching how they render;
+  text with malformed sequences no longer misaligns.
 
 - Rotated axis labels (`setXAxisLabelAngle(45)` / `(90)`) anchor at their
   tick in the default `SVG_TEXT_PATHS` mode and in all raster/PDF output;

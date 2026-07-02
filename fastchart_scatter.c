@@ -362,6 +362,7 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
             self->image_map_areas[k].coords[2] = marker_size;
             self->image_map_areas[k].href = points[i].href;
             self->image_map_areas[k].tooltip = points[i].tooltip;
+            self->image_map_areas[k].orig_index = i;
             k++;
         }
         self->n_image_map_areas = k;

@@ -411,7 +411,7 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                  * half_w=1, which clobbered neighboring cells. */
                 fastchart_target_line(t, x, y_high, x, y_low, color, 1, FASTCHART_DASH_SOLID);
                 int dh = half_w < 2 ? 2 : half_w;
-                gdPoint pts[4] = {
+                fastchart_point_t pts[4] = {
                     { x,      y_close - dh },
                     { x + dh, y_close      },
                     { x,      y_close + dh },

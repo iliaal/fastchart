@@ -81,29 +81,6 @@ void fastchart_glyph_cache_insert(FT_Face face, uint16_t pix_size,
 const struct fc_glyph_cache_entry *fastchart_resolve_glyph(
     FT_Face face, uint16_t pix_size, uint32_t codepoint);
 
-/* Deferred text overlay (opt #7). When defer_text_paths is set on the
- * target, fastchart_target_text records PATHS-mode text here instead
- * of emitting glyph paths into the SVG smart_str. After plutosvg has
- * rasterised the (text-free) SVG, fastchart_apply_text_overlays draws
- * the recorded text directly onto the plutovg surface via cached
- * glyph paths — plutosvg sees a much smaller document with fewer
- * elements and no glyph d-strings to parse.
- *
- * font_path is borrowed (lives on the chart object); text is owned
- * (copied at record time because chart-side label buffers may not
- * survive to apply time). */
-typedef struct fastchart_text_overlay {
-    double      x_logical;
-    double      y_logical;
-    const char *font_path;
-    double      size_px;
-    uint32_t    rgba;          /* 0xAARRGGBB */
-    double      angle_deg;
-    int         align;
-    char       *text;          /* malloc'd copy */
-    size_t      text_len;
-} fastchart_text_overlay_t;
-
 /* Retained for source-compat with chart bodies that reference the
  * enum even though only SVG is now valid. */
 #define FASTCHART_TARGET_SVG  1
@@ -135,11 +112,6 @@ typedef struct fastchart_point {
     int y;
 } fastchart_point_t;
 
-/* Source-compat alias so the existing chart-body code that uses
- * `gdPoint` continues to compile without sweeping renames. The real
- * libgd `gdPoint` is no longer available. */
-typedef fastchart_point_t gdPoint;
-
 typedef struct {
     const char *path;
     char family[64];
@@ -159,6 +131,12 @@ typedef struct fastchart_target {
             int next_clip_id;
             int next_grad_id;
             int text_mode;
+            /* Optional NCName prefix for clip/gradient ids. Fragments
+             * stitched into one host document otherwise all emit
+             * fcc1/fcg1... and chart 2's url(#fcg1) resolves to chart
+             * 1's gradient. Set from drawSvgFragment($idPrefix);
+             * empty = bare ids (full documents never collide). */
+            char id_ns[24];
         } svg;
         /* PDF backend (configure --with-pdfio). `state` is an opaque
          * fc_pdf_state* owned by fastchart_pdf.c; kept void* so pdfio.h
@@ -177,6 +155,12 @@ typedef struct fastchart_target {
     uint32_t *color_rgba;  /* 0xAARRGGBB */
     int n_colors;
     int color_cap;
+    /* Open-addressing index over color_rgba keyed on the packed rgba;
+     * registration is O(1) amortized instead of a linear scan that went
+     * quadratic on per-point-colored charts. Slots hold indices into
+     * color_rgba; -1 = empty. */
+    int *color_hash;
+    int color_hash_cap;    /* power of two, load factor <= 0.5 */
 
     /* SVG clip stack (active clipPath ids, top = current). Sized for
      * the deepest nesting any chart family uses (currently 2). */
@@ -188,13 +172,6 @@ typedef struct fastchart_target {
     fastchart_target_font_cache_entry font_cache[FASTCHART_TARGET_FONT_CACHE];
     int font_cache_n;
 
-    /* Deferred text overlays (opt #7). Populated by
-     * fastchart_target_text when defer_text_paths is set; consumed by
-     * fastchart_apply_text_overlays() at rasterize time. */
-    fastchart_text_overlay_t *text_overlays;
-    int n_text_overlays;
-    int cap_text_overlays;
-    int defer_text_paths;     /* 1 = record overlay; 0 = emit inline (default) */
 } fastchart_target_t;
 
 /* Initialise as an SVG-backed target writing into `buf`. width/height
@@ -222,28 +199,15 @@ int fastchart_target_pdf_ok(const fastchart_target_t *t);
  * returning -1 for non-PDF targets. */
 int fastchart_target_pdf_finish(fastchart_target_t *t);
 
-/* Enable deferred text overlay recording (opt #7). When set, PATHS-mode
- * text emits go to t->text_overlays instead of the SVG buffer. Must
- * be called before any text primitive runs. Only meaningful when
- * text_mode == FASTCHART_SVG_TEXT_PATHS; NATIVE-mode text still emits
- * inline. */
-void fastchart_target_enable_text_defer(fastchart_target_t *t);
+/* Bailout-unwind variant of pdf_finish: releases the malloc'd pdfio
+ * document without appending its close-time flush to request memory.
+ * Only call from a zend_catch block. No-op for non-PDF targets. */
+void fastchart_target_pdf_abort(fastchart_target_t *t);
 
-/* Frees heap state attached to the target (currently: text_overlays).
- * Safe to call on a target with no heap state. Resets the array
- * counters so the target is ready for reuse. */
+/* Frees heap state attached to the target (color table + hash). Safe
+ * to call on a target with no heap state. Resets the counters so the
+ * target is ready for reuse. */
 void fastchart_target_release(fastchart_target_t *t);
-
-/* Apply deferred text overlays to a plutovg surface that was just
- * rendered from the SVG. Takes the surface as void* so this header
- * doesn't have to include plutovg.h. logical_w/logical_h are the
- * SVG document's viewport dims (chart coords); the function derives
- * the logical->physical scale from the surface dims. Idempotent
- * no-op when n_text_overlays == 0. */
-void fastchart_apply_text_overlays(void *plutovg_surface,
-                                    int logical_w, int logical_h,
-                                    const fastchart_text_overlay_t *overlays,
-                                    int n_overlays);
 
 /* Allocate a color handle for (r,g,b,a). 0..255 each; a=255 is opaque.
  * Returns handle index, or -1 if the per-target color table is full. */
@@ -288,12 +252,6 @@ void fastchart_target_arc(fastchart_target_t *t,
 void fastchart_target_ellipse(fastchart_target_t *t,
                                int cx, int cy, int rx, int ry,
                                int color, int fill, int thickness);
-
-void fastchart_target_text(fastchart_target_t *t,
-                            int x, int y,
-                            const char *font_path, double size_pt,
-                            int color, double angle_deg, int align,
-                            const char *text);
 
 void fastchart_target_clip_push(fastchart_target_t *t,
                                  int x, int y, int w, int h);

@@ -26,7 +26,7 @@
 #include <math.h>
 
 /* Match the public setter cap so accepted axes render end-to-end.
- * 128 gdPoint = 1 KB on the stack. The previous 32 silently dropped
+ * 128 fastchart_point_t = 1 KB on the stack. The previous 32 silently dropped
  * axes 33..N from charts whose series were built within the
  * advertised FASTCHART_MAX_RADAR_VALUES limit. */
 #define MAX_RADAR_AXES   FASTCHART_MAX_RADAR_VALUES
@@ -119,7 +119,7 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
     const int rings = 4;
     for (int r = 1; r <= rings; r++) {
         double rr = (double)radius * (double)r / (double)rings;
-        gdPoint poly[MAX_RADAR_AXES];
+        fastchart_point_t poly[MAX_RADAR_AXES];
         for (int i = 0; i < n_axes; i++) {
             poly[i].x = cx + (int)(rr * cos_a[i]);
             poly[i].y = cy + (int)(rr * sin_a[i]);
@@ -165,7 +165,7 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
         if (series[s].color_rgb >= 0) {
             color = fastchart_target_color_rgb(t, (int)series[s].color_rgb);
         }
-        gdPoint poly[MAX_RADAR_AXES];
+        fastchart_point_t poly[MAX_RADAR_AXES];
         for (int i = 0; i < n_axes; i++) {
             double v = radar_read_d(&series[s], i);
             double rr = radar_clamp_radius((double)radius * v / dmax,

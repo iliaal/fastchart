@@ -195,7 +195,7 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
             int ring_h_bot = (int)(half_bot * 0.22 + 0.5);
             if (ring_h_top < 1) ring_h_top = 1;
             if (ring_h_bot < 1) ring_h_bot = 1;
-            gdPoint band[CONE_PTS];
+            fastchart_point_t band[CONE_PTS];
             int k = 0;
             /* Top arc: θ from π (left) → 0 (right), front-facing
              * (sin >= 0 dips below yt). */
@@ -215,7 +215,7 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
             fastchart_target_polygon(t, band, k, color, 1, 0);
             fastchart_target_polygon(t, band, k, pal.border, 0, 1);
         } else {
-            gdPoint trap[4] = {
+            fastchart_point_t trap[4] = {
                 { cx - half_top, yt },
                 { cx + half_top, yt },
                 { cx + half_bot, yb },

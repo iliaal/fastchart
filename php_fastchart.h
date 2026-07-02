@@ -272,6 +272,9 @@ extern zend_class_entry *fastchart_qrcode_ce;
     /* JPEG encode quality 1..100, default 88. Affects renderJpeg() and \
      * renderToFile('*.jpg'). */ \
     zend_long jpeg_quality; \
+    /* PNG zlib compression level 0..9; -1 = libpng default (6). \
+     * Affects renderPng() and renderToFile('*.png'). */ \
+    zend_long png_compression_level; \
     /* WebP encode mode (FASTCHART_WEBP_*). Default DRAWING, tuned for \
      * chart-shaped content. Affects renderWebp() and renderToFile('*.webp'). */ \
     zend_long webp_mode; \
@@ -302,7 +305,7 @@ typedef struct _fastchart_obj { FASTCHART_BASE_FIELDS } fastchart_obj;
  * case an optional values_max array that turns the entries into
  * floating [min, max] ranges. */
 typedef struct {
-    char *label;          /* malloc'd, NUL-terminated; NULL = no label */
+    char *label;          /* emalloc'd, NUL-terminated; NULL = no label */
     double *values;       /* malloc'd, len entries; NaN = data gap */
     double *values_max;   /* malloc'd OR NULL; set on floating-bar series */
     zend_long *point_colors; /* malloc'd OR NULL; -1 = use series default */
@@ -408,6 +411,7 @@ typedef struct fastchart_image_map_area {
     int coords[FASTCHART_IMAGE_MAP_MAX_COORDS];
     const char *href;
     const char *tooltip;
+    int orig_index;   /* position in the original setSeries/setSlices/setPoints */
 } fastchart_image_map_area;
 
 /* Per-data-point href/tooltip supplied via Chart::setImageMap(),
@@ -683,7 +687,7 @@ typedef struct {
 #define FASTCHART_MAX_VECTORS          4096      /* per chart */
 
 typedef struct {
-    char *label;          /* malloc'd, NUL-terminated; NULL = no label */
+    char *label;          /* emalloc'd, NUL-terminated; NULL = no label */
     double value;         /* must be > 0 to take area; <= 0 dropped at setItems */
     int color_rgb;        /* -1 = use palette[i % N] */
 } fastchart_treemap_item;
@@ -704,7 +708,7 @@ typedef struct {
 } fastchart_waterfall_bar;
 
 typedef struct {
-    char *label;          /* malloc'd, NUL-terminated; NULL = no label */
+    char *label;          /* emalloc'd, NUL-terminated; NULL = no label */
     double value;         /* >= 0; negative entries dropped at setBars() */
     int color_rgb;        /* -1 = palette default */
 } fastchart_pareto_bar;
@@ -722,7 +726,7 @@ typedef struct {
  * [child_first, child_first + child_count) into the same node array.
  * Tree built once at setHierarchy(), walked twice at render. */
 typedef struct {
-    char *label;          /* malloc'd, NUL-terminated; NULL = no label */
+    char *label;          /* emalloc'd, NUL-terminated; NULL = no label */
     double value;         /* leaf value, or sum-of-children for interior */
     int color_rgb;        /* -1 = palette default by leaf-position */
     int depth;            /* 0 = root, 1 = first ring, ... */
@@ -732,7 +736,7 @@ typedef struct {
 } fastchart_sunburst_node;
 
 typedef struct {
-    char *label;          /* malloc'd, NUL-terminated; NULL = no label */
+    char *label;          /* emalloc'd, NUL-terminated; NULL = no label */
     int color_rgb;        /* -1 = palette default */
 } fastchart_sankey_node;
 

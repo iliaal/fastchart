@@ -27,6 +27,7 @@
 
 #include "fastchart_target.h"
 #include "fastchart_svg.h"
+#include "fastchart_text.h"
 #include "php_fastchart.h"  /* fc_glyph_cache_entry layout for cache replay */
 
 #ifndef M_PI
@@ -101,27 +102,35 @@ void fc_svg_fmt_color(smart_str *buf, uint32_t rgba)
     int r = (int)((rgba >> 16) & 0xFF);
     int g = (int)((rgba >>  8) & 0xFF);
     int b = (int)( rgba        & 0xFF);
+    static const char hexd[] = "0123456789ABCDEF";
     if (a == 0xFF) {
-        char tmp[8];
-        int n = snprintf(tmp, sizeof(tmp), "#%02X%02X%02X", r, g, b);
-        if (n > 0) smart_str_appendl(buf, tmp, (size_t)n);
+        /* Hand-rolled hex emit: this runs once per primitive fill and
+         * stroke, and snprintf's format parse alone is ~60x the cost
+         * (same rationale as fc_svg_fmt_num above). */
+        char tmp[7];
+        tmp[0] = '#';
+        tmp[1] = hexd[r >> 4]; tmp[2] = hexd[r & 15];
+        tmp[3] = hexd[g >> 4]; tmp[4] = hexd[g & 15];
+        tmp[5] = hexd[b >> 4]; tmp[6] = hexd[b & 15];
+        smart_str_appendl(buf, tmp, sizeof(tmp));
         return;
     }
-    /* Emit the channels via locale-immune integer appends; the alpha
-     * is formatted on its own so fc_fix_decimal_sep only sees the
-     * fraction's separator, never the rgba() argument commas. */
+    /* Emit the channels via locale-immune integer appends. The alpha is
+     * emitted with integer math (round-half-up; exact halves cannot
+     * occur since a*2000 is even and 255*(2k+1) is odd), matching the
+     * previous "%.3f" output byte-for-byte with no locale fixup. */
     FC_APPENDS(buf, "rgba(");
     smart_str_append_long(buf, (zend_long)r); smart_str_appendc(buf, ',');
     smart_str_append_long(buf, (zend_long)g); smart_str_appendc(buf, ',');
     smart_str_append_long(buf, (zend_long)b); smart_str_appendc(buf, ',');
-    char tmp[16];
-    int n = snprintf(tmp, sizeof(tmp), "%.3f", (double)a / 255.0);
-    if (n > 0) {
-        n = fc_fix_decimal_sep(tmp, n);
-        smart_str_appendl(buf, tmp, (size_t)n);
-    } else {
-        smart_str_appendc(buf, '0');
-    }
+    int mille = (a * 1000 + 127) / 255;   /* alpha in thousandths, 0..996 */
+    char ftmp[5];
+    ftmp[0] = '0';
+    ftmp[1] = '.';
+    ftmp[2] = (char)('0' + mille / 100);
+    ftmp[3] = (char)('0' + (mille / 10) % 10);
+    ftmp[4] = (char)('0' + mille % 10);
+    smart_str_appendl(buf, ftmp, sizeof(ftmp));
     smart_str_appendc(buf, ')');
 }
 
@@ -724,31 +733,8 @@ static void fc_replay_cached_glyph(smart_str *out, const fc_glyph_cache_entry *e
 	}
 }
 
-/* Minimal inline UTF-8 -> codepoint walk. Returns next cursor or NULL
- * on truncation. *out_cp is set to the codepoint (replacement char on
- * invalid sequences). */
-static const unsigned char *fc_utf8_next(const unsigned char *p,
-                                          const unsigned char *end,
-                                          uint32_t *out_cp)
-{
-	if (p >= end) return NULL;
-	if (*p < 0x80) { *out_cp = *p; return p + 1; }
-	if ((*p & 0xE0) == 0xC0 && p + 1 < end) {
-		*out_cp = ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
-		return p + 2;
-	}
-	if ((*p & 0xF0) == 0xE0 && p + 2 < end) {
-		*out_cp = ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
-		return p + 3;
-	}
-	if ((*p & 0xF8) == 0xF0 && p + 3 < end) {
-		*out_cp = ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12)
-		       | ((p[2] & 0x3F) << 6)  |  (p[3] & 0x3F);
-		return p + 4;
-	}
-	*out_cp = 0xFFFD;
-	return p + 1;
-}
+/* UTF-8 walking goes through fc_utf8_next_cp (fastchart_text.h). */
+#define fc_utf8_next fc_utf8_next_cp
 
 /* FT_Library and FT_Face are both shared. The face cache (4-slot LRU
  * in fastchart_target.c) skips the FT_New_Face cost — opening a font
@@ -903,10 +889,12 @@ void fc_svg_emit_text_as_path(smart_str *buf,
 	/* face is cache-owned; no FT_Done_Face here. */
 }
 
-void fc_svg_emit_clip_open(smart_str *buf, int id,
+void fc_svg_emit_clip_open(smart_str *buf, const char *id_ns, int id,
                             double x, double y, double w, double h)
 {
-    FC_APPENDS(buf, "<defs><clipPath id=\"fcc");
+    FC_APPENDS(buf, "<defs><clipPath id=\"");
+    if (id_ns && *id_ns) smart_str_appends(buf, id_ns);
+    FC_APPENDS(buf, "fcc");
     smart_str_append_long(buf, id);
     FC_APPENDS(buf, "\"><rect x=\"");
     fc_svg_fmt_num(buf, x);
@@ -916,7 +904,9 @@ void fc_svg_emit_clip_open(smart_str *buf, int id,
     fc_svg_fmt_num(buf, w);
     FC_APPENDS(buf, "\" height=\"");
     fc_svg_fmt_num(buf, h);
-    FC_APPENDS(buf, "\"/></clipPath></defs><g clip-path=\"url(#fcc");
+    FC_APPENDS(buf, "\"/></clipPath></defs><g clip-path=\"url(#");
+    if (id_ns && *id_ns) smart_str_appends(buf, id_ns);
+    FC_APPENDS(buf, "fcc");
     smart_str_append_long(buf, id);
     FC_APPENDS(buf, ")\">\n");
 }
@@ -948,7 +938,8 @@ void fc_svg_emit_image_uri(smart_str *buf, int x, int y, int w, int h,
 /* Internal: emit a <linearGradient id="fcgN" ...> + two <stop>s.
  * x1/y1/x2/y2 are in percent units to keep userSpaceOnUse off; the
  * referenced shape applies the gradient to its own bbox. */
-static void fc_svg_emit_gradient_def(smart_str *buf, int id,
+static void fc_svg_emit_gradient_def(smart_str *buf, const char *id_ns,
+                                      int id,
                                       uint32_t from_rgb, uint32_t to_rgb,
                                       int dir)
 {
@@ -970,7 +961,9 @@ static void fc_svg_emit_gradient_def(smart_str *buf, int id,
     uint32_t from = (from_a << 24) | (from_rgb & 0xFFFFFFu);
     uint32_t to   = (to_a   << 24) | (to_rgb   & 0xFFFFFFu);
 
-    FC_APPENDS(buf, "<defs><linearGradient id=\"fcg");
+    FC_APPENDS(buf, "<defs><linearGradient id=\"");
+    if (id_ns && *id_ns) smart_str_appends(buf, id_ns);
+    FC_APPENDS(buf, "fcg");
     smart_str_append_long(buf, id);
     FC_APPENDS(buf, "\" x1=\"");
     smart_str_appends(buf, x1);
@@ -987,12 +980,12 @@ static void fc_svg_emit_gradient_def(smart_str *buf, int id,
     FC_APPENDS(buf, "\"/></linearGradient></defs>");
 }
 
-void fc_svg_emit_gradient_rect(smart_str *buf, int id,
+void fc_svg_emit_gradient_rect(smart_str *buf, const char *id_ns, int id,
                                 double x, double y, double w, double h,
                                 uint32_t from_rgb, uint32_t to_rgb,
                                 int dir)
 {
-    fc_svg_emit_gradient_def(buf, id, from_rgb, to_rgb, dir);
+    fc_svg_emit_gradient_def(buf, id_ns, id, from_rgb, to_rgb, dir);
     FC_APPENDS(buf, "<rect x=\"");
     fc_svg_fmt_num(buf, x);
     FC_APPENDS(buf, "\" y=\"");
@@ -1001,18 +994,20 @@ void fc_svg_emit_gradient_rect(smart_str *buf, int id,
     fc_svg_fmt_num(buf, w);
     FC_APPENDS(buf, "\" height=\"");
     fc_svg_fmt_num(buf, h);
-    FC_APPENDS(buf, "\" fill=\"url(#fcg");
+    FC_APPENDS(buf, "\" fill=\"url(#");
+    if (id_ns && *id_ns) smart_str_appends(buf, id_ns);
+    FC_APPENDS(buf, "fcg");
     smart_str_append_long(buf, id);
     FC_APPENDS(buf, ")\"/>\n");
 }
 
-void fc_svg_emit_gradient_polygon(smart_str *buf, int id,
+void fc_svg_emit_gradient_polygon(smart_str *buf, const char *id_ns, int id,
                                    const int *xs, const int *ys, int n,
                                    uint32_t from_rgb, uint32_t to_rgb,
                                    int dir)
 {
     if (n < 2) return;
-    fc_svg_emit_gradient_def(buf, id, from_rgb, to_rgb, dir);
+    fc_svg_emit_gradient_def(buf, id_ns, id, from_rgb, to_rgb, dir);
     FC_APPENDS(buf, "<polygon points=\"");
     for (int i = 0; i < n; i++) {
         if (i) smart_str_appendc(buf, ' ');
@@ -1020,7 +1015,9 @@ void fc_svg_emit_gradient_polygon(smart_str *buf, int id,
         smart_str_appendc(buf, ',');
         smart_str_append_long(buf, ys[i]);
     }
-    FC_APPENDS(buf, "\" fill=\"url(#fcg");
+    FC_APPENDS(buf, "\" fill=\"url(#");
+    if (id_ns && *id_ns) smart_str_appends(buf, id_ns);
+    FC_APPENDS(buf, "fcg");
     smart_str_append_long(buf, id);
     FC_APPENDS(buf, ")\"/>\n");
 }
