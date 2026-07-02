@@ -110,13 +110,17 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
      * envelope between series[0] (upper) and series[1] (lower).
      * Falls back to the regular fill-to-baseline path if the caller
      * set band_mode without two series, or stacked is also set
-     * (stacked wins, band is silently ignored). */
+     * (stacked wins, band is silently ignored). Like stream mode, band
+     * ignores the secondary axis: both boundaries map to the left range
+     * (the draw path plots the envelope against range_l only, so a
+     * right-flagged boundary would be ranged on an axis it is never
+     * plotted against). */
     bool band = self->band_mode && n_series == 2 && !stacked;
 
     /* With secondary_y off, all series map to the left axis regardless
      * of the per-series right_axis flag — mirrors LineChart. */
     int n_right = 0;
-    if (self->secondary_y && !stream) {
+    if (self->secondary_y && !stream && !band) {
         for (int s = 0; s < n_series; s++) {
             if (series[s].right_axis) n_right++;
         }
@@ -165,7 +169,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
         }
     } else {
         for (int s = 0; s < n_series; s++) {
-            bool right = self->secondary_y && series[s].right_axis;
+            bool right = self->secondary_y && !band && series[s].right_axis;
             for (int i = 0; i < series[s].len; i++) {
                 double d = series[s].values[i];
                 if (isnan(d)) continue;

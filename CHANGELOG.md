@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Rotated axis labels (`setXAxisLabelAngle(45)` / `(90)`) anchor at their
+  tick in the default `SVG_TEXT_PATHS` mode and in all raster/PDF output;
+  the alignment shift was applied before the rotation, drifting wide
+  labels left by up to the label width (off-canvas in the worst case).
+- `BarChart::setFloating()` combined with `setStacked()` or `STACK_LAYER`
+  renders side by side instead of emitting negative-width rects that
+  SVG renderers drop.
+- `PieChart::setImageMap()` and `setExplode()` entries stay aligned to
+  their `setSlices()` indices when `setOtherThreshold()` folds slices;
+  the synthesized "Other" slice gets no hot-spot or explode offset.
+- `AreaChart` band mode ignores the secondary Y axis (matching stream
+  mode); a right-flagged boundary no longer flat-lines against a plot
+  edge and two right-flagged series no longer throw.
+- `addOverlaySeries('area')` fill polygons cover every data point; the
+  old fixed 1024-point cap closed a self-crossing shape on longer series.
+- JPEG encoding streams into the output buffer through a custom
+  destination manager. libjpeg's `jpeg_mem_dest` publishes its buffer
+  address only at completion, so an encode error after internal buffer
+  growth could double-free the stale pointer.
+- Closed the remaining UB float-cast paths on finite-but-extreme inputs:
+  `CalendarHeatmap` color ramp, filled `ContourChart` cells,
+  `ParetoChart` cumulative totals (now throws when bar values overflow
+  when summed), `PolarChart` huge angles, `SankeyChart` squeezed
+  layouts, and `StockChart` saturated timestamps and icon coordinates.
 - `Treemap::setItems()` caps values at `FASTCHART_MAX_DATA_MAG`, so two
   near-`DBL_MAX` values can't overflow the total to `+Inf` and blank the chart.
 - `Funnel::setStyle(STYLE_CONE)` arcs round symmetrically (`lround`),

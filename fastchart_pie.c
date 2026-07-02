@@ -124,11 +124,21 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
     fastchart_pie_slice slices[FASTCHART_MAX_SLICES];
     int n_slices = self->slice_count;
     double total = self->total;
-    for (int i = 0; i < n_slices; i++) slices[i] = self->slices[i];
+    /* setExplode keys and setImageMap entries are documented as
+     * setSlices()-index-aligned. "Other" aggregation compacts the drawn
+     * slices, so each drawn slot carries its original setSlices() index
+     * here; the synthesized Other bucket gets -1 (no explode offset, no
+     * image-map hot-spot). */
+    int orig_idx[FASTCHART_MAX_SLICES];
+    for (int i = 0; i < n_slices; i++) {
+        slices[i] = self->slices[i];
+        orig_idx[i] = i;
+    }
 
     if (self->pie_other_threshold > 0.0 && total > 0.0 && n_slices > 1) {
         double threshold_value = total * (self->pie_other_threshold / 100.0);
         fastchart_pie_slice kept[FASTCHART_MAX_SLICES];
+        int kept_idx[FASTCHART_MAX_SLICES];
         int n_kept = 0;
         double other_sum = 0.0;
         int other_count = 0;
@@ -137,6 +147,7 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
                 other_sum += slices[i].value;
                 other_count++;
             } else if (n_kept < FASTCHART_MAX_SLICES) {
+                kept_idx[n_kept] = orig_idx[i];
                 kept[n_kept++] = slices[i];
             }
         }
@@ -147,9 +158,13 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
             kept[n_kept].value = other_sum;
             kept[n_kept].color_rgb = -1;
             kept[n_kept].radius_value = 0.0;
+            kept_idx[n_kept] = -1;
             n_kept++;
         }
-        for (int i = 0; i < n_kept; i++) slices[i] = kept[i];
+        for (int i = 0; i < n_kept; i++) {
+            slices[i] = kept[i];
+            orig_idx[i] = kept_idx[i];
+        }
         n_slices = n_kept;
     }
 
@@ -257,8 +272,8 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
          * Computed before the image-map poly so the clickable area
          * tracks the exploded slice rather than its un-offset origin. */
         int slice_cx = cx, slice_cy = cy;
-        if (explode && i < explode_count) {
-            zend_long off = explode[i];
+        if (explode && orig_idx[i] >= 0 && orig_idx[i] < explode_count) {
+            zend_long off = explode[orig_idx[i]];
             if (off > 0) {
                 /* Cap to the slice diameter — beyond that the slice
                  * center is off-canvas anyway, and an unclamped large
@@ -285,7 +300,9 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
             poly_xy[poly_n++] = slice_cx + (int)((double)slice_radius * cos(th));
             poly_xy[poly_n++] = slice_cy + (int)((double)slice_radius * sin(th));
         }
-        fastchart_push_image_map_poly((fastchart_obj *)self, i,
+        /* fc_image_map_push rejects idx < 0, so the Other bucket (-1)
+         * simply gets no hot-spot. */
+        fastchart_push_image_map_poly((fastchart_obj *)self, orig_idx[i],
                                        poly_xy, poly_n);
 
         /* Drop shadow underneath this slice (no-op when chart has

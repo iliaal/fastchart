@@ -53,6 +53,14 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
     for (int i = 0; i < self->bar_count; i++) {
         total += self->bars[i].value;
     }
+    /* Bar values are individually finite at setter time, but their sum can
+     * still overflow to Inf, which would send NaN (inf/inf) through the
+     * cumulative-pct clamp and into an int cast. */
+    if (!isfinite(total)) {
+        zend_throw_error(NULL,
+            "FastChart\\ParetoChart::draw() bar values overflow when summed");
+        return -1;
+    }
     if (total <= 0.0) {
         zend_throw_error(NULL,
             "FastChart\\ParetoChart::draw() requires at least one positive bar");

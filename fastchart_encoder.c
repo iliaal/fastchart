@@ -241,9 +241,49 @@ static void fc_jpeg_error_exit(j_common_ptr cinfo)
 	longjmp(e->jmp, 1);
 }
 
-/* libjpeg's memory destination manager (writes to an in-process
- * malloc buffer). We then copy into the smart_str. The library
- * provides jpeg_mem_dest in modern libjpeg-turbo. */
+/* Custom destination manager appending straight into the caller's
+ * smart_str, mirroring png_smart_write. jpeg_mem_dest is avoided on
+ * purpose: it publishes the final buffer address only at
+ * term_destination, so once its internal buffer grows past the initial
+ * allocation the caller-side pointer dangles at a block
+ * empty_mem_output_buffer already freed — an error_exit longjmp
+ * mid-encode would then double-free it and leak the live grown buffer.
+ * Streaming into the smart_str leaves no malloc'd intermediate to
+ * clean up on either path. */
+#define FC_JPEG_STAGE_SZ 8192
+
+struct fc_jpeg_dest {
+	struct jpeg_destination_mgr base;
+	smart_str *out;
+	JOCTET stage[FC_JPEG_STAGE_SZ];
+};
+
+static void fc_jpeg_init_destination(j_compress_ptr cinfo)
+{
+	struct fc_jpeg_dest *d = (struct fc_jpeg_dest *)cinfo->dest;
+	d->base.next_output_byte = d->stage;
+	d->base.free_in_buffer   = FC_JPEG_STAGE_SZ;
+}
+
+static boolean fc_jpeg_empty_output_buffer(j_compress_ptr cinfo)
+{
+	struct fc_jpeg_dest *d = (struct fc_jpeg_dest *)cinfo->dest;
+	/* libjpeg's contract: flush the WHOLE stage buffer here regardless
+	 * of free_in_buffer (jdatadst.c documents the same). */
+	smart_str_appendl(d->out, (const char *)d->stage, FC_JPEG_STAGE_SZ);
+	d->base.next_output_byte = d->stage;
+	d->base.free_in_buffer   = FC_JPEG_STAGE_SZ;
+	return TRUE;
+}
+
+static void fc_jpeg_term_destination(j_compress_ptr cinfo)
+{
+	struct fc_jpeg_dest *d = (struct fc_jpeg_dest *)cinfo->dest;
+	size_t used = FC_JPEG_STAGE_SZ - d->base.free_in_buffer;
+	if (used > 0) {
+		smart_str_appendl(d->out, (const char *)d->stage, used);
+	}
+}
 
 int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
                           int quality)
@@ -256,17 +296,17 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 	cinfo.err = jpeg_std_error(&err.base);
 	err.base.error_exit = fc_jpeg_error_exit;
 
+	struct fc_jpeg_dest dest;
+	dest.out = out;
+
 	/* `volatile` keeps the pointer's live value in memory across the
 	 * setjmp boundary. Per C99 §7.13.2.1, automatic-storage locals
 	 * modified after setjmp() and read in the longjmp() recovery branch
 	 * have indeterminate values unless declared volatile. Without it,
-	 * the optimizer may keep jpeg_buf / rgb_row in a register that
-	 * libjpeg's longjmp() clobbers — the cleanup branch would then read
-	 * a stale NULL or garbage and either leak the allocation or
-	 * double-free. */
-	unsigned char * volatile jpeg_buf = NULL;
-	unsigned long            jpeg_sz  = 0;
-	uint8_t       * volatile rgb_row  = NULL;
+	 * the optimizer may keep rgb_row in a register that libjpeg's
+	 * longjmp() clobbers — the cleanup branch would then read a stale
+	 * NULL or garbage and either leak the allocation or double-free. */
+	uint8_t * volatile rgb_row = NULL;
 	/* Gate the destroy on a completed create: if jpeg_create_compress
 	 * itself longjmps (struct/version mismatch), cinfo.mem is still
 	 * uninitialized and jpeg_destroy_compress must not run on it. */
@@ -274,18 +314,19 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 
 	if (setjmp(err.jmp)) {
 		if (created) jpeg_destroy_compress(&cinfo);
-		if (jpeg_buf) free(jpeg_buf);
 		if (rgb_row)  efree(rgb_row);
+		/* Partial bytes already streamed into `out` are the caller's
+		 * to discard (smart_str_free on the error branch) — same
+		 * convention as the PNG encoder. */
 		return -1;
 	}
 
 	jpeg_create_compress(&cinfo);
 	created = 1;
-	/* The cast strips the `volatile` qualifier on jpeg_buf for the
-	 * libjpeg API (which takes a plain `unsigned char **`). volatile
-	 * here governs how the compiler optimizes our own access across
-	 * setjmp/longjmp; it doesn't change the underlying storage. */
-	jpeg_mem_dest(&cinfo, (unsigned char **)(uintptr_t)&jpeg_buf, &jpeg_sz);
+	dest.base.init_destination    = fc_jpeg_init_destination;
+	dest.base.empty_output_buffer = fc_jpeg_empty_output_buffer;
+	dest.base.term_destination    = fc_jpeg_term_destination;
+	cinfo.dest = &dest.base;
 
 	cinfo.image_width      = pix->w;
 	cinfo.image_height     = pix->h;
@@ -363,9 +404,6 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 
 	jpeg_finish_compress(&cinfo);
 	jpeg_destroy_compress(&cinfo);
-
-	smart_str_appendl(out, (const char *)jpeg_buf, (size_t)jpeg_sz);
-	free(jpeg_buf);
 	return 0;
 }
 

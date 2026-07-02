@@ -401,15 +401,20 @@ void fc_pdf_emit_text_as_path(fc_pdf_state *s, double x, double y,
 
 	pdfioContentSave(s->st);
 	set_fill(s, rgba);
-	/* Anchor at (x+shift, FY(y)); rotation about that anchor. fastchart
-	 * uses CCW degrees; PDF's MatrixRotate is CCW-positive in y-up, so a
-	 * direct +angle matches. */
-	pdfioContentMatrixTranslate(s->st, x + shift, FY(s, y));
 	/* Glyphs are emitted with y negated (-gy) to stand upright in PDF's
 	 * y-up space; that flip mirrors the rotation direction relative to
 	 * fastchart's CCW-in-y-down convention, so the page rotation is
-	 * -angle. (At angle 0 this is a no-op and text is already correct.) */
-	if (angle_deg != 0.0) pdfioContentMatrixRotate(s->st, -angle_deg);
+	 * -angle. Pivot at the anchor (x, y) and apply the alignment shift
+	 * AFTER the rotate, along the rotated baseline — matching
+	 * fc_svg_emit_text_as_path. (At angle 0 the shift folds into the
+	 * translate and text is already correct.) */
+	if (angle_deg != 0.0) {
+		pdfioContentMatrixTranslate(s->st, x, FY(s, y));
+		pdfioContentMatrixRotate(s->st, -angle_deg);
+		if (shift != 0.0) pdfioContentMatrixTranslate(s->st, shift, 0.0);
+	} else {
+		pdfioContentMatrixTranslate(s->st, x + shift, FY(s, y));
+	}
 
 	double pen_x = 0.0, curx = 0.0, cury = 0.0;
 	int emitted = 0;
