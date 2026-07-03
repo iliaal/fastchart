@@ -86,6 +86,11 @@ static void fastchart_qrcode_init_extras(fastchart_qrcode_obj *o)
     o->ecc = FASTCHART_QR_ECC_M;
     o->min_version = qrcodegen_VERSION_MIN;
     o->max_version = qrcodegen_VERSION_MAX;
+    /* Override the base WebP default (DRAWING, lossy). QR modules are
+     * hard-edged black/white where lossy ringing degrades scan
+     * reliability; lossless gives bit-exact recovery. Callers can still
+     * opt back to a lossy mode via setWebpMode(). */
+    o->webp_mode = FASTCHART_WEBP_LOSSLESS;
 }
 
 /* Generates the create / free / clone trio for one Symbol class.

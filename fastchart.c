@@ -639,6 +639,14 @@ static void fastchart_base_addref_owned(fastchart_obj *b)
 	b->image_map_areas = NULL;
 	b->n_image_map_areas = 0;
 	b->image_map_areas_cap = 0;
+	/* The font/shadow resolution caches are per-render artifacts too, and
+	 * font_cache_path[] borrows pointers into the source's font_path
+	 * zend_string buffer. A clone that later drops its own ref (setFontPath)
+	 * and outlives the source would otherwise read a freed buffer. Reset
+	 * like image_map_areas so the clone re-resolves on its next draw. */
+	b->font_cache_valid = false;
+	b->shadow_color_valid = false;
+	for (int i = 0; i < 4; i++) b->font_cache_path[i] = NULL;
     /* config is a real PHP HashTable wrapped in a zval; the lifecycle
      * macro's memcpy aliased the HashTable pointer between src and
      * dst. Setters that mutate config (addTextAnnotation,
@@ -3659,7 +3667,25 @@ ZEND_METHOD(FastChart_BarChart, setStackMode)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-FASTCHART_BOOL_SETTER_AS(FastChart_BarChart, setFloating, Z_FASTCHART_BAR_OBJ_P, bar_floating)
+ZEND_METHOD(FastChart_BarChart, setFloating)
+{
+    zend_bool enable;
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_BOOL(enable)
+    ZEND_PARSE_PARAMETERS_END();
+    fastchart_bar_obj *self = Z_FASTCHART_BAR_OBJ_P(ZEND_THIS);
+    /* Floating mode changes how setSeries() parses each row ([min,max]
+     * pairs vs scalars), so it must be chosen before the data is parsed.
+     * Enabling it after setSeries() leaves the already-parsed series
+     * without its max column and fails at draw() with a misleading "no
+     * numeric values" error; reject early with an actionable message. */
+    if (enable && !self->bar_floating && self->n_series > 0) {
+        zend_value_error("FastChart\\BarChart::setFloating(true) must be called before setSeries()");
+        RETURN_THROWS();
+    }
+    self->bar_floating = enable;
+    RETURN_ZVAL(ZEND_THIS, 1, 0);
+}
 
 ZEND_METHOD(FastChart_Chart, setLineStyle)
 {
@@ -3734,7 +3760,7 @@ ZEND_METHOD(FastChart_Chart, setShadowAlpha)
         Z_PARAM_LONG(alpha)
     ZEND_PARSE_PARAMETERS_END();
     if (alpha < 0 || alpha > 127) {
-        zend_value_error("FastChart\\Chart::setShadowAlpha() expects 0..127 (libgd alpha)");
+        zend_value_error("FastChart\\Chart::setShadowAlpha() expects 0..127");
         RETURN_THROWS();
     }
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
@@ -5337,6 +5363,7 @@ ZEND_METHOD(FastChart_StockChart, setOhlcv)
             p->values2 = NULL;
             p->values3 = NULL;
             p->value_count = 0;
+            p->histogram_third = false;
         }
         self->indicator_pane_count = kept;
     }
@@ -5723,10 +5750,11 @@ ZEND_METHOD(FastChart_PieChart, setSlices)
     self->slices = ecalloc((size_t)n, sizeof(fastchart_pie_slice));
     int slot = 0;
 
-    /* Decide shape by sampling first element: associative map vs
-     * list of dicts. The associative shape requires every key to be
-     * a string and every value to be numeric; otherwise treat as a
-     * list of dicts and skip non-conformant entries. */
+    /* Decide shape by sampling the first element's VALUE: a scalar value
+     * (numeric) is the map/list-of-scalars shape, an array value is the
+     * list-of-dicts shape. Keying off the value rather than the key lets a
+     * plain numeric list ([10,20,30], integer keys) flow through the scalar
+     * branch, which already synthesizes index labels for null keys. */
     int shape_assoc = 1;
     {
         zend_string *k;
@@ -5735,7 +5763,8 @@ ZEND_METHOD(FastChart_PieChart, setSlices)
         ZEND_HASH_FOREACH_KEY_VAL(ht, h, k, v) {
             if (v) ZVAL_DEREF(v);
             (void)h;
-            if (!k || (Z_TYPE_P(v) != IS_LONG && Z_TYPE_P(v) != IS_DOUBLE)) {
+            (void)k;
+            if (Z_TYPE_P(v) != IS_LONG && Z_TYPE_P(v) != IS_DOUBLE) {
                 shape_assoc = 0;
             }
             break;
@@ -7628,6 +7657,12 @@ ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
     p->has_min = false;       p->min = 0.0;
     p->has_max = false;       p->max = 0.0;
     p->candle_derived = false;
+    /* This is a single-line user pane; the multi-series fields are unused
+     * but must be explicitly cleared rather than left to whatever a reused
+     * slot carried (histogram_third in particular is checked at render). */
+    p->values2 = NULL;        p->color2_rgb = -1;
+    p->values3 = NULL;        p->color3_rgb = -1;
+    p->histogram_third = false;
 
     if (opts) {
         zval *opt;
