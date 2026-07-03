@@ -100,6 +100,34 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
         }
     }
 
+    /* Generic combo overlays (base addOverlaySeries) live in
+     * config["overlays"] and are drawn against this same price range by
+     * fastchart_draw_overlays_time(). Fold their finite values in too, or a
+     * point outside the candle high/low clips against the plot edge (same
+     * reason as the price overlays above). */
+    {
+        zval *ovl = zend_hash_str_find(Z_ARRVAL(((fastchart_obj *)self)->config),
+                                       "overlays", sizeof("overlays") - 1);
+        if (ovl && Z_TYPE_P(ovl) == IS_ARRAY) {
+            zval *entry;
+            ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(ovl), entry) {
+                if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+                zval *vals = zend_hash_str_find(Z_ARRVAL_P(entry), "values",
+                                                sizeof("values") - 1);
+                if (!vals || Z_TYPE_P(vals) != IS_ARRAY) continue;
+                zval *vv;
+                ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(vals), vv) {
+                    double d;
+                    if (vv && Z_TYPE_P(vv) != IS_NULL
+                        && fastchart_zval_to_double(vv, &d) == 0 && isfinite(d)) {
+                        if (d < y_min) y_min = d;
+                        if (d > y_max) y_max = d;
+                    }
+                } ZEND_HASH_FOREACH_END();
+            } ZEND_HASH_FOREACH_END();
+        }
+    }
+
     bool show_volume = self->volume_pane && any_volume;
 
     /* MA periods were validated as >= 2 in addMovingAverage() /
