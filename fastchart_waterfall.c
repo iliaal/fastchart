@@ -116,6 +116,17 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
     int total_c = fastchart_target_color_rgb(t, total_rgb);
 
     int slot_w = (plot.x1 - plot.x0) / n;
+    /* Too many bars for the plot width collapses slot_w to 0, stacking
+     * every bar at the left edge. Reject instead of emitting a misleading
+     * chart, matching ParetoChart / Funnel. */
+    if (slot_w < 1) {
+        efree(bar_lo);
+        efree(bar_hi);
+        efree(labels);
+        zend_throw_error(NULL,
+            "FastChart\\Waterfall::draw() canvas is too narrow for the number of bars");
+        return -1;
+    }
     int bar_pad = slot_w / 6;
     if (bar_pad < 1) bar_pad = 1;
     int bar_w = slot_w - 2 * bar_pad;
@@ -145,8 +156,7 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
          * since the next bar restarts the cumulative. */
         if (i + 1 < n && self->bars[i].kind != FASTCHART_WF_TOTAL) {
             int y_conn = fastchart_y_to_pixel(
-                self->bars[i].kind == FASTCHART_WF_TOTAL ? self->bars[i].value : (
-                    self->bars[i].value >= 0 ? bar_hi[i] : bar_lo[i]),
+                self->bars[i].value >= 0 ? bar_hi[i] : bar_lo[i],
                 &range, &plot);
             int next_slot_cx = fastchart_x_categorical_center(&plot, i + 1, n);
             int x_next0 = next_slot_cx - bar_w / 2;

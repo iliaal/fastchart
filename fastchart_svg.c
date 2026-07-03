@@ -42,31 +42,6 @@
 #define FC_APPENDS(buf, s) \
 	smart_str_appendl((buf), "" s "", sizeof("" s "") - 1)
 
-/* snprintf("%f", ...) honours LC_NUMERIC, so under a comma-decimal
- * locale (de_DE, fr_FR, ...) it emits "12,5". A comma is SVG's own
- * coordinate separator, so an unfixed "x=\"12,5\"" or "points=\"12,5 ...\""
- * silently corrupts geometry for every consumer. Normalise whatever
- * separator the current locale produced back to a literal '.': a "%f"
- * result is [-]digits<sep>digits with no exponent, so the separator is
- * the lone run of non-[-0-9] bytes — collapse it to one '.' (handles the
- * rare multi-byte separator too). Rounding stays snprintf's, so C-locale
- * output is byte-identical to before. Returns the new length. */
-static int fc_fix_decimal_sep(char *s, int n)
-{
-    int w = 0, i = 0, seen = 0;
-    while (i < n) {
-        char c = s[i];
-        if (c == '-' || (c >= '0' && c <= '9')) {
-            s[w++] = c;
-            i++;
-        } else {
-            if (!seen) { s[w++] = '.'; seen = 1; }
-            i++;
-        }
-    }
-    return w;
-}
-
 void fc_svg_fmt_num(smart_str *buf, double v)
 {
     /* %.1f-equivalent, locale-independent and allocation-free: this is the
@@ -621,6 +596,10 @@ static void fc_emit_num(smart_str *buf, double v)
 	if (v == 0.0) { smart_str_appendc(buf, '0'); return; }
 	int neg = v < 0.0;
 	double av = neg ? -v : v;
+	/* Guard the cast below (see fc_svg_fmt_num): glyph coords are em-bounded
+	 * today, but keep the two formatters consistent so a future unbounded
+	 * caller can't hit (long long) UB. */
+	if (!(av < 9.0e18)) { smart_str_appendc(buf, '0'); return; }
 	long long ip = (long long)av;
 	int d = (int)nearbyint((av - (double)ip) * 100.0);   /* two decimals */
 	if (d >= 100) { ip++; d -= 100; }
