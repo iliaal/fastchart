@@ -81,7 +81,18 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
         fastchart_value_range_apply_override((fastchart_obj *)self, &range_l);
     }
     if (n_right > 0) {
-        fastchart_value_range_compute(dmin_r, dmax_r, 6, &range_r);
+        if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
+            /* Match the primary axis and AreaChart: a log chart maps the
+             * secondary series on a log scale too, rejecting non-positive
+             * data rather than silently falling back to linear. */
+            if (dmin_r <= 0 ||
+                fastchart_value_range_compute_log(dmin_r, dmax_r, &range_r) != 0) {
+                zend_value_error("FastChart\\LineChart::draw(): log Y-axis requires strictly-positive data");
+                return -1;
+            }
+        } else {
+            fastchart_value_range_compute(dmin_r, dmax_r, 6, &range_r);
+        }
     }
 
     fastchart_rect plot;

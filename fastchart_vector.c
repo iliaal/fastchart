@@ -82,9 +82,13 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
     fastchart_target_rect(t, plot.x0, plot.y0,
                           plot.x1 - plot.x0 + 1, plot.y1 - plot.y0 + 1,
                           pal.plot_bg, 1, 0);
-    const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
+    /* Tick labels use the AXIS font role (setAxisFont), matching the shared
+     * axis renderer, and are suppressed in thumbnail mode like every other
+     * chart. VectorChart hand-rolls its axis so it must honor both here. */
+    int draw_labels = !((fastchart_obj *)self)->thumbnail_mode;
+    const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_AXIS);
     double size = fastchart_resolve_font_size(
-        (fastchart_obj *)self, FC_FONT_LABEL, base_size);
+        (fastchart_obj *)self, FC_FONT_AXIS, base_size);
 
     /* Light grid. */
     for (int i = 0; i < yr.n_ticks; i++) {
@@ -92,7 +96,7 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
         int y = plot.y1 - (int)(frac * (plot.y1 - plot.y0));
         fastchart_target_line(t, plot.x0, y, plot.x1, y,
                               pal.grid, 1, FASTCHART_DASH_SOLID);
-        if (font) {
+        if (font && draw_labels) {
             char buf[24];
             snprintf(buf, sizeof(buf), "%g", yr.ticks[i]);
             fastchart_text_draw(t, font, size, pal.text,
@@ -105,7 +109,7 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
         int x = plot.x0 + (int)(frac * (plot.x1 - plot.x0));
         fastchart_target_line(t, x, plot.y0, x, plot.y1,
                               pal.grid, 1, FASTCHART_DASH_SOLID);
-        if (font) {
+        if (font && draw_labels) {
             char buf[24];
             snprintf(buf, sizeof(buf), "%g", xr.ticks[i]);
             fastchart_text_draw(t, font, size, pal.text,

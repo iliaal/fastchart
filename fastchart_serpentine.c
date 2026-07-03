@@ -41,7 +41,7 @@ int fastchart_serpentine_render_to_target(fastchart_serpentine_obj *self, fastch
 
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
-    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
+    fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
     if (self->event_count <= 0) {
         zend_throw_error(NULL,
@@ -65,6 +65,14 @@ int fastchart_serpentine_render_to_target(fastchart_serpentine_obj *self, fastch
     int n = self->event_count;
     int plot_x0 = 24, plot_x1 = W - 24;
     int plot_y0 = top_pad + 12, plot_y1 = H - 16;
+    /* Honor setPlotRect so the timeline can be composited into a sub-region
+     * of a shared canvas instead of always spanning the full image. */
+    if (((fastchart_obj *)self)->has_plot_rect) {
+        plot_x0 = ((fastchart_obj *)self)->plot_x0;
+        plot_y0 = ((fastchart_obj *)self)->plot_y0;
+        plot_x1 = ((fastchart_obj *)self)->plot_x1;
+        plot_y1 = ((fastchart_obj *)self)->plot_y1;
+    }
     double plot_w = plot_x1 - plot_x0;
     double plot_h = plot_y1 - plot_y0;
     if (plot_w < 20 || plot_h < 20) return 0;

@@ -810,6 +810,11 @@ int fastchart_y_to_pixel(double y,
         if (span < 1e-12) return plot->y1;
         frac = (y - range->min) / span;
     }
+    /* A forced range whose span overflows to +Inf (setYAxisRange with
+     * near-DBL_MAX bounds) makes frac Inf/Inf = NaN, which passes both
+     * clamps below (every NaN compare is false) and reaches (int)NaN — UB.
+     * Reject it explicitly, mirroring fastchart_frac_to_px. */
+    if (!isfinite(frac)) return plot->y1;
     if (frac < 0) frac = 0;
     if (frac > 1) frac = 1;
     int h = plot->y1 - plot->y0;
@@ -833,6 +838,8 @@ int fastchart_x_to_pixel(double x,
         if (span < 1e-12) return plot->x0;
         frac = (x - range->min) / span;
     }
+    /* See fastchart_y_to_pixel: an overflowed span makes frac NaN. */
+    if (!isfinite(frac)) return plot->x0;
     if (frac < 0) frac = 0;
     if (frac > 1) frac = 1;
     int w = plot->x1 - plot->x0;
@@ -1089,18 +1096,22 @@ void fastchart_draw_v_plot_bands_time(fastchart_target_t *t, fastchart_obj *char
     }
 }
 
-void fastchart_draw_frame(fastchart_target_t *t, fastchart_obj *chart,
-                          const fastchart_rect *plot,
-                          const fastchart_palette *pal)
+/* Paint the canvas-wide background honoring the compositing flags:
+ * has_plot_rect (skip — caller owns/composites the canvas), transparent_bg
+ * (skip — leave alpha 0), bg_image_path (base fill + composite), else a
+ * plain fill. Shared by fastchart_draw_frame and the charts that draw their
+ * own frame instead of going through it (surface, serpentine), so those
+ * honor setTransparentBackground / setPlotRect / setBackgroundImage too. */
+void fastchart_paint_canvas_bg(fastchart_target_t *t, fastchart_obj *chart,
+                               const fastchart_palette *pal)
 {
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
 
     /* setPlotRect implies the caller is compositing multiple charts on
      * one canvas — wiping the whole image to bg would erase neighbours.
-     * Skip the canvas-wide fill in that case; the plot-area fill below
-     * still happens, so each chart's own region is painted cleanly. The
-     * caller is responsible for pre-filling the canvas they own. */
+     * Skip the canvas-wide fill in that case; each chart's own region is
+     * painted separately. The caller pre-fills the canvas they own. */
     if (chart->has_plot_rect) {
         /* no-op: caller manages canvas-wide background */
     } else if (chart->transparent_bg) {
@@ -1116,6 +1127,13 @@ void fastchart_draw_frame(fastchart_target_t *t, fastchart_obj *chart,
     } else {
         fastchart_target_rect(t, 0, 0, W, H, pal->bg, 1, 0);
     }
+}
+
+void fastchart_draw_frame(fastchart_target_t *t, fastchart_obj *chart,
+                          const fastchart_rect *plot,
+                          const fastchart_palette *pal)
+{
+    fastchart_paint_canvas_bg(t, chart, pal);
 
     /* Plot area background stays opaque so chart elements remain
      * readable on top of a transparent canvas or a busy bg image. */

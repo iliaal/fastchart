@@ -8844,6 +8844,17 @@ ZEND_METHOD(FastChart_Funnel, setStages)
 
     if (idx == 0) {
         efree(parsed);
+        /* A non-empty but all-invalid re-set must not leave the previously
+         * parsed stages standing (siblings Pareto/Scatter free-first). The
+         * empty-array branch above already clears; match it here. */
+        if (self->stages) {
+            for (int i = 0; i < self->stage_count; i++) {
+                if (self->stages[i].label) efree(self->stages[i].label);
+            }
+            efree(self->stages);
+            self->stages = NULL;
+            self->stage_count = 0;
+        }
         RETURN_ZVAL(ZEND_THIS, 1, 0);
     }
 

@@ -111,6 +111,12 @@ int fastchart_y_to_pixel(double y,
                          const fastchart_value_range *range,
                          const fastchart_rect *plot);
 
+/* Paint the canvas-wide background honoring the compositing flags
+ * (has_plot_rect / transparent_bg / bg_image_path). For charts that draw
+ * their own frame instead of calling fastchart_draw_frame. */
+void fastchart_paint_canvas_bg(fastchart_target_t *t, fastchart_obj *chart,
+                               const fastchart_palette *pal);
+
 /* Draw the chart background, plot area, and border. */
 void fastchart_draw_frame(fastchart_target_t *t, fastchart_obj *chart,
                           const fastchart_rect *plot,
