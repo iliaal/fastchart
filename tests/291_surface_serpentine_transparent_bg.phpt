@@ -14,10 +14,10 @@ gd
  * canvas corner fully transparent (gd alpha 127). */
 
 function corner_alpha(string $png): int {
+    /* No imagedestroy(): it is a no-op since PHP 8.0 and deprecated in 8.5,
+     * where the notice would pollute the asserted output. GC frees $im. */
     $im = imagecreatefromstring($png);
-    $a = (imagecolorat($im, 2, 2) >> 24) & 0x7F;
-    imagedestroy($im);
-    return $a;
+    return (imagecolorat($im, 2, 2) >> 24) & 0x7F;
 }
 
 $sf = (new FastChart\SurfaceChart(200, 200))
