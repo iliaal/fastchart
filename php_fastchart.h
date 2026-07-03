@@ -57,16 +57,34 @@ typedef struct fc_glyph_cache_entry {
     uint16_t  n_pts;
 } fc_glyph_cache_entry;
 
+/* Glyph advance cache for text MEASUREMENT (fc_ft_measure). The draw
+ * glyph cache is keyed on the integer FT_Set_Pixel_Sizes size; the
+ * measure path uses fractional FT_Set_Char_Size (point size + DPI) and
+ * needs only the advance, not the outline. A separate direct-mapped
+ * cache (slot = codepoint low bits) keyed on that size keeps measured
+ * widths byte-identical while eliminating the repeated FT_Load_Glyph
+ * that label-dense charts (heatmap show-values, many axis labels) pay
+ * per glyph. Per-thread under ZTS like the other FT caches. */
+#define FC_MEASURE_CACHE_N 128   /* power of two: slot = codepoint & (N-1) */
+typedef struct {
+    void     *face;          /* opaque FT_Face key; NULL = empty slot */
+    uint32_t  codepoint;     /* cache key */
+    int32_t   size_64;       /* cache key: point size in FT 26.6 fixed-point */
+    int32_t   dpi;           /* cache key */
+    int32_t   advance_x_64;  /* glyph advance in FT 26.6 fixed-point */
+} fc_measure_cache_entry;
+
 /* Per-thread FT state. Under NTS this is a single struct shared across
  * the (only) thread; under ZTS each thread gets its own copy. The
  * shared-library / shared-face cache that lives here means no
  * cross-thread contention on FT operations, and each thread pays its
  * own FT_Init_FreeType once per first text emit. */
 ZEND_BEGIN_MODULE_GLOBALS(fastchart)
-    FT_Library           ft_lib;
-    int                  ft_lib_init_failed;
-    fc_ft_face_slot      ft_face_cache[FC_FT_FACE_CACHE_N];
-    fc_glyph_cache_entry glyph_cache[FC_GLYPH_CACHE_N];
+    FT_Library             ft_lib;
+    int                    ft_lib_init_failed;
+    fc_ft_face_slot        ft_face_cache[FC_FT_FACE_CACHE_N];
+    fc_glyph_cache_entry   glyph_cache[FC_GLYPH_CACHE_N];
+    fc_measure_cache_entry measure_cache[FC_MEASURE_CACHE_N];
 ZEND_END_MODULE_GLOBALS(fastchart)
 
 ZEND_EXTERN_MODULE_GLOBALS(fastchart)

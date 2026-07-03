@@ -184,17 +184,21 @@ int fastchart_contour_render_to_target(fastchart_contour_obj *self, fastchart_ta
         ? fastchart_target_color_rgb(t, (int)self->edge_color)
         : pal.axis;
 
-    /* Marching squares per level. */
-    for (int k = 0; k < n_levels; k++) {
-        double L = levels[k];
-        for (int i = 0; i < rows - 1; i++) {
-            for (int j = 0; j < cols - 1; j++) {
-                double v00 = G(i,     j);
-                double v01 = G(i,     j + 1);
-                double v10 = G(i + 1, j);
-                double v11 = G(i + 1, j + 1);
-                if (isnan(v00) || isnan(v01) || isnan(v10) || isnan(v11)) continue;
+    /* Marching squares. Cell loop is outermost so each cell's four
+     * corner values and the NaN check are read once, then reused across
+     * all isoline levels (was re-read n_levels times). All isolines
+     * share isoline_color, so the per-cell level ordering does not
+     * change the rendered result. */
+    for (int i = 0; i < rows - 1; i++) {
+        for (int j = 0; j < cols - 1; j++) {
+            double v00 = G(i,     j);
+            double v01 = G(i,     j + 1);
+            double v10 = G(i + 1, j);
+            double v11 = G(i + 1, j + 1);
+            if (isnan(v00) || isnan(v01) || isnan(v10) || isnan(v11)) continue;
 
+            for (int k = 0; k < n_levels; k++) {
+                double L = levels[k];
                 int idx = 0;
                 if (v00 >= L) idx |= 1;
                 if (v01 >= L) idx |= 2;

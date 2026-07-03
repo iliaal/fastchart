@@ -47,8 +47,10 @@ static int fc_ft_measure(const char *font_path, double size_pt, int dpi,
     if (!face) return -1;
     /* Size in 1/64 of a point at the given DPI. Always set: the
      * cached face's size carries over from whatever the last caller
-     * configured. */
-    if (FT_Set_Char_Size(face, (FT_F26Dot6)(size_pt * 64.0), 0, dpi, dpi)) {
+     * configured, and a miss in the advance cache below loads a glyph
+     * that must read this size. */
+    int32_t size_64 = (int32_t)(size_pt * 64.0);
+    if (FT_Set_Char_Size(face, (FT_F26Dot6)size_64, 0, dpi, dpi)) {
         return -1;
     }
 
@@ -57,12 +59,14 @@ static int fc_ft_measure(const char *font_path, double size_pt, int dpi,
     const unsigned char *end = p + text_len;
     uint32_t cp;
     /* Shared walker: invalid bytes measure as U+FFFD with a real
-     * advance, matching what the SVG/PDF emitters will draw. */
+     * advance, matching what the SVG/PDF emitters will draw. The advance
+     * comes from the measure cache (keyed on the size set above), so a
+     * repeated glyph costs no FT_Load_Glyph. */
     while ((p = fc_utf8_next_cp(p, end, &cp)) != NULL) {
-        FT_UInt gi = FT_Get_Char_Index(face, cp);
-        if (FT_Load_Glyph(face, gi, FT_LOAD_NO_BITMAP | FT_LOAD_NO_HINTING))
+        int32_t adv;
+        if (fastchart_measured_advance(face, size_64, dpi, cp, &adv) != 0)
             continue;
-        total_w_64 += face->glyph->advance.x;
+        total_w_64 += adv;
     }
 
     int w = (int)((total_w_64 + 32) / 64);  /* round to nearest pixel */
