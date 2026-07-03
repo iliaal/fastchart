@@ -383,6 +383,45 @@ static void fastchart_glyph_cache_drop_face(FT_Face victim)
             memset(&g[i], 0, sizeof(g[i]));
         }
     }
+    /* The measurement cache keys on the same face pointer; drop its
+     * entries too so a reused pointer (a later FT_New_Face landing at
+     * the freed address) can't produce a stale-advance false hit. */
+    fc_measure_cache_entry *m = FASTCHART_G(measure_cache);
+    for (int i = 0; i < FC_MEASURE_CACHE_N; i++) {
+        if (m[i].face == victim) m[i].face = NULL;
+    }
+}
+
+/* Advance-only glyph lookup for text measurement, backed by the
+ * per-thread measure cache. The caller must have positioned the face
+ * with FT_Set_Char_Size(size_64, dpi) already — the cache key records
+ * that size so a hit returns an advance consistent with it. On a miss
+ * the glyph is loaded for its advance (no outline decompose — the
+ * measure path never needs the path stream) and cached. Returns 0 with
+ * the advance in *out_adv, or -1 on FT_Load_Glyph failure (caller skips
+ * the glyph, matching the pre-cache behaviour). */
+int fastchart_measured_advance(FT_Face face, int32_t size_64, int dpi,
+                               uint32_t codepoint, int32_t *out_adv)
+{
+    fc_measure_cache_entry *m = FASTCHART_G(measure_cache);
+    fc_measure_cache_entry *e = &m[codepoint & (FC_MEASURE_CACHE_N - 1)];
+    if (e->face == face && e->codepoint == codepoint
+        && e->size_64 == size_64 && e->dpi == dpi) {
+        *out_adv = e->advance_x_64;
+        return 0;
+    }
+    FT_UInt gi = FT_Get_Char_Index(face, codepoint);
+    if (FT_Load_Glyph(face, gi, FT_LOAD_NO_BITMAP | FT_LOAD_NO_HINTING)) {
+        return -1;
+    }
+    int32_t adv = (int32_t)face->glyph->advance.x;
+    e->face = face;
+    e->codepoint = codepoint;
+    e->size_64 = size_64;
+    e->dpi = dpi;
+    e->advance_x_64 = adv;
+    *out_adv = adv;
+    return 0;
 }
 
 FT_Face fastchart_ft_face(const char *font_path)
@@ -454,6 +493,8 @@ void fastchart_ft_library_shutdown(void)
         free(gcache[i].pts);
         memset(&gcache[i], 0, sizeof(gcache[i]));
     }
+    memset(FASTCHART_G(measure_cache), 0,
+           sizeof(fc_measure_cache_entry) * FC_MEASURE_CACHE_N);
 
     /* Free cached faces explicitly. FT_Done_FreeType would walk and
      * free them anyway, but doing it ourselves keeps the cache state

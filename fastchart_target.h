@@ -52,6 +52,14 @@ void fastchart_ft_library_shutdown(void);
  * an OOM on the path-key strdup. */
 FT_Face fastchart_ft_face(const char *font_path);
 
+/* Advance-only glyph lookup for text measurement (fc_ft_measure),
+ * backed by a per-thread cache keyed on (face, size_64, dpi, codepoint).
+ * The caller must have positioned the face via FT_Set_Char_Size for the
+ * given size_64/dpi. Returns 0 with the advance (FT 26.6) in *out_adv,
+ * -1 on FT_Load_Glyph failure. */
+int fastchart_measured_advance(FT_Face face, int32_t size_64, int dpi,
+                               uint32_t codepoint, int32_t *out_adv);
+
 /* Glyph outline cache. Process-shared LRU keyed by (face, pix_size,
  * codepoint). Each entry holds the glyph's advance + a decomposed
  * path command stream at pen_x=0, so subsequent renders of the same
