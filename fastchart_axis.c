@@ -1790,6 +1790,27 @@ void fastchart_draw_legend(fastchart_target_t *t, fastchart_obj *chart,
     }
 }
 
+void fastchart_draw_series_legend(fastchart_target_t *t, fastchart_obj *chart,
+                                  const fastchart_rect *plot,
+                                  const fastchart_palette *pal,
+                                  int n_series, const char *const *labels)
+{
+    if (n_series < 2) return;
+
+    int colors[FASTCHART_MAX_SERIES];
+    const char *lbls[FASTCHART_MAX_SERIES];
+    int count = 0;
+    for (int s = 0; s < n_series && count < FASTCHART_MAX_SERIES; s++) {
+        if (!labels[s]) continue;
+        colors[count] = pal->series[s % FASTCHART_PALETTE_SERIES_N];
+        lbls[count] = labels[s];
+        count++;
+    }
+    if (count > 0) {
+        fastchart_draw_legend(t, chart, plot, pal, count, colors, lbls);
+    }
+}
+
 void fastchart_draw_value_label(fastchart_target_t *t, fastchart_obj *chart,
                                 const fastchart_palette *pal,
                                 int x, int y, double value)
@@ -1811,37 +1832,16 @@ void fastchart_draw_value_label(fastchart_target_t *t, fastchart_obj *chart,
                         x, label_y, FASTCHART_ALIGN_CENTER, buf, NULL, 0);
 }
 
-/* Allocate or reuse a color from an overlay's optional 'color' key.
- * Falls back to the rotating palette index `slot`. Returns a target
- * color handle. */
-static int overlay_color(fastchart_target_t *t, const fastchart_palette *pal,
-                         zval *entry, int slot)
+/* Resolve an overlay's stroke color: an explicit color if the caller
+ * set one, else the rotating palette index derived from `slot`.
+ * Returns a target color handle. */
+static int combo_overlay_color(fastchart_target_t *t, const fastchart_palette *pal,
+                               const fastchart_combo_overlay *ov, int slot)
 {
-    zval *c = zend_hash_str_find(Z_ARRVAL_P(entry), "color", sizeof("color") - 1);
-    if (c && Z_TYPE_P(c) == IS_LONG) {
-        zend_long v = Z_LVAL_P(c);
-        if (v >= 0 && v <= 0xFFFFFF) {
-            return fastchart_target_color_rgb(t, (int)v);
-        }
+    if (ov->has_color) {
+        return fastchart_target_color_rgb(t, ov->color);
     }
     return pal->series[(slot + 4) % FASTCHART_PALETTE_SERIES_N];
-}
-
-static int overlay_thickness(zval *entry)
-{
-    zval *t = zend_hash_str_find(Z_ARRVAL_P(entry), "thickness", sizeof("thickness") - 1);
-    if (t && Z_TYPE_P(t) == IS_LONG) {
-        zend_long v = Z_LVAL_P(t);
-        if (v >= 1 && v <= 16) return (int)v;
-    }
-    return 2;
-}
-
-static bool overlay_right_axis(zval *entry)
-{
-    zval *a = zend_hash_str_find(Z_ARRVAL_P(entry), "axis", sizeof("axis") - 1);
-    return (a && Z_TYPE_P(a) == IS_STRING &&
-            zend_string_equals_literal(Z_STR_P(a), "right"));
 }
 
 void fastchart_draw_overlays_categorical(fastchart_target_t *t, fastchart_obj *chart,
@@ -1851,35 +1851,25 @@ void fastchart_draw_overlays_categorical(fastchart_target_t *t, fastchart_obj *c
                                           const fastchart_value_range *yrange_right,
                                           int n_categories)
 {
-    zval *list = zend_hash_str_find(Z_ARRVAL(chart->config),
-                                    "overlays", sizeof("overlays") - 1);
-    if (!list || Z_TYPE_P(list) != IS_ARRAY) return;
+    if (chart->n_combo_overlays <= 0) return;
     if (n_categories <= 0) return;
 
-    int slot = 0;
-    zval *entry;
-    ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(list), entry) {
-        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
-        zval *type_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "type", sizeof("type") - 1);
-        zval *vals_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "values", sizeof("values") - 1);
-        if (!type_zv || !vals_zv || Z_TYPE_P(vals_zv) != IS_ARRAY) continue;
+    for (int slot = 0; slot < chart->n_combo_overlays; slot++) {
+        const fastchart_combo_overlay *ov = &chart->combo_overlays[slot];
 
-        bool is_area = (Z_TYPE_P(type_zv) == IS_STRING &&
-                        zend_string_equals_literal(Z_STR_P(type_zv), "area"));
+        bool is_area = ov->is_area;
         const fastchart_value_range *rng =
-            (overlay_right_axis(entry) && yrange_right) ? yrange_right : yrange;
-        int color = overlay_color(t, pal, entry, slot);
-        int thick = overlay_thickness(entry);
+            (ov->right_axis && yrange_right) ? yrange_right : yrange;
+        int color = combo_overlay_color(t, pal, ov, slot);
+        int thick = ov->thickness;
 
         /* Build a points array. Missing / non-numeric entries break
          * the polyline (matching the line-gap convention). */
         fastchart_pt *pts = ecalloc((size_t)n_categories, sizeof(fastchart_pt));
         for (int i = 0; i < n_categories; i++) {
-            zval *vv = zend_hash_index_find(Z_ARRVAL_P(vals_zv), i);
-            double d;
-            if (vv && Z_TYPE_P(vv) != IS_NULL && fastchart_zval_to_double(vv, &d) == 0) {
+            if (i < ov->n && isfinite(ov->values[i])) {
                 pts[i].x = fastchart_x_categorical_center(plot, i, n_categories);
-                pts[i].y = fastchart_y_to_pixel(d, rng, plot);
+                pts[i].y = fastchart_y_to_pixel(ov->values[i], rng, plot);
                 pts[i].valid = true;
             } else {
                 pts[i].valid = false;
@@ -1932,12 +1922,11 @@ void fastchart_draw_overlays_categorical(fastchart_target_t *t, fastchart_obj *c
         fastchart_draw_polyline(t, chart, pts, n_categories,
                                 color, thick, !is_area);
         efree(pts);
-        slot++;
-    } ZEND_HASH_FOREACH_END();
+    }
 }
 
 /* Overlay rendering for horizontal-bar layouts: value axis is X,
- * category axis is Y. Same overlay-list source ('overlays' on config),
+ * category axis is Y. Same overlay source (chart->combo_overlays),
  * same per-entry shape (type / values / color / thickness). Unlike
  * the categorical helper, lines / area-fill axes flip: y comes from
  * the categorical center, x comes from the value range. Area fill
@@ -1949,30 +1938,20 @@ void fastchart_draw_overlays_horizontal_bar(fastchart_target_t *t, fastchart_obj
                                             const fastchart_value_range *xrange,
                                             int n_categories)
 {
-    zval *list = zend_hash_str_find(Z_ARRVAL(chart->config),
-                                    "overlays", sizeof("overlays") - 1);
-    if (!list || Z_TYPE_P(list) != IS_ARRAY) return;
+    if (chart->n_combo_overlays <= 0) return;
     if (n_categories <= 0) return;
 
-    int slot = 0;
-    zval *entry;
-    ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(list), entry) {
-        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
-        zval *type_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "type", sizeof("type") - 1);
-        zval *vals_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "values", sizeof("values") - 1);
-        if (!type_zv || !vals_zv || Z_TYPE_P(vals_zv) != IS_ARRAY) continue;
+    for (int slot = 0; slot < chart->n_combo_overlays; slot++) {
+        const fastchart_combo_overlay *ov = &chart->combo_overlays[slot];
 
-        bool is_area = (Z_TYPE_P(type_zv) == IS_STRING &&
-                        zend_string_equals_literal(Z_STR_P(type_zv), "area"));
-        int color = overlay_color(t, pal, entry, slot);
-        int thick = overlay_thickness(entry);
+        bool is_area = ov->is_area;
+        int color = combo_overlay_color(t, pal, ov, slot);
+        int thick = ov->thickness;
 
         fastchart_pt *pts = ecalloc((size_t)n_categories, sizeof(fastchart_pt));
         for (int i = 0; i < n_categories; i++) {
-            zval *vv = zend_hash_index_find(Z_ARRVAL_P(vals_zv), i);
-            double d;
-            if (vv && Z_TYPE_P(vv) != IS_NULL && fastchart_zval_to_double(vv, &d) == 0) {
-                pts[i].x = fastchart_x_to_pixel(d, xrange, plot);
+            if (i < ov->n && isfinite(ov->values[i])) {
+                pts[i].x = fastchart_x_to_pixel(ov->values[i], xrange, plot);
                 pts[i].y = fastchart_y_categorical_center(plot, i, n_categories);
                 pts[i].valid = true;
             } else {
@@ -2018,8 +1997,7 @@ void fastchart_draw_overlays_horizontal_bar(fastchart_target_t *t, fastchart_obj
         fastchart_draw_polyline(t, chart, pts, n_categories,
                                 color, thick, !is_area);
         efree(pts);
-        slot++;
-    } ZEND_HASH_FOREACH_END();
+    }
 }
 
 void fastchart_draw_overlays_time(fastchart_target_t *t, fastchart_obj *chart,
@@ -2029,29 +2007,20 @@ void fastchart_draw_overlays_time(fastchart_target_t *t, fastchart_obj *chart,
                                   zend_long t_min, zend_long t_max,
                                   zend_long *timestamps, int n_candles)
 {
-    zval *list = zend_hash_str_find(Z_ARRVAL(chart->config),
-                                    "overlays", sizeof("overlays") - 1);
-    if (!list || Z_TYPE_P(list) != IS_ARRAY) return;
+    if (chart->n_combo_overlays <= 0) return;
     if (n_candles <= 0) return;
 
-    int slot = 0;
-    zval *entry;
-    ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(list), entry) {
-        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
-        zval *type_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "type", sizeof("type") - 1);
-        zval *vals_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "values", sizeof("values") - 1);
-        if (!type_zv || !vals_zv || Z_TYPE_P(vals_zv) != IS_ARRAY) continue;
+    for (int slot = 0; slot < chart->n_combo_overlays; slot++) {
+        const fastchart_combo_overlay *ov = &chart->combo_overlays[slot];
 
-        int color = overlay_color(t, pal, entry, slot);
-        int thick = overlay_thickness(entry);
+        int color = combo_overlay_color(t, pal, ov, slot);
+        int thick = ov->thickness;
 
         fastchart_pt *pts = ecalloc((size_t)n_candles, sizeof(fastchart_pt));
         for (int i = 0; i < n_candles; i++) {
-            zval *vv = zend_hash_index_find(Z_ARRVAL_P(vals_zv), i);
-            double d;
-            if (vv && Z_TYPE_P(vv) != IS_NULL && fastchart_zval_to_double(vv, &d) == 0) {
+            if (i < ov->n && isfinite(ov->values[i])) {
                 pts[i].x = fastchart_x_time_to_pixel(plot, timestamps[i], t_min, t_max);
-                pts[i].y = fastchart_y_to_pixel(d, yrange, plot);
+                pts[i].y = fastchart_y_to_pixel(ov->values[i], yrange, plot);
                 pts[i].valid = true;
             } else {
                 pts[i].valid = false;
@@ -2059,8 +2028,7 @@ void fastchart_draw_overlays_time(fastchart_target_t *t, fastchart_obj *chart,
         }
         fastchart_draw_polyline(t, chart, pts, n_candles, color, thick, true);
         efree(pts);
-        slot++;
-    } ZEND_HASH_FOREACH_END();
+    }
 }
 
 static int annotation_color(const fastchart_palette *pal, fastchart_target_t *t,

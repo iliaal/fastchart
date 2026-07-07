@@ -357,7 +357,7 @@ void fastchart_draw_value_label(fastchart_target_t *t, fastchart_obj *chart,
                                 const fastchart_palette *pal,
                                 int x, int y, double value);
 
-/* Walk overlay series stored on chart->config["overlays"] and
+/* Walk overlay series stored on chart->combo_overlays and
  * draw each as a line or area on top of the existing plot, using
  * the supplied yrange for left-axis overlays and yrange_right (may
  * be NULL) for right-axis ones. Caller passes the categorical-
@@ -399,6 +399,16 @@ void fastchart_draw_legend(fastchart_target_t *t, fastchart_obj *chart,
                            int n_entries,
                            const int *colors,
                            const char *const *labels);
+
+/* Build and draw the series legend: one swatch+label per labeled
+ * series, colored by the rotating palette index `s % PALETTE_SERIES_N`.
+ * A labeled series always gets an entry, even when it carries no data.
+ * `labels[s]` is NULL for an unlabeled series. No-op for fewer than two
+ * series or when none is labeled. */
+void fastchart_draw_series_legend(fastchart_target_t *t, fastchart_obj *chart,
+                                  const fastchart_rect *plot,
+                                  const fastchart_palette *pal,
+                                  int n_series, const char *const *labels);
 
 /* Draw any horizontal-line annotations stored on the chart. The
  * y-mapping uses the supplied value_range. Out-of-range

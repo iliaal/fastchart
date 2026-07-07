@@ -54,6 +54,11 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
         }
     }
 
+    /* Palette is initialized before compute_layout here — the reverse of
+     * fastchart_render_cartesian_setup. Gantt interleaves task-label width
+     * measurement and the bars-rect derivation between layout and
+     * draw_frame, so it deliberately can't fold into that helper; keep
+     * this ordering. */
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
