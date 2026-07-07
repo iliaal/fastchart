@@ -41,7 +41,10 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
 
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
-    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
+    /* Canvas background via the shared helper so setTransparentBackground /
+     * setBackgroundImage / setPlotRect compositing are honored instead of an
+     * unconditional opaque fill. */
+    fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
     if (self->vector_count <= 0) {
         zend_throw_error(NULL,
@@ -86,35 +89,43 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
      * axis renderer, and are suppressed in thumbnail mode like every other
      * chart. VectorChart hand-rolls its axis so it must honor both here. */
     int draw_labels = !((fastchart_obj *)self)->thumbnail_mode;
+    int x_vis = ((fastchart_obj *)self)->x_axis_visible;
+    int y_vis = ((fastchart_obj *)self)->y_axis_visible;
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_AXIS);
     double size = fastchart_resolve_font_size(
         (fastchart_obj *)self, FC_FONT_AXIS, base_size);
 
-    /* Light grid. */
-    for (int i = 0; i < yr.n_ticks; i++) {
-        double frac = (yr.ticks[i] - yr.min) / (yr.max - yr.min);
-        int y = plot.y1 - (int)(frac * (plot.y1 - plot.y0));
-        fastchart_target_line(t, plot.x0, y, plot.x1, y,
-                              pal.grid, 1, FASTCHART_DASH_SOLID);
-        if (font && draw_labels) {
-            char buf[24];
-            snprintf(buf, sizeof(buf), "%g", yr.ticks[i]);
-            fastchart_text_draw(t, font, size, pal.text,
-                                plot.x0 - 6, y + (int)(size * 0.4),
-                                FASTCHART_ALIGN_RIGHT, buf, NULL, 0);
+    /* Light grid. Each axis's gridlines + labels are gated on its
+     * visibility flag, matching the shared axis drawers (setXAxisVisible /
+     * setYAxisVisible suppress the whole axis, gridlines included). */
+    if (y_vis) {
+        for (int i = 0; i < yr.n_ticks; i++) {
+            double frac = (yr.ticks[i] - yr.min) / (yr.max - yr.min);
+            int y = plot.y1 - (int)(frac * (plot.y1 - plot.y0));
+            fastchart_target_line(t, plot.x0, y, plot.x1, y,
+                                  pal.grid, 1, FASTCHART_DASH_SOLID);
+            if (font && draw_labels) {
+                char buf[24];
+                snprintf(buf, sizeof(buf), "%g", yr.ticks[i]);
+                fastchart_text_draw(t, font, size, pal.text,
+                                    plot.x0 - 6, y + (int)(size * 0.4),
+                                    FASTCHART_ALIGN_RIGHT, buf, NULL, 0);
+            }
         }
     }
-    for (int i = 0; i < xr.n_ticks; i++) {
-        double frac = (xr.ticks[i] - xr.min) / (xr.max - xr.min);
-        int x = plot.x0 + (int)(frac * (plot.x1 - plot.x0));
-        fastchart_target_line(t, x, plot.y0, x, plot.y1,
-                              pal.grid, 1, FASTCHART_DASH_SOLID);
-        if (font && draw_labels) {
-            char buf[24];
-            snprintf(buf, sizeof(buf), "%g", xr.ticks[i]);
-            fastchart_text_draw(t, font, size, pal.text,
-                                x, plot.y1 + (int)(size * 1.4),
-                                FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+    if (x_vis) {
+        for (int i = 0; i < xr.n_ticks; i++) {
+            double frac = (xr.ticks[i] - xr.min) / (xr.max - xr.min);
+            int x = plot.x0 + (int)(frac * (plot.x1 - plot.x0));
+            fastchart_target_line(t, x, plot.y0, x, plot.y1,
+                                  pal.grid, 1, FASTCHART_DASH_SOLID);
+            if (font && draw_labels) {
+                char buf[24];
+                snprintf(buf, sizeof(buf), "%g", xr.ticks[i]);
+                fastchart_text_draw(t, font, size, pal.text,
+                                    x, plot.y1 + (int)(size * 1.4),
+                                    FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+            }
         }
     }
     fastchart_target_rect(t, plot.x0, plot.y0,
