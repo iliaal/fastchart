@@ -41,7 +41,7 @@ int fastchart_marimekko_render_to_target(fastchart_marimekko_obj *self, fastchar
 
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
-    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
+    fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
     if (self->column_count <= 0 || self->total_width <= 0.0) {
         zend_throw_error(NULL,
@@ -68,7 +68,7 @@ int fastchart_marimekko_render_to_target(fastchart_marimekko_obj *self, fastchar
     int avail_w = plot_x1 - plot_x0;
     int avail_h = plot_y1 - plot_y0;
     if (avail_w < 32 || avail_h < 32) {
-        zend_throw_error(NULL,
+        zend_value_error(
             "FastChart\\MarimekkoChart::draw() canvas is too small for margins");
         return -1;
     }

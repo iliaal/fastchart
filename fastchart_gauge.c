@@ -30,7 +30,7 @@
  * coordinate system). */
 static double gauge_value_to_deg(double v, double mn, double mx)
 {
-    if (v < mn) v = mn;
+    if (!(v >= mn)) v = mn;
     if (v > mx) v = mx;
     double frac = (mx > mn) ? (v - mn) / (mx - mn) : 0.0;
     return 180.0 - frac * 180.0;
@@ -49,7 +49,7 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
 
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
-    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
+    fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
     /* Reserve title height proportional to font size, not a hardcoded
      * 32px constant. At larger canvas + larger font (1200x800 with
@@ -110,8 +110,8 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
          * color), over a grid-colored background ring. No needle. */
         fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.grid, 1, 0);
         double frac = (mx > mn) ? (v - mn) / (mx - mn) : 0.0;
-        if (frac < 0) frac = 0;
-        if (frac > 1) frac = 1;
+        if (!(frac >= 0.0)) frac = 0.0;
+        if (frac > 1.0) frac = 1.0;
         int fill_color = default_color;
         if (self->zones && self->n_zones > 0) {
             for (int i = 0; i < self->n_zones; i++) {
@@ -148,10 +148,10 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
              * to a 1° sliver because value=0 wrapped 360 -> 0. */
             double frac_a = (zn->from - mn) / (mx - mn);
             double frac_b = (zn->to   - mn) / (mx - mn);
-            if (frac_a < 0) frac_a = 0;
-            if (frac_a > 1) frac_a = 1;
-            if (frac_b < 0) frac_b = 0;
-            if (frac_b > 1) frac_b = 1;
+            if (!(frac_a >= 0.0)) frac_a = 0.0;
+            if (frac_a > 1.0) frac_a = 1.0;
+            if (!(frac_b >= 0.0)) frac_b = 0.0;
+            if (frac_b > 1.0) frac_b = 1.0;
             int start = (int)(180 + frac_a * 180);
             int end   = (int)(180 + frac_b * 180);
             if (start > end) { int tmp = start; start = end; end = tmp; }

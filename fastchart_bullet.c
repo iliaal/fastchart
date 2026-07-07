@@ -50,7 +50,7 @@ int fastchart_bullet_render_to_target(fastchart_bullet_obj *self, fastchart_targ
 
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
-    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
+    fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
     int top_pad = 12;
     int title_h = 0;

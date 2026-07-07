@@ -69,7 +69,7 @@ int fastchart_pictogram_render_to_target(fastchart_pictogram_obj *self, fastchar
 
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
-    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
+    fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
     if (self->total <= 0.0) {
         zend_throw_error(NULL,

@@ -58,7 +58,7 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
 
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
-    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
+    fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
     /* Node-only graphs are valid (isolated/disconnected nodes); the
      * edge loops below all no-op cleanly at link_count == 0. Only nodes
