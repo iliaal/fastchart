@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `drawSvgFragment()` takes an optional `$idPrefix` to namespace
   gradient and clip-path ids, so fragments from several charts can be
   stitched into one host document without `url(#fcg1)` collisions.
+- `addHorizontalLine()` / `addVerticalLine()` and the band variants
+  render on `Waterfall` and `ParetoChart`; the annotation and effect
+  docblocks now name the covered families.
+- `config.w32` gained an opt-in pdfio block, so Windows builds can
+  enable the PDF backend.
 
 ### Changed
 
@@ -39,6 +44,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Solid and alpha SVG colors are formatted by dedicated integer
   emitters instead of `snprintf()`: dense marker-heavy documents emit
   ~40% faster, byte-identical.
+- `setShowValues(?string $format = null)`: null/omitted keeps the
+  current format, `''` resets; the advertised `%g` default was never
+  applied.
+- Render-time "canvas too small" errors throw `ValueError` across
+  chart families, matching the Symbol family.
+- `renderToFile()` writes plain paths via a same-directory temp file
+  plus rename; a failed write no longer truncates an existing file.
+- A labeled empty series gets a legend entry on `LineChart` too,
+  matching Area/Bar/Scatter.
+- `addOverlaySeries()` values parse into typed arrays at setter time
+  instead of being re-read from the PHP array on every render.
+- Text runs decompose each glyph once per draw instead of twice;
+  path-mode text skips its unused font-family lookup; layout measures
+  only the category labels the axis will draw.
 
 ### Fixed
 
@@ -130,6 +149,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Waterfall` renders a negative TOTAL bar below the zero baseline and
   extends the y-axis into the negative region, instead of drawing it at
   its absolute height above zero (a net loss no longer looks like a gain).
+- Axis tick labels keep their fractional part for 2.5x10^N and
+  0.25-family steps (7.5 no longer labels as "8").
+- `ScatterChart` delegates its x-axis to the shared drawer: SVG output
+  is DPI-invariant again and `setXAxisVisible(false)` is honored
+  (visibility also fixed in `VectorChart`).
+- 24 chart families ignored `setTransparentBackground()` /
+  `setBackgroundImage()` and wiped the host canvas under
+  `setPlotRect()` compositing.
+- `BarChart` bars drifted from their category labels at high category
+  counts (~99px at 100 categories), both orientations.
+- `GaugeChart::setRange()` accepted finite bounds whose span overflows
+  to `Inf`, reaching `(int)NaN` casts in the renderer.
+- PDF: fully transparent colors painted opaque, band-gradient alpha
+  was discarded, thick polylines showed notches at vertices, and a
+  memory-limit bailout during close could leak pdfio state.
+- `StockChart` STYLE_VECTOR marked the first bar as a volume climax;
+  ZigZag missed reversals on non-positive prices; `setVolumeColors()`
+  misaligned sparse arrays.
+- Valid PNGs with more than 1024 chunks were rejected as
+  background/icon images.
+- Overlay values kept a hidden reference to the user array, making
+  chart-to-data reference cycles uncollectable.
+- `PolarChart::addVectors()` color validation truncated to 32-bit
+  before range-checking on LLP64/Windows.
 
 ## [1.4.0] - 2026-06-20
 
