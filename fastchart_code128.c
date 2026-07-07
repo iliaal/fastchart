@@ -411,7 +411,7 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
     int n_codes = code128_encode(ZSTR_VAL(base->data), ZSTR_LEN(base->data),
                                  codes, C128_MAX_CODES, err, sizeof(err));
     if (n_codes < 0) {
-        zend_throw_exception(zend_ce_value_error, err, 0);
+        zend_value_error("%s", err);
         return -1;
     }
 
@@ -453,23 +453,23 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
     if (base->quiet_zone < 0) {
         module_px = W / (20 + total_modules);
         if (module_px < 1) {
-            zend_throw_exception(zend_ce_value_error,
+            zend_value_error(
                 "FastChart\\Code128: canvas too narrow for the encoded bars "
-                "+ default quiet zone (need at least 1 px per module)", 0);
+                "+ default quiet zone (need at least 1 px per module)");
             return -1;
         }
     } else {
         int quiet_px = (int)base->quiet_zone;
         if (W <= 2 * quiet_px) {
-            zend_throw_exception(zend_ce_value_error,
-                "FastChart\\Code128: quiet zone consumes the entire canvas", 0);
+            zend_value_error(
+                "FastChart\\Code128: quiet zone consumes the entire canvas");
             return -1;
         }
         module_px = (W - 2 * quiet_px) / total_modules;
         if (module_px < 1) {
-            zend_throw_exception(zend_ce_value_error,
+            zend_value_error(
                 "FastChart\\Code128: canvas too narrow for the encoded bars "
-                "given the configured quiet zone", 0);
+                "given the configured quiet zone");
             return -1;
         }
     }
@@ -496,8 +496,8 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
     int bar_top = 2;
     int bar_bottom = H - 2 - text_strip_h;
     if (bar_bottom <= bar_top + 4) {
-        zend_throw_exception(zend_ce_value_error,
-            "FastChart\\Code128: canvas too short to render bars + text", 0);
+        zend_value_error(
+            "FastChart\\Code128: canvas too short to render bars + text");
         return -1;
     }
 
@@ -562,16 +562,8 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
             }
         }
 
-        /* Font size targets ~55% of the strip height at 96 DPI; FT
-         * renders at canvas DPI, so the physical glyph height is
-         * pt * canvas_dpi/72. Scale pt down by 96/canvas_dpi so the
-         * rendered text fits the strip regardless of resolution.
-         * Without this, setDpi(200) inflates the rendered text past
-         * the 1/5-of-H strip allocation and the `ty + 2 > H` clamp
-         * below pulls the baseline back into the bars. Min 8pt. */
-        int canvas_dpi = fastchart_target_get_dpi(t);
-        if (canvas_dpi <= 0) canvas_dpi = 96;
-        double pt = (double)text_strip_h * 0.55 * 96.0 / (double)canvas_dpi;
+        /* Font size targets ~55% of the strip height. Min 8pt. */
+        double pt = (double)text_strip_h * 0.55;
         if (pt < 8.0) pt = 8.0;
 
         /* Measure to position the baseline below the bars. Falls back

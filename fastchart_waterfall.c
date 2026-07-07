@@ -123,7 +123,7 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
         efree(bar_lo);
         efree(bar_hi);
         efree((void *)labels);
-        zend_throw_error(NULL,
+        zend_value_error(
             "FastChart\\Waterfall::draw() canvas is too narrow for the number of bars");
         return -1;
     }
@@ -164,6 +164,8 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
                                   pal.grid, 1, FASTCHART_DASH_SOLID);
         }
     }
+
+    fastchart_draw_h_annotations(t, (fastchart_obj *)self, &plot, &pal, &range);
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     efree(bar_lo);

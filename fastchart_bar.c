@@ -57,6 +57,45 @@ static int bar_per_point_color(zend_long *point_colors, int idx, int fallback,
     return fastchart_target_color_rgb(t, (int)c);
 }
 
+typedef struct {
+    int left;   /* left edge of the paddable inner region */
+    int inner;  /* inner width available for bars */
+    int sub;    /* per-series sub-slot size */
+    int draw;   /* drawn bar thickness within a sub-slot */
+    int inset;  /* centering inset within a sub-slot */
+} fastchart_bar_slot;
+
+/* Per-category slot geometry. Boundaries are computed in double so bar
+ * centers track fastchart_x_categorical_center() (which places labels
+ * and gridlines) instead of drifting: a single truncated integer slot
+ * width accumulated as i*slot_w pushes the last bar tens of pixels off
+ * its label at high category counts. Works for either axis by passing
+ * the axis span endpoints. */
+static fastchart_bar_slot fastchart_bar_slot_geom(int axis_lo, int axis_hi,
+                                                  int i, int n,
+                                                  int sub_count, int bar_pct)
+{
+    fastchart_bar_slot g;
+    int span = axis_hi - axis_lo;
+    int b0 = axis_lo + (int)((double)span * i / n);
+    int b1 = axis_lo + (int)((double)span * (i + 1) / n);
+    int slot = b1 - b0;
+    int pad = slot / 6;
+    if (pad < 1) pad = 1;
+    int inner = slot - 2 * pad;
+    if (inner < 1) inner = 1;
+    int sub = inner / (sub_count > 0 ? sub_count : 1);
+    if (sub < 1) sub = 1;
+    int draw = (sub * bar_pct + 50) / 100;
+    if (draw < 1) draw = 1;
+    g.left = b0 + pad;
+    g.inner = inner;
+    g.sub = sub;
+    g.draw = draw;
+    g.inset = (sub - draw) / 2;
+    return g;
+}
+
 static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
                                            fastchart_target_t *t);
 static int fastchart_bar_render_radial(fastchart_bar_obj *self,
@@ -198,15 +237,7 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
 
 	int zero_y = fastchart_y_to_pixel(0.0, &range, &plot);
 
-    int slot_w = (plot.x1 - plot.x0) / (n_categories > 0 ? n_categories : 1);
-    int slot_pad = slot_w / 6;
-    if (slot_pad < 1) slot_pad = 1;
-    int slot_inner = slot_w - 2 * slot_pad;
-    if (slot_inner < 1) slot_inner = 1;
-
     int sub_count = (stacked && n_series > 1) ? 1 : n_series;
-    int sub_w = slot_inner / sub_count;
-    if (sub_w < 1) sub_w = 1;
 
     /* setBarWidth(pct) shrinks the bar fill within its allocated
      * sub-slot, centered, at pct/100 of the slot width. 100 = touch
@@ -214,9 +245,6 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
      * sub_w so per-series side-by-side bars all narrow together. */
     int bar_pct = (int)self->bar_width_pct;
     if (bar_pct <= 0) bar_pct = 100;
-    int draw_w = (sub_w * bar_pct + 50) / 100;
-    if (draw_w < 1) draw_w = 1;
-    int sub_inset = (sub_w - draw_w) / 2;
 
     int edge_rgb = (int)self->edge_color;
     int edge_handle = edge_rgb >= 0
@@ -240,7 +268,13 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
     }
 
     for (int i = 0; i < n_categories; i++) {
-        int slot_left = plot.x0 + i * slot_w + slot_pad;
+        fastchart_bar_slot g = fastchart_bar_slot_geom(plot.x0, plot.x1,
+            i, n_categories, sub_count, bar_pct);
+        int slot_left = g.left;
+        int slot_inner = g.inner;
+        int sub_w = g.sub;
+        int draw_w = g.draw;
+        int sub_inset = g.inset;
 
         /* One hot-spot per category column. Covers the full plot
          * height so any click in the column registers on the bar's
@@ -383,7 +417,10 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
      * label would land mid-stack). */
     if (self->show_values && !(stacked && n_series > 1)) {
         for (int i = 0; i < n_categories; i++) {
-            int slot_left = plot.x0 + i * slot_w + slot_pad;
+            fastchart_bar_slot g = fastchart_bar_slot_geom(plot.x0, plot.x1,
+                i, n_categories, sub_count, bar_pct);
+            int slot_left = g.left;
+            int sub_w = g.sub;
             for (int s = 0; s < n_series; s++) {
                 if (i >= series[s].len) continue;
                 double v = series[s].values[i];
@@ -530,21 +567,10 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
 
     int zero_x = fastchart_x_to_pixel(0.0, &range, &plot);
 
-    int slot_h = (plot.y1 - plot.y0) / (n_categories > 0 ? n_categories : 1);
-    int slot_pad = slot_h / 6;
-    if (slot_pad < 1) slot_pad = 1;
-    int slot_inner = slot_h - 2 * slot_pad;
-    if (slot_inner < 1) slot_inner = 1;
-
     int sub_count = (stacked && n_series > 1) ? 1 : n_series;
-    int sub_h = slot_inner / sub_count;
-    if (sub_h < 1) sub_h = 1;
 
     int bar_pct = (int)self->bar_width_pct;
     if (bar_pct <= 0) bar_pct = 100;
-    int draw_h = (sub_h * bar_pct + 50) / 100;
-    if (draw_h < 1) draw_h = 1;
-    int sub_inset = (sub_h - draw_h) / 2;
 
     int edge_rgb = (int)self->edge_color;
     int edge_handle = edge_rgb >= 0
@@ -563,7 +589,13 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
     }
 
     for (int i = 0; i < n_categories; i++) {
-        int slot_top = plot.y0 + i * slot_h + slot_pad;
+        fastchart_bar_slot g = fastchart_bar_slot_geom(plot.y0, plot.y1,
+            i, n_categories, sub_count, bar_pct);
+        int slot_top = g.left;
+        int slot_inner = g.inner;
+        int sub_h = g.sub;
+        int draw_h = g.draw;
+        int sub_inset = g.inset;
 
         /* One hot-spot per category row — full plot width, mirroring
          * the vertical path's full-height column rects. */
@@ -703,7 +735,10 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
      * right edge; negative bars to the left. */
     if (self->show_values && !(stacked && n_series > 1)) {
         for (int i = 0; i < n_categories; i++) {
-            int slot_top = plot.y0 + i * slot_h + slot_pad;
+            fastchart_bar_slot g = fastchart_bar_slot_geom(plot.y0, plot.y1,
+                i, n_categories, sub_count, bar_pct);
+            int slot_top = g.left;
+            int sub_h = g.sub;
             for (int s = 0; s < n_series; s++) {
                 if (i >= series[s].len) continue;
                 double v = series[s].values[i];

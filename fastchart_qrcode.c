@@ -55,7 +55,7 @@ int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,
      * range inversion internally, but a clean PHP exception with
      * specific values is more useful than a generic encode failure. */
     if (self->min_version > self->max_version) {
-        zend_throw_exception_ex(zend_ce_value_error, 0,
+        zend_value_error(
             "FastChart\\QrCode: setMinVersion(%lld) > setMaxVersion(%lld); "
             "the version range must be non-empty",
             (long long)self->min_version, (long long)self->max_version);
@@ -82,7 +82,7 @@ int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,
         /*boostEcl=*/true);
 
     if (!ok) {
-        zend_throw_exception_ex(zend_ce_value_error, 0,
+        zend_value_error(
             "FastChart\\QrCode: data does not fit within the requested "
             "version range (min=%lld, max=%lld) at ECC level %lld; "
             "increase setMaxVersion() or relax setEcc()",
@@ -111,7 +111,7 @@ int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,
     if (base->quiet_zone < 0) {
         quiet_modules = 4;
     } else if (base->quiet_zone > 256) {
-        zend_throw_exception_ex(zend_ce_value_error, 0,
+        zend_value_error(
             "FastChart\\QrCode: quiet zone %lld modules exceeds the QR "
             "maximum of 256 modules",
             (long long)base->quiet_zone);
@@ -129,7 +129,7 @@ int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,
     int module_px_h = H / total_modules;
     int module_px = module_px_w < module_px_h ? module_px_w : module_px_h;
     if (module_px < 1) {
-        zend_throw_exception_ex(zend_ce_value_error, 0,
+        zend_value_error(
             "FastChart\\QrCode: canvas %dx%d too small for a %dx%d-module "
             "symbol + %d-module quiet zone (need at least 1 px per module)",
             W, H, N, N, quiet_modules);

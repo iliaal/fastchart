@@ -39,7 +39,7 @@ int fastchart_pyramid_render_to_target(fastchart_pyramid_obj *self, fastchart_ta
 
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
-    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
+    fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
     if (self->cat_count <= 0 ||
         (self->left.n <= 0 && self->right.n <= 0)) {

@@ -40,7 +40,7 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
 
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
-    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
+    fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
     if (self->bar_count <= 0) {
         zend_throw_error(NULL,
@@ -96,7 +96,7 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
     int plot_y0 = top_pad;
     int plot_y1 = H - 48;
     if (plot_x1 <= plot_x0 || plot_y1 <= plot_y0) {
-        zend_throw_error(NULL,
+        zend_value_error(
             "FastChart\\ParetoChart::draw() canvas is too small for margins");
         return -1;
     }
@@ -213,6 +213,17 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
                             W / 2, 12 + title_h, FASTCHART_ALIGN_CENTER,
                             ZSTR_VAL(self->title), NULL, 0);
     }
+
+    /* Threshold lines (addHorizontalLine) map onto the left value axis,
+     * which is a plain 0-based linear scale [0, y_axis_max] — the bars
+     * above use the same mapping, so build a matching range rather than
+     * the niced `yr` (whose min may not be 0). */
+    fastchart_rect ann_plot = { plot_x0, plot_y0, plot_x1, plot_y1 };
+    fastchart_value_range ann_range = yr;
+    ann_range.min = 0.0;
+    ann_range.max = y_axis_max;
+    fastchart_draw_h_annotations(t, (fastchart_obj *)self, &ann_plot, &pal,
+                                 &ann_range);
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
