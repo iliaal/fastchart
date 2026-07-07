@@ -634,21 +634,10 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
     fastchart_draw_v_annotations_categorical(t, (fastchart_obj *)self, &plot, &pal, max_len);
 
     /* Legend. */
-    if (n_series >= 2) {
-        int legend_colors[FASTCHART_MAX_SERIES];
-        const char *legend_labels[FASTCHART_MAX_SERIES];
-        int legend_count = 0;
-        for (int s = 0; s < n_series; s++) {
-            if (!series[s].label) continue;
-            legend_colors[legend_count] = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-            legend_labels[legend_count] = series[s].label;
-            legend_count++;
-        }
-        if (legend_count > 0) {
-            fastchart_draw_legend(t, (fastchart_obj *)self, &plot, &pal,
-                                  legend_count, legend_colors, legend_labels);
-        }
-    }
+    const char *legend_labels[FASTCHART_MAX_SERIES];
+    for (int s = 0; s < n_series; s++) legend_labels[s] = series[s].label;
+    fastchart_draw_series_legend(t, (fastchart_obj *)self, &plot, &pal,
+                                 n_series, legend_labels);
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
 

@@ -270,6 +270,13 @@ extern zend_class_entry *fastchart_qrcode_ce;
     int n_plot_bands; \
     struct fastchart_icon *icons; \
     int n_icons; \
+    /* Combo overlays added via addOverlaySeries(). Values parse into a \
+     * typed double array (NaN marks a gap) at setter time so the object \
+     * retains no user zval — keeping the raw array in config would form \
+     * an engine-invisible cycle (config is a C-struct zval with no \
+     * get_gc handler). */ \
+    struct fastchart_combo_overlay *combo_overlays; \
+    int n_combo_overlays; \
     /* Per-render font cache: 4 slots (one per role) holding the \
      * resolved path (NULL on basedir reject). Invalidated at the top \
      * of every render via fastchart_compute_layout so an ini_set \
@@ -371,6 +378,21 @@ struct fastchart_plot_band {
     bool   is_vertical;   /* true = X-axis band, false = Y-axis band */
 };
 typedef struct fastchart_plot_band fastchart_plot_band;
+
+/* Combo overlay: a line/area series drawn on top of the primary plot,
+ * added via addOverlaySeries(). `values` is a positional double array
+ * (NaN marks a gap); `n` its length. Color / thickness / axis are
+ * resolved at setter time so the drawers read no user zval. */
+struct fastchart_combo_overlay {
+    double *values;       /* owned, positional; NaN = gap */
+    int     n;
+    bool    is_area;      /* true = filled area, false = line */
+    bool    has_color;    /* false = rotate from palette */
+    int     color;        /* 0..0xFFFFFF, valid when has_color */
+    int     thickness;    /* 1..16 */
+    bool    right_axis;   /* true = plot against the secondary y-axis */
+};
+typedef struct fastchart_combo_overlay fastchart_combo_overlay;
 
 #define FASTCHART_MAX_BANDS 16
 

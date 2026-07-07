@@ -325,6 +325,9 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
     b->icons = NULL;
     b->n_icons = 0;
 
+    b->combo_overlays = NULL;
+    b->n_combo_overlays = 0;
+
 	b->image_map_entries = NULL;
 	b->n_image_map_entries = 0;
 	b->image_map_areas = NULL;
@@ -364,6 +367,17 @@ static void fastchart_plot_bands_free(fastchart_obj *b)
     efree(b->plot_bands);
     b->plot_bands = NULL;
     b->n_plot_bands = 0;
+}
+
+static void fastchart_combo_overlays_free(fastchart_obj *b)
+{
+    if (!b->combo_overlays) return;
+    for (int i = 0; i < b->n_combo_overlays; i++) {
+        if (b->combo_overlays[i].values) efree(b->combo_overlays[i].values);
+    }
+    efree(b->combo_overlays);
+    b->combo_overlays = NULL;
+    b->n_combo_overlays = 0;
 }
 
 static void fastchart_category_labels_free(fastchart_obj *b)
@@ -574,6 +588,7 @@ static void fastchart_base_release_owned(fastchart_obj *b)
     fastchart_category_labels_free(b);
     fastchart_plot_bands_free(b);
     fastchart_icons_free(b);
+    fastchart_combo_overlays_free(b);
     fastchart_image_map_entries_free(b);
     fastchart_image_map_areas_free(b);
     zval_ptr_dtor(&b->config);
@@ -624,6 +639,23 @@ static void fastchart_base_addref_owned(fastchart_obj *b)
             }
         }
         b->icons = copy;
+    }
+    if (b->combo_overlays && b->n_combo_overlays > 0) {
+        size_t bytes = (size_t)b->n_combo_overlays
+                       * sizeof(fastchart_combo_overlay);
+        fastchart_combo_overlay *copy = emalloc(bytes);
+        memcpy(copy, b->combo_overlays, bytes);
+        for (int i = 0; i < b->n_combo_overlays; i++) {
+            if (copy[i].values && copy[i].n > 0) {
+                size_t vbytes = (size_t)copy[i].n * sizeof(double);
+                double *v = emalloc(vbytes);
+                memcpy(v, copy[i].values, vbytes);
+                copy[i].values = v;
+            } else {
+                copy[i].values = NULL;
+            }
+        }
+        b->combo_overlays = copy;
     }
     if (b->image_map_entries && b->n_image_map_entries > 0) {
         size_t bytes = (size_t)b->n_image_map_entries
@@ -5116,21 +5148,42 @@ ZEND_METHOD(FastChart_Chart, addOverlaySeries)
     }
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    zval *list_zv = zend_hash_str_find(Z_ARRVAL(self->config),
-                                       "overlays", sizeof("overlays") - 1);
-    if (!list_zv || Z_TYPE_P(list_zv) != IS_ARRAY) {
-        zval list;
-        array_init(&list);
-        list_zv = zend_hash_str_update(Z_ARRVAL(self->config),
-            "overlays", sizeof("overlays") - 1, &list);
+
+    /* Parse the values into a positional double array (NaN marks a gap)
+     * so nothing from the user zval is retained on the object. Walk in
+     * hash order with a position counter rather than probing index i:
+     * an array with holes has no index for some i < n, and the probe
+     * would read that as an intentional gap and drop the tail. Non-
+     * numeric / non-finite entries become gaps — addOverlaySeries never
+     * validated under strict mode, so preserve the silent-drop contract. */
+    HashTable *vht = Z_ARRVAL_P(values);
+    int n = (int)zend_hash_num_elements(vht);
+    double *vals = NULL;
+    if (n > 0) {
+        vals = emalloc((size_t)n * sizeof(double));
+        int i = 0;
+        zval *v;
+        ZEND_HASH_FOREACH_VAL(vht, v) {
+            if (i >= n) break;
+            double d;
+            ZVAL_DEREF(v);
+            if (Z_TYPE_P(v) != IS_NULL && fastchart_zval_to_double(v, &d) == 0) {
+                vals[i] = d;
+            } else {
+                vals[i] = NAN;
+            }
+            i++;
+        } ZEND_HASH_FOREACH_END();
     }
 
-    zval entry;
-    array_init(&entry);
-    add_assoc_str(&entry, "type", zend_string_copy(type));
-    zval values_copy;
-    ZVAL_COPY(&values_copy, values);
-    add_assoc_zval(&entry, "values", &values_copy);
+    fastchart_combo_overlay ov;
+    ov.values     = vals;
+    ov.n          = n;
+    ov.is_area    = zend_string_equals_literal(type, "area");
+    ov.has_color  = false;
+    ov.color      = 0;
+    ov.thickness  = 2;
+    ov.right_axis = false;
 
     if (opts) {
         zval *opt;
@@ -5138,22 +5191,27 @@ ZEND_METHOD(FastChart_Chart, addOverlaySeries)
         if (opt) ZVAL_DEREF(opt);
         if (opt && Z_TYPE_P(opt) == IS_LONG) {
             zend_long c = Z_LVAL_P(opt);
-            if (c >= 0 && c <= 0xFFFFFF) add_assoc_long(&entry, "color", c);
+            if (c >= 0 && c <= 0xFFFFFF) { ov.has_color = true; ov.color = (int)c; }
         }
         opt = zend_hash_str_find(opts, "thickness", sizeof("thickness") - 1);
         if (opt) ZVAL_DEREF(opt);
         if (opt && Z_TYPE_P(opt) == IS_LONG) {
             zend_long t = Z_LVAL_P(opt);
-            if (t >= 1 && t <= 16) add_assoc_long(&entry, "thickness", t);
+            if (t >= 1 && t <= 16) ov.thickness = (int)t;
         }
         opt = zend_hash_str_find(opts, "axis", sizeof("axis") - 1);
         if (opt) ZVAL_DEREF(opt);
         if (opt && Z_TYPE_P(opt) == IS_STRING) {
-            add_assoc_str(&entry, "axis", zend_string_copy(Z_STR_P(opt)));
+            ov.right_axis = zend_string_equals_literal(Z_STR_P(opt), "right");
         }
     }
 
-    add_next_index_zval(list_zv, &entry);
+    int idx = self->n_combo_overlays;
+    self->combo_overlays = erealloc(self->combo_overlays,
+        (size_t)(idx + 1) * sizeof(fastchart_combo_overlay));
+    self->combo_overlays[idx] = ov;
+    self->n_combo_overlays = idx + 1;
+
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 

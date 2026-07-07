@@ -57,14 +57,9 @@ int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_ta
     fastchart_value_range_apply_override((fastchart_obj *)self, &range);
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, t, 1, 1, NULL, 0, &plot);
-
     fastchart_palette pal;
-    fastchart_palette_init(t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
-
-    fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_render_cartesian_setup((fastchart_obj *)self, t, 1, 1, NULL, 0,
+                                     &plot, &pal);
     fastchart_draw_y_axis(t, (fastchart_obj *)self, &plot, &pal, &range);
     fastchart_draw_plot_bands(t, (fastchart_obj *)self, &plot, &range, &pal);
     fastchart_draw_v_plot_bands_categorical(t, (fastchart_obj *)self, &plot,

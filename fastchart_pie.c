@@ -38,14 +38,9 @@ static int fastchart_pie_render_rings(fastchart_pie_obj *self,
     int ring_count = self->ring_count;
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, t, 0, 0, NULL, 0, &plot);
-
     fastchart_palette pal;
-    fastchart_palette_init(t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
-
-    fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_render_cartesian_setup((fastchart_obj *)self, t, 0, 0, NULL, 0,
+                                     &plot, &pal);
 
     fastchart_reset_image_map_areas((fastchart_obj *)self);
 
@@ -186,16 +181,11 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
     if (donut >= 1.0) donut = 0.95;
 
     fastchart_rect plot;
+    fastchart_palette pal;
     /* No axes for pie charts -- pass 0/0 so layout reserves space
      * only for the title. */
-    fastchart_compute_layout((fastchart_obj *)self, t, 0, 0, NULL, 0, &plot);
-
-    fastchart_palette pal;
-    fastchart_palette_init(t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
-
-    fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_render_cartesian_setup((fastchart_obj *)self, t, 0, 0, NULL, 0,
+                                     &plot, &pal);
 
     /* Pie geometry: largest disk that fits, centered in the plot
      * rect, with a margin reserved for label leaders / outside text. */

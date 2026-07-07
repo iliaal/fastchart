@@ -65,14 +65,9 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
     fastchart_value_range_compute(x_min, x_max, 6, &xrange);
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, t, 1, 1, NULL, 0, &plot);
-
     fastchart_palette pal;
-    fastchart_palette_init(t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
-
-    fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_render_cartesian_setup((fastchart_obj *)self, t, 1, 1, NULL, 0,
+                                     &plot, &pal);
     fastchart_draw_y_axis(t, (fastchart_obj *)self, &plot, &pal, &yrange);
     fastchart_draw_plot_bands(t, (fastchart_obj *)self, &plot, &yrange, &pal);
     fastchart_draw_v_plot_bands_xrange(t, (fastchart_obj *)self, &plot,
@@ -261,21 +256,9 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
     fastchart_draw_h_annotations(t, (fastchart_obj *)self, &plot, &pal, &yrange);
     fastchart_draw_v_annotations_continuous(t, (fastchart_obj *)self, &plot, &pal, &xrange);
 
-    if (n_series >= 2) {
-        int legend_colors[FASTCHART_MAX_SCATTER_SERIES];
-        const char *legend_labels[FASTCHART_MAX_SCATTER_SERIES];
-        int legend_count = 0;
-        for (int s = 0; s < n_series; s++) {
-            if (!self->series_labels[s]) continue;
-            legend_colors[legend_count] = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-            legend_labels[legend_count] = self->series_labels[s];
-            legend_count++;
-        }
-        if (legend_count > 0) {
-            fastchart_draw_legend(t, (fastchart_obj *)self, &plot, &pal,
-                                  legend_count, legend_colors, legend_labels);
-        }
-    }
+    fastchart_draw_series_legend(t, (fastchart_obj *)self, &plot, &pal,
+                                 n_series,
+                                 (const char *const *)self->series_labels);
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
 

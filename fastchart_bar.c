@@ -442,21 +442,10 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
     fastchart_draw_h_annotations(t, (fastchart_obj *)self, &plot, &pal, &range);
     fastchart_draw_v_annotations_categorical(t, (fastchart_obj *)self, &plot, &pal, n_categories);
 
-    if (n_series >= 2) {
-        int legend_colors[FASTCHART_MAX_SERIES];
-        const char *legend_labels[FASTCHART_MAX_SERIES];
-        int legend_count = 0;
-        for (int s = 0; s < n_series; s++) {
-            if (!series[s].label) continue;
-            legend_colors[legend_count] = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-            legend_labels[legend_count] = series[s].label;
-            legend_count++;
-        }
-        if (legend_count > 0) {
-            fastchart_draw_legend(t, (fastchart_obj *)self, &plot, &pal,
-                                  legend_count, legend_colors, legend_labels);
-        }
-    }
+    const char *legend_labels[FASTCHART_MAX_SERIES];
+    for (int s = 0; s < n_series; s++) legend_labels[s] = series[s].label;
+    fastchart_draw_series_legend(t, (fastchart_obj *)self, &plot, &pal,
+                                 n_series, legend_labels);
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
 
@@ -529,15 +518,9 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
     const char **label_ptrs = fastchart_borrow_category_labels((fastchart_obj *)self, n_categories);
 
     fastchart_rect plot;
-    fastchart_compute_layout((fastchart_obj *)self, t, 1, 1,
-                             label_ptrs, n_categories, &plot);
-
     fastchart_palette pal;
-    fastchart_palette_init(t, (int)self->theme, &pal);
-    fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
-
-    fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
-    fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
+    fastchart_render_cartesian_setup((fastchart_obj *)self, t, 1, 1,
+                                     label_ptrs, n_categories, &plot, &pal);
     fastchart_draw_x_axis_numeric(t, (fastchart_obj *)self, &plot, &pal, &range);
 
     fastchart_draw_y_axis_categorical(t, (fastchart_obj *)self, &plot, &pal, n_categories, label_ptrs);
@@ -764,21 +747,10 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
     fastchart_draw_horizontal_bar_annotations(t, (fastchart_obj *)self, &plot,
                                               &pal, &range, n_categories);
 
-    if (n_series >= 2) {
-        int legend_colors[FASTCHART_MAX_SERIES];
-        const char *legend_labels[FASTCHART_MAX_SERIES];
-        int legend_count = 0;
-        for (int s = 0; s < n_series; s++) {
-            if (!series[s].label) continue;
-            legend_colors[legend_count] = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-            legend_labels[legend_count] = series[s].label;
-            legend_count++;
-        }
-        if (legend_count > 0) {
-            fastchart_draw_legend(t, (fastchart_obj *)self, &plot, &pal,
-                                  legend_count, legend_colors, legend_labels);
-        }
-    }
+    const char *legend_labels[FASTCHART_MAX_SERIES];
+    for (int s = 0; s < n_series; s++) legend_labels[s] = series[s].label;
+    fastchart_draw_series_legend(t, (fastchart_obj *)self, &plot, &pal,
+                                 n_series, legend_labels);
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
 
@@ -909,21 +881,9 @@ static int fastchart_bar_render_radial(fastchart_bar_obj *self,
         }
     }
 
-    if (n_series >= 2) {
-        int legend_colors[FASTCHART_MAX_SERIES];
-        const char *legend_labels[FASTCHART_MAX_SERIES];
-        int legend_count = 0;
-        for (int s = 0; s < n_series; s++) {
-            if (!series[s].label) continue;
-            legend_colors[legend_count] = pal.series[s % FASTCHART_PALETTE_SERIES_N];
-            legend_labels[legend_count] = series[s].label;
-            legend_count++;
-        }
-        if (legend_count > 0) {
-            fastchart_draw_legend(t, base, &plot, &pal,
-                                  legend_count, legend_colors, legend_labels);
-        }
-    }
+    const char *legend_labels[FASTCHART_MAX_SERIES];
+    for (int s = 0; s < n_series; s++) legend_labels[s] = series[s].label;
+    fastchart_draw_series_legend(t, base, &plot, &pal, n_series, legend_labels);
 
     fastchart_draw_text_annotations(t, base, &pal);
     return 0;

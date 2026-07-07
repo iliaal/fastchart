@@ -121,9 +121,6 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
         ? (int)self->marker_size
         : 6;
 
-    int legend_colors[FASTCHART_MAX_SERIES];
-    const char *legend_labels[FASTCHART_MAX_SERIES];
-    int legend_count = 0;
 
     /* Optional per-point error bars (parallel to the first series). */
     double *err_lo = self->err_lo;
@@ -198,11 +195,6 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
                                        pts[i].x, pts[i].y, values[i]);
         }
 
-        if (series[s].label) {
-            legend_colors[legend_count] = color;
-            legend_labels[legend_count] = series[s].label;
-            legend_count++;
-        }
     }
 
     /* Combo overlays go on top of the primary data. */
@@ -214,10 +206,10 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
     fastchart_draw_h_annotations(t, (fastchart_obj *)self, &plot, &pal, &range_l);
     fastchart_draw_v_annotations_categorical(t, (fastchart_obj *)self, &plot, &pal, max_len);
 
-    if (legend_count >= 1 && n_series >= 2) {
-        fastchart_draw_legend(t, (fastchart_obj *)self, &plot, &pal,
-                              legend_count, legend_colors, legend_labels);
-    }
+    const char *legend_labels[FASTCHART_MAX_SERIES];
+    for (int s = 0; s < n_series; s++) legend_labels[s] = series[s].label;
+    fastchart_draw_series_legend(t, (fastchart_obj *)self, &plot, &pal,
+                                 n_series, legend_labels);
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
 
