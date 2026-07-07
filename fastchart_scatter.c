@@ -78,51 +78,12 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
     fastchart_draw_v_plot_bands_xrange(t, (fastchart_obj *)self, &plot,
                                        &xrange, &pal);
 
-    /* Custom X axis: continuous numeric ticks from xrange. Reuse the
-     * categorical axis line + tick infrastructure by drawing the line
-     * and emitting ticks at xrange values. */
-    fastchart_target_line(t, plot.x0, plot.y1, plot.x1, plot.y1,
-                          pal.axis, 1, FASTCHART_DASH_SOLID);
-    const char *font = xrange.n_ticks > 0
-        ? fastchart_resolve_font((fastchart_obj *)self, FC_FONT_AXIS) : NULL;
-    if (font) {
-        double size = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-        /* Match the shared numeric x-axis: scale tick length and
-         * label offset with DPI, and use a measured ascender so the
-         * label TOP sits below plot.y1 + tick rather than clipping
-         * into the plot rect at higher DPIs. */
-        double dpi_scale = ((fastchart_obj *)self)->dpi > 96
-            ? (double)((fastchart_obj *)self)->dpi / 96.0 : 1.0;
-        int tick_len = (int)(4 * dpi_scale + 0.5);
-        int probe_h = 0;
-        if (fastchart_text_measure(t, font, size, "Mg9", NULL, &probe_h, NULL, 0) != 0) {
-            probe_h = (int)(size * 1.2 * dpi_scale);
-        }
-        int label_y = plot.y1 + tick_len + probe_h + (int)(4 * dpi_scale);
-        for (int ti = 0; ti < xrange.n_ticks; ti++) {
-            double v = xrange.ticks[ti];
-            double frac = (v - xrange.min) / (xrange.max - xrange.min);
-            int x = plot.x0 + (int)(frac * (plot.x1 - plot.x0) + 0.5);
-            fastchart_target_line(t, x, plot.y1 + 1, x, plot.y1 + tick_len,
-                                  pal.axis, 1, FASTCHART_DASH_SOLID);
-
-            char buf[32];
-            if (self->x_axis_label_format) {
-                fastchart_format_tick_label_user(v, self->x_axis_label_format,
-                                                 buf, sizeof(buf));
-            } else {
-                int decimals = xrange.tick_step >= 1.0 ? 0
-                    : (int)ceil(-log10(xrange.tick_step));
-                if (decimals < 0) decimals = 0;
-                if (decimals > 4) decimals = 4;
-                snprintf(buf, sizeof(buf), "%.*f", decimals, v);
-            }
-
-            fastchart_text_draw(t, font, size, pal.text,
-                                x, label_y, FASTCHART_ALIGN_CENTER,
-                                buf, NULL, 0);
-        }
-    }
+    /* Continuous numeric X axis: the shared drawer honors
+     * setXAxisVisible / thumbnail mode / the axis font+size and keeps
+     * SVG output DPI-invariant (the hand-rolled block scaled ticks by
+     * raw DPI even for SVG targets, breaking that contract). */
+    fastchart_draw_x_axis_numeric(t, (fastchart_obj *)self, &plot, &pal,
+                                  &xrange);
 
     fastchart_draw_axis_titles(t, (fastchart_obj *)self, &plot, &pal);
 
