@@ -296,6 +296,16 @@ abstract class Chart
      */
     public function setSecondaryYAxis(bool $enabled): static {}
 
+    /**
+     * Draw a straight reference line across the plot: addHorizontalLine
+     * at a constant Y value, addVerticalLine at a constant X position.
+     * `$label` is an optional annotation drawn at the line; `$color`
+     * is a 24-bit RGB int (null = theme default).
+     *
+     * Supported by AreaChart, BarChart, BoxPlot, BubbleChart,
+     * LineChart, ScatterChart, StockChart, Waterfall, and ParetoChart;
+     * other chart types accept and silently ignore the call.
+     */
     public function addHorizontalLine(float $value, ?string $label = null, ?int $color = null): static {}
     public function addVerticalLine(float $position, ?string $label = null, ?int $color = null): static {}
 
@@ -334,6 +344,10 @@ abstract class Chart
      * (0 = opaque, 127 = fully transparent), defaulting to 64 for a
      * visible-but-translucent overlay. Up to 16 bands per chart
      * (shared budget with addVerticalBand).
+     *
+     * Supported by AreaChart, BarChart, BoxPlot, BubbleChart,
+     * LineChart, ScatterChart, StockChart, Waterfall, and ParetoChart;
+     * other chart types accept and silently ignore the call.
      */
     public function addHorizontalBand(float $low, float $high, int $color,
                                       int $alpha = 64,
@@ -350,6 +364,10 @@ abstract class Chart
      *   - Stock: unix timestamp.
      * Color / alpha / label / band cap are identical to
      * addHorizontalBand; the two share the 16-band-per-chart budget.
+     *
+     * Supported by AreaChart, BarChart, BoxPlot, BubbleChart,
+     * LineChart, ScatterChart, StockChart, Waterfall, and ParetoChart;
+     * other chart types accept and silently ignore the call.
      */
     public function addVerticalBand(float $low, float $high, int $color,
                                     int $alpha = 64,
@@ -379,10 +397,16 @@ abstract class Chart
     /**
      * Show numeric value labels next to each data point. For line
      * and scatter, labels appear above each marker; for bar, above
-     * each bar. The optional sprintf format applies to each value
-     * (default "%g"). No-op for pie (use setSliceLabelFormat).
+     * each bar. No-op for pie (use setSliceLabelFormat).
+     *
+     * `$format` is an sprintf conversion applied to each value.
+     * `null` (or omitting the argument) leaves the current format
+     * unchanged — toggling visibility without disturbing a format set
+     * earlier. `''` resets to the built-in default ("%g"). A non-empty
+     * string sets the format (validated for exactly one numeric
+     * conversion).
      */
-    public function setShowValues(bool $show, string $format = '%g'): static {}
+    public function setShowValues(bool $show, ?string $format = null): static {}
 
     /**
      * Render the canvas with a transparent background. The PNG and
@@ -567,6 +591,9 @@ abstract class Chart
      * pie slices). `$from` is the color at the top (or left, for
      * horizontal); `$to` is at the bottom (or right). Pass -1 for
      * `$from` to disable gradient and revert to solid fills.
+     *
+     * Supported by AreaChart, BarChart, ContourChart, PieChart, and
+     * SurfaceChart; other chart types silently ignore the call.
      */
     public function setGradientFill(int $from, int $to = -1, int $direction = Chart::GRADIENT_VERTICAL): static {}
 
@@ -575,6 +602,9 @@ abstract class Chart
      * and `$offsetY` are shadow displacement in pixels. `$color`
      * defaults to a 50% opacity black. Pass `setDropShadow(0, 0)`
      * to disable.
+     *
+     * Supported by AreaChart, BarChart, ContourChart, PieChart, and
+     * SurfaceChart; other chart types silently ignore the call.
      */
     public function setDropShadow(int $offsetX, int $offsetY, ?int $color = null): static {}
 
@@ -1020,9 +1050,9 @@ final class ScatterChart extends Chart
 final class StockChart extends Chart
 {
     /** Moving-average kind passed to addMovingAverage(). */
-    const int MA_SMA = 0;
-    const int MA_EMA = 1;
-    const int MA_WMA = 2;
+    public const int MA_SMA = 0;
+    public const int MA_EMA = 1;
+    public const int MA_WMA = 2;
 
     public function setOhlcv(array $ohlcv): static {}
 
@@ -1381,9 +1411,9 @@ final class BoxPlot extends Chart
 final class PolarChart extends Chart
 {
     /** setStyle(): line/area mode (default), connect points into a polygon. */
-    const int STYLE_LINE = 0;
+    public const int STYLE_LINE = 0;
     /** setStyle(): rose mode, each point is an angular wedge from the centre. */
-    const int STYLE_ROSE = 1;
+    public const int STYLE_ROSE = 1;
 
     /**
      * Points (single series) or list of series with
@@ -1528,7 +1558,7 @@ final class Funnel extends Chart
      */
     public function setStyle(int $style): static {}
 
-    /* setShowValues(bool, string $format = '%g') is inherited from
+    /* setShowValues(bool, ?string $format = null) is inherited from
      * Chart and toggles the value labels rendered next to each
      * stage. The funnel default is to show values. */
 
@@ -1579,7 +1609,7 @@ final class Heatmap extends Chart
      */
     public function setColorRamp(int $low, int $high): static {}
 
-    /* setShowValues(bool, string $format = '%g') is inherited from
+    /* setShowValues(bool, ?string $format = null) is inherited from
      * Chart; it toggles the per-cell value rendering AND sets the
      * printf format used for it. */
 
@@ -1594,8 +1624,8 @@ final class Heatmap extends Chart
  */
 final class LinearMeter extends Chart
 {
-    const int METER_HORIZONTAL = 0;
-    const int METER_VERTICAL   = 1;
+    public const int METER_HORIZONTAL = 0;
+    public const int METER_VERTICAL   = 1;
 
     /** Set the meter's data range. min must be < max. */
     public function setRange(float $min, float $max): static {}
@@ -1771,14 +1801,14 @@ final class SankeyChart extends Chart
 final class ArcDiagram extends Chart
 {
     /** setOrientation(): link arcs bulge above the baseline (default). */
-    const int ORIENT_UP = 0;
+    public const int ORIENT_UP = 0;
     /** setOrientation(): link arcs bulge below the baseline. */
-    const int ORIENT_DOWN = 1;
+    public const int ORIENT_DOWN = 1;
     /**
      * setOrientation(): forward links (`to` > `from`) arc above the
      * baseline, backward links below, to reduce visual crossings.
      */
-    const int ORIENT_SPLIT = 2;
+    public const int ORIENT_SPLIT = 2;
 
     /**
      * Node list. Each entry: `['label' => string?, 'color' => int?]`.
@@ -1815,19 +1845,19 @@ final class ArcDiagram extends Chart
 final class ChordDiagram extends Chart
 {
     /** setStyle(): filled translucent ribbons (default). */
-    const int STYLE_RIBBON = 0;
+    public const int STYLE_RIBBON = 0;
     /**
      * setStyle(): non-ribbon mode. Each link is a single curve between
      * the centres of its endpoint slices, stroke width proportional to
      * value, rather than a filled ribbon.
      */
-    const int STYLE_LINE = 1;
+    public const int STYLE_LINE = 1;
     /**
      * setStyle(): filled ribbons with an arrowhead at each link's target
      * endpoint, marking flow direction. A->B and B->A are distinct links,
      * so reciprocal flows draw two opposing arrows.
      */
-    const int STYLE_DIRECTED = 2;
+    public const int STYLE_DIRECTED = 2;
 
     /**
      * Node list. Each entry: `['label' => string?, 'color' => int?]`.
@@ -1989,13 +2019,13 @@ final class CirclePacking extends Chart
 final class Dendrogram extends Chart
 {
     /** setStyle(): straight diagonal parent-child edges (default). */
-    const int STYLE_TREE = 0;
+    public const int STYLE_TREE = 0;
     /** setStyle(): right-angle (elbow) edges, the dendrogram convention. */
-    const int STYLE_ELBOW = 1;
+    public const int STYLE_ELBOW = 1;
     /** setOrientation(): root at top, depth grows downward (default). */
-    const int ORIENT_TOP = 0;
+    public const int ORIENT_TOP = 0;
     /** setOrientation(): root at left, depth grows rightward. */
-    const int ORIENT_LEFT = 1;
+    public const int ORIENT_LEFT = 1;
 
     /**
      * Root node of the hierarchy. Each node:
@@ -2023,9 +2053,9 @@ final class Dendrogram extends Chart
 final class Partition extends Chart
 {
     /** setOrientation(): depth grows left-to-right (default). */
-    const int ORIENT_HORIZONTAL = 0;
+    public const int ORIENT_HORIZONTAL = 0;
     /** setOrientation(): depth grows top-to-bottom (icicle). */
-    const int ORIENT_VERTICAL = 1;
+    public const int ORIENT_VERTICAL = 1;
 
     /**
      * Root node of the hierarchy. Each node:
@@ -2050,11 +2080,11 @@ final class Partition extends Chart
 final class Pictogram extends Chart
 {
     /** setShape(): filled square cells (default). */
-    const int SHAPE_SQUARE = 0;
+    public const int SHAPE_SQUARE = 0;
     /** setShape(): filled circles. */
-    const int SHAPE_CIRCLE = 1;
+    public const int SHAPE_CIRCLE = 1;
     /** setShape(): a simple person silhouette. */
-    const int SHAPE_PERSON = 2;
+    public const int SHAPE_PERSON = 2;
 
     /** The measured value. Its share of the total drives the fill. */
     public function setValue(float $value): static {}
@@ -2129,12 +2159,12 @@ final class VennDiagram extends Chart
 final class WordCloud extends Chart
 {
     /** setOrientation(): all words horizontal (default). */
-    const int ORIENT_HORIZONTAL = 0;
+    public const int ORIENT_HORIZONTAL = 0;
     /**
      * setOrientation(): mix horizontal and vertical (90 deg) words; a
      * deterministic ~1/3 of words are rotated vertical.
      */
-    const int ORIENT_MIXED = 1;
+    public const int ORIENT_MIXED = 1;
 
     /**
      * The words. Each entry:
@@ -2399,13 +2429,13 @@ final class Code128 extends Barcode
 final class QrCode extends Symbol
 {
     /** ECC level L: ~7% recovery. */
-    const int ECC_L = 0;
+    public const int ECC_L = 0;
     /** ECC level M: ~15% recovery (default). */
-    const int ECC_M = 1;
+    public const int ECC_M = 1;
     /** ECC level Q: ~25% recovery. */
-    const int ECC_Q = 2;
+    public const int ECC_Q = 2;
     /** ECC level H: ~30% recovery. */
-    const int ECC_H = 3;
+    public const int ECC_H = 3;
 
     /**
      * Set the MINIMUM error-correction level. Pass one of the ECC_*
