@@ -146,7 +146,7 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
      * the bar count, stacking every bar at the same x. Reject instead of
      * emitting a misleading chart, matching the margin check above. */
     if (slot_w < 1) {
-        zend_throw_error(NULL,
+        zend_value_error(
             "FastChart\\ParetoChart::draw() canvas is too narrow for the number of bars");
         return -1;
     }

@@ -26,6 +26,14 @@ echo 'pareto: ', which(fn() => (new FastChart\ParetoChart(100, 300))
     ->setBars([['label' => 'A', 'value' => 5], ['label' => 'B', 'value' => 3]])
     ->renderSvg()), "\n";
 
+/* Wide enough to clear the margin check, but 128 bars (the cap) in a
+ * ~100px plot truncate the per-bar slot below 1px — the other
+ * doesn't-fit rejection in pareto. */
+$nbars = [];
+for ($i = 0; $i < 128; $i++) { $nbars[] = ['label' => "n$i", 'value' => $i + 1]; }
+echo 'pareto narrow slots: ', which(fn() => (new FastChart\ParetoChart(220, 300))
+    ->setBars($nbars)->renderSvg()), "\n";
+
 echo 'marimekko: ', which(fn() => (new FastChart\MarimekkoChart(40, 300))
     ->setColumns([['label' => 'G', 'segments' => [['label' => 'A', 'value' => 10]]]])
     ->renderSvg()), "\n";
@@ -40,6 +48,7 @@ echo "done\n";
 --EXPECT--
 funnel: ValueError
 pareto: ValueError
+pareto narrow slots: ValueError
 marimekko: ValueError
 waterfall: ValueError
 done
