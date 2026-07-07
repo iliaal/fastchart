@@ -1,5 +1,5 @@
 /* This is a generated file, edit fastchart.stub.php instead.
- * Stub hash: a13a7be6600d16497069003c642d68bc23e4b21e */
+ * Stub hash: 44ffad78f189f5658b14f4ec090409c0f532d76b */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_FastChart_Chart___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, width, IS_LONG, 1, "null")
@@ -139,7 +139,7 @@ ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_Chart_setShowValues, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, show, _IS_BOOL, 0)
-	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, format, IS_STRING, 0, "\'%g\'")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, format, IS_STRING, 1, "null")
 ZEND_END_ARG_INFO()
 
 #define arginfo_class_FastChart_Chart_setTransparentBackground arginfo_class_FastChart_Chart_setSecondaryYAxis
@@ -476,7 +476,10 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_SurfaceChart_set
 	ZEND_ARG_TYPE_INFO(0, grid, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
-#define arginfo_class_FastChart_SurfaceChart_setShowCellValues arginfo_class_FastChart_Chart_setShowValues
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_SurfaceChart_setShowCellValues, 0, 1, IS_STATIC, 0)
+	ZEND_ARG_TYPE_INFO(0, show, _IS_BOOL, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, format, IS_STRING, 0, "\'%g\'")
+ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_FastChart_GaugeChart_setValue, 0, 1, IS_STATIC, 0)
 	ZEND_ARG_TYPE_INFO(0, value, IS_DOUBLE, 0)

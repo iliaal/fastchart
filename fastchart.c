@@ -20,6 +20,7 @@
 #include "ext/standard/info.h"
 #include "Zend/zend_exceptions.h"
 #include "Zend/zend_smart_str.h"
+#include "Zend/zend_hrtime.h"
 
 #include <limits.h>
 #include <math.h>
@@ -3369,7 +3370,7 @@ ZEND_METHOD(FastChart_Chart, setShowValues)
     ZEND_PARSE_PARAMETERS_START(1, 2)
         Z_PARAM_BOOL(show)
         Z_PARAM_OPTIONAL
-        Z_PARAM_STR(fmt)
+        Z_PARAM_STR_OR_NULL(fmt)
     ZEND_PARSE_PARAMETERS_END();
 
     if (fmt && ZSTR_LEN(fmt) > 0) {
@@ -3380,6 +3381,8 @@ ZEND_METHOD(FastChart_Chart, setShowValues)
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     self->show_values = show;
+    /* null (or omitted) leaves the current format untouched; '' resets
+     * to the built-in default; a non-empty string sets it. */
     if (fmt) {
         if (self->value_format) zend_string_release(self->value_format);
         self->value_format = ZSTR_LEN(fmt) == 0 ? NULL : zend_string_copy(fmt);
@@ -4123,7 +4126,7 @@ ZEND_METHOD(FastChart_GaugeChart, setRange)
         fastchart_reject_non_finite(mx, "FastChart\\GaugeChart::setRange()") != 0) {
         RETURN_THROWS();
     }
-    if (mn >= mx) {
+    if (mn >= mx || !isfinite(mx - mn)) {
         zend_value_error("FastChart\\GaugeChart::setRange() requires min < max");
         RETURN_THROWS();
     }
@@ -5016,7 +5019,7 @@ ZEND_METHOD(FastChart_PolarChart, addVectors)
         int color_rgb = -1;
         if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
-            long c = (long)Z_LVAL_P(zc);
+            zend_long c = Z_LVAL_P(zc);
             if (c < -1 || c > 0xFFFFFF) {
                 efree(staging);
                 zend_value_error("FastChart\\PolarChart::addVectors() color must be a 24-bit RGB int (-1 = palette default)");
@@ -5380,15 +5383,40 @@ ZEND_METHOD(FastChart_StockChart, setVolumeColors)
 
     fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
     HashTable *ht = Z_ARRVAL_P(colors);
-    uint32_t un = zend_hash_num_elements(ht);
-    if (un == 0) {
+    if (zend_hash_num_elements(ht) == 0) {
         if (self->volume_colors) efree(self->volume_colors);
         self->volume_colors = NULL;
         self->volume_colors_count = 0;
         RETURN_ZVAL(ZEND_THIS, 1, 0);
     }
-    if (un > FASTCHART_MAX_VOLUME_COLORS) un = FASTCHART_MAX_VOLUME_COLORS;
-    int n = (int)un;
+
+    /* [2 => 0xFF0000] sparse syntax: the user names a candle index and
+     * the rest fall back to the palette. Walk by integer key so array
+     * holes (e.g. array_filter output) don't shift colors onto the
+     * wrong candle; allocate through max(key)+1 capped at the cell cap.
+     * The previous positional 0..n-1 walk silently dropped any entry
+     * whose key exceeded the element count. Mirrors PieChart::setExplode. */
+    zend_ulong max_key = 0;
+    bool any_int = false;
+    {
+        zend_ulong k_idx;
+        zend_string *k_str;
+        zval *v;
+        ZEND_HASH_FOREACH_KEY_VAL(ht, k_idx, k_str, v) {
+            (void)v;
+            if (k_str) continue;  /* string keys ignored */
+            if (k_idx >= FASTCHART_MAX_VOLUME_COLORS) continue;
+            if (!any_int || k_idx > max_key) max_key = k_idx;
+            any_int = true;
+        } ZEND_HASH_FOREACH_END();
+    }
+    if (!any_int) {
+        if (self->volume_colors) efree(self->volume_colors);
+        self->volume_colors = NULL;
+        self->volume_colors_count = 0;
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
+    }
+    int n = (int)max_key + 1;
     int *parsed = emalloc((size_t)n * sizeof(int));
     for (int i = 0; i < n; i++) {
         zval *cv = zend_hash_index_find(ht, i);
@@ -6707,9 +6735,23 @@ static int fastchart_path_ends_with_pdf(const char *path, size_t len)
     return zend_binary_strcasecmp(ext, ext_len, "pdf", 3) == 0;
 }
 
-int fastchart_write_zstr_to_file(zend_string *path, zend_string *payload,
-                                 const char *where,
-                                 zend_long *written_out)
+/* A stream-wrapper URL carries a "scheme://" marker. Windows drive
+ * paths ("C:\...") contain a ':' but never "://", so match the full
+ * three-byte sequence. Wrapper paths can't be renamed portably, so
+ * they are written directly (non-atomic); plain local paths get a
+ * temp-write + rename. */
+static bool fastchart_path_is_wrapper(const char *p, size_t len)
+{
+    if (len < 3) return false;
+    for (size_t i = 0; i + 3 <= len; i++) {
+        if (p[i] == ':' && p[i + 1] == '/' && p[i + 2] == '/') return true;
+    }
+    return false;
+}
+
+/* Direct, non-atomic write used for stream-wrapper destinations. */
+static int fastchart_write_direct(zend_string *path, zend_string *payload,
+                                  const char *where, zend_long *written_out)
 {
     php_stream *stream = php_stream_open_wrapper(ZSTR_VAL(path), "wb",
         REPORT_ERRORS, NULL);
@@ -6735,6 +6777,79 @@ int fastchart_write_zstr_to_file(zend_string *path, zend_string *payload,
             ZSTR_VAL(path), written, sz);
         return -1;
     }
+    if (written_out) {
+        *written_out = (zend_long)written;
+    }
+    return 0;
+}
+
+int fastchart_write_zstr_to_file(zend_string *path, zend_string *payload,
+                                 const char *where,
+                                 zend_long *written_out)
+{
+    const char *p = ZSTR_VAL(path);
+    size_t plen = ZSTR_LEN(path);
+    size_t sz = ZSTR_LEN(payload);
+
+    if (fastchart_path_is_wrapper(p, plen)) {
+        return fastchart_write_direct(path, payload, where, written_out);
+    }
+
+    /* Plain local path: write to a sibling temp file in the same
+     * directory, then rename into place. A failed or short write can
+     * only ever leave a stray temp behind (unlinked here) — never a
+     * truncated file at the caller's destination, and never a
+     * clobbered pre-existing good file. open_basedir was already
+     * checked on the final path by the caller; the temp shares that
+     * path prefix so the same grant covers it. */
+    php_stream *stream = NULL;
+    zend_string *tmp_path = NULL;
+    for (int attempt = 0; attempt < 8; attempt++) {
+        char suffix[48];
+        int slen = snprintf(suffix, sizeof(suffix), ".fctmp-%llx-%d",
+            (unsigned long long)zend_hrtime(), attempt);
+        if (slen <= 0) break;
+        tmp_path = zend_string_alloc(plen + (size_t)slen, 0);
+        memcpy(ZSTR_VAL(tmp_path), p, plen);
+        memcpy(ZSTR_VAL(tmp_path) + plen, suffix, (size_t)slen);
+        ZSTR_VAL(tmp_path)[plen + (size_t)slen] = '\0';
+        /* "x" = O_EXCL create; a name collision fails and we retry.
+         * Suppress REPORT_ERRORS so the retry doesn't warn. */
+        stream = php_stream_open_wrapper(ZSTR_VAL(tmp_path), "xb", 0, NULL);
+        if (stream) break;
+        zend_string_release(tmp_path);
+        tmp_path = NULL;
+        if (EG(exception)) break;
+    }
+    if (!stream) {
+        if (tmp_path) zend_string_release(tmp_path);
+        if (!EG(exception)) {
+            zend_throw_error(NULL,
+                "%s could not create a temporary file for %s", where, p);
+        }
+        return -1;
+    }
+
+    ssize_t written = php_stream_write(stream, ZSTR_VAL(payload), sz);
+    int close_rc = php_stream_close(stream);
+
+    if (written < 0 || (size_t)written != sz || close_rc != 0) {
+        VCWD_UNLINK(ZSTR_VAL(tmp_path));
+        zend_throw_error(NULL,
+            "FastChart: short write to %s (%zd of %zu bytes)",
+            p, written, sz);
+        zend_string_release(tmp_path);
+        return -1;
+    }
+
+    if (VCWD_RENAME(ZSTR_VAL(tmp_path), p) != 0) {
+        VCWD_UNLINK(ZSTR_VAL(tmp_path));
+        zend_throw_error(NULL, "%s could not finalize %s", where, p);
+        zend_string_release(tmp_path);
+        return -1;
+    }
+
+    zend_string_release(tmp_path);
     if (written_out) {
         *written_out = (zend_long)written;
     }
@@ -8395,14 +8510,21 @@ ZEND_METHOD(FastChart_StockChart, addZigZag)
     double ext = c[0].close;
     for (int i = 1; i < n; i++) {
         double px = c[i].close;
+        /* Threshold is a percentage of the leg's extreme magnitude.
+         * Basing it on |ext| (with a tiny absolute floor) keeps
+         * reversals detectable for series whose extreme is <= 0
+         * (spreads, returns); for positive prices |ext| == ext so
+         * behavior is unchanged. */
+        double base = fabs(ext);
+        if (base < 1e-9) base = 1e-9;
         if (dir == 1) {
             if (px > ext) { ext = px; ext_idx = i; }
-            else if (ext > 0.0 && (ext - px) >= ext * thr) {
+            else if ((ext - px) >= base * thr) {
                 out[ext_idx] = ext; dir = -1; ext = px; ext_idx = i;
             }
         } else if (dir == -1) {
             if (px < ext) { ext = px; ext_idx = i; }
-            else if (ext > 0.0 && (px - ext) >= ext * thr) {
+            else if ((px - ext) >= base * thr) {
                 out[ext_idx] = ext; dir = 1; ext = px; ext_idx = i;
             }
         } else {
