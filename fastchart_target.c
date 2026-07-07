@@ -104,8 +104,34 @@ int fastchart_target_pdf_finish(fastchart_target_t *t)
 {
     if (t->kind != FASTCHART_TARGET_PDF) return -1;
 #ifdef HAVE_FASTCHART_PDF
-    int rc = fc_pdf_doc_close((fc_pdf_state *)t->u.pdf.state);
+    fc_pdf_state *st = (fc_pdf_state *)t->u.pdf.state;
     t->u.pdf.state = NULL;
+
+    /* pdfioFileClose streams the xref/trailer (and the page content
+     * stream) through our smart_str output callback, then frees all
+     * pdfio objects in the same call. A memory_limit bailout during that
+     * flush would longjmp past the frees, leaking pdfio's malloc'd
+     * objects (untracked by the request allocator) for the life of a
+     * worker — and pdfioFileClose is not re-entrant (it re-adds the PDF/A
+     * OutputIntent and re-closes objects on each call), so the interrupted
+     * close cannot simply be retried. Lift the limit across the bounded
+     * flush so the close runs to completion atomically; the zend_try guard
+     * still tears the document down before re-entering the bailout should
+     * any other fatal (e.g. timeout) fire. */
+    zend_long saved = PG(memory_limit);
+    zend_set_memory_limit((size_t)-1);
+    int rc = 0;
+    zend_try {
+        rc = fc_pdf_doc_close(st);
+    } zend_catch {
+        /* Reached only if some non-memory_limit fatal (e.g. timeout)
+         * fired mid-close. pdfioFileClose is not re-entrant, so we can't
+         * safely retry it; restore the limit and let the bailout unwind
+         * the dying request. */
+        zend_set_memory_limit((size_t)saved);
+        zend_bailout();
+    } zend_end_try();
+    zend_set_memory_limit((size_t)saved);
     return rc;
 #else
     return -1;
@@ -282,19 +308,6 @@ void fastchart_target_polyline(fastchart_target_t *t,
                                 int color, int thickness)
 {
     if (n < 2) return;
-#ifdef HAVE_FASTCHART_PDF
-    if (t->kind == FASTCHART_TARGET_PDF) {
-        /* PDF content streams are compact, so the per-segment line ops
-         * cost nothing comparable to the SVG element explosion; reuse
-         * the line primitive rather than adding a PDF polyline op. */
-        for (int i = 0; i + 1 < n; i++) {
-            fastchart_target_line(t, pts[i].x, pts[i].y,
-                                  pts[i + 1].x, pts[i + 1].y,
-                                  color, thickness, FASTCHART_DASH_SOLID);
-        }
-        return;
-    }
-#endif
     int xs_stack[256], ys_stack[256];
     int *xs = xs_stack, *ys = ys_stack;
     if (n > 256) {
@@ -306,6 +319,14 @@ void fastchart_target_polyline(fastchart_target_t *t,
         ys[i] = pts[i].y;
     }
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
+#ifdef HAVE_FASTCHART_PDF
+    if (t->kind == FASTCHART_TARGET_PDF) {
+        /* One stroked path, matching SVG's single <polyline>: decomposing
+         * into n-1 independent segments left butt-cap notches at interior
+         * vertices for thickness > 1. */
+        fc_pdf_emit_polyline(t->u.pdf.state, xs, ys, n, rgba, thickness);
+    } else
+#endif
     fc_svg_emit_polyline(t->u.svg.buf, xs, ys, n, rgba, thickness);
     if (n > 256) { efree(xs); efree(ys); }
 }
@@ -737,8 +758,12 @@ static int fc_validate_png_chunks(const unsigned char *b, size_t n)
         return 0;
     }
     size_t off = 8; /* past PNG signature */
-    /* Cap iterations: a legal PNG has well under this many chunks. */
-    for (int iter = 0; iter < 1024; iter++) {
+    /* Cap iterations purely as a runaway guard — each pass advances off
+     * by at least 12 bytes, so a buffer under FC_IMAGE_MAX_BYTES already
+     * bounds the loop. libpng emits ~8KB IDATs, so a valid file near the
+     * cap can hold well over 1000 chunks; keep the ceiling high enough
+     * that legal PNGs are never rejected into the solid-fill fallback. */
+    for (int iter = 0; iter < 65536; iter++) {
         if (off + 12 > n) return 0; /* truncated tail; stb handles it */
         uint32_t len = ((uint32_t)b[off]     << 24)
                      | ((uint32_t)b[off + 1] << 16)

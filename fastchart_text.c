@@ -132,7 +132,15 @@ int fastchart_text_draw(fastchart_target_t *t,
      * Branch on the target's text mode: PATHS flattens to <path>
      * glyphs via FreeType; NATIVE keeps <text>. */
     char family[64];
-    fastchart_target_resolve_font_family(t, font_path, family, sizeof(family));
+    /* The family name is consumed only by the NATIVE <text> branch;
+     * PATHS mode and every raster/PDF render pay nothing for it. Resolve
+     * lazily. The kind check short-circuits before reading the svg union
+     * member when the target is PDF. */
+    int native = (t->kind != FASTCHART_TARGET_PDF
+                  && t->u.svg.text_mode == FASTCHART_SVG_TEXT_NATIVE);
+    if (native)
+        fastchart_target_resolve_font_family(t, font_path, family,
+                                             sizeof(family));
     double size_px = font_size * (4.0 / 3.0);
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
     int svg_align = align_to_target(align);
@@ -203,7 +211,13 @@ int fastchart_text_draw_rotated(fastchart_target_t *t,
      * while the companion measure() function reports the multi-line
      * height, so layout and rendering disagreed. */
     char family[64];
-    fastchart_target_resolve_font_family(t, font_path, family, sizeof(family));
+    /* Family name only feeds the NATIVE <text> branch; resolve lazily so
+     * PATHS mode and PDF/raster renders skip the cache scan + snprintfs. */
+    int native = (t->kind != FASTCHART_TARGET_PDF
+                  && t->u.svg.text_mode == FASTCHART_SVG_TEXT_NATIVE);
+    if (native)
+        fastchart_target_resolve_font_family(t, font_path, family,
+                                             sizeof(family));
     double size_px = font_size * (4.0 / 3.0);
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
     int svg_align = align_to_target(align);
