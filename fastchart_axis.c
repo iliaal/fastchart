@@ -500,8 +500,14 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
     if (labels_drawn && has_y_axis && probe_ok) {
         int y_label_w = probe_w;
         if (cat_y_labels && n_cat_y_labels > 0 && axis_font) {
+            /* Stride exactly like fastchart_draw_y_axis_categorical
+             * (max_visible 20): only labels the drawer renders can clip,
+             * so only those need measuring. */
+            int stride = 1;
+            if (n_cat_y_labels > 20 + 2)
+                stride = (n_cat_y_labels + 20 - 1) / 20;
             int widest = 0;
-            for (int i = 0; i < n_cat_y_labels; i++) {
+            for (int i = 0; i < n_cat_y_labels; i += stride) {
                 if (!cat_y_labels[i]) continue;
                 int w = 0;
                 if (fastchart_text_measure(t, axis_font, axis_size, cat_y_labels[i],
@@ -549,9 +555,21 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
      * above for `cat_y_labels`. */
     if (labels_drawn && has_x_axis && probe_ok) {
         int x_label_w = probe_w;
-        if (chart->category_labels && chart->n_category_labels > 0 && axis_font) {
+        /* The widest-label scan only feeds the rotated (45/90) branches
+         * below; the angle-0 branch uses probe_h alone, so skip the scan
+         * entirely there. When it does run, stride exactly like
+         * fastchart_draw_x_axis_categorical (rotated -> max_visible 30,
+         * times the user stride) so only labels that will actually be
+         * drawn are measured — a strided-out label can't clip. */
+        if (chart->x_axis_label_angle != 0
+            && chart->category_labels && chart->n_category_labels > 0
+            && axis_font) {
+            int n = chart->n_category_labels;
+            int stride = 1;
+            if (n > 30 + 2) stride = (n + 30 - 1) / 30;
+            if (chart->x_label_stride > 1) stride *= (int)chart->x_label_stride;
             int widest = 0;
-            for (int i = 0; i < chart->n_category_labels; i++) {
+            for (int i = 0; i < n; i += stride) {
                 const char *lbl = chart->category_labels[i];
                 if (!lbl) continue;
                 int w = 0;
@@ -1205,15 +1223,20 @@ void fastchart_draw_title(fastchart_target_t *t, fastchart_obj *chart,
 
 static void format_tick_label(double value, double step, char *out, size_t out_n)
 {
-    /* Pick a decimal precision based on the step magnitude. Avoid
-     * trailing-zero clutter for whole-number steps. */
-    int decimals;
-    if (step >= 1.0) {
-        decimals = 0;
-    } else {
-        decimals = (int)ceil(-log10(step));
-        if (decimals < 0) decimals = 0;
-        if (decimals > 6) decimals = 6;
+    /* Derive decimal precision from the step's actual fractional
+     * precision. A fixed "step >= 1 -> 0 decimals" rule mislabels the
+     * 2.5x10^N nice-step family (step 2.5 needs 1 decimal so 2.5/7.5
+     * don't round to 2/8; step 0.25 needs 2 so 0.75 isn't "0.8"), and a
+     * log10-based guess is off by the same amount. Grow decimals until
+     * the step scaled by 10^decimals is integral, capped at 6. */
+    int decimals = 0;
+    if (isfinite(step) && step > 0.0) {
+        while (decimals < 6) {
+            double scaled = step * pow(10.0, decimals);
+            double eps = 1e-9 * (scaled + 1.0);
+            if (fabs(scaled - round(scaled)) <= eps) break;
+            decimals++;
+        }
     }
     snprintf(out, out_n, "%.*f", decimals, value);
 }
