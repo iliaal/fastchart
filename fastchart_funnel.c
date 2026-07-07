@@ -38,7 +38,7 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
 
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
-    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
+    fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
     /* Title reservation. */
     int top_pad = 12;
@@ -69,7 +69,7 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
     int y0 = top_pad;
     int y1 = H - 12;
     if (x_right <= x_left || y1 <= y0) {
-        zend_throw_error(NULL,
+        zend_value_error(
             "FastChart\\Funnel::draw() canvas is too narrow for label margins");
         return -1;
     }
