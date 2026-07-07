@@ -122,7 +122,7 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
     if (slot_w < 1) {
         efree(bar_lo);
         efree(bar_hi);
-        efree(labels);
+        efree((void *)labels);
         zend_throw_error(NULL,
             "FastChart\\Waterfall::draw() canvas is too narrow for the number of bars");
         return -1;
@@ -168,7 +168,7 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     efree(bar_lo);
     efree(bar_hi);
-    efree(labels);
+    efree((void *)labels);
     return 0;
 }
 

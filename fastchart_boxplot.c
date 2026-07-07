@@ -82,7 +82,7 @@ int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_ta
     }
     fastchart_draw_x_axis_categorical(t, (fastchart_obj *)self, &plot, &pal, n, labels);
     fastchart_draw_axis_titles(t, (fastchart_obj *)self, &plot, &pal);
-    efree(labels);
+    efree((void *)labels);
 
     int slot_w = (plot.x1 - plot.x0) / n;
     int box_pct = (int)self->box_width_pct;
