@@ -78,8 +78,23 @@ static inline double FY(const fc_pdf_state *s, double y) { return s->h - y; }
 
 static inline double cc(uint32_t v) { return (double)v / 255.0; }
 
+/* A fully-transparent handle (alpha byte 0) means "paint nothing": the
+ * SVG backend emits rgba(...,0), which renders invisibly, so the PDF
+ * backend must skip the paint to match. Legacy bare RGB (also alpha
+ * byte 0, but meaning opaque) reaches the backend only through the
+ * gradient fallbacks — which force 0xFF — and the canvas-background
+ * capture in fc_pdf_emit_rect, both handled explicitly. Everywhere else
+ * alpha 0 is a suppressed shape, e.g. a drop shadow at setShadowAlpha(127)
+ * (fastchart_effects.c maps 127 to alpha byte 0). */
+static inline int fc_pdf_transparent(uint32_t rgba)
+{
+	return ((rgba >> 24) & 0xFFu) == 0u;
+}
+
 /* Flatten a translucent 0xAARRGGBB onto the page background. Alpha byte
- * 255 (opaque) and 0 (legacy bare-RGB, also opaque) pass through. */
+ * 255 (opaque) and 0 (legacy bare-RGB canvas fill, also opaque) pass
+ * through; genuinely-transparent handles are caught by fc_pdf_transparent
+ * at the emitters before reaching here. */
 static uint32_t fc_pdf_flatten(const fc_pdf_state *s, uint32_t rgba)
 {
 	uint32_t a = (rgba >> 24) & 0xFF;
@@ -166,8 +181,6 @@ void fc_pdf_doc_abort(fc_pdf_state *s)
 	(void)fc_pdf_doc_close(s);
 }
 
-int fc_pdf_height(const fc_pdf_state *s) { return s ? (int)s->h : 0; }
-
 /* ============================================================ *
  * Primitives                                                    *
  * ============================================================ */
@@ -176,6 +189,7 @@ void fc_pdf_emit_line(fc_pdf_state *s, double x0, double y0,
                        double x1, double y1, uint32_t rgba,
                        int thickness, int dash)
 {
+	if (fc_pdf_transparent(rgba)) return;
 	pdfioContentSave(s->st);
 	set_stroke(s, rgba, thickness, dash);
 	pdfioContentPathMoveTo(s->st, x0, FY(s, y0));
@@ -188,20 +202,28 @@ void fc_pdf_emit_rect(fc_pdf_state *s, double x, double y,
                        double w, double h, uint32_t rgba,
                        int fill, int thickness)
 {
+	uint32_t a = (rgba >> 24) & 0xFF;
+	int is_canvas = 0;
+	if (fill && !s->bg_set && (a == 0xFFu || a == 0u) &&
+	    x <= 0.5 && y <= 0.5 && w >= s->pw - 1.0 && h >= s->h - 1.0) {
+		/* Capture the chart's opaque full-canvas fill as the background
+		 * that later translucent fills composite against. */
+		s->bg = 0xFF000000u | (rgba & 0x00FFFFFFu);
+		s->bg_set = 1;
+		is_canvas = 1;
+	}
+	/* Suppressed shape: a fully-transparent fill or stroke paints
+	 * nothing. Skip before emitting any path so the content stream is
+	 * byte-identical to omitting the shape. The canvas-bg capture above
+	 * is the sole legacy bare-RGB exception and always draws. */
+	if (a == 0u && !is_canvas) return;
+
 	pdfioContentSave(s->st);
 	/* PDF rect origin is the lower-left corner; the fastchart rect is
 	 * given by its upper-left (x,y), so the flipped lower-left y is
 	 * FY(y+h). */
 	pdfioContentPathRect(s->st, x, FY(s, y + h), w, h);
 	if (fill) {
-		/* Capture the chart's opaque full-canvas fill as the background
-		 * that later translucent fills composite against. */
-		uint32_t a = (rgba >> 24) & 0xFF;
-		if (!s->bg_set && (a == 0xFFu || a == 0u) &&
-		    x <= 0.5 && y <= 0.5 && w >= s->pw - 1.0 && h >= s->h - 1.0) {
-			s->bg = 0xFF000000u | (rgba & 0x00FFFFFFu);
-			s->bg_set = 1;
-		}
 		set_fill(s, rgba);
 		pdfioContentFill(s->st, false);
 	} else {
@@ -215,6 +237,7 @@ void fc_pdf_emit_polygon(fc_pdf_state *s, const int *xs, const int *ys,
                           int n, uint32_t rgba, int fill, int thickness)
 {
 	if (n < 2) return;
+	if (fc_pdf_transparent(rgba)) return;
 	pdfioContentSave(s->st);
 	pdfioContentPathMoveTo(s->st, (double)xs[0], FY(s, (double)ys[0]));
 	for (int i = 1; i < n; i++)
@@ -230,6 +253,24 @@ void fc_pdf_emit_polygon(fc_pdf_state *s, const int *xs, const int *ys,
 	pdfioContentRestore(s->st);
 }
 
+/* Open polyline: one path, stroked once. The SVG backend emits a single
+ * <polyline> with joins; matching that here (rather than n-1 independent
+ * line segments) avoids butt-cap notches at interior vertices for
+ * thickness > 1. */
+void fc_pdf_emit_polyline(fc_pdf_state *s, const int *xs, const int *ys,
+                           int n, uint32_t rgba, int thickness)
+{
+	if (n < 2) return;
+	if (fc_pdf_transparent(rgba)) return;
+	pdfioContentSave(s->st);
+	set_stroke(s, rgba, thickness, FASTCHART_DASH_SOLID);
+	pdfioContentPathMoveTo(s->st, (double)xs[0], FY(s, (double)ys[0]));
+	for (int i = 1; i < n; i++)
+		pdfioContentPathLineTo(s->st, (double)xs[i], FY(s, (double)ys[i]));
+	pdfioContentStroke(s->st);
+	pdfioContentRestore(s->st);
+}
+
 /* Quarter-arc bezier constant: control-point offset for a 90° arc. */
 #define FC_PDF_KAPPA 0.5522847498307936
 
@@ -237,6 +278,7 @@ void fc_pdf_emit_ellipse(fc_pdf_state *s, double cx, double cy,
                           double rx, double ry, uint32_t rgba,
                           int fill, int thickness)
 {
+	if (fc_pdf_transparent(rgba)) return;
 	double ox = FC_PDF_KAPPA * rx, oy = FC_PDF_KAPPA * ry;
 	double Y = FY(s, cy);          /* center in PDF space */
 	/* Four cubic quadrants, starting at the +x point. Sign of oy is in
@@ -282,6 +324,7 @@ void fc_pdf_emit_arc(fc_pdf_state *s, double cx, double cy,
                       double start_deg, double end_deg,
                       uint32_t rgba, int fill, int thickness)
 {
+	if (fc_pdf_transparent(rgba)) return;
 	double sweep = end_deg - start_deg;
 	if (sweep < 0) sweep += 360.0;
 	if (sweep >= 359.999) {
@@ -371,6 +414,7 @@ void fc_pdf_emit_text_as_path(fc_pdf_state *s, double x, double y,
                                const char *text, size_t text_len)
 {
 	if (!text || text_len == 0 || !font_path) return;
+	if (fc_pdf_transparent(rgba)) return;
 
 	FT_Face face = fastchart_ft_face(font_path);
 	if (!face) return;
@@ -460,7 +504,14 @@ void fc_pdf_emit_gradient_rect(fc_pdf_state *s, double x, double y,
                                 uint32_t to_rgb, int dir)
 {
 	(void)to_rgb; (void)dir;
-	fc_pdf_emit_rect(s, x, y, w, h, from_rgb | 0xFF000000u, 1, 0);
+	/* No axial shading in this pdfio build — solid fallback of from_rgb.
+	 * When the caller packed a non-zero alpha into the high byte (AreaChart
+	 * band mode, fastchart_area.c), honor it so the fill composites against
+	 * the captured page background instead of rendering opaque; a zero high
+	 * byte is bare opaque RGB (stacked areas, plain gradients). */
+	uint32_t color = (from_rgb & 0xFF000000u) ? from_rgb
+	                                          : (from_rgb | 0xFF000000u);
+	fc_pdf_emit_rect(s, x, y, w, h, color, 1, 0);
 }
 
 void fc_pdf_emit_gradient_polygon(fc_pdf_state *s, const int *xs,
@@ -468,7 +519,9 @@ void fc_pdf_emit_gradient_polygon(fc_pdf_state *s, const int *xs,
                                    uint32_t to_rgb, int dir)
 {
 	(void)to_rgb; (void)dir;
-	fc_pdf_emit_polygon(s, xs, ys, n, from_rgb | 0xFF000000u, 1, 0);
+	uint32_t color = (from_rgb & 0xFF000000u) ? from_rgb
+	                                          : (from_rgb | 0xFF000000u);
+	fc_pdf_emit_polygon(s, xs, ys, n, color, 1, 0);
 }
 
 #endif /* HAVE_FASTCHART_PDF */

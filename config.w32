@@ -17,6 +17,10 @@
 
 ARG_ENABLE("fastchart", "Enable fastchart support", "no");
 ARG_ENABLE("fastchart-dev", "Upgrade wrapper warnings to /WX (development builds)", "no");
+// PDF output via system pdfio (msweet.org). Opt-in, off by default —
+// mirrors config.m4's --with-pdfio. When enabled, fastchart_pdf.c joins
+// the build and HAVE_FASTCHART_PDF gates renderPdf() / renderToFile('*.pdf').
+ARG_WITH("fastchart-pdfio", "fastchart: enable PDF output via pdfio (msweet.org)", "no");
 
 if (PHP_FASTCHART != "no") {
 
@@ -26,7 +30,8 @@ if (PHP_FASTCHART != "no") {
         CHECK_HEADER_ADD_INCLUDE("ft2build.h", "CFLAGS_FASTCHART",
             PHP_FASTCHART + ";" + PHP_PHP_BUILD + "\\include\\freetype2;" +
             PHP_PHP_BUILD + "\\include\\freetype")) {
-        AC_DEFINE("HAVE_FREETYPE", 1, "Have FreeType");
+        // freetype found; the checks above added the lib + include path.
+        // No define needed — the sources reference FreeType unconditionally.
     } else {
         WARNING("fastchart not enabled — freetype is required.");
         PHP_FASTCHART = "no";
@@ -67,6 +72,25 @@ if (PHP_FASTCHART != "no") {
             STDOUT.WriteLine("fastchart: libwebp found");
         } else {
             STDOUT.WriteLine("fastchart: libwebp not found — WebP output disabled");
+        }
+
+        // Optional PDF output via system pdfio. Unlike the codecs above
+        // (auto-detected), --with-fastchart-pdfio must be requested; a
+        // request that can't be satisfied is a hard error rather than a
+        // silent skip, mirroring config.m4. pdfio is not vendored.
+        var fastchart_pdf_source = "";
+        if (PHP_FASTCHART_PDFIO != "no") {
+            if (CHECK_LIB("pdfio_a.lib;pdfio.lib", "fastchart", PHP_FASTCHART) &&
+                CHECK_HEADER_ADD_INCLUDE("pdfio.h", "CFLAGS_FASTCHART",
+                    PHP_FASTCHART + ";" + PHP_PHP_BUILD + "\\include")) {
+                AC_DEFINE("HAVE_FASTCHART_PDF", 1, "Have pdfio PDF output");
+                ADD_FLAG("CFLAGS_FASTCHART", "/DHAVE_FASTCHART_PDF=1");
+                fastchart_pdf_source = "fastchart_pdf.c";
+                STDOUT.WriteLine("fastchart: pdfio found, PDF output enabled");
+            } else {
+                ERROR("fastchart: --with-fastchart-pdfio given but pdfio " +
+                      "(pdfio.lib + pdfio.h) was not found");
+            }
         }
 
         // Vendor include paths so #include "plutovg.h" /
@@ -112,7 +136,9 @@ if (PHP_FASTCHART != "no") {
             "fastchart_network.c fastchart_pyramid.c fastchart_violin.c " +
             "fastchart_circlepack.c fastchart_pictogram.c fastchart_venn.c " +
             "fastchart_wordcloud.c fastchart_serpentine.c fastchart_dendrogram.c " +
-            "fastchart_partition.c";
+            "fastchart_partition.c" +
+            // fastchart_pdf.c only when --with-fastchart-pdfio resolved above.
+            (fastchart_pdf_source != "" ? " " + fastchart_pdf_source : "");
 
         var qrcode_sources = "qrcodegen.c";
 

@@ -52,12 +52,12 @@ int fc_pdf_doc_close(fc_pdf_state *st);
  * closes the document, releasing all malloc'd pdfio state. */
 void fc_pdf_doc_abort(fc_pdf_state *st);
 
-int fc_pdf_height(const fc_pdf_state *st);
-
-/* Primitives. Colors are packed 0xAARRGGBB (alpha currently ignored —
- * opaque fills only; see the alpha note in fastchart_pdf.c). thickness
- * >= 1; fill is 0/1; dash is FASTCHART_DASH_*. Polygon takes parallel
- * xs/ys int arrays (target.c already splits fastchart_point_t). */
+/* Primitives. Colors are packed 0xAARRGGBB: alpha byte 255 is opaque,
+ * a value in between is flattened against the captured page background
+ * (see the alpha note in fastchart_pdf.c), and alpha byte 0 is a
+ * suppressed shape (paints nothing). thickness >= 1; fill is 0/1; dash
+ * is FASTCHART_DASH_*. Polygon takes parallel xs/ys int arrays (target.c
+ * already splits fastchart_point_t). */
 void fc_pdf_emit_line(fc_pdf_state *st, double x0, double y0,
                        double x1, double y1, uint32_t rgba,
                        int thickness, int dash);
@@ -66,6 +66,8 @@ void fc_pdf_emit_rect(fc_pdf_state *st, double x, double y,
                        int fill, int thickness);
 void fc_pdf_emit_polygon(fc_pdf_state *st, const int *xs, const int *ys,
                           int n, uint32_t rgba, int fill, int thickness);
+void fc_pdf_emit_polyline(fc_pdf_state *st, const int *xs, const int *ys,
+                           int n, uint32_t rgba, int thickness);
 void fc_pdf_emit_ellipse(fc_pdf_state *st, double cx, double cy,
                           double rx, double ry, uint32_t rgba,
                           int fill, int thickness);

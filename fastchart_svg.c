@@ -783,31 +783,14 @@ void fc_svg_emit_text_as_path(smart_str *buf,
 		return;
 	}
 
-	/* Two passes — but because the cache mutates (swap-to-front + LRU
-	 * evict) on every miss, we cannot hold cache entry pointers
-	 * across multiple resolves. Pass 1 sums advances (the resolver
-	 * primes the cache for any unseen glyph); pass 2 re-resolves +
-	 * emits in lockstep so each entry is read before the next resolve
-	 * potentially shuffles the cache. After pass 1, pass 2 is all
-	 * cache hits — FC_GLYPH_CACHE_N pointer compares per codepoint
-	 * (no FT work). */
-	double total_w = 0.0;
-	{
-		const unsigned char *p = (const unsigned char *)text;
-		const unsigned char *e = p + text_len;
-		uint32_t cp;
-		while ((p = fc_utf8_next(p, e, &cp))) {
-			const fc_glyph_cache_entry *g =
-			    fastchart_resolve_glyph(face, (uint16_t)pix, cp);
-			if (!g) continue;
-			total_w += g->advance_x_64 / 64.0;
-		}
-	}
-
-	double shift = 0.0;
-	if (align == FASTCHART_TARGET_ALIGN_CENTER) shift = -total_w / 2.0;
-	else if (align == FASTCHART_TARGET_ALIGN_RIGHT) shift = -total_w;
-
+	/* Single pass. The cache mutates (swap-to-front + LRU evict) on
+	 * every miss, so we read each resolved entry before the next
+	 * resolve can shuffle it, replaying it into `d` and accumulating
+	 * pen_x. The alignment shift is applied in the <g transform>
+	 * wrapper emitted after `d` is fully built, so pen_x — the summed
+	 * advance over every resolved glyph — is exactly the run width
+	 * the wrapper needs; a separate advance-summing pass would repeat
+	 * the identical work. */
 	smart_str d = {0};
 	double pen_x = 0.0;
 	{
@@ -829,6 +812,10 @@ void fc_svg_emit_text_as_path(smart_str *buf,
 	}
 
 	smart_str_0(&d);
+
+	double shift = 0.0;
+	if (align == FASTCHART_TARGET_ALIGN_CENTER) shift = -pen_x / 2.0;
+	else if (align == FASTCHART_TARGET_ALIGN_RIGHT) shift = -pen_x;
 
 	if (d.s && ZSTR_LEN(d.s) > 0) {
 		FC_APPENDS(buf, "<g transform=\"translate(");
