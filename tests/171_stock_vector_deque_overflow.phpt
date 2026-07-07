@@ -46,14 +46,15 @@ $lime    = substr_count($svg, '#00E640');
 $fuchsia = substr_count($svg, '#E600C0');
 $climax_total = $lime + $fuchsia;
 
-/* Under the FIX, only bar 0 is a "climax" (climax_max=0 at i=0 is a
- * separate, pre-existing detail unrelated to this bug — there's no
- * window to compare against on the first bar). All bullish, so
- * lime; each candle emits the color twice (wick line + body rect)
- * for ~2 occurrences. We allow [1, 8] to give breathing room.
+/* Under the FIX, no bar is a climax: the classifier now requires a real
+ * windowed max (have_max) before the climax-by-range test, so bar 0 (and
+ * any bar after a volume-less stretch) with an empty deque no longer
+ * trivially satisfies climax >= 0. All cv values here sit below the true
+ * window max and none reaches 2x the trailing average. We allow [0, 8] to
+ * stay robust to palette/emit details.
  *
- * Under the BUG, bar 0 plus bars 11..18 (9 climax bars × 2 colors
- * per bar = 18 occurrences) flood the SVG with lime. */
+ * Under the BUG, bar 0 plus bars 11..18 (9 climax bars × 2 colors per bar
+ * = 18 occurrences) flood the SVG with lime. */
 echo "climax_color_count_low: ",
     ($climax_total <= 8 ? "ok ($climax_total)" : "BAD ($climax_total)"), "\n";
 

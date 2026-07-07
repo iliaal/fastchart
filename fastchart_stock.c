@@ -346,12 +346,15 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
             double climax = candles[i].volume *
                 (candles[i].high - candles[i].low);
             double climax_max = 0;
+            bool have_max = false;
             if (dq_head != dq_tail) {
                 int fidx = dq[dq_head];
                 climax_max = candles[fidx].volume *
                     (candles[fidx].high - candles[fidx].low);
+                have_max = true;
             }
-            if (avg > 0 && (candles[i].volume >= avg * 2 || climax >= climax_max)) {
+            if (avg > 0 && (candles[i].volume >= avg * 2 ||
+                            (have_max && climax >= climax_max))) {
                 va[i] = 1;
             } else if (avg > 0 && candles[i].volume >= avg * 1.5) {
                 va[i] = 2;

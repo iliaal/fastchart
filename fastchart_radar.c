@@ -94,7 +94,7 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
 
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
-    fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
+    fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
     /* Reserve top space for title. */
     int title_h = (self->title && ZSTR_LEN(self->title) > 0) ? 32 : 8;
