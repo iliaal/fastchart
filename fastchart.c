@@ -20,10 +20,10 @@
 #include "ext/standard/info.h"
 #include "Zend/zend_exceptions.h"
 #include "Zend/zend_smart_str.h"
-#include "Zend/zend_hrtime.h"
 
 #include <limits.h>
 #include <math.h>
+#include <time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -6863,9 +6863,14 @@ int fastchart_write_zstr_to_file(zend_string *path, zend_string *payload,
     php_stream *stream = NULL;
     zend_string *tmp_path = NULL;
     for (int attempt = 0; attempt < 8; attempt++) {
-        char suffix[48];
-        int slen = snprintf(suffix, sizeof(suffix), ".fctmp-%llx-%d",
-            (unsigned long long)zend_hrtime(), attempt);
+        /* time + payload address + attempt: unique enough per call
+         * (the address separates concurrent ZTS writers), portable to
+         * PHP 8.1 (zend_hrtime.h is 8.3+), and any residual collision
+         * just fails the O_EXCL open and retries. */
+        char suffix[64];
+        int slen = snprintf(suffix, sizeof(suffix), ".fctmp-%llx-%llx-%d",
+            (unsigned long long)time(NULL),
+            (unsigned long long)(uintptr_t)payload, attempt);
         if (slen <= 0) break;
         tmp_path = zend_string_alloc(plen + (size_t)slen, 0);
         memcpy(ZSTR_VAL(tmp_path), p, plen);
