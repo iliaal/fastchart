@@ -118,13 +118,17 @@ $chart->renderJpeg(95);                  // per-call override (1..100)
 $chart->renderWebp();                    // default quality 90
 $chart->renderWebp(60);                  // smaller, lossier (1..100)
 
+$chart->setPngCompressionLevel(9);       // zlib 0..9 (default 6);
+$chart->renderPng();                     // ...PNG stays lossless
+
 $chart->renderToFile('/tmp/out.webp');   // setJpegQuality only affects
                                          // .jpg; renderToFile uses the
                                          // built-in WebP default
 ```
 
-PNG is always lossless; there's no quality knob. The encoder is
-libpng with default filter selection.
+PNG is always lossless; `setPngCompressionLevel()` trades encode time
+for file size. The encoder is libpng with a fixed row filter tuned
+for chart-shaped content.
 
 WebP has four encoder modes selectable via `setWebpMode()`. The
 default `WEBP_DRAWING` is tuned for chart-shaped content (flat
@@ -189,7 +193,9 @@ Three static methods on `FastChart\Chart` rasterize caller-supplied
 SVG bytes through the same plutovg + libpng / libjpeg-turbo /
 libwebp pipeline. Useful for round-tripping `renderSvg()` output, or
 for stitching multiple `drawSvgFragment()` calls into one outer SVG
-and rasterizing the result, all in-process:
+and rasterizing the result, all in-process. When stitching, pass each
+fragment a distinct `drawSvgFragment($idPrefix)` so gradient and
+clip-path ids from different charts can't collide:
 
 ```php
 $png  = FastChart\Chart::svgToPng($svg);

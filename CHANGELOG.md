@@ -7,46 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-07
+
 ### Added
 
 - `Chart::setPngCompressionLevel()`: zlib level 0-9 for PNG output;
   the default stays at libpng's 6.
-- `drawSvgFragment()` takes an optional `$idPrefix` to namespace
-  gradient and clip-path ids, so fragments from several charts can be
-  stitched into one host document without `url(#fcg1)` collisions.
+- `drawSvgFragment()` takes an optional `$idPrefix`, so fragments from
+  several charts can be stitched without gradient/clip id collisions.
 - `addHorizontalLine()` / `addVerticalLine()` and the band variants
-  render on `Waterfall` and `ParetoChart`; the annotation and effect
-  docblocks now name the covered families.
+  render on `Waterfall` and `ParetoChart`.
 - `config.w32` gained an opt-in pdfio block, so Windows builds can
   enable the PDF backend.
 
 ### Changed
 
 - Series arrays with holes (`array_filter()`, `unset()`) compact in
-  key order instead of turning missing indexes into NaN gaps and
-  silently dropping tail values.
+  key order instead of becoming NaN gaps with dropped tail values.
 - `setSeries()` throws a `ValueError` past the 8-series cap instead of
-  silently truncating; `setStrict(true)` throws a `TypeError` on
-  non-array series entries and malformed floating pairs (lax mode
-  keeps rendering them as gaps).
+  silently truncating; `setStrict(true)` throws on malformed entries.
 - `getImageMapAreas()` reports each area's `index` as the position in
-  the original `setSeries()`/`setSlices()`/`setPoints()` input, as
-  documented, even when earlier entries were skipped (no href, NaN
-  point).
-- SVG color handles are looked up through a hash table instead of a
-  linear table scan: a 4096-point scatter with per-point colors
-  renders ~6x faster.
-- PNG rows use the fixed UP filter instead of adaptive per-row
-  filtering: a 2000x1500 `renderPng()` completes ~40% faster at
-  effectively unchanged file size.
+  the original input, even when earlier entries were skipped.
+- SVG color handles resolve through a hash table: a 4096-point scatter
+  with per-point colors renders ~6x faster.
+- PNG rows use the fixed UP filter instead of adaptive filtering:
+  ~40% faster `renderPng()` at effectively unchanged file size.
 - `WordCloud` collision tests are pruned through a spatial bucket
   grid: ~30% faster at 200 words with byte-identical output.
-- Solid and alpha SVG colors are formatted by dedicated integer
-  emitters instead of `snprintf()`: dense marker-heavy documents emit
-  ~40% faster, byte-identical.
+- Solid and alpha SVG colors format through dedicated integer emitters
+  instead of `snprintf()`: ~40% faster on dense documents.
 - `setShowValues(?string $format = null)`: null/omitted keeps the
-  current format, `''` resets; the advertised `%g` default was never
-  applied.
+  current format, `''` resets; the advertised `%g` default never applied.
 - Render-time "canvas too small" errors throw `ValueError` across
   chart families, matching the Symbol family.
 - `renderToFile()` writes plain paths via a same-directory temp file
@@ -55,77 +46,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matching Area/Bar/Scatter.
 - `addOverlaySeries()` values parse into typed arrays at setter time
   instead of being re-read from the PHP array on every render.
-- Text runs decompose each glyph once per draw instead of twice;
-  path-mode text skips its unused font-family lookup; layout measures
-  only the category labels the axis will draw.
+- Text runs decompose each glyph once per draw instead of twice, and
+  layout measures only the category labels the axis will draw.
 
 ### Fixed
 
 - An out-of-memory bailout inside a libpng / libjpeg / libwebp /
-  plutovg / pdfio session no longer leaks the library's internal
-  state: raster buffers are allocated before the vendor window opens
-  and each encode session is unwound before the bailout propagates.
+  plutovg / pdfio session no longer leaks the library's internal state.
 - `setYAxisRange()` no longer draws tick labels outside the forced
-  bounds (a "0" label used to clamp onto the min's pixel row), and an
-  interval finer than the tick ladder strides to span the range
-  instead of packing every gridline at the bottom of the plot.
-- Per-role font-size overrides (title, axis titles, labels, legend)
-  are honored during layout measurement, not only at draw time, so an
-  oversized title no longer overlaps the plot area.
+  bounds, and a finer-than-ladder interval strides to span the range.
+- Per-role font-size overrides are honored during layout measurement,
+  so an oversized title no longer overlaps the plot area.
 - PDF output keeps the 96-DPI layout baseline like SVG; `setDpi(200)`
-  previously inflated the reserved margins 2x while page and font
-  sizes stayed logical.
-- `renderWebp()` rejects physical dimensions past WebP's 16383px
-  per-dimension limit before rasterizing, with a message naming the
-  offending size, instead of failing afterwards with a generic
-  encoder error.
+  previously inflated the reserved margins 2x.
+- `renderWebp()` rejects dimensions past WebP's 16383px limit before
+  rasterizing, with a message naming the offending size.
 - Invalid UTF-8 bytes measure as U+FFFD, matching how they render;
   text with malformed sequences no longer misaligns.
-
-- Rotated axis labels (`setXAxisLabelAngle(45)` / `(90)`) anchor at their
-  tick in the default `SVG_TEXT_PATHS` mode and in all raster/PDF output;
-  the alignment shift was applied before the rotation, drifting wide
-  labels left by up to the label width (off-canvas in the worst case).
-- `BarChart::setFloating()` combined with `setStacked()` or `STACK_LAYER`
-  renders side by side instead of emitting negative-width rects that
-  SVG renderers drop.
-- `PieChart::setImageMap()` and `setExplode()` entries stay aligned to
-  their `setSlices()` indices when `setOtherThreshold()` folds slices;
-  the synthesized "Other" slice gets no hot-spot or explode offset.
+- Rotated axis labels (`setXAxisLabelAngle(45)` / `(90)`) anchor at
+  their tick in paths mode and raster/PDF; wide labels drifted left.
+- `BarChart::setFloating()` with `setStacked()` or `STACK_LAYER`
+  renders side by side instead of emitting negative-width rects.
+- `PieChart::setImageMap()` and `setExplode()` stay aligned to their
+  `setSlices()` indices when `setOtherThreshold()` folds slices.
 - `AreaChart` band mode ignores the secondary Y axis (matching stream
-  mode); a right-flagged boundary no longer flat-lines against a plot
-  edge and two right-flagged series no longer throw.
+  mode); right-flagged boundaries no longer flat-line or throw.
 - `addOverlaySeries('area')` fill polygons cover every data point; the
   old fixed 1024-point cap closed a self-crossing shape on longer series.
-- JPEG encoding streams into the output buffer through a custom
-  destination manager. libjpeg's `jpeg_mem_dest` publishes its buffer
-  address only at completion, so an encode error after internal buffer
-  growth could double-free the stale pointer.
-- Closed the remaining UB float-cast paths on finite-but-extreme inputs:
-  `CalendarHeatmap` color ramp, filled `ContourChart` cells,
-  `ParetoChart` cumulative totals (now throws when bar values overflow
-  when summed), `PolarChart` huge angles, `SankeyChart` squeezed
-  layouts, and `StockChart` saturated timestamps and icon coordinates.
+- JPEG encoding streams through a custom destination manager, closing
+  a `jpeg_mem_dest` double-free after internal buffer growth.
+- Closed the remaining UB float-cast paths on finite-but-extreme input
+  in Calendar, Contour, Pareto, Polar, Sankey, and Stock charts.
 - `Treemap::setItems()` caps values at `FASTCHART_MAX_DATA_MAG`, so two
   near-`DBL_MAX` values can't overflow the total to `+Inf` and blank the chart.
 - `Funnel::setStyle(STYLE_CONE)` arcs round symmetrically (`lround`),
   fixing a 1px left/right asymmetry.
 - Hardened latent overflow paths: `INT_MAX` guards in the SVG rasterizer,
   saturating clip/gradient ids, and a guarded `jpeg_destroy_compress`.
-- `StockChart::setOhlcv()` clears native indicator panes (RSI, MACD,
-  ATR, ...) when it replaces the candles, like the Bollinger/SAR
-  overlays; they were computed from the old candles and rendered stale
-  against the new timestamps. Caller-supplied `addIndicatorPane()` data
-  is kept.
-- `Funnel::setStages()` honors `setStrict(true)`: an invalid stage
-  (non-array, or a non-finite/non-positive/too-large value) throws a
-  `TypeError` instead of being silently dropped. The flat style rejects
-  a canvas too short for its stages instead of drawing them off the edge.
+- `StockChart::setOhlcv()` clears native indicator panes computed from
+  the replaced candles; caller-supplied `addIndicatorPane()` data is kept.
+- `Funnel::setStages()` honors `setStrict(true)` (invalid stages throw
+  `TypeError`); the flat style rejects a canvas too short for its stages.
 - `AreaChart` stream mode (`setStreamMode(true)`) with only gap/NaN input
   raises the no-numeric-values error instead of rendering an empty chart.
-- `addOverlaySeries('area')` fills break at gaps: a `null` / non-numeric
-  value splits the translucent fill into separate runs instead of painting
-  straight across the missing category (categorical and horizontal-bar).
+- `addOverlaySeries('area')` fills break at gaps instead of painting
+  across the missing category (categorical and horizontal-bar).
 - `BarChart` radial orientation honors per-point `colors`, matching the
   vertical and horizontal paths.
 - `BubbleChart` renders an all-zero size dimension as minimum-size markers
@@ -136,37 +101,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (zero fit denominator) instead of drawing a spurious y=0 line.
 - `LinearMeter` value labels format through a right-sized buffer, so a
   high-precision format (`%.999f`) is no longer silently truncated.
-- Extended the UB float-cast hardening to more finite-but-extreme paths:
-  `Heatmap` and `SurfaceChart` normalization, `ScatterChart` /
-  `VectorChart` pixel mapping, and the `StockChart` volume bar; a span
-  that overflows to `Inf` now yields a clamped pixel, not `(int)NaN`.
-- The shared UTF-8 walker validates continuation bytes and rejects
-  overlong, surrogate, and out-of-range sequences, substituting one
-  U+FFFD and advancing a single byte, so a lead byte followed by ASCII no
-  longer swallows the next character.
+- Extended the UB float-cast hardening to `Heatmap` / `Surface`
+  normalization, `Scatter` / `Vector` mapping, and the stock volume bar.
+- The shared UTF-8 walker rejects overlong, surrogate, and out-of-range
+  sequences, substituting one U+FFFD and advancing a single byte.
 - `Treemap` skips degenerate cells (`x1 < x0`) that a plot rect smaller
   than the item count can produce, instead of emitting negative-size rects.
-- `Waterfall` renders a negative TOTAL bar below the zero baseline and
-  extends the y-axis into the negative region, instead of drawing it at
-  its absolute height above zero (a net loss no longer looks like a gain).
+- `Waterfall` renders a negative TOTAL bar below the zero baseline
+  instead of at its absolute height (a loss no longer looks like a gain).
 - Axis tick labels keep their fractional part for 2.5x10^N and
   0.25-family steps (7.5 no longer labels as "8").
-- `ScatterChart` delegates its x-axis to the shared drawer: SVG output
-  is DPI-invariant again and `setXAxisVisible(false)` is honored
-  (visibility also fixed in `VectorChart`).
-- 24 chart families ignored `setTransparentBackground()` /
-  `setBackgroundImage()` and wiped the host canvas under
-  `setPlotRect()` compositing.
+- `ScatterChart` delegates its x-axis to the shared drawer: SVG is
+  DPI-invariant again and `setXAxisVisible(false)` is honored.
+- 24 chart families ignored `setTransparentBackground()` and
+  `setBackgroundImage()`, and wiped the host canvas when compositing.
 - `BarChart` bars drifted from their category labels at high category
   counts (~99px at 100 categories), both orientations.
 - `GaugeChart::setRange()` accepted finite bounds whose span overflows
   to `Inf`, reaching `(int)NaN` casts in the renderer.
-- PDF: fully transparent colors painted opaque, band-gradient alpha
-  was discarded, thick polylines showed notches at vertices, and a
-  memory-limit bailout during close could leak pdfio state.
-- `StockChart` STYLE_VECTOR marked the first bar as a volume climax;
-  ZigZag missed reversals on non-positive prices; `setVolumeColors()`
-  misaligned sparse arrays.
+- PDF: fully transparent colors painted opaque, band-gradient alpha was
+  discarded, and thick polylines showed notches at vertices.
+- `StockChart` STYLE_VECTOR marked the first bar as a volume climax,
+  and ZigZag missed reversals on non-positive prices.
+- `setVolumeColors()` misaligned sparse arrays.
 - Valid PNGs with more than 1024 chunks were rejected as
   background/icon images.
 - Overlay values kept a hidden reference to the user array, making
@@ -1292,7 +1249,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.4.0...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.5.0...HEAD
+[1.5.0]: https://github.com/iliaal/fastchart/releases/tag/1.5.0
 [1.4.0]: https://github.com/iliaal/fastchart/releases/tag/1.4.0
 [1.3.0]: https://github.com/iliaal/fastchart/releases/tag/1.3.0
 [1.2.0]: https://github.com/iliaal/fastchart/releases/tag/1.2.0
