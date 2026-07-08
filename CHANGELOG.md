@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `config.w32`: the pdfio probe now searches the `include\pdfio`
+  header subdir and accepts `pdfio1.lib`, matching Windows
+  source-build conventions (#12).
+
 ## [1.5.0] - 2026-07-07
 
 ### Added
