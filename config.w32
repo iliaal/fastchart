@@ -80,9 +80,10 @@ if (PHP_FASTCHART != "no") {
         // silent skip, mirroring config.m4. pdfio is not vendored.
         var fastchart_pdf_source = "";
         if (PHP_FASTCHART_PDFIO != "no") {
-            if (CHECK_LIB("pdfio_a.lib;pdfio.lib", "fastchart", PHP_FASTCHART) &&
+            if (CHECK_LIB("pdfio_a.lib;pdfio.lib;pdfio1.lib", "fastchart", PHP_FASTCHART) &&
                 CHECK_HEADER_ADD_INCLUDE("pdfio.h", "CFLAGS_FASTCHART",
-                    PHP_FASTCHART + ";" + PHP_PHP_BUILD + "\\include")) {
+                    PHP_FASTCHART + ";" + PHP_PHP_BUILD + "\\include;" +
+                    PHP_PHP_BUILD + "\\include\\pdfio")) {
                 AC_DEFINE("HAVE_FASTCHART_PDF", 1, "Have pdfio PDF output");
                 ADD_FLAG("CFLAGS_FASTCHART", "/DHAVE_FASTCHART_PDF=1");
                 fastchart_pdf_source = "fastchart_pdf.c";
