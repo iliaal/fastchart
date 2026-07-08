@@ -28,16 +28,10 @@ require __DIR__ . '/_font_candidates.inc';
 $font = fc_pick_font();
 if ($font === '') { echo "skip: no system font under /usr/share\n"; exit; }
 
-/* Run the same probe across each non-layout family. Each function:
- *   1. constructs a chart with $font (outside the to-be-narrowed
- *      base dir),
- *   2. optionally renders once to warm the font cache,
- *   3. narrows open_basedir to /tmp,
- *   4. renders again and returns the bytes.
- *
- * The warmed and unwarmed bytes MUST match — both should reflect the
- * narrowed policy, not a cached pre-narrowing path. */
-function probe_family(string $klass, string $font, bool $warm): string {
+/* Build every chart before the one-way open_basedir narrowing. PHP does
+ * not reliably allow widening it again in-process, and setFontPath()
+ * now throws on denied paths. */
+function build_family(string $klass, string $font, bool $warm): object {
     $c = new $klass(220, 140);
     $c->setFontPath($font)->setTitle('t');
     if (method_exists($c, 'setRange')) $c->setRange(0, 100);
@@ -49,10 +43,7 @@ function probe_family(string $klass, string $font, bool $warm): string {
         $c->setGrid([[1,2,3,4],[2,3,4,5],[3,4,5,6],[4,5,6,7]]);
     }
     if ($warm) { $c->renderPng(); }
-    ini_set('open_basedir', '/tmp');
-    $bytes = $c->renderPng();
-    ini_restore('open_basedir');
-    return $bytes;
+    return $c;
 }
 
 $families = [
@@ -63,9 +54,18 @@ $families = [
     'ContourChart' => 'FastChart\\ContourChart',
 ];
 
+$charts = [];
 foreach ($families as $name => $klass) {
-    $warm   = @probe_family($klass, $font, true);
-    $unwarm = @probe_family($klass, $font, false);
+    $charts[$name] = [
+        'warm' => build_family($klass, $font, true),
+        'unwarm' => build_family($klass, $font, false),
+    ];
+}
+
+ini_set('open_basedir', '/tmp');
+foreach ($charts as $name => $pair) {
+    $warm   = @$pair['warm']->renderPng();
+    $unwarm = @$pair['unwarm']->renderPng();
     echo "$name: ", ($warm === $unwarm ? "match" : "DIFFER"), "\n";
 }
 ?>

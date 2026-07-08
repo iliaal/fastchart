@@ -100,11 +100,19 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
             "FastChart\\ParetoChart::draw() canvas is too small for margins");
         return -1;
     }
+    fastchart_rect ann_plot = { plot_x0, plot_y0, plot_x1, plot_y1 };
+    fastchart_value_range ann_range = yr;
+    ann_range.min = 0.0;
+    ann_range.max = y_axis_max;
 
     /* Plot background + frame. */
     fastchart_target_rect(t, plot_x0, plot_y0,
                           plot_x1 - plot_x0 + 1, plot_y1 - plot_y0 + 1,
                           pal.plot_bg, 1, 0);
+    fastchart_draw_plot_bands(t, (fastchart_obj *)self, &ann_plot,
+                              &ann_range, &pal);
+    fastchart_draw_v_plot_bands_categorical(t, (fastchart_obj *)self,
+                                            &ann_plot, self->bar_count, &pal);
 
     /* Left-axis ticks. 5 evenly-spaced including 0 and max. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
@@ -218,12 +226,10 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
      * which is a plain 0-based linear scale [0, y_axis_max] — the bars
      * above use the same mapping, so build a matching range rather than
      * the niced `yr` (whose min may not be 0). */
-    fastchart_rect ann_plot = { plot_x0, plot_y0, plot_x1, plot_y1 };
-    fastchart_value_range ann_range = yr;
-    ann_range.min = 0.0;
-    ann_range.max = y_axis_max;
     fastchart_draw_h_annotations(t, (fastchart_obj *)self, &ann_plot, &pal,
                                  &ann_range);
+    fastchart_draw_v_annotations_categorical(t, (fastchart_obj *)self,
+                                             &ann_plot, &pal, self->bar_count);
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;

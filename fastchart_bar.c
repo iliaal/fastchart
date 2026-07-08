@@ -149,6 +149,17 @@ static int bar_compute_range(const fastchart_bar_obj *self,
             }
         }
     }
+    fastchart_obj *base = (fastchart_obj *)self;
+    for (int o = 0; o < base->n_combo_overlays; o++) {
+        const fastchart_combo_overlay *ov = &base->combo_overlays[o];
+        int lim = ov->n < n_categories ? ov->n : n_categories;
+        for (int i = 0; i < lim; i++) {
+            double d = ov->values[i];
+            if (!isfinite(d)) continue;
+            if (!seen) { dmin = dmax = d; seen = 1; }
+            else { if (d < dmin) dmin = d; if (d > dmax) dmax = d; }
+        }
+    }
     if (!seen) return -1;
     /* Floating bars don't anchor at zero. Regular bars do. */
     if (!floating) {

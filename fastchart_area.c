@@ -220,6 +220,32 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
          * value; an all-gap stream must still hit the no-data error. */
         if (seen_stream_value) seen_l = 1;
     }
+    fastchart_obj *base = (fastchart_obj *)self;
+    for (int o = 0; o < base->n_combo_overlays; o++) {
+        const fastchart_combo_overlay *ov = &base->combo_overlays[o];
+        bool right = self->secondary_y && !stream && !band && ov->right_axis;
+        if (right) n_right++;
+        int lim = ov->n < max_len ? ov->n : max_len;
+        for (int i = 0; i < lim; i++) {
+            double d = ov->values[i];
+            if (!isfinite(d)) continue;
+            if (right) {
+                if (!seen_r) { dmin_r = dmax_r = d; seen_r = 1; }
+                else { if (d < dmin_r) dmin_r = d; if (d > dmax_r) dmax_r = d; }
+            } else {
+                if (!seen_l) { dmin_l = dmax_l = d; seen_l = 1; }
+                else { if (d < dmin_l) dmin_l = d; if (d > dmax_l) dmax_l = d; }
+            }
+        }
+    }
+    if (!stream && self->y_axis_scale != FASTCHART_SCALE_LOG) {
+        if (dmin_l > 0) dmin_l = 0;
+        if (dmax_l < 0) dmax_l = 0;
+        if (n_right > 0) {
+            if (dmin_r > 0) dmin_r = 0;
+            if (dmax_r < 0) dmax_r = 0;
+        }
+    }
     if (!seen_l) {
         zend_throw_error(NULL,
             "FastChart\\AreaChart::draw() found no numeric values for the primary Y axis");
@@ -654,4 +680,3 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
     }
     return 0;
 }
-

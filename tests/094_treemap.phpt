@@ -55,12 +55,16 @@ try {
     echo "empty_throws: throws\n";
 }
 
-/* Item cap: 256 items. The 257th gets dropped at setItems and the
- * render still succeeds. */
+/* Item cap: 256 items. Over-cap input is rejected instead of silently
+ * truncating the caller's data. */
 $big = [];
 for ($i = 0; $i < 300; $i++) $big[] = ['value' => $i + 1];
-$capped = (new FastChart\Treemap(640, 400))->setItems($big)->renderPng();
-echo "cap_renders: ", ($capped !== '' ? "yes" : "no"), "\n";
+try {
+    (new FastChart\Treemap(640, 400))->setItems($big)->renderPng();
+    echo "cap_throws: no\n";
+} catch (\ValueError $e) {
+    echo "cap_throws: yes\n";
+}
 
 /* setShowLabels(false) must change output (labels disappear). */
 $labelled  = (new FastChart\Treemap(320, 200))
@@ -75,5 +79,5 @@ perturb_differs: yes
 color_differs: yes
 drops_nonpositive: yes
 empty_throws: throws
-cap_renders: yes
+cap_throws: yes
 label_toggle: differs

@@ -305,7 +305,7 @@ void fastchart_target_polygon(fastchart_target_t *t,
 
 void fastchart_target_polyline(fastchart_target_t *t,
                                 const fastchart_point_t *pts, int n,
-                                int color, int thickness)
+                                int color, int thickness, int dash)
 {
     if (n < 2) return;
     int xs_stack[256], ys_stack[256];
@@ -324,10 +324,10 @@ void fastchart_target_polyline(fastchart_target_t *t,
         /* One stroked path, matching SVG's single <polyline>: decomposing
          * into n-1 independent segments left butt-cap notches at interior
          * vertices for thickness > 1. */
-        fc_pdf_emit_polyline(t->u.pdf.state, xs, ys, n, rgba, thickness);
+        fc_pdf_emit_polyline(t->u.pdf.state, xs, ys, n, rgba, thickness, dash);
     } else
 #endif
-    fc_svg_emit_polyline(t->u.svg.buf, xs, ys, n, rgba, thickness);
+    fc_svg_emit_polyline(t->u.svg.buf, xs, ys, n, rgba, thickness, dash);
     if (n > 256) { efree(xs); efree(ys); }
 }
 
@@ -1017,4 +1017,3 @@ void fastchart_target_gradient_polygon(fastchart_target_t *t,
                                   from_rgb, to_rgb, dir);
     if (n > 256) { efree(xs); efree(ys); }
 }
-

@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `config.w32`: the pdfio probe now searches the `include\pdfio`
   header subdir and accepts `pdfio1.lib`, matching Windows
   source-build conventions (#12).
+- `addOverlaySeries()` now enforces count/value caps and expands
+  Line/Area/Bar/BoxPlot ranges for finite overlay values.
+- `setImageMap()` rejects excessive entry/string counts without
+  erasing the previous valid map; donut and scatter hotspots now match
+  visible geometry.
+- `Waterfall` / `ParetoChart` now render vertical annotations and
+  horizontal / vertical bands, matching the 1.5.0 API notes.
+- `QrCode::setData()` rejects payloads above the QR version-40 text
+  ceiling at setter time.
 
 ## [1.5.0] - 2026-07-07
 

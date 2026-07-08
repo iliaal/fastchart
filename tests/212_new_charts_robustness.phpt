@@ -50,11 +50,15 @@ $p = (new FastChart\CirclePacking(400, 400))
 echo "circlepack_huge_clean: ", clean($p) ? "yes" : "no", "\n";
 
 /* CR-003: CirclePacking child array far larger than the node cap must
- * not allocate beyond the cap (and must still render). */
+ * not allocate beyond the cap; over-cap input is rejected at the setter. */
 $kids = [];
 for ($i = 0; $i < 50000; $i++) { $kids[] = ['value' => 1]; }
-$p2 = (new FastChart\CirclePacking(300, 300))->setHierarchy(['children' => $kids])->renderSvg();
-echo "circlepack_bigarray_clean: ", clean($p2) ? "yes" : "no", "\n";
+try {
+    (new FastChart\CirclePacking(300, 300))->setHierarchy(['children' => $kids]);
+    echo "circlepack_bigarray_throws: no_throw\n";
+} catch (\ValueError $e) {
+    echo "circlepack_bigarray_throws: threw\n";
+}
 
 /* CR-005: VennDiagram on a canvas too small to draw into renders blank,
  * not a negative radius. */
@@ -95,9 +99,7 @@ $pg = (new FastChart\Pictogram(400, 200))
 echo "pictogram_one_clip: ", (substr_count($pg, '<clipPath') === 1 ? "yes" : "no"), "\n";
 
 /* #2: a hierarchy nested past the depth cap (24) is rejected at the
- * setter rather than silently truncated and surfaced as a bad render.
- * Wide-but-shallow data past the node cap stays graceful (CR-003,
- * exercised by circlepack_bigarray_clean above). */
+ * setter rather than silently truncated and surfaced as a bad render. */
 $deep = ['value' => 1];
 for ($i = 0; $i < 30; $i++) { $deep = ['children' => [$deep]]; }
 try {
@@ -164,7 +166,7 @@ violin_huge: threw
 violin_mixed_clean: yes
 chord_huge_clean: yes
 circlepack_huge_clean: yes
-circlepack_bigarray_clean: yes
+circlepack_bigarray_throws: threw
 venn_tiny_clean: yes
 venn_tiny_blank: yes
 venn_dedup_clean: yes

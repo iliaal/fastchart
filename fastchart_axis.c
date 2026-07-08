@@ -226,103 +226,76 @@ void fastchart_catmull_point(int p0x, int p0y, int p1x, int p1y,
     *oy = (int)(y + 0.5);
 }
 
-/* Emit one polyline segment through the target abstraction. */
-static inline void poly_seg(fastchart_target_t *t,
-                            int x0, int y0, int x1, int y1,
-                            int color_handle, int thickness, int dash,
-                            int aa_gd_color)
-{
-    (void)aa_gd_color;  /* Retired AA-spine hint; SVG renderers AA natively. */
-    fastchart_target_line(t, x0, y0, x1, y1, color_handle, thickness, dash);
-}
-
-/* Walk the polyline path once. Factored out so fastchart_draw_polyline
- * can run two passes (thick non-AA underbody + thin AA spine) when
- * both weight and edge smoothness are wanted.
- *
- * color_handle / thickness / dash drive fastchart_target_line.
- * aa_gd_color is retained only to keep the retired two-pass call
- * shape local to this helper. */
 static void polyline_pass(fastchart_target_t *t, fastchart_obj *chart,
                           const fastchart_pt *pts, int n,
                           int color_handle, int thickness, int dash,
                           int aa_gd_color)
 {
-    if (chart->line_interpolation == FASTCHART_INTERP_STEP_AFTER ||
-        chart->line_interpolation == FASTCHART_INTERP_STEP_BEFORE) {
-        /* Staircase: each segment is one horizontal + one vertical
-         * line. STEP_AFTER carries the previous y forward to the next
-         * x (the "Excel step" shape: change happens at the new x).
-         * STEP_BEFORE jumps to the next y at the previous x and then
-         * holds (change happens at the start of each segment). */
-        bool after = (chart->line_interpolation == FASTCHART_INTERP_STEP_AFTER);
-        int prev_x = 0, prev_y = 0;
-        bool prev_valid = false;
-        for (int i = 0; i < n; i++) {
-            if (!pts[i].valid) { prev_valid = false; continue; }
-            if (prev_valid) {
-                if (after) {
-                    /* STEP_AFTER: hold prev_y forward to the new x, then
-                     * jump. Corner at (cur_x, prev_y). */
-                    poly_seg(t, prev_x, prev_y, pts[i].x, prev_y,
-                             color_handle, thickness, dash, aa_gd_color);
-                    poly_seg(t, pts[i].x, prev_y, pts[i].x, pts[i].y,
-                             color_handle, thickness, dash, aa_gd_color);
-                } else {
-                    /* STEP_BEFORE: jump to the new y at the previous x,
-                     * then hold across to the new x. Corner at
-                     * (prev_x, cur_y). */
-                    poly_seg(t, prev_x, prev_y, prev_x, pts[i].y,
-                             color_handle, thickness, dash, aa_gd_color);
-                    poly_seg(t, prev_x, pts[i].y, pts[i].x, pts[i].y,
-                             color_handle, thickness, dash, aa_gd_color);
+    (void)aa_gd_color;
+    int i = 0;
+    while (i < n) {
+        while (i < n && !pts[i].valid) i++;
+        int start = i;
+        while (i < n && pts[i].valid) i++;
+        int end = i;
+        int run_n = end - start;
+        if (run_n < 2) continue;
+
+        fastchart_point_t *run;
+        int cap;
+        if (chart->line_interpolation == FASTCHART_INTERP_SMOOTH) {
+            cap = 1 + 20 * (run_n - 1);
+        } else if (chart->line_interpolation == FASTCHART_INTERP_STEP_AFTER ||
+                   chart->line_interpolation == FASTCHART_INTERP_STEP_BEFORE) {
+            cap = 1 + 2 * (run_n - 1);
+        } else {
+            cap = run_n;
+        }
+        run = emalloc((size_t)cap * sizeof(*run));
+        int out = 0;
+        run[out++] = (fastchart_point_t){ pts[start].x, pts[start].y };
+
+        if (chart->line_interpolation == FASTCHART_INTERP_STEP_AFTER ||
+            chart->line_interpolation == FASTCHART_INTERP_STEP_BEFORE) {
+            bool after = (chart->line_interpolation == FASTCHART_INTERP_STEP_AFTER);
+            for (int j = start + 1; j < end; j++) {
+                int prev_x = pts[j - 1].x, prev_y = pts[j - 1].y;
+                int cur_x = pts[j].x, cur_y = pts[j].y;
+                run[out++] = after
+                    ? (fastchart_point_t){ cur_x, prev_y }
+                    : (fastchart_point_t){ prev_x, cur_y };
+                run[out++] = (fastchart_point_t){ cur_x, cur_y };
+            }
+        } else if (chart->line_interpolation == FASTCHART_INTERP_SMOOTH) {
+            for (int j = start; j < end - 1; j++) {
+                int p0i = (j > start) ? j - 1 : j;
+                int p3i = (j + 2 < end) ? j + 2 : j + 1;
+                int dx = pts[j + 1].x - pts[j].x;
+                int dy = pts[j + 1].y - pts[j].y;
+                if (dx < 0) dx = -dx;
+                if (dy < 0) dy = -dy;
+                int subdiv = (dx + dy) / 4;
+                if (subdiv < 2)  subdiv = 2;
+                if (subdiv > 20) subdiv = 20;
+                for (int k = 1; k <= subdiv; k++) {
+                    double tt = (double)k / (double)subdiv;
+                    int x, y;
+                    fastchart_catmull_point(pts[p0i].x, pts[p0i].y,
+                                  pts[j].x,   pts[j].y,
+                                  pts[j + 1].x, pts[j + 1].y,
+                                  pts[p3i].x, pts[p3i].y,
+                                  tt, &x, &y);
+                    run[out++] = (fastchart_point_t){ x, y };
                 }
             }
-            prev_x = pts[i].x; prev_y = pts[i].y; prev_valid = true;
-        }
-    } else if (chart->line_interpolation != FASTCHART_INTERP_SMOOTH) {
-        /* Linear: connect consecutive valid points. */
-        int prev_x = 0, prev_y = 0;
-        bool prev_valid = false;
-        for (int i = 0; i < n; i++) {
-            if (!pts[i].valid) { prev_valid = false; continue; }
-            if (prev_valid) {
-                poly_seg(t, prev_x, prev_y, pts[i].x, pts[i].y,
-                         color_handle, thickness, dash, aa_gd_color);
-            }
-            prev_x = pts[i].x; prev_y = pts[i].y; prev_valid = true;
-        }
-    } else {
-        /* Catmull-Rom with adaptive sub-segment count. Two adjacent
-         * points 3 px apart don't need 10 sub-segments (9 of them
-         * collapse to the same pixel); 200 px apart need more than
-         * 10 to keep the curve smooth. Step roughly one sub-segment
-         * per 4 px of Manhattan distance, clamped to [2, 20]. */
-        for (int i = 0; i < n - 1; i++) {
-            if (!pts[i].valid || !pts[i + 1].valid) continue;
-            int p0i = (i > 0 && pts[i - 1].valid) ? i - 1 : i;
-            int p3i = (i + 2 < n && pts[i + 2].valid) ? i + 2 : i + 1;
-            int dx = pts[i + 1].x - pts[i].x;
-            int dy = pts[i + 1].y - pts[i].y;
-            if (dx < 0) dx = -dx;
-            if (dy < 0) dy = -dy;
-            int subdiv = (dx + dy) / 4;
-            if (subdiv < 2)  subdiv = 2;
-            if (subdiv > 20) subdiv = 20;
-            int prev_x = pts[i].x, prev_y = pts[i].y;
-            for (int k = 1; k <= subdiv; k++) {
-                double tt = (double)k / (double)subdiv;
-                int x, y;
-                fastchart_catmull_point(pts[p0i].x, pts[p0i].y,
-                              pts[i].x,   pts[i].y,
-                              pts[i + 1].x, pts[i + 1].y,
-                              pts[p3i].x, pts[p3i].y,
-                              tt, &x, &y);
-                poly_seg(t, prev_x, prev_y, x, y,
-                         color_handle, thickness, dash, aa_gd_color);
-                prev_x = x; prev_y = y;
+        } else {
+            for (int j = start + 1; j < end; j++) {
+                run[out++] = (fastchart_point_t){ pts[j].x, pts[j].y };
             }
         }
+
+        fastchart_target_polyline(t, run, out, color_handle, thickness, dash);
+        efree(run);
     }
 }
 

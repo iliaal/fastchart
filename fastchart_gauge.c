@@ -206,23 +206,22 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
     if (font) {
         const char *fmt = self->gauge_value_format
             ? ZSTR_VAL(self->gauge_value_format) : "%.1f";
-        char buf[64];
-        snprintf(buf, sizeof(buf), fmt, v);
+        char *buf = fastchart_format_double_label(fmt, v);
         double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
         double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base * 1.4);
         int tx = cx;
         int ty = cy + (int)(diameter * 0.35);
         fastchart_text_draw(t, font, size, pal.text, tx, ty,
                             FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+        efree(buf);
     }
 
     /* Min/max tick labels at arc ends. */
     if (font) {
-        char minbuf[32], maxbuf[32];
         const char *fmt = self->gauge_value_format
             ? ZSTR_VAL(self->gauge_value_format) : "%.0f";
-        snprintf(minbuf, sizeof(minbuf), fmt, mn);
-        snprintf(maxbuf, sizeof(maxbuf), fmt, mx);
+        char *minbuf = fastchart_format_double_label(fmt, mn);
+        char *maxbuf = fastchart_format_double_label(fmt, mx);
         double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
         double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base * 0.85);
         fastchart_text_draw(t, font, size, pal.text,
@@ -231,6 +230,8 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
         fastchart_text_draw(t, font, size, pal.text,
                             cx + radius, cy + (int)(size * 1.5),
                             FASTCHART_ALIGN_CENTER, maxbuf, NULL, 0);
+        efree(minbuf);
+        efree(maxbuf);
     }
 
     /* Title. Baseline scales with the title font size so the ascender

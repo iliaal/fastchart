@@ -105,6 +105,9 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
     fastchart_draw_frame(t, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_title(t, (fastchart_obj *)self, &plot, &pal);
     fastchart_draw_y_axis(t, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_plot_bands(t, (fastchart_obj *)self, &plot, &range, &pal);
+    fastchart_draw_v_plot_bands_categorical(t, (fastchart_obj *)self, &plot,
+                                            n, &pal);
     fastchart_draw_x_axis_categorical(t, (fastchart_obj *)self, &plot, &pal, n, labels);
     fastchart_draw_axis_titles(t, (fastchart_obj *)self, &plot, &pal);
 
@@ -166,6 +169,7 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
     }
 
     fastchart_draw_h_annotations(t, (fastchart_obj *)self, &plot, &pal, &range);
+    fastchart_draw_v_annotations_categorical(t, (fastchart_obj *)self, &plot, &pal, n);
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     efree(bar_lo);
@@ -173,4 +177,3 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
     efree((void *)labels);
     return 0;
 }
-

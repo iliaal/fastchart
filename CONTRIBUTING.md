@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- PHP 8.3 or later (debug build recommended for development:
+- PHP 8.1 or later (debug build recommended for development:
   `--enable-debug`)
 - C compiler: GCC 11+, Clang 14+
 - `phpize` and `php-config` (from `php-dev` / `php8.x-dev`)
@@ -14,7 +14,7 @@
   Probed via pkg-config in `config.m4`. plutovg + plutosvg are
   vendored under `vendor/` — no install needed.
 - ext/gd is **not** a runtime requirement. The test suite uses ext/gd
-  in 65 of the 96 phpt files to round-trip raster output for pixel
+  in roughly 90 of the 298 phpt files to round-trip raster output for pixel
   inspection; those tests SKIP cleanly when ext/gd isn't available.
   If you want to run the full suite, build ext/gd once against your
   PHP install (recipe in AGENTS.md).
@@ -52,6 +52,7 @@ Before filing, try to reproduce against the latest `master` branch.
        --enable-fastchart --enable-fastchart-dev
    make -j$(nproc)
 
+   ASAN_OPTIONS=detect_leaks=0 \
    TEST_PHP_EXECUTABLE=$HOME/php-install-PHP-8.4/bin/php \
    TEST_PHP_ARGS="-d extension=$HOME/php-src-8.4/ext/gd/modules/gd.so \
                   -d extension=$(pwd)/modules/fastchart.so" \
@@ -59,12 +60,11 @@ Before filing, try to reproduce against the latest `master` branch.
    $HOME/php-install-PHP-8.4/bin/php run-tests.php tests/
    ```
 
-   `detect_leaks=0` is no longer needed. fastchart 1.0 has zero
-   LSan-reported leaks of its own; the ASAN CI job (`.github/
-   workflows/tests.yml`) runs with `detect_leaks=1` and a
-   suppressions file (`.github/lsan-suppressions.txt`) that covers
-   only ext/gd's MINIT-time persistent allocations. To exercise
-   the same leak-detection locally without ext/gd in the picture:
+   `detect_leaks=0` is for the routine local ext/gd sweep when using
+   the ASAN debug PHP build described in AGENTS.md. The CI-style leak
+   check uses `detect_leaks=1` and the narrow suppressions file in
+   `.github/lsan-suppressions.txt`; run that path when validating
+   memory-management changes. For a quick render smoke without ext/gd:
 
    ```sh
    ~/php-install-PHP-8.4/bin/php \
@@ -77,7 +77,7 @@ Before filing, try to reproduce against the latest `master` branch.
 
 6. Verify zero compiler warnings (`--enable-fastchart-dev` adds
    `-Werror -Wextra -Wstrict-prototypes`; the release matrix treats
-   any warning as a build failure) and that all 86+ tests pass.
+   any warning as a build failure) and that the full PHPT suite passes.
 7. Push and open a PR against `master`.
 
 ### Commit message conventions

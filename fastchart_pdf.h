@@ -67,7 +67,7 @@ void fc_pdf_emit_rect(fc_pdf_state *st, double x, double y,
 void fc_pdf_emit_polygon(fc_pdf_state *st, const int *xs, const int *ys,
                           int n, uint32_t rgba, int fill, int thickness);
 void fc_pdf_emit_polyline(fc_pdf_state *st, const int *xs, const int *ys,
-                           int n, uint32_t rgba, int thickness);
+                           int n, uint32_t rgba, int thickness, int dash);
 void fc_pdf_emit_ellipse(fc_pdf_state *st, double cx, double cy,
                           double rx, double ry, uint32_t rgba,
                           int fill, int thickness);

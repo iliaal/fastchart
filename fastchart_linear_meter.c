@@ -26,19 +26,6 @@
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 
-/* Format `value` through a user-supplied printf format into a freshly
- * allocated buffer. The validated format allows up to three digits of
- * width/precision (e.g. "%.999f"), which overruns any fixed stack
- * buffer and truncates the label silently; size the buffer to fit. */
-static char *meter_format_label(const char *fmt, double value)
-{
-    int need = snprintf(NULL, 0, fmt, value);
-    if (need < 0) need = 0;
-    char *buf = emalloc((size_t)need + 1);
-    snprintf(buf, (size_t)need + 1, fmt, value);
-    return buf;
-}
-
 int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self, fastchart_target_t *t)
 {
     fastchart_begin_render((fastchart_obj *)self, t);
@@ -165,9 +152,9 @@ int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self, fa
     if (font) {
         const char *fmt = self->meter_value_format
             ? ZSTR_VAL(self->meter_value_format) : "%.0f";
-        char *min_buf = meter_format_label(fmt, mn);
-        char *max_buf = meter_format_label(fmt, mx);
-        char *val_buf = meter_format_label(fmt, v);
+        char *min_buf = fastchart_format_double_label(fmt, mn);
+        char *max_buf = fastchart_format_double_label(fmt, mx);
+        char *val_buf = fastchart_format_double_label(fmt, v);
 
         if (self->meter_orientation == FASTCHART_METER_HORIZONTAL) {
             int label_y = bar_y1 + (int)(size * 1.5);
@@ -208,4 +195,3 @@ int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self, fa
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
 }
-

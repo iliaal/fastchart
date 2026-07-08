@@ -110,7 +110,7 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
          * the per-stage `cum_v / total_v * total_h` math feeds NaN
          * into the int cast (UB per C11 6.3.1.4p1). Throw rather
          * than silently emitting garbage geometry. */
-        zend_throw_error(NULL,
+        zend_value_error(
             "FastChart\\Funnel::draw() canvas is too short for STYLE_CONE "
             "(width-relative bottom-arc reserve consumed the entire plot height)");
         return -1;
@@ -121,7 +121,7 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
      * truncated chart (mirrors the STYLE_CONE too-short guard above).
      * PYRAMID/CONE position by cumulative value and stay in bounds. */
     if (!pyramid && total_h < n * 4) {
-        zend_throw_error(NULL,
+        zend_value_error(
             "FastChart\\Funnel::draw() canvas is too short for %d stages "
             "(each stage needs at least 4px of height)", n);
         return -1;

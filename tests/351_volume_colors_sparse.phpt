@@ -43,9 +43,17 @@ foreach (['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff'] as $hex) {
 }
 echo "packed_all_present: ", ($all ? "yes" : "no"), "\n";
 
+try {
+    volume_svg([4096 => 0x123456]);
+    echo "sparse_out_of_range: no\n";
+} catch (ValueError $e) {
+    echo "sparse_out_of_range: yes\n";
+}
+
 ?>
 --EXPECT--
 sparse_index2_blue: yes
 hole_red:  yes
 hole_blue: yes
 packed_all_present: yes
+sparse_out_of_range: yes

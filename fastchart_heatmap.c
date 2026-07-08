@@ -91,7 +91,7 @@ int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self, fastchart_ta
     int plot_w = x1 - x0 + 1;
     int plot_h = y1 - y0 + 1;
     if (plot_w < cols || plot_h < rows) {
-        zend_throw_error(NULL,
+        zend_value_error(
             "FastChart\\Heatmap::draw() plot area too small for the grid (%dx%d cells need >= %dx%d px)",
             cols, rows, cols, rows);
         return -1;
@@ -196,4 +196,3 @@ int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self, fastchart_ta
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
 }
-

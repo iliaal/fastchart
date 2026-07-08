@@ -187,7 +187,10 @@ $chart->renderToFile('/tmp/dau.pdf');    // inferred from the extension
 
 Without `--with-pdfio`, both methods throw `"PDF support not compiled
 in"`. This first cut falls back to solid fills for gradients, omits
-raster background images, and renders fills opaque (alpha is ignored).
+raster background images, and flattens alpha against the page
+background. Stacked translucent overlaps won't match SVG/raster
+exactly because the current pdfio API doesn't expose per-shape
+transparency.
 
 Three static methods on `FastChart\Chart` rasterize caller-supplied
 SVG bytes through the same plutovg + libpng / libjpeg-turbo /
@@ -342,7 +345,7 @@ Cross-cutting features available on most chart types:
 - TrueType / OpenType labels via `setFontPath()` (and per-role
   `setTitleFont()`, `setAxisFont()`, `setLabelFont()`).
 - Light and dark themes (`THEME_LIGHT`, `THEME_DARK`); per-series colors
-  via `setSeriesColors()`; full custom palettes via `setPalette()`.
+  via `setSeriesColors()`.
 - Legend positioning (`LEGEND_TOP_RIGHT`, `_TOP_LEFT`, `_BOTTOM_RIGHT`,
   `_BOTTOM_LEFT`, `_NONE`).
 - Annotations: plot bands, vertical bands, horizontal / vertical lines,
@@ -350,9 +353,9 @@ Cross-cutting features available on most chart types:
 - Strict-mode input validation (`setStrict(true)` rejects malformed
   series with a `TypeError` instead of silently coercing to NaN).
 - Background images, drop shadows, anti-aliased lines and markers.
-- Image map output: `getImageMap()` returns category-aligned
-  rectangles for HTML overlay; `getImageMapAreas()` returns the same
-  hot-spots as structured array data.
+- Image map output: `getImageMap()` returns HTML hot-spots over bars,
+  slices, and points; `getImageMapAreas()` returns the same geometry
+  as structured array data.
 
 ## Examples
 

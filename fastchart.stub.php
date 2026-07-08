@@ -249,11 +249,12 @@ abstract class Chart
      * TypeError instead of silently coercing to NaN. Default: off.
      *
      * Coverage: enforced on `LineChart::setSeries`,
-     * `AreaChart::setSeries`, `BarChart::setSeries`. All other
+     * `AreaChart::setSeries`, `BarChart::setSeries`, and
+     * `Funnel::setStages`. All other
      * array-based setters (Pie::setSlices, Scatter::setPoints,
      * Stock::setOhlcv, Gantt::setTasks, BoxPlot::setBoxes,
      * Radar/Polar::setSeries, Surface/Contour::setGrid,
-     * Treemap/Funnel/Waterfall/Heatmap/Sunburst/Sankey/etc.)
+     * Treemap/Waterfall/Heatmap/Sunburst/Sankey/etc.)
      * are best-effort: malformed entries are silently dropped
      * (or turned into NaN) even when setStrict(true) is used.
      * See docs/README.md "Strict mode coverage and best-effort families".
@@ -784,6 +785,9 @@ abstract class Chart
      * is `['href' => string, 'tooltip' => string?]`. ScatterChart
      * already takes per-point href/tooltip on setPoints() directly;
      * other chart types use setImageMap() to attach them.
+     * At most 4096 entries are accepted; href / tooltip strings
+     * longer than 4096 bytes throw `\ValueError`. Embedded NULs in
+     * a field silently drop that field.
      *
      * After a render, call `getImageMap()` to retrieve the matching
      * HTML `<map>` markup with `<area>` elements positioned over
@@ -2360,9 +2364,11 @@ abstract class Symbol
      * Render to an SVG fragment: a single
      * `<g class="fastchart-symbol">…</g>` group with no outer `<svg>`
      * or XML prolog. Intended for stitching multiple charts /
-     * symbols into one caller-managed SVG document.
+     * symbols into one caller-managed SVG document. `$idPrefix`
+     * matches Chart::drawSvgFragment() for API symmetry and future
+     * symbol-local ids.
      */
-    public function drawSvgFragment(): string {}
+    public function drawSvgFragment(?string $idPrefix = null): string {}
 
     /**
      * Render and write to `$path`. Format inferred from extension;
@@ -2420,10 +2426,10 @@ final class Code128 extends Barcode
  * the ASCII subset thereof). The underlying encoder treats the
  * string as UTF-8 text and selects the most compact QR mode that
  * fits — numeric, alphanumeric, or byte. Invalid UTF-8 byte
- * sequences are not rejected by `setData()` (which only forbids
- * embedded NULs) but produce QR symbols that decode back to garbage
- * or unspecified bytes. If you need to encode arbitrary binary data,
- * base64-encode upstream and decode after scan.
+ * sequences are not rejected by `setData()` (which forbids embedded
+ * NULs and payloads above 7089 bytes) but produce QR symbols that
+ * decode back to garbage or unspecified bytes. If you need to encode
+ * arbitrary binary data, base64-encode upstream and decode after scan.
   * @strict-properties
  */
 final class QrCode extends Symbol

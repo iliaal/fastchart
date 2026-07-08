@@ -10,7 +10,8 @@ inputs into native buffers.
 
 | Version | Supported          |
 |---------|--------------------|
-| 1.1.x   | :white_check_mark: |
+| 1.5.x   | :white_check_mark: |
+| 1.4.x   | :white_check_mark: |
 
 The two most recent minor versions receive security fixes.
 
@@ -72,4 +73,4 @@ Out of scope:
   cap checks are in scope.
 - Behavior of the `setStrict(false)` default mode for chart types
   outside Line / Area / Bar. Silent drop of malformed entries is
-  documented (see AGENTS.md "Strict-mode coverage gap").
+  documented (see AGENTS.md "Public API").
