@@ -237,7 +237,8 @@ int fastchart_chord_render_to_target(fastchart_chord_obj *self, fastchart_target
             /* One <polyline> per link instead of n-1 <line> elements: at
              * the link cap this is the difference between a few thousand
              * SVG elements and a few hundred thousand. */
-            fastchart_target_polyline(t, poly, n, stroke, thickness);
+            fastchart_target_polyline(t, poly, n, stroke, thickness,
+                                      FASTCHART_DASH_SOLID);
         }
     }
 

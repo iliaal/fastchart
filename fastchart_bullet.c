@@ -79,7 +79,7 @@ int fastchart_bullet_render_to_target(fastchart_bullet_obj *self, fastchart_targ
     int bar_x0 = margin_x;
     int bar_x1 = W - margin_x;
     if (bar_x1 <= bar_x0) {
-        zend_throw_error(NULL,
+        zend_value_error(
             "FastChart\\BulletChart::draw() canvas is too narrow "
             "for label margins (need at least 121 px wide)");
         return -1;
@@ -155,12 +155,11 @@ int fastchart_bullet_render_to_target(fastchart_bullet_obj *self, fastchart_targ
     double size = fastchart_resolve_font_size(
         (fastchart_obj *)self, FC_FONT_LABEL, base_size);
     if (font) {
-        char min_buf[32], max_buf[32], val_buf[64];
         const char *fmt = self->bullet_value_format
             ? ZSTR_VAL(self->bullet_value_format) : "%.0f";
-        snprintf(min_buf, sizeof(min_buf), fmt, mn);
-        snprintf(max_buf, sizeof(max_buf), fmt, mx);
-        snprintf(val_buf, sizeof(val_buf), fmt, v);
+        char *min_buf = fastchart_format_double_label(fmt, mn);
+        char *max_buf = fastchart_format_double_label(fmt, mx);
+        char *val_buf = fastchart_format_double_label(fmt, v);
 
         int label_y = band_y1 + (int)(size * 1.5);
         fastchart_text_draw(t, font, size, pal.text,
@@ -173,14 +172,17 @@ int fastchart_bullet_render_to_target(fastchart_bullet_obj *self, fastchart_targ
                             vx, band_y0 - 6, FASTCHART_ALIGN_CENTER,
                             val_buf, NULL, 0);
         if (isfinite(tgt) && tgt >= mn && tgt <= mx) {
-            char tgt_buf[64];
-            snprintf(tgt_buf, sizeof(tgt_buf), fmt, tgt);
+            char *tgt_buf = fastchart_format_double_label(fmt, tgt);
             double tfrac = (tgt - mn) / (mx - mn);
             int tx = bar_x0 + (int)(tfrac * (bar_x1 - bar_x0));
             fastchart_text_draw(t, font, size, pal.text,
                                 tx, band_y1 + (int)(size * 3.0),
                                 FASTCHART_ALIGN_CENTER, tgt_buf, NULL, 0);
+            efree(tgt_buf);
         }
+        efree(min_buf);
+        efree(max_buf);
+        efree(val_buf);
     }
 
     if (self->title && ZSTR_LEN(self->title) > 0 && title_font && title_h > 0) {

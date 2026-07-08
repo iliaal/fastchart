@@ -21,15 +21,29 @@ function valid(string $svg): bool {
         simplexml_load_string($svg, null, LIBXML_NOERROR | LIBXML_NOWARNING) !== false;
 }
 
-/* Count diagonal coloured data lines (the series stroke is #1F77B4):
+/* Count diagonal coloured data segments (the series stroke is #1F77B4):
  * a segment with both x and y changing. Axis/grid lines use other
- * colours, so keying on the series colour isolates the data path. */
+ * colours, so keying on the series colour isolates the data path.
+ * Series runs are emitted as polyline elements now; keep support for
+ * the old line-element shape so the assertion describes geometry, not
+ * the specific SVG primitive. */
 function diagonals(string $svg): int {
-    preg_match_all('/<line\b[^>]*stroke="#1F77B4"[^>]*>/', $svg, $m);
     $n = 0;
+    preg_match_all('/<line\b[^>]*stroke="#1F77B4"[^>]*>/', $svg, $m);
     foreach ($m[0] as $line) {
         if (preg_match('/x1="(-?\d+)" y1="(-?\d+)" x2="(-?\d+)" y2="(-?\d+)"/', $line, $c)) {
             if ($c[1] !== $c[3] && $c[2] !== $c[4]) $n++;
+        }
+    }
+    preg_match_all('/<polyline\b[^>]*stroke="#1F77B4"[^>]*>/', $svg, $pm);
+    foreach ($pm[0] as $poly) {
+        if (!preg_match('/points="([^"]+)"/', $poly, $p)) continue;
+        preg_match_all('/(-?\d+),(-?\d+)/', $p[1], $pts, PREG_SET_ORDER);
+        for ($i = 1; $i < count($pts); $i++) {
+            if ($pts[$i - 1][1] !== $pts[$i][1] &&
+                $pts[$i - 1][2] !== $pts[$i][2]) {
+                $n++;
+            }
         }
     }
     return $n;

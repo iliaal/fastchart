@@ -305,7 +305,9 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
             self->image_map_areas[k].n_coords = 3;
             self->image_map_areas[k].coords[0] = px;
             self->image_map_areas[k].coords[1] = py;
-            self->image_map_areas[k].coords[2] = marker_size;
+            int radius = marker_size / 2;
+            if (radius < 1) radius = 1;
+            self->image_map_areas[k].coords[2] = radius;
             self->image_map_areas[k].href = points[i].href;
             self->image_map_areas[k].tooltip = points[i].tooltip;
             self->image_map_areas[k].orig_index = i;

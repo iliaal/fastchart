@@ -5,37 +5,37 @@ fastchart
 --FILE--
 <?php
 
+function value_error(string $label, callable $fn): void {
+    try {
+        $fn();
+        echo "$label: fail\n";
+    } catch (\ValueError $e) {
+        echo "$label: ok\n";
+    }
+}
+
 /* CR-001: Input caps on the new chart families. ecalloc'ing
  * unbounded user-supplied counts let a 100M-entry array DoS the
- * worker. Each family now has a per-setter cap in
- * php_fastchart.h:528+. */
-$bars = array_fill(0, 5000, ['value' => 1, 'label' => 'x']);
-$svg = (new FastChart\ParetoChart(400, 300))->setBars($bars)->renderSvg();
-/* Cap is 128. Polygon/rect counts should reflect that, not 5000. */
-echo "pareto_capped: ",
-    (substr_count($svg, '<rect') < 500 ? "ok" : "fail"), "\n";
+ * worker. Over-cap input is now rejected instead of silently
+ * truncating to the public cap. */
+value_error('pareto_cap_throws',
+    fn() => (new FastChart\ParetoChart(400, 300))
+        ->setBars(array_fill(0, 129, ['value' => 1, 'label' => 'x'])));
 
-$vecs = array_fill(0, 100000,
-    ['x' => 0, 'y' => 0, 'dx' => 0.5, 'dy' => 0.5]);
-$svg = (new FastChart\VectorChart(400, 400))->setVectors($vecs)->renderSvg();
-/* Cap is 4096; arrow polygons should not exceed that. */
-echo "vector_capped: ",
-    (substr_count($svg, '<polygon') <= 4200 ? "ok" : "fail"), "\n";
+value_error('vector_cap_throws',
+    fn() => (new FastChart\VectorChart(400, 400))
+        ->setVectors(array_fill(0, 4097,
+            ['x' => 0, 'y' => 0, 'dx' => 0.5, 'dy' => 0.5])));
 
 /* Sankey caps: 256 nodes, 1024 links. */
-$nodes = [];
-for ($i = 0; $i < 1000; $i++) {
-    $nodes[] = ['label' => "n$i"];
-}
-$links = [];
-for ($i = 0; $i < 5000; $i++) {
-    $links[] = ['from' => 0, 'to' => 1, 'value' => 1];
-}
-$svg = (new FastChart\SankeyChart(400, 300))
-    ->setNodes($nodes)
-    ->setLinks($links)
-    ->renderSvg();
-echo "sankey_capped: ", (strlen($svg) > 100 ? "ok" : "fail"), "\n";
+value_error('sankey_node_cap_throws',
+    fn() => (new FastChart\SankeyChart(400, 300))
+        ->setNodes(array_fill(0, 257, ['label' => 'n'])));
+
+value_error('sankey_link_cap_throws',
+    fn() => (new FastChart\SankeyChart(400, 300))
+        ->setNodes([['label' => 'a'], ['label' => 'b']])
+        ->setLinks(array_fill(0, 1025, ['from' => 0, 'to' => 1, 'value' => 1])));
 
 /* CR-003: Gantt depends narrowing. Pre-fix, depends => [4294967296]
  * silently became depends => [0] via signed-int cast. */
@@ -108,9 +108,10 @@ try {
 echo "ok\n";
 ?>
 --EXPECT--
-pareto_capped: ok
-vector_capped: ok
-sankey_capped: ok
+pareto_cap_throws: ok
+vector_cap_throws: ok
+sankey_node_cap_throws: ok
+sankey_link_cap_throws: ok
 gantt_big_dep_renders: ok
 calendar_invalid_dropped: ok
 png_dim_ub_safe: ok

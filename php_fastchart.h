@@ -346,6 +346,8 @@ typedef struct {
  * truncating. */
 #define FASTCHART_MAX_POINTS_PER_SERIES 2048
 
+#define FASTCHART_MAX_COMBO_OVERLAYS 16
+
 /* IconPlot overlay: an external image blitted onto the chart at a
  * data-coordinate position. Path is owned (loaded fresh at each
  * draw); max_w / max_h cap the display size while preserving the
@@ -445,6 +447,8 @@ typedef struct {
  * headroom for denser sampling or richer poly shapes without bumping
  * the struct's fixed-size coord buffer at the call sites. */
 #define FASTCHART_IMAGE_MAP_MAX_COORDS 32
+#define FASTCHART_MAX_IMAGE_MAP_ENTRIES 4096
+#define FASTCHART_MAX_IMAGE_MAP_STRING_BYTES 4096
 typedef struct fastchart_image_map_area {
     int shape;
     int n_coords;
@@ -1425,6 +1429,8 @@ static inline const char *fastchart_label_or_null(const zval *zv)
     return Z_STRVAL_P(zv);
 }
 
+char *fastchart_format_double_label(const char *fmt, double value);
+
 /* Per-chart SVG rendering helpers. Each chart family implements
  * fastchart_<name>_render_to_target(self, t), called by
  * dispatch_svg_render. The legacy image-backend wrappers retired
@@ -1581,6 +1587,12 @@ typedef struct {
 #define FASTCHART_CODE128_DEFAULT_H   80
 #define FASTCHART_QRCODE_DEFAULT_W   300
 #define FASTCHART_QRCODE_DEFAULT_H   300
+
+/* QR version 40-L can encode at most 7089 numeric characters. This
+ * bounds setter-time memory while preserving the format's largest
+ * text payload class; the encoder still enforces the tighter limits
+ * for alphanumeric / byte-mode payloads at render time. */
+#define FASTCHART_MAX_QRCODE_TEXT_BYTES 7089
 
 static inline fastchart_symbol_obj *fastchart_symbol_obj_from_zend(zend_object *obj) {
     return (fastchart_symbol_obj *)((char *)(obj) - obj->handlers->offset);

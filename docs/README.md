@@ -684,7 +684,7 @@ The remaining catch-all knobs:
 - `setPlotRect(x0, y0, x1, y1)`: pin the plot area to fixed pixel
   coordinates; useful for compositing two charts on one canvas
 - `setStrict(true)`: TypeError on non-numeric Line/Area/Bar series
-  cells instead of silent NaN coercion
+  cells and malformed Funnel stages instead of best-effort parsing
 - `setBoxWidth(percent)`: boxplot box width as a percent of slot
 - `setBackgroundImage(path)`: bitmap behind the chart; PNG/JPEG only;
   open_basedir-checked at draw time
@@ -1029,8 +1029,8 @@ you want to composite the symbol onto an existing image.
   `'tooltip'` become clickable; call `getImageMap('mapname')` after
   the render to emit the HTML `<map>`.
 - **Strict numeric input.** `setStrict(true)` makes Line/Area/Bar
-  `setSeries` throw `TypeError` on non-numeric cells. Other chart
-  types parse best-effort.
+  `setSeries` and Funnel `setStages` throw `TypeError` on malformed
+  cells. Other chart types parse best-effort.
 - **Floating bars / setStrict / setFloating ordering.** A few setters
   must run **before** `setSeries` so the parser knows the input shape.
   `setFloating(true)` is the most common; without it, the parser
@@ -1038,11 +1038,11 @@ you want to composite the symbol onto an existing image.
 
 ### Strict mode coverage and best-effort families
 
-`setStrict(true)` is **only** honored by `LineChart`, `AreaChart` and
-`BarChart` `setSeries()`. Every other setter that ingests arrays of
-data (slices, points, OHLCV rows, tasks, boxes, grids, stages,
-vectors, columns, etc.) is **best-effort**: bad entries are silently
-dropped or coerced to NaN. No `TypeError` is ever raised for them,
+`setStrict(true)` is honored by `LineChart`, `AreaChart` and
+`BarChart` `setSeries()`, plus `Funnel::setStages()`. Other setters
+that ingest arrays of data (slices, points, OHLCV rows, tasks, boxes,
+grids, vectors, columns, etc.) are **best-effort**: bad entries are
+silently dropped or coerced to NaN. No `TypeError` is raised for them,
 even if `setStrict(true)` was called on the chart instance.
 
 This contract is intentional (complex shapes such as a Gantt task

@@ -363,7 +363,8 @@ static void fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAMETERS,
  * — DPI does not multiply the viewport (SVG is vector). Mirrors
  * fastchart.c:fastchart_render_to_svg for the Chart family. */
 static void fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAMETERS,
-                                            int fragment_only)
+                                            int fragment_only,
+                                            zend_string *id_prefix)
 {
     fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
     zend_class_entry *ce = Z_OBJCE_P(ZEND_THIS);
@@ -391,6 +392,10 @@ static void fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAMETERS,
     fastchart_target_t t;
     fastchart_target_from_svg(&t, &buf, (int)lw, (int)lh, (int)self->dpi,
                                (int)self->svg_text_mode);
+    if (id_prefix && ZSTR_LEN(id_prefix) > 0) {
+        memcpy(t.u.svg.id_ns, ZSTR_VAL(id_prefix), ZSTR_LEN(id_prefix));
+        t.u.svg.id_ns[ZSTR_LEN(id_prefix)] = '\0';
+    }
 
     if (dispatch_symbol_svg_render(self, ce, &t) != 0 || EG(exception)) {
         fastchart_target_release(&t);
@@ -507,6 +512,13 @@ ZEND_METHOD(FastChart_Symbol, setData)
     if (memchr(ZSTR_VAL(data), 0, ZSTR_LEN(data)) != NULL) {
         zend_value_error(
             "FastChart\\Symbol::setData() data must not contain NUL bytes");
+        RETURN_THROWS();
+    }
+    if (Z_OBJCE_P(ZEND_THIS) == fastchart_qrcode_ce &&
+        ZSTR_LEN(data) > FASTCHART_MAX_QRCODE_TEXT_BYTES) {
+        zend_value_error(
+            "FastChart\\QrCode::setData() accepts at most %d bytes",
+            FASTCHART_MAX_QRCODE_TEXT_BYTES);
         RETURN_THROWS();
     }
     fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
@@ -688,13 +700,40 @@ ZEND_METHOD(FastChart_Symbol, renderWebp)
 ZEND_METHOD(FastChart_Symbol, renderSvg)
 {
     ZEND_PARSE_PARAMETERS_NONE();
-    fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+    fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0, NULL);
 }
 
 ZEND_METHOD(FastChart_Symbol, drawSvgFragment)
 {
-    ZEND_PARSE_PARAMETERS_NONE();
-    fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
+    zend_string *id_prefix = NULL;
+    ZEND_PARSE_PARAMETERS_START(0, 1)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_STR_OR_NULL(id_prefix)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (id_prefix && ZSTR_LEN(id_prefix) > 0) {
+        if (ZSTR_LEN(id_prefix) > 16) {
+            zend_value_error("FastChart\\Symbol::drawSvgFragment() $idPrefix "
+                             "must be at most 16 characters");
+            RETURN_THROWS();
+        }
+        const char *s = ZSTR_VAL(id_prefix);
+        if (!((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z') || s[0] == '_')) {
+            zend_value_error("FastChart\\Symbol::drawSvgFragment() $idPrefix "
+                             "must start with a letter or underscore");
+            RETURN_THROWS();
+        }
+        for (size_t i = 0; i < ZSTR_LEN(id_prefix); i++) {
+            char c = s[i];
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                  (c >= '0' && c <= '9') || c == '_' || c == '-')) {
+                zend_value_error("FastChart\\Symbol::drawSvgFragment() $idPrefix "
+                                 "may only contain [A-Za-z0-9_-]");
+                RETURN_THROWS();
+            }
+        }
+    }
+    fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1, id_prefix);
 }
 
 ZEND_METHOD(FastChart_Symbol, renderToFile)

@@ -277,18 +277,41 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
             }
         }
 
-        /* Image-map poly per slice: center + 5 sample points along
-         * the arc gives a 6-vertex wedge approximation that captures
-         * the slice's clickable area well enough for HTML imagemaps. */
+        /* Image-map poly per slice. Plain pies use a center wedge.
+         * Donuts use an annular polygon so the center hole is not
+         * clickable. */
         int poly_xy[FASTCHART_IMAGE_MAP_MAX_COORDS];
         int poly_n = 0;
-        poly_xy[poly_n++] = slice_cx;
-        poly_xy[poly_n++] = slice_cy;
-        for (int k = 0; k < 6 && poly_n + 1 < FASTCHART_IMAGE_MAP_MAX_COORDS; k++) {
-            double t_frac = (double)k / 5.0;
-            double th = (s_deg + (e_deg - s_deg) * t_frac) * M_PI / 180.0;
-            poly_xy[poly_n++] = slice_cx + (int)((double)slice_radius * cos(th));
-            poly_xy[poly_n++] = slice_cy + (int)((double)slice_radius * sin(th));
+        int inner_r = 0;
+        if (donut > 0) {
+            int hole = (int)((double)diameter * donut);
+            if (hole < 4) hole = 4;
+            inner_r = hole / 2;
+            if (inner_r >= slice_radius) inner_r = slice_radius - 1;
+            if (inner_r < 1) inner_r = 0;
+        }
+        if (inner_r > 0) {
+            for (int k = 0; k < 6 && poly_n + 1 < FASTCHART_IMAGE_MAP_MAX_COORDS; k++) {
+                double t_frac = (double)k / 5.0;
+                double th = (s_deg + (e_deg - s_deg) * t_frac) * M_PI / 180.0;
+                poly_xy[poly_n++] = slice_cx + (int)((double)slice_radius * cos(th));
+                poly_xy[poly_n++] = slice_cy + (int)((double)slice_radius * sin(th));
+            }
+            for (int k = 5; k >= 0 && poly_n + 1 < FASTCHART_IMAGE_MAP_MAX_COORDS; k--) {
+                double t_frac = (double)k / 5.0;
+                double th = (s_deg + (e_deg - s_deg) * t_frac) * M_PI / 180.0;
+                poly_xy[poly_n++] = slice_cx + (int)((double)inner_r * cos(th));
+                poly_xy[poly_n++] = slice_cy + (int)((double)inner_r * sin(th));
+            }
+        } else {
+            poly_xy[poly_n++] = slice_cx;
+            poly_xy[poly_n++] = slice_cy;
+            for (int k = 0; k < 6 && poly_n + 1 < FASTCHART_IMAGE_MAP_MAX_COORDS; k++) {
+                double t_frac = (double)k / 5.0;
+                double th = (s_deg + (e_deg - s_deg) * t_frac) * M_PI / 180.0;
+                poly_xy[poly_n++] = slice_cx + (int)((double)slice_radius * cos(th));
+                poly_xy[poly_n++] = slice_cy + (int)((double)slice_radius * sin(th));
+            }
         }
         /* fc_image_map_push rejects idx < 0, so the Other bucket (-1)
          * simply gets no hot-spot. */
@@ -356,8 +379,8 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
             double mid_rad = (start_deg + sweep / 2.0) * M_PI / 180.0;
             double cos_mid = cos(mid_rad);
             double sin_mid = sin(mid_rad);
-            char buf[64];
-            snprintf(buf, sizeof(buf), fmt, 100.0 * slices[i].value / total);
+            char *buf = fastchart_format_double_label(
+                fmt, 100.0 * slices[i].value / total);
 
             if (self->slice_label_position == FASTCHART_LABEL_LEFT ||
                 self->slice_label_position == FASTCHART_LABEL_RIGHT) {
@@ -406,6 +429,7 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
                                         FASTCHART_ALIGN_CENTER, buf, NULL, 0);
                 }
             }
+            efree(buf);
             start_deg += sweep;
         }
     }

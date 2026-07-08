@@ -258,12 +258,12 @@ void fc_pdf_emit_polygon(fc_pdf_state *s, const int *xs, const int *ys,
  * line segments) avoids butt-cap notches at interior vertices for
  * thickness > 1. */
 void fc_pdf_emit_polyline(fc_pdf_state *s, const int *xs, const int *ys,
-                           int n, uint32_t rgba, int thickness)
+                           int n, uint32_t rgba, int thickness, int dash)
 {
 	if (n < 2) return;
 	if (fc_pdf_transparent(rgba)) return;
 	pdfioContentSave(s->st);
-	set_stroke(s, rgba, thickness, FASTCHART_DASH_SOLID);
+	set_stroke(s, rgba, thickness, dash);
 	pdfioContentPathMoveTo(s->st, (double)xs[0], FY(s, (double)ys[0]));
 	for (int i = 1; i < n; i++)
 		pdfioContentPathLineTo(s->st, (double)xs[i], FY(s, (double)ys[i]));

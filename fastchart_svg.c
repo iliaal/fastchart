@@ -373,7 +373,7 @@ void fc_svg_emit_polygon(smart_str *buf,
 
 void fc_svg_emit_polyline(smart_str *buf,
                            const int *xs, const int *ys, int n,
-                           uint32_t rgba, int thickness)
+                           uint32_t rgba, int thickness, int dash)
 {
     if (n < 2) return;
     FC_APPENDS(buf, "<polyline points=\"");
@@ -391,6 +391,7 @@ void fc_svg_emit_polyline(smart_str *buf,
         smart_str_append_long(buf, thickness);
         smart_str_appendc(buf, '"');
     }
+    fc_svg_emit_dash_attr(buf, dash, thickness);
     FC_APPENDS(buf, "/>\n");
 }
 

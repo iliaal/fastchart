@@ -250,7 +250,7 @@ void fastchart_target_polygon(fastchart_target_t *t,
  * matters for curves sampled into many segments (e.g. chord links). */
 void fastchart_target_polyline(fastchart_target_t *t,
                                 const fastchart_point_t *pts, int n,
-                                int color, int thickness);
+                                int color, int thickness, int dash);
 
 void fastchart_target_arc(fastchart_target_t *t,
                            int cx, int cy, int rx, int ry,

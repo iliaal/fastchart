@@ -59,6 +59,24 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
             }
         }
     }
+    fastchart_obj *base = (fastchart_obj *)self;
+    for (int o = 0; o < base->n_combo_overlays; o++) {
+        const fastchart_combo_overlay *ov = &base->combo_overlays[o];
+        bool right = self->secondary_y && ov->right_axis;
+        if (right) n_right++;
+        int lim = ov->n < max_len ? ov->n : max_len;
+        for (int i = 0; i < lim; i++) {
+            double d = ov->values[i];
+            if (!isfinite(d)) continue;
+            if (right) {
+                if (!seen_r) { dmin_r = dmax_r = d; seen_r = 1; }
+                else { if (d < dmin_r) dmin_r = d; if (d > dmax_r) dmax_r = d; }
+            } else {
+                if (!seen_l) { dmin_l = dmax_l = d; seen_l = 1; }
+                else { if (d < dmin_l) dmin_l = d; if (d > dmax_l) dmax_l = d; }
+            }
+        }
+    }
     if (!seen_l) {
         zend_throw_error(NULL,
             "FastChart\\LineChart::draw() found no numeric values for the primary Y axis");

@@ -43,6 +43,17 @@ int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_ta
             if (boxes[i].outliers[k] > dmax) dmax = boxes[i].outliers[k];
         }
     }
+    fastchart_obj *base = (fastchart_obj *)self;
+    for (int o = 0; o < base->n_combo_overlays; o++) {
+        const fastchart_combo_overlay *ov = &base->combo_overlays[o];
+        int lim = ov->n < n ? ov->n : n;
+        for (int i = 0; i < lim; i++) {
+            double d = ov->values[i];
+            if (!isfinite(d)) continue;
+            if (d < dmin) dmin = d;
+            if (d > dmax) dmax = d;
+        }
+    }
 
     fastchart_value_range range;
     if (((fastchart_obj *)self)->y_axis_scale == FASTCHART_SCALE_LOG) {
@@ -68,7 +79,6 @@ int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_ta
     /* Use category labels if supplied, else fall back to per-box label
      * fields, else integer indices. */
     const char **labels = ecalloc(n, sizeof(const char *));
-    fastchart_obj *base = (fastchart_obj *)self;
     for (int i = 0; i < n; i++) {
         if (base->category_labels && i < base->n_category_labels) {
             labels[i] = base->category_labels[i];
