@@ -127,31 +127,31 @@ int fastchart_violin_render_to_target(fastchart_violin_obj *self, fastchart_targ
                 var += d * d;
             }
         }
-		double sd = n > 1 ? sqrt(var / (n - 1)) : 0.0;
-		double h = sd > 0.0 ? 1.06 * sd * pow((double)n, -0.2) : 0.0;
-		if (h < (vmax - vmin) * 0.01) h = (vmax - vmin) * 0.02;  /* floor */
-		int sample_stride = n > 1024 ? (n + 1023) / 1024 : 1;
+        double sd = n > 1 ? sqrt(var / (n - 1)) : 0.0;
+        double h = sd > 0.0 ? 1.06 * sd * pow((double)n, -0.2) : 0.0;
+        if (h < (vmax - vmin) * 0.01) h = (vmax - vmin) * 0.02;  /* floor */
+        int sample_stride = n > 1024 ? (n + 1023) / 1024 : 1;
 
-		/* Density over the global value grid. Cache each grid point's
-		 * pixel y so the two polygon passes below don't recompute it. */
+        /* Density over the global value grid. Cache each grid point's
+         * pixel y so the two polygon passes below don't recompute it. */
         double dens[VIOLIN_GRID];
         double yv[VIOLIN_GRID];
         double dmax = 0.0;
         for (int j = 0; j < VIOLIN_GRID; j++) {
             double x = vmin + (vmax - vmin) * ((double)j / (VIOLIN_GRID - 1));
-			yv[j] = plot_y1 - (x - vmin) / (vmax - vmin) * plot_h;
-			double s = 0.0;
-			int sampled = 0;
-			for (int i = 0; i < grp->n; i += sample_stride) {
-				if (!isfinite(grp->values[i])) continue;
-				double u = (x - grp->values[i]) / h;
-				s += exp(-0.5 * u * u);
-				sampled++;
-			}
-			if (sampled == 0) sampled = 1;
-			dens[j] = s / (sampled * h * 2.5066282746310002);  /* sqrt(2pi) */
-			if (dens[j] > dmax) dmax = dens[j];
-		}
+            yv[j] = plot_y1 - (x - vmin) / (vmax - vmin) * plot_h;
+            double s = 0.0;
+            int sampled = 0;
+            for (int i = 0; i < grp->n; i += sample_stride) {
+                if (!isfinite(grp->values[i])) continue;
+                double u = (x - grp->values[i]) / h;
+                s += exp(-0.5 * u * u);
+                sampled++;
+            }
+            if (sampled == 0) sampled = 1;
+            dens[j] = s / (sampled * h * 2.5066282746310002);  /* sqrt(2pi) */
+            if (dens[j] > dmax) dmax = dens[j];
+        }
         if (dmax <= 0.0) dmax = 1.0;
 
         int np = 0;

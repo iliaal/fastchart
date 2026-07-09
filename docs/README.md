@@ -1045,6 +1045,11 @@ grids, vectors, columns, etc.) are **best-effort**: bad entries are
 silently dropped or coerced to NaN. No `TypeError` is raised for them,
 even if `setStrict(true)` was called on the chart instance.
 
+Best-effort applies to malformed *entries*, not oversized *counts*.
+An array whose element count exceeds a setter's documented cap throws
+`ValueError` regardless of strict mode, rather than truncating to the
+cap; that keeps silent data loss from masquerading as a full render.
+
 This contract is intentional (complex shapes such as a Gantt task
 list or Sankey flows are often assembled from heterogeneous sources;
 dropping one bad row is usually preferable to aborting the whole

@@ -5531,19 +5531,19 @@ ZEND_METHOD(FastChart_StockChart, setVolumeColors)
         zend_ulong k_idx;
         zend_string *k_str;
         zval *v;
-		ZEND_HASH_FOREACH_KEY_VAL(ht, k_idx, k_str, v) {
-			(void)v;
-			if (k_str) continue;  /* string keys ignored */
-			if (k_idx >= FASTCHART_MAX_VOLUME_COLORS) {
-				zend_value_error(
-					"FastChart\\StockChart::setVolumeColors() accepts candle indexes below %d",
-					FASTCHART_MAX_VOLUME_COLORS);
-				RETURN_THROWS();
-			}
-			if (!any_int || k_idx > max_key) max_key = k_idx;
-			any_int = true;
-		} ZEND_HASH_FOREACH_END();
-	}
+        ZEND_HASH_FOREACH_KEY_VAL(ht, k_idx, k_str, v) {
+            (void)v;
+            if (k_str) continue;  /* string keys ignored */
+            if (k_idx >= FASTCHART_MAX_VOLUME_COLORS) {
+                zend_value_error(
+                    "FastChart\\StockChart::setVolumeColors() accepts candle indexes below %d",
+                    FASTCHART_MAX_VOLUME_COLORS);
+                RETURN_THROWS();
+            }
+            if (!any_int || k_idx > max_key) max_key = k_idx;
+            any_int = true;
+        } ZEND_HASH_FOREACH_END();
+    }
     if (!any_int) {
         if (self->volume_colors) efree(self->volume_colors);
         self->volume_colors = NULL;
