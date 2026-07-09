@@ -388,8 +388,9 @@ abstract class Chart
      * chart title; `setAxisFont` for axis tick labels and axis
      * titles; `setLabelFont` for category labels, value labels,
      * and pie slice labels. Pass null path to keep using the
-     * global setFontPath() font; pass 0.0 size to keep the
-     * computed default. The two arguments are independent.
+     * global setFontPath() font; pass null size (or omit it) to keep
+     * the computed default. A given size must be in 1.0..200.0. The
+     * two arguments are independent.
      */
     public function setTitleFont(?string $path = null, ?float $size = null): static {}
     public function setAxisFont(?string $path = null, ?float $size = null): static {}
@@ -688,8 +689,10 @@ abstract class Chart
     public function renderPng(): string {}
 
     /**
-     * Render to JPEG bytes. `$quality` is 1..100; default 0 means
-     * "use the value set via setJpegQuality()" (default 88).
+     * Render to JPEG bytes. When given, `$quality` must be in 1..100;
+     * omit the argument to use the value set via setJpegQuality()
+     * (default 88). An explicit 0 is rejected — omit it to get the
+     * configured default.
      */
     public function renderJpeg(int $quality = 0): string {}
 
@@ -799,9 +802,9 @@ abstract class Chart
      * Return an HTML imagemap describing the clickable hot-spots for
      * each rendered data point. The chart must have been rendered at
      * least once (renderSvg/renderPng/renderJpeg/renderWebp/renderToFile)
-     * for this to return non-empty output. Hot-spot shape depends on
-     * the chart type: circle for ScatterChart/BubbleChart, rect for
-     * BarChart, poly for PieChart, small rect for LineChart/AreaChart.
+     * for this to return non-empty output. Hot-spots are emitted for
+     * BarChart (rect), PieChart (poly), and ScatterChart (circle);
+     * other chart types render no hot-spots.
      * Map name defaults to 'fastchart'; sanitized to alphanumeric +
      * '-' + '_' so it's safe to inline into an `<img usemap="#...">`.
      *

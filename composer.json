@@ -26,6 +26,11 @@
                 "name": "enable-fastchart-dev",
                 "description": "Enable -Wall -Wextra -Werror for wrapper code (development builds)",
                 "needs-value": false
+            },
+            {
+                "name": "with-pdfio",
+                "description": "Enable PDF output (renderPdf) via system-installed pdfio; off by default",
+                "needs-value": false
             }
         ],
         "support-zts": true,

@@ -26,6 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   horizontal / vertical bands, matching the 1.5.0 API notes.
 - `QrCode::setData()` rejects payloads above the QR version-40 text
   ceiling at setter time.
+- Data setters now validate input caps before dropping prior data, so
+  a caught over-cap `ValueError` no longer wipes a valid chart.
+- `BarChart::getImageMap()` no longer returns stale hot-spots after a
+  render aborts on a validation error (e.g. log scale, negative data).
+- Plot bands and Area fills with libgd alpha 127 now render fully
+  transparent instead of leaking a `rgba(...,0.004)` trace.
+- Symbol JPEG output honours the configured background colour when the
+  background is transparent, instead of flattening to white.
 
 ## [1.5.0] - 2026-07-07
 

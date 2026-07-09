@@ -173,6 +173,11 @@ static int bar_compute_range(const fastchart_bar_obj *self,
 
 int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *t)
 {
+    /* Clear hot-spots from a prior successful render up front, so a render
+     * that aborts on a validation error (e.g. log Y-axis with non-positive
+     * data) does not leave stale areas behind for getImageMap(). The
+     * success path resets and repopulates them again below. */
+    fastchart_reset_image_map_areas((fastchart_obj *)self);
     if (self->n_series == 0) {
         zend_throw_error(NULL,
             "FastChart\\BarChart::draw() requires setSeries() to have been called with non-empty data");

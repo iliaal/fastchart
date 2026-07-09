@@ -1,6 +1,12 @@
 # Spec: `Chart::renderPdf()` via libharu
 
-**Status:** deferred to v1.2
+> **Superseded (historical design doc).** PDF output shipped in v1.3.0
+> built on **system pdfio** (msweet.org) via the opt-in `--with-pdfio`
+> configure flag, not libharu / `--with-libharu` as explored below.
+> See `renderPdf()` in the README and `fastchart_pdf.c` for the
+> implementation. This file is kept for design rationale only.
+
+**Status:** shipped in v1.3.0 (via pdfio, not libharu)
 **Author:** ilia
 **Created:** 2026-05-16
 **Target:** v1.2

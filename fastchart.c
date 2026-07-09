@@ -4233,15 +4233,15 @@ ZEND_METHOD(FastChart_GaugeChart, setZones)
      * array { from: float, to: float, color?: int }. Bad-shape entries
      * are silently dropped (matches the prior config-zval behavior).
      * Up to 16 zones; further entries are ignored. */
-    if (self->zones) efree(self->zones);
-    self->zones = NULL;
-    self->n_zones = 0;
-
     HashTable *ht = Z_ARRVAL_P(zones);
     int total = fastchart_array_count_or_throw(
         ht, FASTCHART_MAX_GAUGE_ZONES,
         "FastChart\\GaugeChart::setZones()", "zones");
     if (total < 0) RETURN_THROWS();
+
+    if (self->zones) efree(self->zones);
+    self->zones = NULL;
+    self->n_zones = 0;
     if (total == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
     fastchart_gauge_zone *out = ecalloc((size_t)total, sizeof(fastchart_gauge_zone));
@@ -4653,7 +4653,7 @@ ZEND_METHOD(FastChart_Chart, svgToJpeg)
     }
 
     smart_str out = {0};
-    int rc = fastchart_encode_jpeg(&out, &pix, (int)quality);
+    int rc = fastchart_encode_jpeg(&out, &pix, (int)quality, -1);
     fastchart_pixels_release(&pix);
     if (rc != 0) {
         smart_str_free(&out);
@@ -5156,13 +5156,13 @@ ZEND_METHOD(FastChart_ContourChart, setLevels)
         Z_PARAM_ARRAY(levels)
     ZEND_PARSE_PARAMETERS_END();
     fastchart_contour_obj *self = Z_FASTCHART_CONTOUR_OBJ_P(ZEND_THIS);
-    if (self->levels) { efree(self->levels); self->levels = NULL; }
-    self->level_count = 0;
     HashTable *ht = Z_ARRVAL_P(levels);
     int n = fastchart_array_count_or_throw(
         ht, FASTCHART_MAX_LEVELS,
         "FastChart\\ContourChart::setLevels()", "levels");
     if (n < 0) RETURN_THROWS();
+    if (self->levels) { efree(self->levels); self->levels = NULL; }
+    self->level_count = 0;
     if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     self->levels = ecalloc((size_t)n, sizeof(double));
     int k = 0;
@@ -5770,6 +5770,29 @@ ZEND_METHOD(FastChart_PieChart, setRings)
 
     fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
 
+    HashTable *ht = Z_ARRVAL_P(data_zv);
+    int ring_input = fastchart_array_count_or_throw(
+        ht, FASTCHART_MAX_PIE_RINGS,
+        "FastChart\\PieChart::setRings()", "rings");
+    if (ring_input < 0) RETURN_THROWS();
+
+    /* Validate every ring's slice cap before dropping the prior rings,
+     * so a caught over-cap ValueError leaves the chart renderable (the
+     * loop below commits rings into self->rings incrementally). */
+    {
+        zval *_r;
+        ZEND_HASH_FOREACH_VAL(ht, _r) {
+            if (_r) ZVAL_DEREF(_r);
+            if (Z_TYPE_P(_r) != IS_ARRAY) continue;
+            if (zend_hash_num_elements(Z_ARRVAL_P(_r)) > FASTCHART_MAX_SLICES) {
+                zend_value_error("FastChart\\PieChart::setRings() accepts at most %u slices per ring; got %u",
+                                 (unsigned)FASTCHART_MAX_SLICES,
+                                 (unsigned)zend_hash_num_elements(Z_ARRVAL_P(_r)));
+                RETURN_THROWS();
+            }
+        } ZEND_HASH_FOREACH_END();
+    }
+
     /* Drop any previously-parsed rings. */
     for (int r = 0; r < self->ring_count; r++) {
         fastchart_pie_slice *rs = self->rings[r].slices;
@@ -5785,21 +5808,10 @@ ZEND_METHOD(FastChart_PieChart, setRings)
     }
     self->ring_count = 0;
 
-    HashTable *ht = Z_ARRVAL_P(data_zv);
-    int ring_input = fastchart_array_count_or_throw(
-        ht, FASTCHART_MAX_PIE_RINGS,
-        "FastChart\\PieChart::setRings()", "rings");
-    if (ring_input < 0) RETURN_THROWS();
     zval *ring_zv;
     ZEND_HASH_FOREACH_VAL(ht, ring_zv) {
         if (ring_zv) ZVAL_DEREF(ring_zv);
         if (Z_TYPE_P(ring_zv) != IS_ARRAY) continue;
-        if (zend_hash_num_elements(Z_ARRVAL_P(ring_zv)) > FASTCHART_MAX_SLICES) {
-            zend_value_error("FastChart\\PieChart::setRings() accepts at most %u slices per ring; got %u",
-                             (unsigned)FASTCHART_MAX_SLICES,
-                             (unsigned)zend_hash_num_elements(Z_ARRVAL_P(ring_zv)));
-            RETURN_THROWS();
-        }
         fastchart_pie_slice *slices;
         int count;
         double total;
@@ -5900,6 +5912,12 @@ ZEND_METHOD(FastChart_PieChart, setSlices)
 
     fastchart_pie_obj *self = Z_FASTCHART_PIE_OBJ_P(ZEND_THIS);
 
+    HashTable *ht = Z_ARRVAL_P(data_zv);
+    int n = fastchart_array_count_or_throw(
+        ht, FASTCHART_MAX_SLICES,
+        "FastChart\\PieChart::setSlices()", "slices");
+    if (n < 0) RETURN_THROWS();
+
     /* Drop any previously-parsed slices. */
     if (self->slices) {
         for (int i = 0; i < self->slice_count; i++) {
@@ -5912,11 +5930,6 @@ ZEND_METHOD(FastChart_PieChart, setSlices)
     self->total = 0.0;
     self->pie_variable_radius = false;
 
-    HashTable *ht = Z_ARRVAL_P(data_zv);
-    int n = fastchart_array_count_or_throw(
-        ht, FASTCHART_MAX_SLICES,
-        "FastChart\\PieChart::setSlices()", "slices");
-    if (n < 0) RETURN_THROWS();
     if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
     self->slices = ecalloc((size_t)n, sizeof(fastchart_pie_slice));
@@ -6511,7 +6524,7 @@ static int fastchart_chart_render_to_buf(fastchart_obj *self,
         break;
     case 1:
         rc = fastchart_encode_jpeg(out_buf, &pix,
-            (quality > 0) ? quality : (int)self->jpeg_quality);
+            (quality > 0) ? quality : (int)self->jpeg_quality, -1);
         break;
     case 2:
         rc = fastchart_encode_webp(out_buf, &pix,
@@ -7312,6 +7325,34 @@ ZEND_METHOD(FastChart_GanttChart, setTasks)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_gantt_obj *self = Z_FASTCHART_GANTT_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(arr);
+    int n = fastchart_array_count_or_throw(
+        ht, FASTCHART_MAX_GANTT_TASKS,
+        "FastChart\\GanttChart::setTasks()", "tasks");
+    if (n < 0) RETURN_THROWS();
+
+    /* Validate every task's dependency cap before dropping the prior
+     * task list, so a caught over-cap ValueError leaves the chart
+     * renderable (the parse loop below builds into self->tasks and
+     * cannot roll back). */
+    {
+        zval *_t;
+        ZEND_HASH_FOREACH_VAL(ht, _t) {
+            if (_t) ZVAL_DEREF(_t);
+            if (Z_TYPE_P(_t) != IS_ARRAY) continue;
+            zval *_zd = zend_hash_str_find(Z_ARRVAL_P(_t), "depends", 7);
+            if (_zd) ZVAL_DEREF(_zd);
+            if (_zd && Z_TYPE_P(_zd) == IS_ARRAY &&
+                zend_hash_num_elements(Z_ARRVAL_P(_zd)) > FASTCHART_MAX_GANTT_DEPS) {
+                zend_value_error(
+                    "FastChart\\GanttChart::setTasks() accepts at most %u dependencies; got %u",
+                    (unsigned)FASTCHART_MAX_GANTT_DEPS,
+                    (unsigned)zend_hash_num_elements(Z_ARRVAL_P(_zd)));
+                RETURN_THROWS();
+            }
+        } ZEND_HASH_FOREACH_END();
+    }
+
     if (self->tasks) {
         for (int i = 0; i < self->task_count; i++) {
             fc_efree_opt(self->tasks[i].name);
@@ -7321,12 +7362,6 @@ ZEND_METHOD(FastChart_GanttChart, setTasks)
         self->tasks = NULL;
     }
     self->task_count = 0;
-
-    HashTable *ht = Z_ARRVAL_P(arr);
-    int n = fastchart_array_count_or_throw(
-        ht, FASTCHART_MAX_GANTT_TASKS,
-        "FastChart\\GanttChart::setTasks()", "tasks");
-    if (n < 0) RETURN_THROWS();
     if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     self->tasks = ecalloc((size_t)n, sizeof(fastchart_gantt_task));
     int slot = 0;
@@ -7680,6 +7715,33 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxes)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_boxplot_obj *self = Z_FASTCHART_BOXPLOT_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(arr);
+    int n = fastchart_array_count_or_throw(
+        ht, FASTCHART_MAX_BOXPLOT_ENTRIES,
+        "FastChart\\BoxPlot::setBoxes()", "boxes");
+    if (n < 0) RETURN_THROWS();
+
+    /* Validate every box's outlier cap before dropping the prior
+     * entries, so a caught over-cap ValueError leaves the chart
+     * renderable (the parse loop below builds into self->entries). */
+    {
+        zval *_e;
+        ZEND_HASH_FOREACH_VAL(ht, _e) {
+            if (_e) ZVAL_DEREF(_e);
+            if (Z_TYPE_P(_e) != IS_ARRAY) continue;
+            zval *_zo = zend_hash_str_find(Z_ARRVAL_P(_e), "outliers", 8);
+            if (_zo) ZVAL_DEREF(_zo);
+            if (_zo && Z_TYPE_P(_zo) == IS_ARRAY &&
+                zend_hash_num_elements(Z_ARRVAL_P(_zo)) > FASTCHART_MAX_OUTLIERS) {
+                zend_value_error(
+                    "FastChart\\BoxPlot::setBoxes() accepts at most %u outliers; got %u",
+                    (unsigned)FASTCHART_MAX_OUTLIERS,
+                    (unsigned)zend_hash_num_elements(Z_ARRVAL_P(_zo)));
+                RETURN_THROWS();
+            }
+        } ZEND_HASH_FOREACH_END();
+    }
+
     if (self->entries) {
         for (int i = 0; i < self->entry_count; i++) {
             fc_efree_opt(self->entries[i].label);
@@ -7689,12 +7751,6 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxes)
         self->entries = NULL;
     }
     self->entry_count = 0;
-
-    HashTable *ht = Z_ARRVAL_P(arr);
-    int n = fastchart_array_count_or_throw(
-        ht, FASTCHART_MAX_BOXPLOT_ENTRIES,
-        "FastChart\\BoxPlot::setBoxes()", "boxes");
-    if (n < 0) RETURN_THROWS();
     if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     self->entries = ecalloc((size_t)n, sizeof(fastchart_boxplot_entry));
     int slot = 0;
@@ -7797,14 +7853,13 @@ ZEND_METHOD(FastChart_BubbleChart, setPoints)
         Z_PARAM_ARRAY(arr)
     ZEND_PARSE_PARAMETERS_END();
     fastchart_bubble_obj *self = Z_FASTCHART_BUBBLE_OBJ_P(ZEND_THIS);
-    if (self->points) { efree(self->points); self->points = NULL; }
-    self->point_count = 0;
-
     HashTable *ht = Z_ARRVAL_P(arr);
     int n = fastchart_array_count_or_throw(
         ht, FASTCHART_MAX_BUBBLE_POINTS,
         "FastChart\\BubbleChart::setPoints()", "points");
     if (n < 0) RETURN_THROWS();
+    if (self->points) { efree(self->points); self->points = NULL; }
+    self->point_count = 0;
     if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     self->points = ecalloc((size_t)n, sizeof(fastchart_bubble_point));
     int slot = 0;
@@ -9971,6 +10026,12 @@ ZEND_METHOD(FastChart_SankeyChart, setNodes)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_sankey_obj *self = Z_FASTCHART_SANKEY_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(nodes);
+    int n = fastchart_array_count_or_throw(
+        ht, FASTCHART_MAX_SANKEY_NODES,
+        "FastChart\\SankeyChart::setNodes()", "nodes");
+    if (n < 0) RETURN_THROWS();
+
     if (self->nodes) {
         for (int i = 0; i < self->node_count; i++) {
             if (self->nodes[i].label) efree(self->nodes[i].label);
@@ -9990,11 +10051,6 @@ ZEND_METHOD(FastChart_SankeyChart, setNodes)
     }
     self->link_count = 0;
 
-    HashTable *ht = Z_ARRVAL_P(nodes);
-    int n = fastchart_array_count_or_throw(
-        ht, FASTCHART_MAX_SANKEY_NODES,
-        "FastChart\\SankeyChart::setNodes()", "nodes");
-    if (n < 0) RETURN_THROWS();
     if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     fastchart_sankey_node *parsed = ecalloc(n, sizeof(*parsed));
     int kept = 0;
@@ -10034,15 +10090,15 @@ ZEND_METHOD(FastChart_SankeyChart, setLinks)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_sankey_obj *self = Z_FASTCHART_SANKEY_OBJ_P(ZEND_THIS);
-    if (self->links) efree(self->links);
-    self->links = NULL;
-    self->link_count = 0;
-
     HashTable *ht = Z_ARRVAL_P(links);
     int n = fastchart_array_count_or_throw(
         ht, FASTCHART_MAX_SANKEY_LINKS,
         "FastChart\\SankeyChart::setLinks()", "links");
     if (n < 0) RETURN_THROWS();
+
+    if (self->links) efree(self->links);
+    self->links = NULL;
+    self->link_count = 0;
     if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     fastchart_sankey_link *parsed = ecalloc(n, sizeof(*parsed));
     int kept = 0;
@@ -10241,10 +10297,24 @@ ZEND_METHOD(FastChart_NetworkChart, setIterations)
  * Frees any existing contents of `side` first. */
 static void fastchart_pyramid_parse_side(zval *arr, fastchart_pyramid_side *side)
 {
+    HashTable *ht = Z_ARRVAL_P(arr);
+
+    /* Validate the data-array cap before releasing the previous side,
+     * so a caught over-cap ValueError leaves the prior series intact. */
+    zval *zd = zend_hash_str_find(ht, "data", sizeof("data") - 1);
+    if (zd) ZVAL_DEREF(zd);
+    HashTable *dht = (zd && Z_TYPE_P(zd) == IS_ARRAY) ? Z_ARRVAL_P(zd) : NULL;
+    int n = 0;
+    if (dht) {
+        n = fastchart_array_count_or_throw(
+            dht, FASTCHART_MAX_PYRAMID_ROWS,
+            "FastChart\\PopulationPyramid::setSeries()", "values");
+        if (n < 0) return;
+    }
+
     fastchart_pyramid_side_release(side);
     side->color_rgb = -1;
 
-    HashTable *ht = Z_ARRVAL_P(arr);
     const char *lbl = fastchart_label_or_null(
         zend_hash_str_find(ht, "label", sizeof("label") - 1));
     side->label = lbl ? estrdup(lbl) : NULL;
@@ -10256,15 +10326,7 @@ static void fastchart_pyramid_parse_side(zval *arr, fastchart_pyramid_side *side
         if (c >= 0 && c <= 0xFFFFFF) side->color_rgb = (int)c;
     }
 
-    zval *zd = zend_hash_str_find(ht, "data", sizeof("data") - 1);
-    if (zd) ZVAL_DEREF(zd);
-    if (!zd || Z_TYPE_P(zd) != IS_ARRAY) return;
-    HashTable *dht = Z_ARRVAL_P(zd);
-    int n = fastchart_array_count_or_throw(
-        dht, FASTCHART_MAX_PYRAMID_ROWS,
-        "FastChart\\PopulationPyramid::setSeries()", "values");
-    if (n < 0) return;
-    if (n <= 0) return;
+    if (!dht || n <= 0) return;
     double *data = ecalloc(n, sizeof(double));
     int kept = 0;
     zval *entry;
@@ -10286,6 +10348,12 @@ ZEND_METHOD(FastChart_PopulationPyramid, setCategories)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_pyramid_obj *self = Z_FASTCHART_PYRAMID_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(cats);
+    int n = fastchart_array_count_or_throw(
+        ht, FASTCHART_MAX_PYRAMID_ROWS,
+        "FastChart\\PopulationPyramid::setCategories()", "categories");
+    if (n < 0) RETURN_THROWS();
+
     if (self->categories) {
         for (int i = 0; i < self->cat_count; i++) {
             if (self->categories[i]) efree(self->categories[i]);
@@ -10294,12 +10362,6 @@ ZEND_METHOD(FastChart_PopulationPyramid, setCategories)
         self->categories = NULL;
     }
     self->cat_count = 0;
-
-    HashTable *ht = Z_ARRVAL_P(cats);
-    int n = fastchart_array_count_or_throw(
-        ht, FASTCHART_MAX_PYRAMID_ROWS,
-        "FastChart\\PopulationPyramid::setCategories()", "categories");
-    if (n < 0) RETURN_THROWS();
     if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     char **parsed = ecalloc(n, sizeof(char *));
     int kept = 0;
@@ -10353,6 +10415,32 @@ ZEND_METHOD(FastChart_ViolinPlot, setGroups)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_violin_obj *self = Z_FASTCHART_VIOLIN_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(groups);
+    int n = fastchart_array_count_or_throw(
+        ht, FASTCHART_MAX_VIOLIN_GROUPS,
+        "FastChart\\ViolinPlot::setGroups()", "groups");
+    if (n < 0) RETURN_THROWS();
+
+    /* Validate every group's value cap before dropping the prior
+     * groups, so a caught over-cap ValueError leaves the chart intact. */
+    {
+        zval *_g;
+        ZEND_HASH_FOREACH_VAL(ht, _g) {
+            if (_g) ZVAL_DEREF(_g);
+            if (Z_TYPE_P(_g) != IS_ARRAY) continue;
+            zval *_zv = zend_hash_str_find(Z_ARRVAL_P(_g), "values", sizeof("values") - 1);
+            if (_zv) ZVAL_DEREF(_zv);
+            if (_zv && Z_TYPE_P(_zv) == IS_ARRAY &&
+                zend_hash_num_elements(Z_ARRVAL_P(_zv)) > FASTCHART_MAX_VIOLIN_VALUES) {
+                zend_value_error(
+                    "FastChart\\ViolinPlot::setGroups() accepts at most %u values; got %u",
+                    (unsigned)FASTCHART_MAX_VIOLIN_VALUES,
+                    (unsigned)zend_hash_num_elements(Z_ARRVAL_P(_zv)));
+                RETURN_THROWS();
+            }
+        } ZEND_HASH_FOREACH_END();
+    }
+
     if (self->groups) {
         for (int i = 0; i < self->group_count; i++) {
             if (self->groups[i].label) efree(self->groups[i].label);
@@ -10362,12 +10450,6 @@ ZEND_METHOD(FastChart_ViolinPlot, setGroups)
         self->groups = NULL;
     }
     self->group_count = 0;
-
-    HashTable *ht = Z_ARRVAL_P(groups);
-    int n = fastchart_array_count_or_throw(
-        ht, FASTCHART_MAX_VIOLIN_GROUPS,
-        "FastChart\\ViolinPlot::setGroups()", "groups");
-    if (n < 0) RETURN_THROWS();
     if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     fastchart_violin_group *parsed = ecalloc(n, sizeof(*parsed));
     int kept = 0;
@@ -10689,6 +10771,12 @@ ZEND_METHOD(FastChart_WordCloud, setWords)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_wordcloud_obj *self = Z_FASTCHART_WORDCLOUD_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(words);
+    int n = fastchart_array_count_or_throw(
+        ht, FASTCHART_MAX_WORDS,
+        "FastChart\\WordCloud::setWords()", "words");
+    if (n < 0) RETURN_THROWS();
+
     if (self->words) {
         for (int i = 0; i < self->word_count; i++) {
             if (self->words[i].text) efree(self->words[i].text);
@@ -10697,12 +10785,6 @@ ZEND_METHOD(FastChart_WordCloud, setWords)
         self->words = NULL;
     }
     self->word_count = 0;
-
-    HashTable *ht = Z_ARRVAL_P(words);
-    int n = fastchart_array_count_or_throw(
-        ht, FASTCHART_MAX_WORDS,
-        "FastChart\\WordCloud::setWords()", "words");
-    if (n < 0) RETURN_THROWS();
     if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     fastchart_word *parsed = ecalloc(n, sizeof(*parsed));
     int kept = 0;
@@ -10765,6 +10847,12 @@ ZEND_METHOD(FastChart_SerpentineTimeline, setEvents)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_serpentine_obj *self = Z_FASTCHART_SERPENTINE_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(events);
+    int n = fastchart_array_count_or_throw(
+        ht, FASTCHART_MAX_TIMELINE_EVENTS,
+        "FastChart\\SerpentineTimeline::setEvents()", "events");
+    if (n < 0) RETURN_THROWS();
+
     if (self->events) {
         for (int i = 0; i < self->event_count; i++) {
             if (self->events[i].label) efree(self->events[i].label);
@@ -10774,12 +10862,6 @@ ZEND_METHOD(FastChart_SerpentineTimeline, setEvents)
         self->events = NULL;
     }
     self->event_count = 0;
-
-    HashTable *ht = Z_ARRVAL_P(events);
-    int n = fastchart_array_count_or_throw(
-        ht, FASTCHART_MAX_TIMELINE_EVENTS,
-        "FastChart\\SerpentineTimeline::setEvents()", "events");
-    if (n < 0) RETURN_THROWS();
     if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     fastchart_timeline_event *parsed = ecalloc(n, sizeof(*parsed));
     int kept = 0;
@@ -10945,6 +11027,32 @@ ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_marimekko_obj *self = Z_FASTCHART_MARIMEKKO_OBJ_P(ZEND_THIS);
+    HashTable *ht = Z_ARRVAL_P(cols);
+    int n = fastchart_array_count_or_throw(
+        ht, FASTCHART_MAX_MARIMEKKO_COLS,
+        "FastChart\\MarimekkoChart::setColumns()", "columns");
+    if (n < 0) RETURN_THROWS();
+
+    /* Validate every column's segment cap before dropping the prior
+     * columns, so a caught over-cap ValueError leaves the chart intact. */
+    {
+        zval *_c;
+        ZEND_HASH_FOREACH_VAL(ht, _c) {
+            if (_c) ZVAL_DEREF(_c);
+            if (Z_TYPE_P(_c) != IS_ARRAY) continue;
+            zval *_zs = zend_hash_str_find(Z_ARRVAL_P(_c), "segments", sizeof("segments") - 1);
+            if (_zs) ZVAL_DEREF(_zs);
+            if (_zs && Z_TYPE_P(_zs) == IS_ARRAY &&
+                zend_hash_num_elements(Z_ARRVAL_P(_zs)) > FASTCHART_MAX_MARIMEKKO_SEGS) {
+                zend_value_error(
+                    "FastChart\\MarimekkoChart::setColumns() accepts at most %u segments; got %u",
+                    (unsigned)FASTCHART_MAX_MARIMEKKO_SEGS,
+                    (unsigned)zend_hash_num_elements(Z_ARRVAL_P(_zs)));
+                RETURN_THROWS();
+            }
+        } ZEND_HASH_FOREACH_END();
+    }
+
     if (self->columns) {
         for (int i = 0; i < self->column_count; i++) {
             if (self->columns[i].label) efree(self->columns[i].label);
@@ -10962,12 +11070,6 @@ ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
     }
     self->column_count = 0;
     self->total_width = 0.0;
-
-    HashTable *ht = Z_ARRVAL_P(cols);
-    int n = fastchart_array_count_or_throw(
-        ht, FASTCHART_MAX_MARIMEKKO_COLS,
-        "FastChart\\MarimekkoChart::setColumns()", "columns");
-    if (n < 0) RETURN_THROWS();
     if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     fastchart_marimekko_column *parsed = ecalloc(n, sizeof(*parsed));
     int kept = 0;
@@ -11069,17 +11171,17 @@ ZEND_METHOD(FastChart_VectorChart, setVectors)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_vector_obj *self = Z_FASTCHART_VECTOR_OBJ_P(ZEND_THIS);
-    if (self->vectors) efree(self->vectors);
-    self->vectors = NULL;
-    self->vector_count = 0;
-    self->mag_min = 0.0;
-    self->mag_max = 0.0;
-
     HashTable *ht = Z_ARRVAL_P(vecs);
     int n = fastchart_array_count_or_throw(
         ht, FASTCHART_MAX_VECTORS,
         "FastChart\\VectorChart::setVectors()", "vectors");
     if (n < 0) RETURN_THROWS();
+
+    if (self->vectors) efree(self->vectors);
+    self->vectors = NULL;
+    self->vector_count = 0;
+    self->mag_min = 0.0;
+    self->mag_max = 0.0;
     if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     fastchart_vector_datum *parsed = ecalloc(n, sizeof(*parsed));
     int kept = 0;

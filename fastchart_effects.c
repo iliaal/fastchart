@@ -49,9 +49,7 @@ int fastchart_lerp_rgb(int from, int to, double t)
  * the same opaque endpoint at input 0. */
 static int shadow_alpha_to_255(const fastchart_obj *chart)
 {
-    int a = (int)chart->shadow_alpha;
-    if (a < 0) a = 0; else if (a > 127) a = 127;
-    return 255 - (a * 255 + 63) / 127;
+    return fastchart_gd_alpha_to_byte((int)chart->shadow_alpha);
 }
 
 static int shadow_color_handle(fastchart_target_t *t,

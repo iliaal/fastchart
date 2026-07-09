@@ -156,7 +156,13 @@ jobs:
           # a file so we can assert "Tests failed: N" cleanly.
           set +e
           php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt
+          rc=${PIPESTATUS[0]}
           set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::run-tests.php exited $rc on PHP ${{ matrix.php }} - Linux (crash / BORK / aborted before summary)"
+            grep -E '^FAIL\b|^FAILED TEST|^BORK' /tmp/test-output.txt || true
+            exit 1
+          fi
           if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
             echo "::error::Tests failed on PHP ${{ matrix.php }} - Linux"
             grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
@@ -244,7 +250,13 @@ jobs:
           export NO_INTERACTION=1
           set +e
           php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt
+          rc=${PIPESTATUS[0]}
           set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::run-tests.php exited $rc on the PDF lane (crash / BORK / aborted before summary)"
+            grep -E '^FAIL\b|^FAILED TEST|^BORK' /tmp/test-output.txt || true
+            exit 1
+          fi
           if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
             echo "::error::Tests failed on the PDF lane"
             grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
@@ -358,7 +370,7 @@ jobs:
           # also fails the job — previously a non-zero exit was masked.
           set +e
           /tmp/php-asan/bin/php run-tests.php --show-diff --asan -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt
-          rc=$?
+          rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -ne 0 ]; then
             echo "::error::run-tests.php exited $rc under ASAN"
@@ -416,7 +428,13 @@ jobs:
           export NO_INTERACTION=1
           set +e
           php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt
+          rc=${PIPESTATUS[0]}
           set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::run-tests.php exited $rc on PHP ${{ matrix.php }} - macOS (crash / BORK / aborted before summary)"
+            grep -E '^FAIL\b|^FAILED TEST|^BORK' /tmp/test-output.txt || true
+            exit 1
+          fi
           if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
             echo "::error::Tests failed on PHP ${{ matrix.php }} - macOS"
             grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true

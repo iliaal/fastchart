@@ -1429,6 +1429,18 @@ static inline const char *fastchart_label_or_null(const zval *zv)
     return Z_STRVAL_P(zv);
 }
 
+/* Map a libgd-convention alpha (0..127, 0 = opaque, 127 = fully
+ * transparent) to a 0..255 straight-alpha byte (255 = opaque).
+ * Proportional so 127 rounds to 0 cleanly; the naive `255 - a * 2`
+ * left a 1/255 floor that surfaced as rgba(...,0.004) for a band or
+ * fill the caller asked to be fully transparent. Shared so plot
+ * bands, area fills, and drop shadows can't drift apart again. */
+static inline int fastchart_gd_alpha_to_byte(int a)
+{
+    if (a < 0) a = 0; else if (a > 127) a = 127;
+    return 255 - (a * 255 + 63) / 127;
+}
+
 char *fastchart_format_double_label(const char *fmt, double value);
 
 /* Per-chart SVG rendering helpers. Each chart family implements
