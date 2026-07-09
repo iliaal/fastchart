@@ -7,8 +7,8 @@
  *   - drawSvgFragment()           : <g>...</g> for stitching into an
  *                                   outer SVG document
  *   - renderPng()                 : PNG bytes (libpng, lossless)
- *   - renderJpeg($quality = 0)    : JPEG bytes (libjpeg-turbo); $quality
- *                                   0 means "use setJpegQuality()", default 88
+ *   - renderJpeg($quality = null) : JPEG bytes (libjpeg-turbo); null
+ *                                   means "use setJpegQuality()", default 88
  *   - renderWebp($quality = 90)   : WebP bytes (libwebp)
  *
  * The bytes-returning helpers skip the encode-to-disk roundtrip and

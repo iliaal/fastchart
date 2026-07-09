@@ -6565,15 +6565,16 @@ ZEND_METHOD(FastChart_Chart, renderPng)
 
 ZEND_METHOD(FastChart_Chart, renderJpeg)
 {
-    /* Per-call quality wins when provided; otherwise falls back to
+    /* Per-call quality wins when given; null (or omitted) falls back to
      * self->jpeg_quality (default 88, settable via setJpegQuality). */
     zend_long quality = 0;
+    bool quality_is_null = true;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
-        Z_PARAM_LONG(quality)
+        Z_PARAM_LONG_OR_NULL(quality, quality_is_null)
     ZEND_PARSE_PARAMETERS_END();
 
-    if (ZEND_NUM_ARGS() > 0) {
+    if (!quality_is_null) {
         if (quality < 1 || quality > 100) {
             zend_value_error(
                 "FastChart\\Chart::renderJpeg() quality must be in [1, 100]");

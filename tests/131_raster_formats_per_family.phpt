@@ -3,6 +3,11 @@ Per-chart-family raster round-trip: every family emits valid PNG/JPEG/WebP/SVG
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require __DIR__ . '/_font_candidates.inc';
+if (fc_pick_font() === '') echo "skip no system font available\n";
+?>
 --FILE--
 <?php
 /* Coverage gap before this test: PNG was exercised by ~50 phpts but

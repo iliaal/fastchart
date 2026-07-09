@@ -192,6 +192,10 @@ background. Stacked translucent overlaps won't match SVG/raster
 exactly because the current pdfio API doesn't expose per-shape
 transparency.
 
+On Windows, the PDF backend is opt-in via `--with-fastchart-pdfio`
+(`config.w32`) and requires `pdfio.h` / `pdfio.lib` to be provisioned
+first; the Windows CI and prebuilt DLLs ship PDF-disabled.
+
 Three static methods on `FastChart\Chart` rasterize caller-supplied
 SVG bytes through the same plutovg + libpng / libjpeg-turbo /
 libwebp pipeline. Useful for round-tripping `renderSvg()` output, or

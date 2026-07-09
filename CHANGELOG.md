@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   input instead of silently truncating to the internal cap.
 - `setFontPath()` now throws when `open_basedir` denies the path,
   instead of silently returning `$this`.
+- `renderJpeg()` now takes `?int $quality = null` (was `int = 0`) so the
+  reflected default no longer throws; null uses the setJpegQuality value.
 
 ### Fixed
 

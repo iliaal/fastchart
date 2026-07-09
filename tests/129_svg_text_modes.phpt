@@ -5,6 +5,11 @@ fastchart
 gd
 --INI--
 asan.detect_leaks=0
+--SKIPIF--
+<?php
+require __DIR__ . '/_font_candidates.inc';
+if (fc_pick_font() === '') echo "skip no system font found\n";
+?>
 --FILE--
 <?php
 require __DIR__ . '/_font_candidates.inc';
