@@ -27,7 +27,7 @@ extension; `renderPng()` / `renderJpeg()` / `renderWebp()` /
 
 ## Status
 
-v1.5.0 (current): 38 chart classes plus a 2-class Symbol family,
+v1.6.0 (current): 38 chart classes plus a 2-class Symbol family,
 vector PDF output (`renderPdf`, opt-in `--with-pdfio`), PNG
 compression control, SVG fragment id prefixes, and HTML image-map
 hot-spots on Bar / Pie / Scatter (`setImageMap` + `getImageMap`).
