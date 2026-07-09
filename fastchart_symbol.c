@@ -325,7 +325,8 @@ static int fastchart_symbol_render_to_buf(fastchart_symbol_obj *self,
         break;
     case 1:
         rc = fastchart_encode_jpeg(enc_buf_out, &pix,
-            (quality > 0) ? quality : (int)self->jpeg_quality);
+            (quality > 0) ? quality : (int)self->jpeg_quality,
+            (int)self->bg_rgb);
         break;
     case 2:
         rc = fastchart_encode_webp(enc_buf_out, &pix,

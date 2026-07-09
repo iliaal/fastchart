@@ -53,9 +53,11 @@ void fastchart_pixels_release(fastchart_pixels_t *pix);
 int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix);
 
 /* Encode pix into JPEG bytes. quality is 1..100; clamped if out of
- * range. -2 if libjpeg-turbo is not compiled in. */
+ * range. JPEG can't carry alpha, so transparent pixels are flattened
+ * onto bg_rgb (0xRRGGBB); pass a negative bg_rgb to flatten onto white.
+ * -2 if libjpeg-turbo is not compiled in. */
 int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
-                          int quality);
+                          int quality, int bg_rgb);
 
 /* WebP encoding mode. See setWebpMode() in fastchart.stub.php for the
  * caller-facing description. DRAWING is the default and is tuned for

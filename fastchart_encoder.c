@@ -322,10 +322,19 @@ static void fc_jpeg_term_destination(j_compress_ptr cinfo)
 }
 
 int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
-                          int quality)
+                          int quality, int bg_rgb)
 {
 	if (quality < 1)   quality = 1;
 	if (quality > 100) quality = 100;
+
+	/* Flatten transparent pixels onto this background. Negative bg_rgb
+	 * (the chart-side default) keeps the historical white fill. */
+	uint8_t bg_r = 255, bg_g = 255, bg_b = 255;
+	if (bg_rgb >= 0) {
+		bg_r = (uint8_t)((bg_rgb >> 16) & 0xFF);
+		bg_g = (uint8_t)((bg_rgb >>  8) & 0xFF);
+		bg_b = (uint8_t)( bg_rgb        & 0xFF);
+	}
 
 	struct jpeg_compress_struct cinfo;
 	struct fc_jpeg_err err;
@@ -431,13 +440,13 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 				if (a == 255) {
 					q[0] = r; q[1] = g; q[2] = b;
 				} else if (a == 0) {
-					q[0] = 255; q[1] = 255; q[2] = 255;
+					q[0] = bg_r; q[1] = bg_g; q[2] = bg_b;
 				} else {
-					/* over white: out = src*a + 255*(255-a)/255 */
+					/* over bg: out = src*a + bg*(255-a)/255 */
 					int ia = 255 - a;
-					q[0] = (uint8_t)((r * a + 255 * ia) / 255);
-					q[1] = (uint8_t)((g * a + 255 * ia) / 255);
-					q[2] = (uint8_t)((b * a + 255 * ia) / 255);
+					q[0] = (uint8_t)((r * a + bg_r * ia) / 255);
+					q[1] = (uint8_t)((g * a + bg_g * ia) / 255);
+					q[2] = (uint8_t)((b * a + bg_b * ia) / 255);
 				}
 			}
 		}

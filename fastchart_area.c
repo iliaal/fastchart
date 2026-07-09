@@ -375,8 +375,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
         int r = (rgba >> 16) & 0xFF;
         int g = (rgba >>  8) & 0xFF;
         int b =  rgba        & 0xFF;
-        int alpha_byte = 255 - alpha * 2;
-        if (alpha_byte < 0) alpha_byte = 0;
+        int alpha_byte = fastchart_gd_alpha_to_byte(alpha);
         int alpha_handle = fastchart_target_color(t, r, g, b, alpha_byte);
         if (n_pts >= 3) {
             fastchart_obj *base = (fastchart_obj *)self;
@@ -544,9 +543,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             int r = (rgba >> 16) & 0xFF;
             int g = (rgba >>  8) & 0xFF;
             int b =  rgba        & 0xFF;
-            /* gd alpha 0..127 -> byte 255..1 via 255 - gd_alpha * 2. */
-            int alpha_byte = 255 - alpha * 2;
-            if (alpha_byte < 0) alpha_byte = 0;
+            int alpha_byte = fastchart_gd_alpha_to_byte(alpha);
             int alpha_handle = fastchart_target_color(t, r, g, b, alpha_byte);
 
             if (curve) {

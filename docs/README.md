@@ -8,8 +8,8 @@ loaded; ext/gd is no longer required at runtime:
 php -d extension=fastchart docs/examples/01_line_basic.php
 ```
 
-Together the 40 scripts exercise every public method on the
-`FastChart\*` classes (105/105 covered), so this gallery doubles as
+Together the 71 scripts exercise every public method on the
+`FastChart\*` classes, so this gallery doubles as
 live documentation: if a knob exists, an example demonstrates it.
 
 Every script `require`s `_bootstrap.php` to resolve a TrueType font
@@ -1063,6 +1063,6 @@ pre-process the input array yourself before passing it to the setter.
 ## See also
 
 - [`examples/`](examples/): runnable PHP scripts for each chart above
-- [`tests/`](../tests/): 96 phpt tests covering every public method
+- [`tests/`](../tests/): 300+ phpt tests covering every public method
 - [`fastchart.stub.php`](../fastchart.stub.php): full public API
   surface with docstrings

@@ -920,9 +920,7 @@ void fastchart_blit_icon(fastchart_target_t *t, const fastchart_icon *icon,
  * round-trips to fully opaque. */
 static inline int band_alpha_to_255(int gd_alpha)
 {
-    if (gd_alpha < 0) gd_alpha = 0;
-    if (gd_alpha > 127) gd_alpha = 127;
-    return 255 - gd_alpha * 2;
+    return fastchart_gd_alpha_to_byte(gd_alpha);
 }
 
 void fastchart_draw_plot_bands(fastchart_target_t *t, fastchart_obj *chart,

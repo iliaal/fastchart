@@ -27,14 +27,14 @@ extension; `renderPng()` / `renderJpeg()` / `renderWebp()` /
 
 ## Status
 
-v1.1: confidence-band area charts, cone-style funnels, smooth polar
-curves with overlay vectors, log-scale bubble plots, HTML image-map
+v1.5.0 (current): 38 chart classes plus a 2-class Symbol family,
+vector PDF output (`renderPdf`, opt-in `--with-pdfio`), PNG
+compression control, SVG fragment id prefixes, and HTML image-map
 hot-spots on Bar / Pie / Scatter (`setImageMap` + `getImageMap`).
 v1.0 dropped libgd as a runtime dependency, rebuilt rasterization
 around vendored plutovg, and replaced `draw($canvas)` with
-`renderSvg/Png/Jpeg/Webp` + `renderToFile`. 38 chart types, 2-class
-Symbol family. See [`CHANGELOG.md`](CHANGELOG.md)
-for the full breaking-change list.
+`renderSvg/Png/Jpeg/Webp` + `renderToFile`. See
+[`CHANGELOG.md`](CHANGELOG.md) for the full history.
 
 ## Install
 
