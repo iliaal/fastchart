@@ -7,16 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Fixed-cap data setters now throw `ValueError` on oversized array
+  input instead of silently truncating to the internal cap.
+- `setFontPath()` now throws when `open_basedir` denies the path,
+  instead of silently returning `$this`.
+
 ### Fixed
 
-- `config.w32`: the pdfio probe now searches the `include\pdfio`
-  header subdir and accepts `pdfio1.lib`, matching Windows
-  source-build conventions (#12).
+- `config.w32`: the pdfio probe now searches `include\pdfio` and
+  accepts `pdfio1.lib`, matching Windows source-build layout (#12).
 - `addOverlaySeries()` now enforces count/value caps and expands
   Line/Area/Bar/BoxPlot ranges for finite overlay values.
-- `setImageMap()` rejects excessive entry/string counts without
-  erasing the previous valid map; donut and scatter hotspots now match
-  visible geometry.
+- `setImageMap()` rejects over-cap input without discarding the prior
+  valid map; donut/scatter hotspots now match the drawn geometry.
 - `Waterfall` / `ParetoChart` now render vertical annotations and
   horizontal / vertical bands, matching the 1.5.0 API notes.
 - `QrCode::setData()` rejects payloads above the QR version-40 text

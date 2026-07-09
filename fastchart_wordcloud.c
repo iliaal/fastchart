@@ -104,9 +104,9 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
     double cx = (plot_x0 + plot_x1) / 2.0;
     double cy = (plot_y0 + plot_y1) / 2.0;
 
-	wc_box *placed = ecalloc(n, sizeof(*placed));
-	int placed_n = 0;
-	long spiral_budget = 2000000L;
+    wc_box *placed = ecalloc(n, sizeof(*placed));
+    int placed_n = 0;
+    long spiral_budget = 2000000L;
 
     /* Uniform bucket grid over the canvas: collision candidates come
      * from the cells a box overlaps instead of the whole placed list,
@@ -150,8 +150,8 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
         /* Spiral outward until the box clears every placed box. */
         double bx = cx, by = cy;
         int ok = 0;
-		for (long s = 0; s < 60000 && !ok && spiral_budget > 0; s++, spiral_budget--) {
-			double tt = (double)s;
+        for (long s = 0; s < 60000 && !ok && spiral_budget > 0; s++, spiral_budget--) {
+            double tt = (double)s;
             double ang = tt * 2.39996322972865332;
             double rad = 1.5 * sqrt(tt);
             bx = cx + rad * cos(ang);
@@ -181,11 +181,11 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
                     }
                 }
             }
-		}
-		if (!ok) {
-			if (spiral_budget <= 0) break;
-			continue;   /* could not fit this word; drop it */
-		}
+        }
+        if (!ok) {
+            if (spiral_budget <= 0) break;
+            continue;   /* could not fit this word; drop it */
+        }
 
         placed[placed_n].x0 = bx - hw;
         placed[placed_n].y0 = by - hh;
