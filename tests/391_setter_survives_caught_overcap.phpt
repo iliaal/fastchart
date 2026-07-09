@@ -79,7 +79,9 @@ $bar = (new FastChart\BarChart(300, 200))->setSeries([1, 2, 3])->setImageMap([['
 $bar->renderSvg();
 $bar->setYAxisScale(FastChart\Chart::SCALE_LOG);
 $bar->setSeries([0, -1, 2]);
-try { $bar->renderSvg(); } catch (\Throwable $e) {}
+$threw = '';
+try { $bar->renderSvg(); } catch (\ValueError $e) { $threw = 'valueerror'; } catch (\Throwable $e) { $threw = get_class($e); }
+echo "bar log render throws: ", ($threw === 'valueerror' ? "valueerror" : "NO ($threw)"), "\n";
 echo "bar stale areas cleared: ", (count($bar->getImageMapAreas()) === 0 ? "yes" : "NO"), "\n";
 
 /* Alpha 127 (libgd fully transparent) must not leak a 0.004 opacity. */
@@ -110,6 +112,7 @@ gantt_nested_deps: survives
 boxplot_nested_outliers: survives
 violin_nested_values: survives
 marimekko_nested_segs: survives
+bar log render throws: valueerror
 bar stale areas cleared: yes
 alpha127 fully transparent: yes
 bar hotspots: yes

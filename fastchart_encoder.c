@@ -327,15 +327,6 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 	if (quality < 1)   quality = 1;
 	if (quality > 100) quality = 100;
 
-	/* Flatten transparent pixels onto this background. Negative bg_rgb
-	 * (the chart-side default) keeps the historical white fill. */
-	uint8_t bg_r = 255, bg_g = 255, bg_b = 255;
-	if (bg_rgb >= 0) {
-		bg_r = (uint8_t)((bg_rgb >> 16) & 0xFF);
-		bg_g = (uint8_t)((bg_rgb >>  8) & 0xFF);
-		bg_b = (uint8_t)( bg_rgb        & 0xFF);
-	}
-
 	struct jpeg_compress_struct cinfo;
 	struct fc_jpeg_err err;
 	cinfo.err = jpeg_std_error(&err.base);
@@ -411,9 +402,18 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 	 *   - opaque (pix->has_alpha == 0, set by fastchart_rasterize_doc's
 	 *     opaque-detect): SSSE3 on x86_64 or NEON on AArch64 packs
 	 *     pixels in vector chunks; scalar straight copy handles the rest.
-	 *   - translucent: scalar alpha-flatten over white. JPEG has no
+	 *   - translucent: scalar alpha-flatten over bg. JPEG has no
 	 *     alpha channel, so transparent regions show through as the
 	 *     composited background. */
+	/* Computed past the setjmp() above so it isn't flagged -Wclobbered;
+	 * set once here and only read in the loop. Negative bg_rgb (the
+	 * chart-side default) keeps the historical white fill. */
+	uint8_t bg_r = 255, bg_g = 255, bg_b = 255;
+	if (bg_rgb >= 0) {
+		bg_r = (uint8_t)((bg_rgb >> 16) & 0xFF);
+		bg_g = (uint8_t)((bg_rgb >>  8) & 0xFF);
+		bg_b = (uint8_t)( bg_rgb        & 0xFF);
+	}
 	rgb_row = emalloc((size_t)pix->w * 3 + 16);  /* +16 trailing slack for x86 SSE store overrun */
 	for (int y = 0; y < pix->h; y++) {
 		const uint8_t *src = pix->rgba + (size_t)y * pix->w * 4;
@@ -462,6 +462,7 @@ done:;
 
 	} zend_catch {
 		if (created) jpeg_destroy_compress(&cinfo);
+		if (rgb_row) efree(rgb_row);
 		zend_bailout();
 	} zend_end_try();
 
@@ -486,9 +487,9 @@ const char *fastchart_libjpeg_version(void)
 }
 #else  /* !HAVE_LIBJPEG */
 int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
-                          int quality)
+                          int quality, int bg_rgb)
 {
-	(void)out; (void)pix; (void)quality;
+	(void)out; (void)pix; (void)quality; (void)bg_rgb;
 	return -2;
 }
 int fastchart_have_libjpeg(void)         { return 0; }

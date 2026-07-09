@@ -690,11 +690,10 @@ abstract class Chart
 
     /**
      * Render to JPEG bytes. When given, `$quality` must be in 1..100;
-     * omit the argument to use the value set via setJpegQuality()
-     * (default 88). An explicit 0 is rejected — omit it to get the
-     * configured default.
+     * pass null (or omit) to use the value set via setJpegQuality()
+     * (default 88).
      */
-    public function renderJpeg(int $quality = 0): string {}
+    public function renderJpeg(?int $quality = null): string {}
 
     /** Render to WebP bytes. `$quality` is 1..100. */
     public function renderWebp(int $quality = 90): string {}
@@ -2351,7 +2350,7 @@ abstract class Symbol
     public function setWebpMode(int $mode): static {}
 
     public function renderPng(): string {}
-    public function renderJpeg(int $quality = 0): string {}
+    public function renderJpeg(?int $quality = null): string {}
     public function renderWebp(int $quality = 90): string {}
 
     /**

@@ -667,11 +667,12 @@ ZEND_METHOD(FastChart_Symbol, renderPng)
 ZEND_METHOD(FastChart_Symbol, renderJpeg)
 {
     zend_long quality = 0;
+    bool quality_is_null = true;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
-        Z_PARAM_LONG(quality)
+        Z_PARAM_LONG_OR_NULL(quality, quality_is_null)
     ZEND_PARSE_PARAMETERS_END();
-    if (ZEND_NUM_ARGS() > 0) {
+    if (!quality_is_null) {
         if (quality < 1 || quality > 100) {
             zend_value_error(
                 "FastChart\\Symbol::renderJpeg() quality must be in [1, 100]");
