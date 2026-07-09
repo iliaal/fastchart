@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-09
+
 ### Changed
 
 - Fixed-cap data setters now throw `ValueError` on oversized array
@@ -1279,7 +1281,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.5.0...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.6.0...HEAD
+[1.6.0]: https://github.com/iliaal/fastchart/releases/tag/1.6.0
 [1.5.0]: https://github.com/iliaal/fastchart/releases/tag/1.5.0
 [1.4.0]: https://github.com/iliaal/fastchart/releases/tag/1.4.0
 [1.3.0]: https://github.com/iliaal/fastchart/releases/tag/1.3.0
