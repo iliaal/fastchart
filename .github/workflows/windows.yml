@@ -173,7 +173,14 @@ jobs:
             "$prefix\include\pdfio", "$prefix\lib", "$prefix\bin" | Out-Null
           Copy-Item "pdfio-src\*.h" "$prefix\include\pdfio\" -Force
           Copy-Item "$libdir\pdfio1.lib" "$prefix\lib\" -Force
-          Copy-Item "$libdir\pdfio1.dll" "$prefix\bin\" -Force -ErrorAction SilentlyContinue
+          $rt = Get-ChildItem $libdir -Filter '*.dll' -ErrorAction SilentlyContinue
+          if ($rt) {
+            $rt | Copy-Item -Destination "$prefix\bin\" -Force
+            Write-Host "pdfio runtime DLLs staged: $($rt.Name -join ', ')"
+          } else {
+            Write-Host "pdfio produced no runtime DLL (static build) — contents of ${libdir}:"
+            Get-ChildItem $libdir | Select-Object -ExpandProperty Name
+          }
           # config.w32's CHECK_LIB / CHECK_HEADER_ADD_INCLUDE consult the
           # LIB / INCLUDE env vars; export them for the build action.
           Add-Content $env:GITHUB_ENV "LIB=$prefix\lib;$env:LIB"
@@ -207,8 +214,20 @@ jobs:
             Select-Object -First 1
           if (-not $dllItem) { throw "php_fastchart.dll not found under $($bdir.FullName)" }
           $dll = $dllItem.FullName
-          # pdfio1.dll must be resolvable when php_fastchart.dll loads.
+          # PHP >= 7.4 on Windows resolves extension dependencies via the
+          # altered DLL search path (the module's own directory), NOT
+          # %PATH% — run 29162048084 failed "module could not be found"
+          # on an existing dll for exactly this reason. Stage pdfio's
+          # runtime DLLs next to the extension and next to php.exe.
+          if (Test-Path "$env:PDFIO_PREFIX\bin") {
+            Copy-Item "$env:PDFIO_PREFIX\bin\*.dll" (Split-Path $dll) -Force -ErrorAction SilentlyContinue
+            Copy-Item "$env:PDFIO_PREFIX\bin\*.dll" (Split-Path $php) -Force -ErrorAction SilentlyContinue
+          }
           $env:PATH = "$env:PDFIO_PREFIX\bin;$env:PATH"
+          if (Get-Command dumpbin -ErrorAction SilentlyContinue) {
+            Write-Host "=== php_fastchart.dll dependencies ==="
+            dumpbin /dependents $dll | Out-Host
+          }
           $env:TEST_PHP_EXECUTABLE = $php
           $env:TEST_PHP_ARGS = "-n -d extension=$dll"
           $env:REPORT_EXIT_STATUS = '1'
