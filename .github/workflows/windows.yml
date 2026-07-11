@@ -37,10 +37,26 @@ jobs:
 
       - name: Build extension
         uses: php/php-windows-builder/extension@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # v1
+        env:
+          # tests/_font_candidates.inc only knows Linux font paths; the
+          # FC_FONT escape hatch points the ~12 font-gated phpts at a
+          # font every Windows runner ships.
+          FC_FONT: C:\Windows\Fonts\arial.ttf
         with:
           php-version: ${{ matrix.php-version }}
           ts: ${{ matrix.ts }}
           arch: ${{ matrix.arch }}
+          # The action's test step runs php.exe with `-n` plus only the
+          # built fastchart.dll, so the ~90 gd round-trip phpts SKIP.
+          # test-runner-args REPLACES the action's defaults (first 8
+          # tokens below reproduce them) — the extra -d loads the
+          # php_gd.dll bundled in the official Windows test build the
+          # action stages under <workspace>\php-bin, turning the raster
+          # decode coverage on for every Windows lane.
+          test-runner-args: >-
+            -d open_basedir= -d output_buffering=0 -q --offline --show-diff
+            --show-slow 1000 --set-timeout 120 -g FAIL,XFAIL,BORK,WARN,LEAK,SKIP
+            -d extension=${{ github.workspace }}\php-bin\ext\php_gd.dll
           # --enable-fastchart-dev turns MSVC warnings into errors (/WX,
           # config.w32:113-117), matching the -Werror bar the Unix lanes
           # hold. This workflow also feeds release publishing (the
@@ -84,7 +100,11 @@ jobs:
 
       - name: Setup PHP SDK
         id: sdk
-        uses: php/setup-php-sdk@v0.10
+        # v0.12: determine-revision.ps1 gained Invoke-RestMethod + TLS
+        # pinning + ErrorActionPreference=Stop; v0.10's bare
+        # Invoke-WebRequest null-deref'd on the releases.json fetch and
+        # killed this lane before the build started (run 29160900899).
+        uses: php/setup-php-sdk@e2ce1c294f272ed93e8083f14649f5adadf93788 # v0.12
         with:
           version: '8.4'
           arch: x64
