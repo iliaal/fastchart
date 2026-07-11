@@ -85,6 +85,12 @@ ZEND_BEGIN_MODULE_GLOBALS(fastchart)
     fc_ft_face_slot        ft_face_cache[FC_FT_FACE_CACHE_N];
     fc_glyph_cache_entry   glyph_cache[FC_GLYPH_CACHE_N];
     fc_measure_cache_entry measure_cache[FC_MEASURE_CACHE_N];
+    /* fastchart.max_render_pixels: operator ceiling on the physical
+     * raster pixel count. The rasterizer allocates ~8 bytes/pixel
+     * across two full frames, half of it malloc-backed and invisible
+     * to memory_limit, so this is the knob that actually bounds a
+     * render's native footprint. Clamped to the built-in 64M cap. */
+    zend_long              max_render_pixels;
 ZEND_END_MODULE_GLOBALS(fastchart)
 
 ZEND_EXTERN_MODULE_GLOBALS(fastchart)
@@ -731,6 +737,15 @@ typedef struct {
  * any real chart value; values exceeding it in magnitude are rejected
  * at setter time so the layout math stays representable. */
 #define FASTCHART_MAX_DATA_MAG         1e12
+
+/* Byte cap for a single rendered-text string (title, axis title,
+ * annotation label, series/slice label, etc.). Glyph-path SVG output
+ * replays each glyph's outline inline, amplifying text ~200x, so an
+ * unbounded string balloons the document (a 100 KiB title produced a
+ * ~20 MB SVG). 8 KiB bounds one string's worst-case contribution to
+ * ~2 MB. Scalar setters throw on excess; array-element labels drop. */
+#define FASTCHART_MAX_TEXT_BYTES       8192
+
 #define FASTCHART_MAX_MARIMEKKO_COLS   128       /* per chart */
 #define FASTCHART_MAX_MARIMEKKO_SEGS   64        /* per column */
 #define FASTCHART_MAX_VECTORS          4096      /* per chart */
@@ -1413,18 +1428,21 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 #define FASTCHART_DATE_YEAR    4
 
 /* Read a string label from an array-shaped setter, dropping the
- * value if it carries an embedded NUL. Public scalar setters reject
- * embedded NUL with ValueError; per-element strings inside arrays
- * (series labels, slice labels, gantt task names, category labels,
- * overlay labels, etc.) take the silent-drop path because rejecting
- * them with an exception would force every chart-type setter to
- * walk the whole input array up front. The render-vs-stored
- * divergence (text draw paths use C-string sentinels, PHP strings
- * carry an explicit length) is what we're guarding against. */
+ * value if it carries an embedded NUL or exceeds FASTCHART_MAX_TEXT_BYTES.
+ * Public scalar setters reject both conditions with ValueError;
+ * per-element strings inside arrays (series labels, slice labels,
+ * gantt task names, category labels, overlay labels, etc.) take the
+ * silent-drop path because rejecting them with an exception would
+ * force every chart-type setter to walk the whole input array up
+ * front. The render-vs-stored divergence (text draw paths use
+ * C-string sentinels, PHP strings carry an explicit length) is what
+ * we're guarding against; the length cap keeps one oversized label
+ * from ballooning glyph-path SVG output. */
 static inline const char *fastchart_label_or_null(const zval *zv)
 {
     if (zv && Z_TYPE_P(zv) == IS_REFERENCE) zv = Z_REFVAL_P(zv);
     if (!zv || Z_TYPE_P(zv) != IS_STRING) return NULL;
+    if (Z_STRLEN_P(zv) > FASTCHART_MAX_TEXT_BYTES) return NULL;
     if (memchr(Z_STRVAL_P(zv), 0, Z_STRLEN_P(zv)) != NULL) return NULL;
     return Z_STRVAL_P(zv);
 }
@@ -1548,6 +1566,10 @@ int fastchart_partition_render_to_target(fastchart_partition_obj *self,
     zend_long bg_rgb;           /* 0..0xFFFFFF; default 0xFFFFFF */ \
     bool transparent_bg;        /* honoured by PNG/WebP encoders */ \
     zend_long quiet_zone;       /* per-class units; -1 = class default */ \
+    /* Per-class ceiling for quiet_zone, set by each create_object; \
+     * setQuietZone validates against it. QrCode counts modules (256, \
+     * matching the render-time cap); Code128 counts pixels (4096). */ \
+    zend_long quiet_zone_max; \
     /* SVG text-rendering mode: 0 = NATIVE, 1 = PATHS (default). Same \
      * semantics as the Chart side. Code128's human-readable text and \
      * any future Symbol-with-text variants honor this. */ \

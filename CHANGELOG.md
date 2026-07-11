@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Rendered-text setters now throw `ValueError` above 8192 bytes;
+  over-cap array labels drop silently (glyph-path SVG amplifies ~200x).
+- Added `fastchart.max_render_pixels` INI (PHP_INI_SYSTEM, default 64M);
+  bounds `render*()` / `svgTo*()` raster buffers outside `memory_limit`.
+- `QrCode::setQuietZone()` now rejects values above 256 modules at
+  setter time; `Code128` keeps its 4096-pixel ceiling.
+- Static pdfio / codec archives no longer re-export their symbols from
+  `fastchart.so` (`--exclude-libs=ALL` whenever the linker supports it).
+
+### Fixed
+
+- Scatter/Radar/Polar series setters validate caps before dropping prior
+  data; a caught over-cap `ValueError` no longer wipes a valid chart.
+- Arc/Chord/Network `setNodes()` / `setLinks()` throw `ValueError` on
+  over-cap input instead of silently truncating.
+- First-party code now builds under the full warning set (`-Werror` in
+  dev); vendor `-Wno-*` flags no longer blanket fastchart TUs.
+
+### CI
+
+- Release binaries are load-tested (dlopen, render, decode) before
+  upload.
+- Test lanes probe gd capabilities and enforce per-lane skip ceilings;
+  the PDF lane gates the module's dynamic-symbol surface.
+- New stub-drift job regenerates `fastchart_arginfo.h` and fails on
+  diff.
+- Windows CI builds with `/WX`; an experimental non-blocking lane
+  compiles the pdfio backend under MSVC.
+- The PDF nan/inf test inflates FlateDecode streams before scanning; a
+  new test decodes JPEG/WebP output for every chart family.
+
 ## [1.6.0] - 2026-07-09
 
 ### Changed

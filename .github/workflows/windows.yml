@@ -41,13 +41,123 @@ jobs:
           php-version: ${{ matrix.php-version }}
           ts: ${{ matrix.ts }}
           arch: ${{ matrix.arch }}
-          args: --enable-fastchart
+          # --enable-fastchart-dev turns MSVC warnings into errors (/WX,
+          # config.w32:113-117), matching the -Werror bar the Unix lanes
+          # hold. This workflow also feeds release publishing (the
+          # `release` job below fires on release:published), so /WX now
+          # gates release DLLs too: a warning-bearing DLL fails the build
+          # and never publishes. That is intended.
+          args: --enable-fastchart --enable-fastchart-dev
           # Four pkg-config deps fastchart's config.m4 probes for. The
           # action wires these into the Windows build's vcpkg sysroot so
           # config.m4's PKG_CHECK_MODULES calls resolve. plutovg /
           # plutosvg / qrcodegen are vendored under vendor/ and don't
           # need an entry here.
           libs: freetype,libpng,libjpeg-turbo,libwebp
+
+  # EXPERIMENTAL — single representative lane that compiles the MSVC PDF
+  # path (fastchart_pdf.c, gated by --with-fastchart-pdfio in config.w32).
+  # No other Windows job exercises it, so without this lane fastchart_pdf.c
+  # never compiles on MSVC. pdfio is NOT a php-sdk dependency, so it is
+  # built from source with MSVC and staged into the SDK deps layout by
+  # hand. That hand-wiring CANNOT be validated locally and is expected to
+  # need a CI round or two to settle — specifically:
+  #   * the exact deps-prefix path config.w32's PHP_PHP_BUILD resolves to,
+  #   * pdfio.vcxproj's output names / dirs at the pinned tag,
+  #   * runtime discovery of pdfio1.dll when loading php_fastchart.dll,
+  #   * whether the runner exposes a usable font for the PDF text render.
+  # Kept continue-on-error so an unresolved detail yields a yellow lane
+  # (with the compile log visible) rather than reding the release matrix.
+  # Drop continue-on-error once it goes green. Not part of release
+  # publishing — this lane builds a --with-fastchart-pdfio DLL that the
+  # release job intentionally does not upload (release DLLs are pdfio-less,
+  # matching the Linux prebuilt).
+  windows-pdf:
+    name: PHP 8.4 x64 nts - Windows PDF backend (experimental)
+    runs-on: windows-2022
+    continue-on-error: true
+    env:
+      # Keep in sync with the Linux PDF lane's PDFIO_VERSION in tests.yml.
+      PDFIO_VERSION: '1.6.4'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup PHP SDK
+        id: sdk
+        uses: php/setup-php-sdk@v0.10
+        with:
+          version: '8.4'
+          arch: x64
+          ts: nts
+          # The four codec deps config.w32 probes for; the SDK fetches
+          # them into the deps prefix (include/ + lib/). pdfio is not
+          # available here — it is built and staged in the next step.
+          deps: freetype,libpng,libjpeg-turbo,libwebp
+
+      - name: Enable MSVC toolchain
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+          toolset: ${{ steps.sdk.outputs.toolset }}
+
+      - name: Build pdfio (MSVC) and stage into the SDK deps prefix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # pdfio ships pdfio.vcxproj, which builds pdfio1.dll + its import
+          # lib pdfio1.lib for x64 and pulls zlib via NuGet. config.w32
+          # accepts pdfio1.lib and searches for headers under
+          # <PHP_PHP_BUILD>\include\pdfio. fastchart_pdf.c includes both
+          # <pdfio.h> and <pdfio-content.h>, so stage every pdfio header.
+          git clone --depth=1 --branch "v$env:PDFIO_VERSION" `
+            https://github.com/michaelrsweet/pdfio.git pdfio-src
+          Push-Location pdfio-src
+          nuget restore pdfio.sln
+          msbuild pdfio.vcxproj /p:Configuration=Release /p:Platform=x64
+          $lib = Get-ChildItem -Recurse -Filter pdfio1.lib | Select-Object -First 1
+          if (-not $lib) { throw "pdfio1.lib was not produced by msbuild" }
+          $libdir = $lib.Directory.FullName
+          Pop-Location
+          # Stage into the deps prefix the SDK reported and, if different,
+          # the PHP_PHP_BUILD the phpsdk env exported (config.w32 reads the
+          # latter). Place pdfio1.dll on a bin dir so php can load it when
+          # php_fastchart.dll pulls it in at runtime.
+          $roots = @("${{ steps.sdk.outputs.prefix }}", $env:PHP_PHP_BUILD) |
+            Where-Object { $_ } | Select-Object -Unique
+          foreach ($root in $roots) {
+            New-Item -ItemType Directory -Force -Path "$root\include\pdfio" | Out-Null
+            New-Item -ItemType Directory -Force -Path "$root\lib" | Out-Null
+            New-Item -ItemType Directory -Force -Path "$root\bin" | Out-Null
+            Copy-Item "pdfio-src\*.h" "$root\include\pdfio\" -Force
+            Copy-Item "$libdir\pdfio1.lib" "$root\lib\" -Force
+            Copy-Item "$libdir\pdfio1.dll" "$root\bin\" -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Build extension with PDF enabled
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          phpize
+          # --with-fastchart-pdfio flips config.w32's PDF path on (compiles
+          # fastchart_pdf.c); --enable-fastchart-dev holds the /WX bar.
+          configure --enable-fastchart --enable-fastchart-dev --with-fastchart-pdfio
+          nmake
+
+      - name: Run PDF tests (must execute, not skip)
+        shell: pwsh
+        run: |
+          # 200/201 gate only on pdfio presence (no font needed), mirroring
+          # the Linux PDF lane: if the backend linked they run and pass; if
+          # pdfio didn't link they SKIP. "Tests passed : 2" is the proof
+          # fastchart_pdf.c actually compiled and linked under MSVC.
+          $env:PATH = "${{ steps.sdk.outputs.prefix }}\bin;$env:PHP_PHP_BUILD\bin;$env:PATH"
+          $env:NO_INTERACTION = "1"
+          nmake test TESTS="tests\200_pdf_render_basic.phpt tests\201_pdf_render_to_file.phpt" 2>&1 |
+            Tee-Object -FilePath pdf-tests.txt
+          if (-not (Select-String -Path pdf-tests.txt -Pattern 'Tests passed\s*:\s*2' -Quiet)) {
+            Write-Error "PDF tests did not both pass — pdfio may not have linked (see SKIP reasons above)"
+            exit 1
+          }
 
   release:
     name: Attach Windows DLLs to release

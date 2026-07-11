@@ -51,6 +51,7 @@ void fastchart_symbol_base_init_defaults(fastchart_symbol_obj *b)
     b->bg_rgb = 0xFFFFFF;
     b->transparent_bg = false;
     b->quiet_zone = -1;      /* -1 = pick class default at render time */
+    b->quiet_zone_max = 4096; /* concrete class overrides in init_extras */
     b->svg_text_mode = FASTCHART_SVG_TEXT_PATHS;
     b->jpeg_quality = 88;
     b->webp_mode    = FASTCHART_WEBP_DRAWING;
@@ -79,11 +80,13 @@ void fastchart_symbol_base_addref_owned(fastchart_symbol_obj *b)
 static void fastchart_code128_init_extras(fastchart_code128_obj *o)
 {
     o->show_text = false;
+    o->quiet_zone_max = 4096;  /* pixel margin */
 }
 
 static void fastchart_qrcode_init_extras(fastchart_qrcode_obj *o)
 {
     o->ecc = FASTCHART_QR_ECC_M;
+    o->quiet_zone_max = 256;  /* modules; matches the render-time cap */
     o->min_version = qrcodegen_VERSION_MIN;
     o->max_version = qrcodegen_VERSION_MAX;
     /* Override the base WebP default (DRAWING, lossy). QR modules are
@@ -534,15 +537,24 @@ ZEND_METHOD(FastChart_Symbol, setQuietZone)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(units)
     ZEND_PARSE_PARAMETERS_END();
-    /* -1 sentinels "use class default"; anything below that is a
-     * typo. 4096 is a generous ceiling that still leaves room inside
-     * the canvas-dim cap on a 16384px render. */
-    if (units < -1 || units > 4096) {
-        zend_value_error(
-            "FastChart\\Symbol::setQuietZone() units must be in [-1, 4096]");
+    fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
+    /* -1 sentinels "use class default"; anything below that is a typo.
+     * The ceiling is per-class (quiet_zone_max, set at create_object):
+     * QrCode counts modules and caps at 256 to match the render-time
+     * check, so a value the setter accepts always renders; Code128
+     * counts pixels and allows a generous 4096 margin. */
+    if (units < -1 || units > self->quiet_zone_max) {
+        if (Z_OBJCE_P(ZEND_THIS) == fastchart_qrcode_ce) {
+            zend_value_error(
+                "FastChart\\QrCode::setQuietZone() quiet zone must be in "
+                "[-1, %lld] modules", (long long)self->quiet_zone_max);
+        } else {
+            zend_value_error(
+                "FastChart\\Code128::setQuietZone() quiet zone must be in "
+                "[-1, %lld] pixels", (long long)self->quiet_zone_max);
+        }
         RETURN_THROWS();
     }
-    fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
     self->quiet_zone = units;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }

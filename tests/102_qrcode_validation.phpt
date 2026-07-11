@@ -80,19 +80,19 @@ try {
     echo "empty-data: ok\n";
 }
 
-// QR-specific quiet zone cap: setQuietZone accepts up to 4096 at the
-// Symbol-level setter, but values >256 modules don't make sense for
-// QR. Render-time check throws ValueError instead of silently
-// clamping, so a caller who sets 4096 sees the rejection.
+// QR-specific quiet zone cap: setQuietZone rejects >256 modules at set
+// time (256 modules already dwarfs any symbol). The render path keeps
+// the same ceiling as defense-in-depth. Pre-fix the setter accepted up
+// to 4096 and only the render threw, so a value the setter took failed
+// at every subsequent render.
 try {
     (new FastChart\QrCode())
         ->setData('hello')
         ->setSize(2000, 2000)
-        ->setQuietZone(300)
-        ->renderPng();
+        ->setQuietZone(300);
     echo "ERR: excessive quiet zone did not throw\n";
 } catch (\ValueError $e) {
-    echo "qz-cap: ", str_contains($e->getMessage(), 'maximum of 256 modules') ? "ok" : $e->getMessage(), "\n";
+    echo "qz-cap: ", str_contains($e->getMessage(), '[-1, 256] modules') ? "ok" : $e->getMessage(), "\n";
 }
 
 // Embedded NUL rejected at setData (Symbol-level). Both QR and

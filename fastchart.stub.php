@@ -221,6 +221,14 @@ abstract class Chart
                                       int $mode = Chart::WEBP_DRAWING): string {}
 
     public function setSize(int $width, int $height): static {}
+    /**
+     * Set the chart title. Throws ValueError if $title exceeds 8192
+     * bytes; glyph-path SVG output replays each glyph inline, so an
+     * unbounded title balloons the document. The same 8192-byte cap
+     * applies to every rendered-text setter (axis titles, annotation
+     * and band/line labels); oversized array-element labels are
+     * dropped rather than throwing.
+     */
     public function setTitle(string $title): static {}
     public function setTheme(int $theme): static {}
     public function setBackgroundColor(int $rgb): static {}
@@ -2301,11 +2309,12 @@ abstract class Symbol
     public function setData(string $data): static {}
 
     /**
-     * Quiet-zone (whitespace) margin around the symbol. Units are
-     * per-class: `Code128` measures it in pixels (default 10× the
-     * narrowest bar), `QrCode` measures it in modules (default 4 per
-     * the QR spec). Pass -1 to revert to the class default; any
-     * other negative value is rejected.
+     * Quiet-zone (whitespace) margin around the symbol. Units and
+     * ceiling are per-class: `Code128` measures it in pixels (default
+     * 10× the narrowest bar, max 4096), `QrCode` measures it in
+     * modules (default 4 per the QR spec, max 256). Pass -1 to revert
+     * to the class default; any other negative value, or a value above
+     * the class ceiling, is rejected with `\ValueError` at set time.
      */
     public function setQuietZone(int $units): static {}
 

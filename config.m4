@@ -125,24 +125,36 @@ if test "$PHP_FASTCHART" != "no"; then
   PHP_EVAL_INCLINE([$FC_PC_CFLAGS])
   PHP_EVAL_LIBLINE([$FC_PC_LIBS], FASTCHART_SHARED_LIBADD)
 
-  dnl In static-codec mode, append -Wl,--exclude-libs=ALL to the
-  dnl extension's link line so libjpeg / libpng / libwebp / libfreetype
-  dnl symbols pulled in from .a archives are localized in fastchart.so
-  dnl rather than exported globally. Without this, loading ext/gd in
-  dnl the same process (it dynamically links the system libjpeg.so.8)
-  dnl alongside our statically-linked libjpeg-turbo 3.x collides on
-  dnl the jpeg_CreateCompress / jpeg_destroy / etc. symbol table —
-  dnl JPEG_LIB_VERSION validation rejects the call ("encoder produced
-  dnl no output"). -fvisibility=hidden in CFLAGS doesn't cover
-  dnl static-archive symbols; --exclude-libs is the link-time
-  dnl equivalent.
-  if test "$PHP_FASTCHART_STATIC_CODECS" != "no"; then
-    FASTCHART_SHARED_LIBADD="$FASTCHART_SHARED_LIBADD -Wl,--exclude-libs=ALL"
-  fi
+  dnl Localize symbols pulled in from ANY static .a archive so they are
+  dnl not re-exported through fastchart.so's dynamic symbol table. Two
+  dnl static-archive paths need this: --with-fastchart-static-codecs
+  dnl (libjpeg / libpng / libwebp / libfreetype .a) and --with-pdfio
+  dnl linked against a static libpdfio.a (which drags in 200+ pdfio*/
+  dnl ttf* symbols). PHP dlopens extensions with RTLD_GLOBAL, so any
+  dnl re-exported symbol can interpose another extension's copy — e.g.
+  dnl our statically-linked libjpeg-turbo 3.x colliding with ext/gd's
+  dnl dynamic libjpeg.so.8, where JPEG_LIB_VERSION validation then
+  dnl rejects the call ("encoder produced no output"). -fvisibility=
+  dnl hidden in CFLAGS can't reach static-archive objects; --exclude-libs
+  dnl is the link-time equivalent. It is a no-op for dynamically NEEDED
+  dnl libs, so applying it whenever the linker accepts it is safe. GNU ld
+  dnl and gold accept it; macOS ld64 does not — hence the link probe.
+  FC_SAVE_LDFLAGS="$LDFLAGS"
+  LDFLAGS="$LDFLAGS -Wl,--exclude-libs=ALL"
+  AC_MSG_CHECKING([whether the linker accepts -Wl,--exclude-libs=ALL])
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([[]], [[]])],
+    [AC_MSG_RESULT([yes])
+     FASTCHART_SHARED_LIBADD="$FASTCHART_SHARED_LIBADD -Wl,--exclude-libs=ALL"],
+    [AC_MSG_RESULT([no])])
+  LDFLAGS="$FC_SAVE_LDFLAGS"
 
   PHP_SUBST(FASTCHART_SHARED_LIBADD)
 
-  WRAPPER_SOURCES="fastchart.c \
+  dnl First-party sources (the repo-root fastchart*.c). These compile
+  dnl under the strict, unsuppressed warning set (and -Werror in dev
+  dnl builds); the vendored sources below are added separately with the
+  dnl warning suppressions they need.
+  FASTCHART_SOURCES="fastchart.c \
     fastchart_palette.c \
     fastchart_text.c \
     fastchart_target.c \
@@ -193,8 +205,13 @@ if test "$PHP_FASTCHART" != "no"; then
     fastchart_symbol.c \
     fastchart_code128.c \
     fastchart_qrcode.c \
-    $FC_PDF_SRC \
-    vendor/qrcodegen/qrcodegen.c \
+    $FC_PDF_SRC"
+
+  dnl Vendored sources. Kept in a separate list so they can be compiled
+  dnl with the warning suppressions they require (see FASTCHART_VENDOR_-
+  dnl CFLAGS below) without those suppressions leaking onto first-party
+  dnl code — PHP applies one CFLAGS set per PHP_NEW_EXTENSION call.
+  FASTCHART_VENDOR_SOURCES="vendor/qrcodegen/qrcodegen.c \
     vendor/plutovg/source/plutovg-blend.c \
     vendor/plutovg/source/plutovg-canvas.c \
     vendor/plutovg/source/plutovg-font.c \
@@ -209,25 +226,21 @@ if test "$PHP_FASTCHART" != "no"; then
     vendor/plutosvg/source/plutosvg.c"
 
   dnl -Wall -Wextra are on by default so wrapper regressions get caught
-  dnl in every local build; --enable-fastchart-dev upgrades warnings to
-  dnl -Werror plus extra strictness.
+  dnl in every local build; --enable-fastchart-dev upgrades first-party
+  dnl warnings to -Werror plus extra strictness.
   dnl
   dnl -fvisibility=hidden keeps the vendored plutovg_/plutosvg_/qrcodegen_
   dnl symbols (and every internal fastchart_* helper) out of the dynamic
   dnl symbol table. Only get_module stays exported, marked default by
   dnl ZEND_DLEXPORT. PLUTOVG_BUILD_STATIC + PLUTOSVG_BUILD_STATIC make those
   dnl libraries' headers stop applying visibility=default on their API
-  dnl decorations, so -fvisibility=hidden actually buries them.
+  dnl decorations, so -fvisibility=hidden actually buries them. Both
+  dnl defines stay on first-party TUs too: fastchart.c / fastchart_-
+  dnl rasterize.c / fastchart_target.c include those headers and must
+  dnl agree on the (hidden) decoration.
   dnl Verify with:
   dnl   nm -D --defined-only modules/fastchart.so | grep -v get_module
   dnl Expected: only standard-library symbols (memcpy, etc.) remain.
-  dnl Vendor-driven warning suppressions: plutovg ships stb_image* /
-  dnl stb_image_write* / stb_truetype headers + ft-stroker code that
-  dnl trip a few standard warnings (unused statics, signed/unsigned
-  dnl comparisons in tight inner loops, implicit fallthrough in case
-  dnl arms). PHP_NEW_EXTENSION applies one CFLAGS to every TU, so we
-  dnl silence globally rather than per-file. Fastchart's own code is
-  dnl warning-clean under the unsuppressed set.
   dnl PLUTOVG_DISABLE_IMAGE_WRITE (opt #12): drops the plutovg_surface_-
   dnl write_to_* (PNG/JPEG file + stream) functions and their stb_image_
   dnl write.h backing. fastchart routes every raster output through
@@ -238,22 +251,52 @@ if test "$PHP_FASTCHART" != "no"; then
   dnl unit shrinks fastchart.so by ~70 KB and saves ~1 s of incremental
   dnl build time.
   FASTCHART_CFLAGS="-Wall -Wextra \
+    -fvisibility=hidden \
+    -DPLUTOVG_BUILD_STATIC -DPLUTOSVG_BUILD_STATIC \
+    -DPLUTOVG_DISABLE_IMAGE_WRITE \
+    $FC_OPT_DEFS"
+
+  dnl Vendor-driven warning suppressions: plutovg ships stb_image* /
+  dnl stb_image_write* / stb_truetype headers + ft-stroker code that
+  dnl trip a few standard warnings (unused statics, signed/unsigned
+  dnl comparisons in tight inner loops, implicit fallthrough in case
+  dnl arms). These are scoped to the vendored TUs only — the
+  dnl PHP_ADD_SOURCES call below compiles FASTCHART_VENDOR_SOURCES with
+  dnl this set, so the suppressions never mask a regression in first-
+  dnl party fastchart*.c (which build under the strict FASTCHART_CFLAGS
+  dnl above, plus -Werror in dev builds). -Werror is deliberately NOT
+  dnl added here: vendored code stays warning-tolerant regardless of how
+  dnl complete the suppression list is. The visibility and static-build
+  dnl defines are repeated because the vendored TUs need them too.
+  FASTCHART_VENDOR_CFLAGS="-Wall -Wextra \
     -Wno-unused-parameter -Wno-unused-function -Wno-sign-compare \
     -Wno-implicit-fallthrough -Wno-unused-but-set-variable \
     -Wno-misleading-indentation -Wno-missing-field-initializers \
     -fvisibility=hidden \
     -DPLUTOVG_BUILD_STATIC -DPLUTOSVG_BUILD_STATIC \
-    -DPLUTOVG_DISABLE_IMAGE_WRITE \
-    $FC_OPT_DEFS"
+    -DPLUTOVG_DISABLE_IMAGE_WRITE"
 
   if test "$PHP_FASTCHART_DEV" = "yes"; then
     FASTCHART_CFLAGS="$FASTCHART_CFLAGS -Werror -Wstrict-prototypes"
   fi
 
   PHP_NEW_EXTENSION(fastchart,
-    $WRAPPER_SOURCES,
+    $FASTCHART_SOURCES,
     $ext_shared,,
     $FASTCHART_CFLAGS)
+
+  dnl Add the vendored sources with their own suppression-carrying flags.
+  dnl PHP_NEW_EXTENSION has already emitted the shared-module link rule,
+  dnl which references the object list through a make variable resolved at
+  dnl build time, so objects appended here still reach the final link.
+  dnl Mirror the shared-vs-static object-array choice PHP_NEW_EXTENSION
+  dnl makes internally (shared_objects_fastchart for a shared module,
+  dnl PHP_GLOBAL_OBJS for a static in-tree build).
+  if test "$PHP_FASTCHART_SHARED" = "yes"; then
+    PHP_ADD_SOURCES_X($ext_dir, $FASTCHART_VENDOR_SOURCES, $FASTCHART_VENDOR_CFLAGS -DZEND_COMPILE_DL_EXT=1, shared_objects_fastchart, yes)
+  else
+    PHP_ADD_SOURCES($ext_dir, $FASTCHART_VENDOR_SOURCES, $FASTCHART_VENDOR_CFLAGS)
+  fi
 
   PHP_ADD_INCLUDE([$ext_srcdir])
   PHP_ADD_INCLUDE([$ext_srcdir/vendor/qrcodegen])

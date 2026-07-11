@@ -257,3 +257,68 @@ jobs:
             exit 1
           fi
           echo "OK: codec libs are statically linked into fastchart.so"
+
+      # Load-test the produced binary (Linux + macOS). readelf/NEEDED
+      # inspection above proves the codecs are statically linked but
+      # never dlopens the object or renders a pixel — a .so that loads
+      # readelf-clean can still abort at MINIT or crash the encoder.
+      # This runs on the SAME fastchart.so that pie-ext-binary-builder
+      # packaged (packaging is tar/zip, no strip step mutates the code),
+      # located the same way the Verify step finds it. Covers the release
+      # path (built under $HOME by the action) and the workflow_dispatch
+      # path (built into ./modules). Renders PNG/JPEG/WebP from a titled
+      # LineChart and a QrCode, then validates each with
+      # getimagesizefromstring (header-parse only — no ext/gd needed for
+      # PNG/JPEG/WebP) asserting exact dimensions and non-trivial length.
+      # No PDF render: release binaries are built without --with-pdfio.
+      - name: Smoke-test built binary (load + render + decode)
+        run: |
+          set -e
+          SO=$(find "$HOME" -name fastchart.so -path '*/modules/*' 2>/dev/null | head -1)
+          if [ -z "$SO" ]; then
+            SO=$(find "$PWD" -name fastchart.so -path '*/modules/*' 2>/dev/null | head -1)
+          fi
+          if [ -z "$SO" ]; then
+            echo "::error::fastchart.so not found for smoke test"; exit 1
+          fi
+          echo "Smoke-testing $SO"
+          cat > "$RUNNER_TEMP/release-smoke.php" <<'PHP'
+          <?php
+          function fail(string $m): void { fwrite(STDERR, "SMOKE FAIL: $m\n"); exit(1); }
+
+          $v = FastChart\Chart::version();
+          if (!is_string($v) || $v === '') { fail('version() returned empty'); }
+          echo "fastchart version: $v\n";
+
+          $line = (new FastChart\LineChart(400, 300))
+              ->setTitle('Release Smoke')
+              ->setSeries([1, 3, 2, 5, 4, 6]);
+          $qr = (new FastChart\QrCode())
+              ->setData('https://github.com/iliaal/fastchart')
+              ->setSize(240, 240);
+
+          $checks = [
+              'line-png'  => [$line->renderPng(),  400, 300, 'png'],
+              'line-jpeg' => [$line->renderJpeg(), 400, 300, 'jpeg'],
+              'line-webp' => [$line->renderWebp(), 400, 300, 'webp'],
+              'qr-png'    => [$qr->renderPng(),    240, 240, 'png'],
+              'qr-jpeg'   => [$qr->renderJpeg(),   240, 240, 'jpeg'],
+              'qr-webp'   => [$qr->renderWebp(),   240, 240, 'webp'],
+          ];
+
+          foreach ($checks as $name => [$bytes, $ew, $eh, $fmt]) {
+              if (!is_string($bytes) || strlen($bytes) < 128) {
+                  fail("$name: output too small (" . strlen((string) $bytes) . " bytes)");
+              }
+              $info = getimagesizefromstring($bytes);
+              if ($info === false) {
+                  fail("$name: getimagesizefromstring rejected the $fmt output");
+              }
+              if ($info[0] !== $ew || $info[1] !== $eh) {
+                  fail("$name: dims {$info[0]}x{$info[1]} != expected {$ew}x{$eh}");
+              }
+              printf("OK %-9s %-4s %dx%d %d bytes\n", $name, $fmt, $info[0], $info[1], strlen($bytes));
+          }
+          echo "release smoke passed\n";
+          PHP
+          php -d extension="$SO" "$RUNNER_TEMP/release-smoke.php"

@@ -102,8 +102,10 @@ int fastchart_bullet_render_to_target(fastchart_bullet_obj *self, fastchart_targ
         const fastchart_gauge_zone *bn = &self->bands[i];
         double t0 = (bn->from - mn) / (mx - mn);
         double t1 = (bn->to   - mn) / (mx - mn);
-        if (t0 < 0) t0 = 0; if (t0 > 1) t0 = 1;
-        if (t1 < 0) t1 = 0; if (t1 > 1) t1 = 1;
+        if (t0 < 0) t0 = 0;
+        if (t0 > 1) t0 = 1;
+        if (t1 < 0) t1 = 0;
+        if (t1 > 1) t1 = 1;
         if (t1 <= t0) continue;
         int color;
         if (bn->color_rgb >= 0) {

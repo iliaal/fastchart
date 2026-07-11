@@ -163,8 +163,19 @@ static PHP_GINIT_FUNCTION(fastchart)
 
 static PHP_GSHUTDOWN_FUNCTION(fastchart)
 {
+    (void)fastchart_globals;
     fastchart_ft_library_shutdown();
 }
+
+/* PHP_INI_SYSTEM: the pixel ceiling is an operator control against
+ * render-driven memory exhaustion; a script must not be able to
+ * ini_set() it back up. Values above the built-in 64M cap (or <= 0)
+ * clamp to the cap at check time rather than erroring here. */
+PHP_INI_BEGIN()
+    STD_PHP_INI_ENTRY("fastchart.max_render_pixels", "67108864",
+        PHP_INI_SYSTEM, OnUpdateLong, max_render_pixels,
+        zend_fastchart_globals, fastchart_globals)
+PHP_INI_END()
 
 /* Per-class object_handlers. Each chart class's std offset varies
  * because per-type fields shift std's position within its struct.
@@ -2669,6 +2680,11 @@ ZEND_METHOD(FastChart_Chart, setTitle)
         Z_PARAM_STR(title)
     ZEND_PARSE_PARAMETERS_END();
 
+    if (ZSTR_LEN(title) > FASTCHART_MAX_TEXT_BYTES) {
+        zend_value_error("FastChart\\Chart::setTitle() text exceeds the %d-byte limit",
+                         FASTCHART_MAX_TEXT_BYTES);
+        RETURN_THROWS();
+    }
     /* Reject embedded NUL: text drawing consumes C strings, while the
      * stored zend_string keeps its full length. */
     if (memchr(ZSTR_VAL(title), 0, ZSTR_LEN(title)) != NULL) {
@@ -3024,6 +3040,11 @@ ZEND_METHOD(FastChart_Chart, addHorizontalLine)
     if (!color_is_null) {
         FASTCHART_VALIDATE_RGB(color, "FastChart\\Chart::addHorizontalLine");
     }
+    if (label && ZSTR_LEN(label) > FASTCHART_MAX_TEXT_BYTES) {
+        zend_value_error("FastChart\\Chart::addHorizontalLine() label exceeds the %d-byte limit",
+                         FASTCHART_MAX_TEXT_BYTES);
+        RETURN_THROWS();
+    }
     if (label && memchr(ZSTR_VAL(label), 0, ZSTR_LEN(label)) != NULL) {
         zend_value_error("FastChart\\Chart::addHorizontalLine() label contains an embedded NUL");
         RETURN_THROWS();
@@ -3057,6 +3078,11 @@ ZEND_METHOD(FastChart_Chart, addHorizontalBand)
     FASTCHART_VALIDATE_RGB(color, "FastChart\\Chart::addHorizontalBand");
     if (alpha < 0 || alpha > 127) {
         zend_value_error("FastChart\\Chart::addHorizontalBand() alpha out of range; expected 0..127");
+        RETURN_THROWS();
+    }
+    if (label && ZSTR_LEN(label) > FASTCHART_MAX_TEXT_BYTES) {
+        zend_value_error("FastChart\\Chart::addHorizontalBand() label exceeds the %d-byte limit",
+                         FASTCHART_MAX_TEXT_BYTES);
         RETURN_THROWS();
     }
     if (label && memchr(ZSTR_VAL(label), 0, ZSTR_LEN(label)) != NULL) {
@@ -3120,6 +3146,11 @@ ZEND_METHOD(FastChart_Chart, addVerticalBand)
     FASTCHART_VALIDATE_RGB(color, "FastChart\\Chart::addVerticalBand");
     if (alpha < 0 || alpha > 127) {
         zend_value_error("FastChart\\Chart::addVerticalBand() alpha out of range; expected 0..127");
+        RETURN_THROWS();
+    }
+    if (label && ZSTR_LEN(label) > FASTCHART_MAX_TEXT_BYTES) {
+        zend_value_error("FastChart\\Chart::addVerticalBand() label exceeds the %d-byte limit",
+                         FASTCHART_MAX_TEXT_BYTES);
         RETURN_THROWS();
     }
     if (label && memchr(ZSTR_VAL(label), 0, ZSTR_LEN(label)) != NULL) {
@@ -3232,6 +3263,11 @@ ZEND_METHOD(FastChart_Chart, addVerticalLine)
     }
     if (!color_is_null) {
         FASTCHART_VALIDATE_RGB(color, "FastChart\\Chart::addVerticalLine");
+    }
+    if (label && ZSTR_LEN(label) > FASTCHART_MAX_TEXT_BYTES) {
+        zend_value_error("FastChart\\Chart::addVerticalLine() label exceeds the %d-byte limit",
+                         FASTCHART_MAX_TEXT_BYTES);
+        RETURN_THROWS();
     }
     if (label && memchr(ZSTR_VAL(label), 0, ZSTR_LEN(label)) != NULL) {
         zend_value_error("FastChart\\Chart::addVerticalLine() label contains an embedded NUL");
@@ -3356,6 +3392,11 @@ static int fastchart_validate_double_format(const zend_string *fmt, const char *
 
     const char *p = ZSTR_VAL(fmt);
     size_t len = ZSTR_LEN(fmt);
+    if (len > FASTCHART_MAX_TEXT_BYTES) {
+        zend_value_error("FastChart\\Chart::%s() format exceeds the %d-byte limit",
+                         where, FASTCHART_MAX_TEXT_BYTES);
+        return -1;
+    }
     if (memchr(p, 0, len) != NULL) {
         zend_value_error("FastChart\\Chart::%s() format contains an embedded NUL", where);
         return -1;
@@ -3637,6 +3678,11 @@ ZEND_METHOD(FastChart_Chart, setSecondaryYAxisTitle)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_STR(t)
     ZEND_PARSE_PARAMETERS_END();
+    if (ZSTR_LEN(t) > FASTCHART_MAX_TEXT_BYTES) {
+        zend_value_error("FastChart\\Chart::setSecondaryYAxisTitle() text exceeds the %d-byte limit",
+                         FASTCHART_MAX_TEXT_BYTES);
+        RETURN_THROWS();
+    }
     if (memchr(ZSTR_VAL(t), 0, ZSTR_LEN(t)) != NULL) {
         zend_value_error("FastChart\\Chart::setSecondaryYAxisTitle() text contains an embedded NUL");
         RETURN_THROWS();
@@ -3692,6 +3738,11 @@ ZEND_METHOD(FastChart_Chart, addTextAnnotation)
     }
     if (x < INT_MIN || x > INT_MAX || y < INT_MIN || y > INT_MAX) {
         zend_value_error("FastChart\\Chart::addTextAnnotation() x and y must fit in a 32-bit int");
+        RETURN_THROWS();
+    }
+    if (ZSTR_LEN(text) > FASTCHART_MAX_TEXT_BYTES) {
+        zend_value_error("FastChart\\Chart::addTextAnnotation() text exceeds the %d-byte limit",
+                         FASTCHART_MAX_TEXT_BYTES);
         RETURN_THROWS();
     }
     if (memchr(ZSTR_VAL(text), 0, ZSTR_LEN(text)) != NULL) {
@@ -4016,36 +4067,9 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_scatter_obj *self = Z_FASTCHART_SCATTER_OBJ_P(ZEND_THIS);
-    /* image_map_areas borrows points[i].href / tooltip after a render
-     * (fastchart_scatter.c); freeing the points below without hiding
-     * the area list would leave getImageMap() reading freed memory. */
-    fastchart_reset_image_map_areas((fastchart_obj *)self);
-    /* Drop any existing parsed state. */
-    if (self->points) {
-        for (int i = 0; i < self->point_count; i++) {
-            if (self->points[i].href) efree(self->points[i].href);
-            if (self->points[i].tooltip) efree(self->points[i].tooltip);
-        }
-        efree(self->points);
-        self->points = NULL;
-    }
-    self->point_count = 0;
-    for (int i = 0; i < FASTCHART_MAX_SCATTER_SERIES; i++) {
-        if (self->series_labels[i]) {
-            efree(self->series_labels[i]);
-            self->series_labels[i] = NULL;
-        }
-    }
-    self->n_series = 0;
-    if (self->err_lo) efree(self->err_lo);
-    if (self->err_hi) efree(self->err_hi);
-    self->err_lo = NULL;
-    self->err_hi = NULL;
-    self->err_n = 0;
 
     HashTable *ht = Z_ARRVAL_P(data_zv);
     int n_input = (int)zend_hash_num_elements(ht);
-    if (n_input == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
     /* Detect multi-series: first element (in hash order — index 0 may
      * not exist after unset/array_filter) is dict with 'data' key. */
@@ -4065,6 +4089,8 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints)
         if (dk && Z_TYPE_P(dk) == IS_ARRAY) is_multi = true;
     }
 
+    /* Validate every cap before dropping prior state, so a caught
+     * over-cap ValueError leaves the chart renderable. */
     if (is_multi && n_input > FASTCHART_MAX_SCATTER_SERIES) {
         zend_value_error("FastChart\\ScatterChart::setPoints() accepts at most %u series; got %u",
                          (unsigned)FASTCHART_MAX_SCATTER_SERIES,
@@ -4096,6 +4122,35 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints)
                          (unsigned)total_pts);
         RETURN_THROWS();
     }
+
+    /* image_map_areas borrows points[i].href / tooltip after a render
+     * (fastchart_scatter.c); freeing the points below without hiding
+     * the area list would leave getImageMap() reading freed memory. */
+    fastchart_reset_image_map_areas((fastchart_obj *)self);
+    /* Drop any existing parsed state. */
+    if (self->points) {
+        for (int i = 0; i < self->point_count; i++) {
+            if (self->points[i].href) efree(self->points[i].href);
+            if (self->points[i].tooltip) efree(self->points[i].tooltip);
+        }
+        efree(self->points);
+        self->points = NULL;
+    }
+    self->point_count = 0;
+    for (int i = 0; i < FASTCHART_MAX_SCATTER_SERIES; i++) {
+        if (self->series_labels[i]) {
+            efree(self->series_labels[i]);
+            self->series_labels[i] = NULL;
+        }
+    }
+    self->n_series = 0;
+    if (self->err_lo) efree(self->err_lo);
+    if (self->err_hi) efree(self->err_hi);
+    self->err_lo = NULL;
+    self->err_hi = NULL;
+    self->err_n = 0;
+
+    if (n_input == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     if (total_pts == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
     self->points = ecalloc((size_t)total_pts, sizeof(fastchart_scatter_point));
@@ -4529,10 +4584,20 @@ static int fastchart_svg_to_pixels(
         return -1;
     }
 
+    /* fastchart.max_render_pixels lowers the pixel budget here too —
+     * this path allocates the same two full frames as the chart
+     * renderers, so an INI ceiling that only governed render*() would
+     * leave svgTo*() as a bypass. */
+    int max_pixels = FC_IMAGE_MAX_PIXELS;
+    zend_long ini_budget = FASTCHART_G(max_render_pixels);
+    if (ini_budget > 0 && ini_budget < (zend_long)max_pixels) {
+        max_pixels = (int)ini_budget;
+    }
+
     int w = 0, h = 0;
     int rc = fastchart_rasterize_svg_with_dims(
         ZSTR_VAL(svg), ZSTR_LEN(svg),
-        FC_IMAGE_MAX_DIM, FC_IMAGE_MAX_PIXELS,
+        FC_IMAGE_MAX_DIM, max_pixels,
         pix, &w, &h);
     if (rc == -1 || rc == -2) {
         zend_value_error(
@@ -4544,9 +4609,11 @@ static int fastchart_svg_to_pixels(
     if (rc == -3) {
         zend_value_error(
             "%s() output dimensions %dx%d exceed cap "
-            "(max %d per side, %d total pixels)",
+            "(max %d per side, %d total pixels%s)",
             method_name, w, h,
-            FC_IMAGE_MAX_DIM, FC_IMAGE_MAX_PIXELS);
+            FC_IMAGE_MAX_DIM, max_pixels,
+            max_pixels < FC_IMAGE_MAX_PIXELS
+                ? ", lowered by fastchart.max_render_pixels" : "");
         return -1;
     }
     if (rc != 0) {
@@ -5302,6 +5369,11 @@ ZEND_METHOD(FastChart_PieChart, setOtherThreshold)
         zend_value_error("FastChart\\PieChart::setOtherThreshold() expects a percentage in [0.0, 100.0)");
         RETURN_THROWS();
     }
+    if (label && ZSTR_LEN(label) > FASTCHART_MAX_TEXT_BYTES) {
+        zend_value_error("FastChart\\PieChart::setOtherThreshold() label exceeds the %d-byte limit",
+                         FASTCHART_MAX_TEXT_BYTES);
+        RETURN_THROWS();
+    }
     if (label && memchr(ZSTR_VAL(label), 0, ZSTR_LEN(label)) != NULL) {
         zend_value_error("FastChart\\PieChart::setOtherThreshold() label contains an embedded NUL");
         RETURN_THROWS();
@@ -5571,6 +5643,11 @@ ZEND_METHOD(FastChart_Chart, setXAxisTitle)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_STR(txt)
     ZEND_PARSE_PARAMETERS_END();
+    if (ZSTR_LEN(txt) > FASTCHART_MAX_TEXT_BYTES) {
+        zend_value_error("FastChart\\Chart::setXAxisTitle() text exceeds the %d-byte limit",
+                         FASTCHART_MAX_TEXT_BYTES);
+        RETURN_THROWS();
+    }
     if (memchr(ZSTR_VAL(txt), 0, ZSTR_LEN(txt)) != NULL) {
         zend_value_error("FastChart\\Chart::setXAxisTitle() text contains an embedded NUL");
         RETURN_THROWS();
@@ -5587,6 +5664,11 @@ ZEND_METHOD(FastChart_Chart, setYAxisTitle)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_STR(txt)
     ZEND_PARSE_PARAMETERS_END();
+    if (ZSTR_LEN(txt) > FASTCHART_MAX_TEXT_BYTES) {
+        zend_value_error("FastChart\\Chart::setYAxisTitle() text exceeds the %d-byte limit",
+                         FASTCHART_MAX_TEXT_BYTES);
+        RETURN_THROWS();
+    }
     if (memchr(ZSTR_VAL(txt), 0, ZSTR_LEN(txt)) != NULL) {
         zend_value_error("FastChart\\Chart::setYAxisTitle() text contains an embedded NUL");
         RETURN_THROWS();
@@ -6396,17 +6478,29 @@ int fastchart_resolve_canvas_dims(zend_long width, zend_long height,
      * truecolor canvas, plus comparable encoder buffers. Square
      * worst case (16384 * 16384 = 268M) is rejected here even
      * though both dims pass MAX_PHYS_DIM. Multiply as int64 so the
-     * arithmetic itself can't overflow before the comparison. */
+     * arithmetic itself can't overflow before the comparison.
+     * fastchart.max_render_pixels (PHP_INI_SYSTEM) can lower the
+     * budget — the rasterizer's second frame buffer is malloc-backed
+     * and invisible to memory_limit, so operators need an enforced
+     * knob here rather than a documented caller obligation. Values
+     * above the built-in cap or <= 0 clamp to the cap. */
     const long long MAX_PHYS_PIXELS = 64LL * 1024LL * 1024LL;
+    long long budget = MAX_PHYS_PIXELS;
+    zend_long ini_budget = FASTCHART_G(max_render_pixels);
+    if (ini_budget > 0 && (long long)ini_budget < budget) {
+        budget = (long long)ini_budget;
+    }
     long long pixels = (long long)pw * (long long)ph;
-    if (pixels > MAX_PHYS_PIXELS) {
+    if (pixels > budget) {
         zend_value_error(
             "FastChart: physical canvas pixel count exceeds the %lld "
             "budget (setSize=" ZEND_LONG_FMT "x" ZEND_LONG_FMT
             ", setDpi=" ZEND_LONG_FMT " -> %dx%d = %lld pixels). "
-            "Reduce setSize() or setDpi().",
-            MAX_PHYS_PIXELS,
-            width, height, dpi, pw, ph, pixels);
+            "Reduce setSize() or setDpi()%s.",
+            budget,
+            width, height, dpi, pw, ph, pixels,
+            budget < MAX_PHYS_PIXELS
+                ? ", or raise fastchart.max_render_pixels" : "");
         return -1;
     }
     *out_w = pw;
@@ -7463,17 +7557,8 @@ ZEND_METHOD(FastChart_RadarChart, setSeries)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_radar_obj *self = Z_FASTCHART_RADAR_OBJ_P(ZEND_THIS);
-    for (int i = 0; i < self->n_series; i++) {
-        fc_efree_opt(self->series[i].values);
-        fc_efree_opt(self->series[i].label);
-        self->series[i].values = NULL;
-        self->series[i].label = NULL;
-        self->series[i].len = 0;
-    }
-    self->n_series = 0;
 
     HashTable *ht = Z_ARRVAL_P(arr);
-    if (zend_hash_num_elements(ht) == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
     zval *first = NULL;
     {
@@ -7518,6 +7603,18 @@ ZEND_METHOD(FastChart_RadarChart, setSeries)
                          (unsigned)zend_hash_num_elements(ht));
         RETURN_THROWS();
     }
+
+    /* All caps validated; drop the prior series now (a thrown
+     * ValueError above leaves the previous state renderable). */
+    for (int i = 0; i < self->n_series; i++) {
+        fc_efree_opt(self->series[i].values);
+        fc_efree_opt(self->series[i].label);
+        self->series[i].values = NULL;
+        self->series[i].label = NULL;
+        self->series[i].len = 0;
+    }
+    self->n_series = 0;
+    if (zend_hash_num_elements(ht) == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
 #define RADAR_PARSE_VALUES(slot_, ht_) do {                                  \
         HashTable *_dh = (ht_);                                              \
@@ -7583,20 +7680,8 @@ ZEND_METHOD(FastChart_PolarChart, setSeries)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_polar_obj *self = Z_FASTCHART_POLAR_OBJ_P(ZEND_THIS);
-    /* Drop existing series. */
-    for (int i = 0; i < self->n_series; i++) {
-        fc_efree_opt(self->series[i].angles);
-        fc_efree_opt(self->series[i].radii);
-        fc_efree_opt(self->series[i].label);
-        self->series[i].angles = NULL;
-        self->series[i].radii = NULL;
-        self->series[i].label = NULL;
-        self->series[i].len = 0;
-    }
-    self->n_series = 0;
 
     HashTable *ht = Z_ARRVAL_P(arr);
-    if (zend_hash_num_elements(ht) == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
     zval *first = NULL;
     {
@@ -7641,6 +7726,20 @@ ZEND_METHOD(FastChart_PolarChart, setSeries)
                          (unsigned)zend_hash_num_elements(ht));
         RETURN_THROWS();
     }
+
+    /* All caps validated; drop the prior series now (a thrown
+     * ValueError above leaves the previous state renderable). */
+    for (int i = 0; i < self->n_series; i++) {
+        fc_efree_opt(self->series[i].angles);
+        fc_efree_opt(self->series[i].radii);
+        fc_efree_opt(self->series[i].label);
+        self->series[i].angles = NULL;
+        self->series[i].radii = NULL;
+        self->series[i].label = NULL;
+        self->series[i].len = 0;
+    }
+    self->n_series = 0;
+    if (zend_hash_num_elements(ht) == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
     /* Helper: parse a [angle, radius] list into the slot. */
 #define POLAR_PARSE_DATA(slot_, ht_) do {                                \
@@ -8042,6 +8141,11 @@ ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
 
     if (ZSTR_LEN(name) == 0) {
         zend_value_error("FastChart\\StockChart::addIndicatorPane() requires a non-empty name");
+        RETURN_THROWS();
+    }
+    if (ZSTR_LEN(name) > FASTCHART_MAX_TEXT_BYTES) {
+        zend_value_error("FastChart\\StockChart::addIndicatorPane() name exceeds the %d-byte limit",
+                         FASTCHART_MAX_TEXT_BYTES);
         RETURN_THROWS();
     }
     if (memchr(ZSTR_VAL(name), 0, ZSTR_LEN(name)) != NULL) {
@@ -9165,7 +9269,8 @@ ZEND_METHOD(FastChart_Treemap, setItems)
         if (zl && Z_TYPE_P(zl) == IS_STRING) {
             size_t len = Z_STRLEN_P(zl);
             const char *s = Z_STRVAL_P(zl);
-            if (memchr(s, 0, len) == NULL && len > 0) {
+            if (memchr(s, 0, len) == NULL && len > 0 &&
+                len <= FASTCHART_MAX_TEXT_BYTES) {
                 parsed[idx].label = emalloc(len + 1);
                 memcpy(parsed[idx].label, s, len);
                 parsed[idx].label[len] = '\0';
@@ -9269,7 +9374,8 @@ ZEND_METHOD(FastChart_Funnel, setStages)
         if (zl && Z_TYPE_P(zl) == IS_STRING) {
             size_t len = Z_STRLEN_P(zl);
             const char *s = Z_STRVAL_P(zl);
-            if (len > 0 && memchr(s, 0, len) == NULL) {
+            if (len > 0 && memchr(s, 0, len) == NULL &&
+                len <= FASTCHART_MAX_TEXT_BYTES) {
                 parsed[idx].label = emalloc(len + 1);
                 memcpy(parsed[idx].label, s, len);
                 parsed[idx].label[len] = '\0';
@@ -9403,7 +9509,8 @@ ZEND_METHOD(FastChart_Waterfall, setBars)
         if (zl && Z_TYPE_P(zl) == IS_STRING) {
             size_t len = Z_STRLEN_P(zl);
             const char *s = Z_STRVAL_P(zl);
-            if (len > 0 && memchr(s, 0, len) == NULL) {
+            if (len > 0 && memchr(s, 0, len) == NULL &&
+                len <= FASTCHART_MAX_TEXT_BYTES) {
                 parsed[idx].label = emalloc(len + 1);
                 memcpy(parsed[idx].label, s, len);
                 parsed[idx].label[len] = '\0';
@@ -10146,6 +10253,11 @@ ZEND_METHOD(FastChart_ArcDiagram, setNodes)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_arc_obj *self = Z_FASTCHART_ARC_OBJ_P(ZEND_THIS);
+    if (fastchart_array_count_or_throw(Z_ARRVAL_P(nodes),
+            FASTCHART_MAX_GRAPH_NODES,
+            "FastChart\\ArcDiagram::setNodes()", "nodes") < 0) {
+        RETURN_THROWS();
+    }
     fastchart_graph_fields_set_nodes(&self->nodes, &self->node_count,
                                      &self->links, &self->link_count, nodes);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -10159,6 +10271,11 @@ ZEND_METHOD(FastChart_ArcDiagram, setLinks)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_arc_obj *self = Z_FASTCHART_ARC_OBJ_P(ZEND_THIS);
+    if (fastchart_array_count_or_throw(Z_ARRVAL_P(links),
+            FASTCHART_MAX_GRAPH_LINKS,
+            "FastChart\\ArcDiagram::setLinks()", "links") < 0) {
+        RETURN_THROWS();
+    }
     fastchart_graph_fields_set_links(self->node_count, &self->links,
                                      &self->link_count, links);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -10189,6 +10306,11 @@ ZEND_METHOD(FastChart_ChordDiagram, setNodes)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_chord_obj *self = Z_FASTCHART_CHORD_OBJ_P(ZEND_THIS);
+    if (fastchart_array_count_or_throw(Z_ARRVAL_P(nodes),
+            FASTCHART_MAX_GRAPH_NODES,
+            "FastChart\\ChordDiagram::setNodes()", "nodes") < 0) {
+        RETURN_THROWS();
+    }
     fastchart_graph_fields_set_nodes(&self->nodes, &self->node_count,
                                      &self->links, &self->link_count, nodes);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -10202,6 +10324,11 @@ ZEND_METHOD(FastChart_ChordDiagram, setLinks)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_chord_obj *self = Z_FASTCHART_CHORD_OBJ_P(ZEND_THIS);
+    if (fastchart_array_count_or_throw(Z_ARRVAL_P(links),
+            FASTCHART_MAX_GRAPH_LINKS,
+            "FastChart\\ChordDiagram::setLinks()", "links") < 0) {
+        RETURN_THROWS();
+    }
     fastchart_graph_fields_set_links(self->node_count, &self->links,
                                      &self->link_count, links);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -10246,6 +10373,11 @@ ZEND_METHOD(FastChart_NetworkChart, setNodes)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_network_obj *self = Z_FASTCHART_NETWORK_OBJ_P(ZEND_THIS);
+    if (fastchart_array_count_or_throw(Z_ARRVAL_P(nodes),
+            FASTCHART_MAX_GRAPH_NODES,
+            "FastChart\\NetworkChart::setNodes()", "nodes") < 0) {
+        RETURN_THROWS();
+    }
     fastchart_graph_fields_set_nodes(&self->nodes, &self->node_count,
                                      &self->links, &self->link_count, nodes);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -10259,6 +10391,11 @@ ZEND_METHOD(FastChart_NetworkChart, setLinks)
     ZEND_PARSE_PARAMETERS_END();
 
     fastchart_network_obj *self = Z_FASTCHART_NETWORK_OBJ_P(ZEND_THIS);
+    if (fastchart_array_count_or_throw(Z_ARRVAL_P(links),
+            FASTCHART_MAX_GRAPH_LINKS,
+            "FastChart\\NetworkChart::setLinks()", "links") < 0) {
+        RETURN_THROWS();
+    }
     fastchart_graph_fields_set_links(self->node_count, &self->links,
                                      &self->link_count, links);
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -11253,6 +11390,8 @@ ZEND_METHOD(FastChart_VectorChart, setColorRamp)
 
 PHP_MINIT_FUNCTION(fastchart)
 {
+    (void)type;
+    REGISTER_INI_ENTRIES();
     /* Pre-warm the rasterizer's un-premultiply LUT now, while we are
      * single-threaded, so the lazy first-call init can't race under ZTS.
      * Same for the encoder's SSSE3 capability cache. */
@@ -11486,6 +11625,8 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
 
 PHP_MSHUTDOWN_FUNCTION(fastchart)
 {
+    (void)type;
+    UNREGISTER_INI_ENTRIES();
     /* fastchart_default_font_path points at one of the string
      * literals in FASTCHART_DEFAULT_FONT_CANDIDATES. Nothing to
      * release; clear the pointer so a misordered RSHUTDOWN can't
@@ -11500,6 +11641,7 @@ PHP_MSHUTDOWN_FUNCTION(fastchart)
 
 PHP_MINFO_FUNCTION(fastchart)
 {
+    (void)zend_module;
     php_info_print_table_start();
     php_info_print_table_row(2, "fastchart support", "enabled");
     php_info_print_table_row(2, "fastchart version", PHP_FASTCHART_VERSION);
@@ -11544,6 +11686,8 @@ PHP_MINFO_FUNCTION(fastchart)
             ? fastchart_default_font_path
             : "(not auto-detected, setFontPath() required)");
     php_info_print_table_end();
+
+    DISPLAY_INI_ENTRIES();
 }
 
 zend_module_entry fastchart_module_entry = {

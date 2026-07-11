@@ -19,6 +19,45 @@ jobs:
           coverage: none
       - run: composer validate --strict
 
+  stub-drift:
+    name: Stub / arginfo drift
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          # gen_stub.php parses the stub via the tokenizer extension and
+          # pulls PHP-Parser at runtime; both are in setup-php's default set.
+          coverage: none
+      - name: Fetch gen_stub.php from php-src
+        # gen_stub.php is the canonical *_arginfo.h generator (same script
+        # the /php-stub-regen skill runs locally). It lives in php-src's
+        # build/ dir and self-installs PHP-Parser on first run, so a
+        # shallow sparse checkout of just build/ is all we need — no full
+        # php-src tree, no php-src build. Pinned to tag php-8.4.9: the
+        # generated "Stub hash" header format is stable across the 8.x
+        # line (verified: 8.4.x gen_stub reproduces the committed header
+        # byte-for-byte). Bump this pin only if a deliberate regen changes
+        # the header format.
+        run: |
+          git clone --depth=1 --branch=php-8.4.9 --filter=blob:none --sparse \
+            https://github.com/php/php-src.git /tmp/php-src
+          git -C /tmp/php-src sparse-checkout set build
+          test -f /tmp/php-src/build/gen_stub.php
+      - name: Regenerate arginfo and check for drift
+        # gen_stub emits fastchart_arginfo.h next to the stub (repo root).
+        # If it differs from the committed header, the stub was edited
+        # without regenerating — fail and point at the fix.
+        run: |
+          php /tmp/php-src/build/gen_stub.php fastchart.stub.php
+          if ! git diff --exit-code fastchart_arginfo.h; then
+            echo "::error::fastchart_arginfo.h is out of sync with fastchart.stub.php — run /php-stub-regen and commit the regenerated header"
+            exit 1
+          fi
+          echo "arginfo is in sync with the stub"
+
   pie-smoke:
     name: PIE install smoke
     runs-on: ubuntu-latest
@@ -140,6 +179,33 @@ jobs:
           fi
           echo "symbol audit: no libgcc cpu-feature symbols"
 
+      - name: Verify gd capabilities (guard against silent mass-skips)
+        # ~91 phpts declare `--EXTENSIONS-- gd` and round-trip raster
+        # output through imagecreatefromstring / imagecreatefromwebp for
+        # pixel inspection. If gd vanishes, or its build loses WebP /
+        # JPEG / FreeType support, those tests SKIP silently and a "green"
+        # run hides a real regression. Assert the capabilities up front so
+        # the loss fails fast with a clear message instead of hiding in
+        # the skip counter. This lane loads gd via setup-php's
+        # `extensions: gd`.
+        run: |
+          php -r '
+            if (!extension_loaded("gd")) {
+              fwrite(STDERR, "gd not loaded — ~91 raster round-trip tests would skip silently\n");
+              exit(1);
+            }
+            $i = gd_info();
+            $need = ["WebP Support", "JPEG Support", "FreeType Support", "PNG Support"];
+            $missing = [];
+            foreach ($need as $k) { if (empty($i[$k])) { $missing[] = $k; } }
+            if ($missing) {
+              fwrite(STDERR, "gd is missing: " . implode(", ", $missing) .
+                " — raster round-trip tests would skip silently\n");
+              exit(1);
+            }
+            echo "gd capabilities OK: " . implode(", ", $need) . "\n";
+          '
+
       - name: Run tests
         run: |
           export TEST_PHP_EXECUTABLE=$(which php)
@@ -166,6 +232,23 @@ jobs:
           if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
             echo "::error::Tests failed on PHP ${{ matrix.php }} - Linux"
             grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
+            exit 1
+          fi
+          # Skip ceiling. This lane loads gd (so the ~91 gd round-trip
+          # tests RUN) and is built without --with-pdfio. Legitimate
+          # skips: 7 PDF-gated + up to 12 fc_pick_font()-gated (system
+          # font absent) + 1 comma-decimal-locale + a couple of
+          # environment-gated (open_basedir / non-regular-source). Budget
+          # 7 + 12 + ~5 slack = 25. A run that skips MORE than this means
+          # a capability quietly vanished and tests are hiding in the skip
+          # counter rather than failing — treat it as a failure. Bump this
+          # only alongside a deliberate new skip-gated test.
+          SKIPPED=$(grep -oP '^Tests skipped\s*:\s*\K[0-9]+' /tmp/test-output.txt | head -1)
+          SKIPPED=${SKIPPED:-0}
+          echo "Tests skipped: $SKIPPED (ceiling 25)"
+          if [ "$SKIPPED" -gt 25 ]; then
+            echo "::error::Skip count $SKIPPED exceeds ceiling 25 on PHP ${{ matrix.php }} - Linux — a capability likely vanished (gd/webp/fonts); tests are hiding in the skip counter"
+            grep -E '^SKIP\b' /tmp/test-output.txt || true
             exit 1
           fi
 
@@ -225,6 +308,56 @@ jobs:
             exit 1
           fi
 
+      - name: Guard localized static-dep symbols (nm export gate)
+        # The PDF lane links pdfio statically, alongside the always-static
+        # vendored plutovg/plutosvg and FreeType. --exclude-libs must
+        # localize every one of those archives' symbols so none leak into
+        # fastchart.so's dynamic export table — only fastchart's own PHP
+        # entry point (get_module) should be exported. A leaked pdfio /
+        # plutovg / plutosvg / ttf symbol means --exclude-libs didn't
+        # take and the .so could clash with another extension's copy.
+        # This guards the config.m4 --exclude-libs localization; it passes
+        # once that concurrent config.m4 fix lands (both land together).
+        run: |
+          SO=modules/fastchart.so
+          if ! nm -D "$SO" | grep -qE ' T get_module$'; then
+            echo "::error::get_module is not exported from $SO — dynamic symbol table looks wrong"
+            nm -D "$SO" | grep -i 'get_module' || true
+            exit 1
+          fi
+          # Defined/exported symbols only: ' T ' (text), ' D ' (data),
+          # ' B ' (bss). Localized statics show as lowercase (t/d/b) or
+          # vanish from -D entirely, so an uppercase match here is a leak.
+          LEAKED=$(nm -D "$SO" | grep -E ' [TDB] ' | grep -iE 'pdfio|_pdfio|ttf|plutovg|plutosvg' || true)
+          if [ -n "$LEAKED" ]; then
+            echo "::error::static-dep symbols leaked into the dynamic export table (--exclude-libs not applied):"
+            echo "$LEAKED"
+            exit 1
+          fi
+          echo "nm export gate OK: get_module exported; no pdfio/ttf/plutovg/plutosvg exports"
+
+      - name: Verify gd capabilities (guard against silent mass-skips)
+        # Same guard as the Linux lane: this lane also runs the full
+        # suite, so a vanished gd (or a gd without WebP/JPEG/FreeType)
+        # would silently skip the ~91 raster round-trip tests here too.
+        run: |
+          php -r '
+            if (!extension_loaded("gd")) {
+              fwrite(STDERR, "gd not loaded — ~91 raster round-trip tests would skip silently\n");
+              exit(1);
+            }
+            $i = gd_info();
+            $need = ["WebP Support", "JPEG Support", "FreeType Support", "PNG Support"];
+            $missing = [];
+            foreach ($need as $k) { if (empty($i[$k])) { $missing[] = $k; } }
+            if ($missing) {
+              fwrite(STDERR, "gd is missing: " . implode(", ", $missing) .
+                " — raster round-trip tests would skip silently\n");
+              exit(1);
+            }
+            echo "gd capabilities OK: " . implode(", ", $need) . "\n";
+          '
+
       - name: Run PDF tests (must execute, not skip)
         # The lane exists to exercise the PDF backend. Run 200/201 in
         # isolation first: if pdfio failed to link they would SKIP, so
@@ -260,6 +393,22 @@ jobs:
           if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
             echo "::error::Tests failed on the PDF lane"
             grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
+            exit 1
+          fi
+          # Skip ceiling. This lane loads gd AND builds --with-pdfio, so
+          # both the ~91 gd round-trip tests and the 7 PDF tests RUN.
+          # Legitimate skips: up to 12 fc_pick_font()-gated (system font
+          # absent) + 1 comma-decimal-locale + a couple environment-gated.
+          # Budget 12 + ~6 slack = 18. More means a capability quietly
+          # vanished (gd/webp/fonts/pdfio) and tests are hiding in the
+          # skip counter. Bump only alongside a deliberate new skip-gated
+          # test.
+          SKIPPED=$(grep -oP '^Tests skipped\s*:\s*\K[0-9]+' /tmp/test-output.txt | head -1)
+          SKIPPED=${SKIPPED:-0}
+          echo "Tests skipped: $SKIPPED (ceiling 18)"
+          if [ "$SKIPPED" -gt 18 ]; then
+            echo "::error::Skip count $SKIPPED exceeds ceiling 18 on the PDF lane — a capability likely vanished (gd/webp/fonts/pdfio); tests are hiding in the skip counter"
+            grep -E '^SKIP\b' /tmp/test-output.txt || true
             exit 1
           fi
 
@@ -356,6 +505,30 @@ jobs:
             exit 1
           fi
 
+      - name: Verify gd capabilities (guard against silent mass-skips)
+        # This lane builds gd directly into the ASAN PHP
+        # (--enable-gd --with-external-gd against the runner's libgd-dev),
+        # so the ~91 gd round-trip tests EXECUTE here, they do not skip.
+        # Assert the external-gd build kept WebP/JPEG/FreeType so a codec
+        # gap in the runner's libgd surfaces loudly instead of silently
+        # skipping those tests under ASAN.
+        run: |
+          /tmp/php-asan/bin/php -r '
+            if (!extension_loaded("gd")) {
+              fwrite(STDERR, "gd not built into the ASAN PHP — ~91 raster tests would skip\n");
+              exit(1);
+            }
+            $i = gd_info();
+            $need = ["WebP Support", "JPEG Support", "FreeType Support", "PNG Support"];
+            $missing = [];
+            foreach ($need as $k) { if (empty($i[$k])) { $missing[] = $k; } }
+            if ($missing) {
+              fwrite(STDERR, "ASAN gd missing: " . implode(", ", $missing) . "\n");
+              exit(1);
+            }
+            echo "ASAN gd capabilities OK: " . implode(", ", $need) . "\n";
+          '
+
       - name: Run tests under ASAN
         run: |
           export TEST_PHP_EXECUTABLE=/tmp/php-asan/bin/php
@@ -382,6 +555,22 @@ jobs:
           fi
           if grep -qP '^Tests leaked\s*:\s*[1-9]' /tmp/test-output.txt; then
             echo "::error::Tests leaked under ASAN (LSan reported memory leaks)"
+            exit 1
+          fi
+          # Skip ceiling. NOTE: gd IS present in this lane (built into the
+          # ASAN PHP above), so the ~91 gd tests run — the skip profile
+          # matches the Linux lane, NOT a gd-less lane. Legitimate skips:
+          # 7 PDF-gated (no --with-pdfio) + up to 12 font-gated + locale/
+          # environment-gated. Budget 30 (Linux's 25 + a little extra
+          # slack for ASAN-specific environment differences). If gd were
+          # ever dropped from this lane the capability probe above fails
+          # first, so reaching this check means gd ran.
+          SKIPPED=$(grep -oP '^Tests skipped\s*:\s*\K[0-9]+' /tmp/test-output.txt | head -1)
+          SKIPPED=${SKIPPED:-0}
+          echo "Tests skipped: $SKIPPED (ceiling 30)"
+          if [ "$SKIPPED" -gt 30 ]; then
+            echo "::error::Skip count $SKIPPED exceeds ceiling 30 under ASAN — a capability likely vanished; tests are hiding in the skip counter"
+            grep -E '^SKIP\b' /tmp/test-output.txt || true
             exit 1
           fi
 
@@ -417,6 +606,28 @@ jobs:
           ./configure --enable-fastchart
           make -j$(sysctl -n hw.ncpu)
 
+      - name: Verify gd capabilities (guard against silent mass-skips)
+        # Same guard as the Linux lane: the ~91 gd round-trip tests need
+        # gd with WebP/JPEG/FreeType. macOS gd comes from setup-php's
+        # `extensions: gd`; if that build ever loses a codec those tests
+        # would skip silently and the lane would still go green.
+        run: |
+          php -r '
+            if (!extension_loaded("gd")) {
+              fwrite(STDERR, "gd not loaded — ~91 raster round-trip tests would skip silently\n");
+              exit(1);
+            }
+            $i = gd_info();
+            $need = ["WebP Support", "JPEG Support", "FreeType Support", "PNG Support"];
+            $missing = [];
+            foreach ($need as $k) { if (empty($i[$k])) { $missing[] = $k; } }
+            if ($missing) {
+              fwrite(STDERR, "gd is missing: " . implode(", ", $missing) . "\n");
+              exit(1);
+            }
+            echo "gd capabilities OK: " . implode(", ", $need) . "\n";
+          '
+
       - name: Run tests
         run: |
           export TEST_PHP_EXECUTABLE=$(which php)
@@ -438,5 +649,19 @@ jobs:
           if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
             echo "::error::Tests failed on PHP ${{ matrix.php }} - macOS"
             grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
+            exit 1
+          fi
+          # Skip ceiling. macOS loads gd and is built without pdfio.
+          # Legitimate skips mirror Linux (7 PDF + up to 12 font +
+          # locale), plus macOS-only environment skips: /proc-gated
+          # (136_source_image_non_regular) always skips (no procfs) and
+          # the comma-decimal-locale test typically skips. Budget 30 to
+          # cover the extra macOS environment skips over Linux's 25.
+          SKIPPED=$(grep -oE '^Tests skipped[[:space:]]*:[[:space:]]*[0-9]+' /tmp/test-output.txt | grep -oE '[0-9]+' | head -1)
+          SKIPPED=${SKIPPED:-0}
+          echo "Tests skipped: $SKIPPED (ceiling 30)"
+          if [ "$SKIPPED" -gt 30 ]; then
+            echo "::error::Skip count $SKIPPED exceeds ceiling 30 on PHP ${{ matrix.php }} - macOS — a capability likely vanished; tests are hiding in the skip counter"
+            grep -E '^SKIP\b' /tmp/test-output.txt || true
             exit 1
           fi

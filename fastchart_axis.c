@@ -382,6 +382,7 @@ void fastchart_begin_render(fastchart_obj *chart, fastchart_target_t *t)
      * density metadata flow from fastchart_pixels_t::dpi in the
      * encoder. */
     (void)chart;
+    (void)t;
 }
 
 void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
