@@ -4102,7 +4102,6 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints)
     int total_pts = 0;
     if (is_multi) {
         zval *series_zv;
-        int s = 0;
         ZEND_HASH_FOREACH_VAL(ht, series_zv) {
             if (series_zv) ZVAL_DEREF(series_zv);
             if (Z_TYPE_P(series_zv) != IS_ARRAY) continue;
@@ -4111,7 +4110,6 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints)
             if (dk) ZVAL_DEREF(dk);
             if (!dk || Z_TYPE_P(dk) != IS_ARRAY) continue;
             total_pts += (int)zend_hash_num_elements(Z_ARRVAL_P(dk));
-            s++;
         } ZEND_HASH_FOREACH_END();
     } else {
         total_pts = n_input;

@@ -250,7 +250,13 @@ if test "$PHP_FASTCHART" != "no"; then
   dnl out of the dynamic symbol table. Disabling the entire translation
   dnl unit shrinks fastchart.so by ~70 KB and saves ~1 s of incremental
   dnl build time.
+  dnl -Wno-unused-parameter stays on first-party TUs: PHP's own headers
+  dnl trip it under clang (zend_arena.h's static-inline stubs carry
+  dnl unused params in ZEND_DEBUG builds — the ASAN lane), and php-src
+  dnl compiles itself with the same suppression. Every other class from
+  dnl the vendor suppression set below is enforced on first-party code.
   FASTCHART_CFLAGS="-Wall -Wextra \
+    -Wno-unused-parameter \
     -fvisibility=hidden \
     -DPLUTOVG_BUILD_STATIC -DPLUTOSVG_BUILD_STATIC \
     -DPLUTOVG_DISABLE_IMAGE_WRITE \

@@ -193,7 +193,8 @@ foreach ($families as $name => [$w, $h, $build]) {
                  " != {$w}x{$h}\n";
             $row_ok = false;
         }
-        imagedestroy($ij);
+        /* No imagedestroy(): no-op since PHP 8.0, deprecated in 8.5. */
+        $ij = null;
     }
 
     $iw = @imagecreatefromstring($webp);
@@ -206,7 +207,7 @@ foreach ($families as $name => [$w, $h, $build]) {
                  " != {$w}x{$h}\n";
             $row_ok = false;
         }
-        imagedestroy($iw);
+        $iw = null;
     }
 
     if ($row_ok) {

@@ -156,7 +156,13 @@ jobs:
           export CC=${{ matrix.cc }}
           phpize
           ./configure --enable-fastchart --enable-fastchart-dev
-          WARNINGS=$(make -j$(nproc) 2>&1 | tee /dev/stderr | grep -c 'warning:' || true)
+          # make must fail the step itself — piping straight into grep
+          # took grep's exit status, so a failed compile left no .so,
+          # every test SKIPped, and only the skip ceiling caught it.
+          set -o pipefail
+          make -j$(nproc) 2>&1 | tee /tmp/build.log
+          set +o pipefail
+          WARNINGS=$(grep -c 'warning:' /tmp/build.log || true)
           if [ "$WARNINGS" -gt 0 ]; then
             echo "::error::Build produced $WARNINGS warning(s) with ${{ matrix.cc }}"
             exit 1
@@ -302,7 +308,12 @@ jobs:
           export PKG_CONFIG_PATH=/opt/pdfio/lib/pkgconfig:${PKG_CONFIG_PATH:-}
           phpize
           ./configure --enable-fastchart --enable-fastchart-dev --with-pdfio=/opt/pdfio
-          WARNINGS=$(make -j"$(nproc)" 2>&1 | tee /dev/stderr | grep -c 'warning:' || true)
+          # pipefail so a failed compile fails the step (grep's status
+          # otherwise masks make's — see the Linux lane's build step).
+          set -o pipefail
+          make -j"$(nproc)" 2>&1 | tee /tmp/build.log
+          set +o pipefail
+          WARNINGS=$(grep -c 'warning:' /tmp/build.log || true)
           if [ "$WARNINGS" -gt 0 ]; then
             echo "::error::PDF build produced $WARNINGS warning(s)"
             exit 1
