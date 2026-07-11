@@ -35,8 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the PDF lane gates the module's dynamic-symbol surface.
 - New stub-drift job regenerates `fastchart_arginfo.h` and fails on
   diff.
-- Windows CI builds with `/WX`; an experimental non-blocking lane
-  compiles the pdfio backend under MSVC.
+- Windows CI builds with `/WX`; a blocking lane builds and tests the
+  pdfio PDF backend under MSVC (7/7 PDF tests).
+- Windows test runs now load gd and a system font, so the raster
+  round-trip and decode suites execute on every Windows lane.
 - The PDF nan/inf test inflates FlateDecode streams before scanning; a
   new test decodes JPEG/WebP output for every chart family.
 
