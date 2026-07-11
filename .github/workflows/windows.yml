@@ -115,30 +115,23 @@ jobs:
           $skipped = (Select-String -Path win-tests.txt -Pattern 'Tests skipped\s*:\s*(\d+)').Matches.Groups[1].Value
           Write-Host "Tests skipped: $skipped (expected ~10 with gd+fonts loaded: 7 PDF + env-gated)"
 
-  # EXPERIMENTAL — single representative lane that compiles the MSVC PDF
-  # path (fastchart_pdf.c, gated by --with-fastchart-pdfio in config.w32).
-  # No other Windows job exercises it, so without this lane fastchart_pdf.c
-  # never compiles on MSVC. pdfio is NOT in php-windows-builder's dep
-  # catalog, so it is built from source first and handed to the build via
-  # LIB / INCLUDE, which config.w32's CHECK_LIB / CHECK_HEADER honor.
-  # (Round 1 used php/setup-php-sdk instead, which null-derefs in
-  # run.ps1's bare Invoke-WebRequest on WinPS 5.1 — upstream bug, present
-  # at v0.12 and master, so the lane now rides the same php-windows-builder
-  # action as the main matrix.) Remaining unknowns needing CI rounds:
-  #   * whether the phpsdk vcvars invocation preserves the injected LIB /
-  #     INCLUDE entries,
-  #   * pdfio.vcxproj's output names / dirs at the pinned tag,
-  #   * runtime discovery of pdfio1.dll when loading php_fastchart.dll.
-  # Kept continue-on-error so an unresolved detail yields a yellow lane
-  # (with the compile log visible) rather than reding the release matrix.
-  # Drop continue-on-error once it goes green. Not part of release
-  # publishing — this lane builds a --with-fastchart-pdfio DLL that the
-  # release job intentionally does not upload (release DLLs are pdfio-less,
-  # matching the Linux prebuilt).
+  # Single representative lane that compiles and tests the MSVC PDF path
+  # (fastchart_pdf.c, gated by --with-fastchart-pdfio in config.w32). No
+  # other Windows job exercises it. pdfio is NOT in php-windows-builder's
+  # dep catalog, so it is built from source first and handed to the build
+  # via LIB / INCLUDE, which config.w32's CHECK_LIB / CHECK_HEADER honor;
+  # its runtime DLLs are then staged next to the built extension because
+  # PHP >= 7.4 on Windows does not consult %PATH% for extension
+  # dependencies. (php/setup-php-sdk was rejected for this lane: its
+  # run.ps1 null-derefs in bare Invoke-WebRequest on WinPS 5.1 — upstream
+  # bug present at v0.12 and master.) Blocking since run 29162247340 went
+  # green (7/7 PDF tests, 0 skips). Not part of release publishing — this
+  # lane builds a --with-fastchart-pdfio DLL that the release job
+  # intentionally does not upload (release DLLs are pdfio-less, matching
+  # the Linux prebuilt).
   windows-pdf:
-    name: PHP 8.4 x64 nts - Windows PDF backend (experimental)
+    name: PHP 8.4 x64 nts - Windows PDF backend
     runs-on: windows-2022
-    continue-on-error: true
     env:
       # Keep in sync with the Linux PDF lane's PDFIO_VERSION in tests.yml.
       PDFIO_VERSION: '1.6.4'
