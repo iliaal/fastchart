@@ -66,12 +66,23 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # The action builds under build\<random-guid>\ and moves only
+          # artifacts\ back to the workspace; php-bin (the staged test
+          # PHP) and the built dll stay in the guid dir. Run from there
+          # so runtime dep DLLs resolve exactly as the action's own
+          # test step would have them.
+          $bdir = Get-ChildItem build -Directory -ErrorAction SilentlyContinue |
+            Where-Object { Test-Path (Join-Path $_.FullName 'php-bin\php.exe') } |
+            Select-Object -First 1
+          if (-not $bdir) { throw "no build\<guid>\php-bin found — action layout changed?" }
+          Set-Location $bdir.FullName
           $ws = (Get-Location).Path
           $php = Join-Path $ws 'php-bin\php.exe'
-          $dll = Join-Path $ws 'build\php_fastchart.dll'
-          foreach ($f in @($php, $dll)) {
-            if (-not (Test-Path $f)) { throw "missing $f — action layout changed?" }
-          }
+          $dllItem = Get-ChildItem . -Recurse -Filter php_fastchart.dll |
+            Where-Object { $_.FullName -notmatch '\\artifacts\\' } |
+            Select-Object -First 1
+          if (-not $dllItem) { throw "php_fastchart.dll not found under $ws" }
+          $dll = $dllItem.FullName
           # TEST_PHP_ARGS is passed to the test php verbatim (no
           # addslashes mangling, unlike run-tests' -d forwarding), so
           # absolute Windows paths are safe here. php_gd.dll ships in
@@ -183,12 +194,19 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $ws = (Get-Location).Path
-          $php = Join-Path $ws 'php-bin\php.exe'
-          $dll = Join-Path $ws 'build\php_fastchart.dll'
-          foreach ($f in @($php, $dll)) {
-            if (-not (Test-Path $f)) { throw "missing $f — action layout changed?" }
-          }
+          # Same layout note as the matrix test step: the action builds
+          # under build\<guid>\ and leaves php-bin + the dll there.
+          $bdir = Get-ChildItem build -Directory -ErrorAction SilentlyContinue |
+            Where-Object { Test-Path (Join-Path $_.FullName 'php-bin\php.exe') } |
+            Select-Object -First 1
+          if (-not $bdir) { throw "no build\<guid>\php-bin found — action layout changed?" }
+          Set-Location $bdir.FullName
+          $php = Join-Path $bdir.FullName 'php-bin\php.exe'
+          $dllItem = Get-ChildItem . -Recurse -Filter php_fastchart.dll |
+            Where-Object { $_.FullName -notmatch '\\artifacts\\' } |
+            Select-Object -First 1
+          if (-not $dllItem) { throw "php_fastchart.dll not found under $($bdir.FullName)" }
+          $dll = $dllItem.FullName
           # pdfio1.dll must be resolvable when php_fastchart.dll loads.
           $env:PATH = "$env:PDFIO_PREFIX\bin;$env:PATH"
           $env:TEST_PHP_EXECUTABLE = $php
