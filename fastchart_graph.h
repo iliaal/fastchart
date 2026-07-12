@@ -23,6 +23,7 @@
 
 #define FASTCHART_MAX_GRAPH_NODES   512    /* per chart */
 #define FASTCHART_MAX_GRAPH_LINKS   2048   /* per chart */
+#define FASTCHART_MAX_GRAPH_LABEL_BYTES (64 * 1024)
 
 typedef struct {
     char *label;          /* emalloc'd, NUL-terminated; NULL = no label */
@@ -42,6 +43,7 @@ typedef struct {
  * *count and returns 0; an empty input yields *count == 0 and *out NULL. */
 int fastchart_graph_parse_nodes(zval *arr, int max,
                                 fastchart_graph_node **out, int *count);
+int fastchart_graph_validate_node_labels(zval *arr, const char *method);
 
 /* Parse a PHP link array (`[['from' => int, 'to' => int, 'value' => num],
  * ...]`) into a freshly emalloc'd fastchart_graph_link[]. Drops entries

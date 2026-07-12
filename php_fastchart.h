@@ -32,8 +32,10 @@ extern zend_module_entry fastchart_module_entry;
  * can size the cache. */
 #define FC_FT_FACE_CACHE_N 4
 typedef struct {
-    char    *path;   /* malloc'd; NULL = empty slot */
-    FT_Face  face;
+    char          *path;   /* malloc'd; NULL = empty slot */
+    unsigned char *data;   /* malloc'd backing for FT_New_Memory_Face */
+    size_t         data_len;
+    FT_Face        face;
 } fc_ft_face_slot;
 
 /* Glyph outline cache. Decomposed (face, pix_size, codepoint) ->

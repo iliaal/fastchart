@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `renderToFile()` now accepts only local filesystem paths; stream-wrapper
+  destinations are rejected because they cannot provide atomic replacement.
+- Pie totals, graph-label aggregates, error-bar arrays, Venn sets, category
+  labels, and scatter image-map strings now enforce their documented resource
+  and numeric limits before replacing valid chart state.
+- Pictogram scalar setters and `StockChart::addVWAP()` now reject invalid enum,
+  numeric, and RGB arguments instead of silently coercing them.
 - Rendered-text setters now throw `ValueError` above 8192 bytes;
   over-cap array labels drop silently (glyph-path SVG amplifies ~200x).
 - Added `fastchart.max_render_pixels` INI (PHP_INI_SYSTEM, default 64M);
@@ -20,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Font faces are created from bytes opened through PHP streams, closing the
+  check/open race between `open_basedir` validation and FreeType loading.
+- Stream reads and atomic output writes clean up their handles and temporary
+  files when the Zend engine bails out.
 - Scatter/Radar/Polar series setters validate caps before dropping prior
   data; a caught over-cap `ValueError` no longer wipes a valid chart.
 - Arc/Chord/Network `setNodes()` / `setLinks()` throw `ValueError` on
@@ -29,6 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
+- ASAN and isolated PDF pipelines preserve the PHP runner exit status across
+  `tee`; Windows requires GD raster coverage and enforces a skip ceiling.
+- macOS and release builds enable the developer warning gate, and Windows now
+  uses the same `--with-pdfio` option as Unix and PIE metadata.
+- The published benchmark covers all 38 concrete chart classes and rejects
+  future class/benchmark inventory drift.
 - Release binaries are load-tested (dlopen, render, decode) before
   upload.
 - Test lanes probe gd capabilities and enforce per-lane skip ceilings;

@@ -204,7 +204,7 @@ background. Stacked translucent overlaps won't match SVG/raster
 exactly because the current pdfio API doesn't expose per-shape
 transparency.
 
-On Windows, the PDF backend is opt-in via `--with-fastchart-pdfio`
+On Windows, the PDF backend is opt-in via `--with-pdfio`
 (`config.w32`) and requires `pdfio.h` / `pdfio.lib` to be provisioned
 first; the Windows CI and prebuilt DLLs ship PDF-disabled.
 

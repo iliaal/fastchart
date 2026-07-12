@@ -23,6 +23,31 @@
 #include "fastchart_graph.h"
 #include "fastchart_axis.h"
 
+int fastchart_graph_validate_node_labels(zval *arr, const char *method)
+{
+    size_t total = 0;
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(arr), entry) {
+        if (entry) ZVAL_DEREF(entry);
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        zval *label = zend_hash_str_find(Z_ARRVAL_P(entry),
+            "label", sizeof("label") - 1);
+        if (label) ZVAL_DEREF(label);
+        if (!label || Z_TYPE_P(label) != IS_STRING
+            || Z_STRLEN_P(label) > FASTCHART_MAX_TEXT_BYTES
+            || memchr(Z_STRVAL_P(label), 0, Z_STRLEN_P(label)) != NULL) {
+            continue;
+        }
+        if (Z_STRLEN_P(label) > FASTCHART_MAX_GRAPH_LABEL_BYTES - total) {
+            zend_value_error("%s labels exceed the %u-byte aggregate limit",
+                method, (unsigned)FASTCHART_MAX_GRAPH_LABEL_BYTES);
+            return -1;
+        }
+        total += Z_STRLEN_P(label);
+    } ZEND_HASH_FOREACH_END();
+    return 0;
+}
+
 int fastchart_graph_parse_nodes(zval *arr, int max,
                                 fastchart_graph_node **out, int *count)
 {

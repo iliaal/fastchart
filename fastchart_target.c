@@ -40,6 +40,7 @@
 /* Source-image bytes cap. FC_IMAGE_MAX_DIM / FC_IMAGE_MAX_PIXELS
  * are shared with the SVG rasterizer via fastchart_rasterize.h. */
 #define FC_IMAGE_MAX_BYTES   (8 * 1024 * 1024)
+#define FC_FONT_MAX_BYTES    (16 * 1024 * 1024)
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -445,6 +446,53 @@ int fastchart_measured_advance(FT_Face face, int32_t size_64, int dpi,
     return 0;
 }
 
+static zend_string *fc_stream_copy_and_close(php_stream *stream, size_t max_len)
+{
+	php_stream * volatile live = stream;
+	zend_string *raw = NULL;
+	zend_try {
+		raw = php_stream_copy_to_mem((php_stream *)live, max_len, 0);
+		php_stream *closing = (php_stream *)live;
+		live = NULL;
+		php_stream_close(closing);
+	} zend_catch {
+        if (live) php_stream_close((php_stream *)live);
+        zend_bailout();
+    } zend_end_try();
+    return raw;
+}
+
+static unsigned char *fastchart_load_font_bytes(const char *font_path,
+                                                size_t *out_len)
+{
+    *out_len = 0;
+    int er = EG(error_reporting);
+    EG(error_reporting) = 0;
+    php_stream *stream = php_stream_open_wrapper((char *)font_path, "rb",
+        IGNORE_PATH | IGNORE_URL, NULL);
+    EG(error_reporting) = er;
+    if (!stream) {
+        if (EG(exception)) zend_clear_exception();
+        return NULL;
+    }
+
+    zend_string *raw = fc_stream_copy_and_close(stream, FC_FONT_MAX_BYTES + 1);
+    if (!raw || ZSTR_LEN(raw) == 0 || ZSTR_LEN(raw) > FC_FONT_MAX_BYTES) {
+        if (raw) zend_string_release(raw);
+        return NULL;
+    }
+    size_t len = ZSTR_LEN(raw);
+    unsigned char *data = malloc(len);
+    if (!data) {
+        zend_string_release(raw);
+        return NULL;
+    }
+    memcpy(data, ZSTR_VAL(raw), len);
+    zend_string_release(raw);
+    *out_len = len;
+    return data;
+}
+
 FT_Face fastchart_ft_face(const char *font_path)
 {
     if (!font_path) return NULL;
@@ -471,22 +519,25 @@ FT_Face fastchart_ft_face(const char *font_path)
      * a malloc failure degrades to an uncached face instead of fataling
      * the request.
      *
-     * The cached FT_Face keeps the font file mapped for the worker's
-     * lifetime: replacing a font IN PLACE (truncate + write) makes
-     * later glyph loads read changed pages — deploy fonts with an
-     * atomic rename.
-     *
-     * Miss. Build the new entry (malloc + FT_New_Face) BEFORE
+     * Miss. Build the new entry (malloc + FT_New_Memory_Face) BEFORE
      * evicting anything so a failure mid-build leaves the cache
      * untouched. */
+    size_t data_len;
+    unsigned char *data = fastchart_load_font_bytes(font_path, &data_len);
+    if (!data) return NULL;
+
     size_t path_len = strlen(font_path);
     char  *path_copy = malloc(path_len + 1);
-    if (!path_copy) return NULL;
+    if (!path_copy) {
+        free(data);
+        return NULL;
+    }
     memcpy(path_copy, font_path, path_len + 1);
 
     FT_Face face = NULL;
-    if (FT_New_Face(lib, font_path, 0, &face)) {
+    if (FT_New_Memory_Face(lib, data, (FT_Long)data_len, 0, &face)) {
         free(path_copy);
+        free(data);
         return NULL;
     }
 
@@ -497,10 +548,13 @@ FT_Face fastchart_ft_face(const char *font_path)
         FT_Done_Face(cache[tail].face);
     }
     if (cache[tail].path) free(cache[tail].path);
+    if (cache[tail].data) free(cache[tail].data);
     for (int i = tail; i > 0; i--) {
         cache[i] = cache[i - 1];
     }
     cache[0].path = path_copy;
+    cache[0].data = data;
+    cache[0].data_len = data_len;
     cache[0].face = face;
     return face;
 }
@@ -531,6 +585,11 @@ void fastchart_ft_library_shutdown(void)
         if (cache[i].path) {
             free(cache[i].path);
             cache[i].path = NULL;
+        }
+        if (cache[i].data) {
+            free(cache[i].data);
+            cache[i].data = NULL;
+            cache[i].data_len = 0;
         }
     }
     if (FASTCHART_G(ft_lib) != NULL) {
@@ -880,9 +939,7 @@ int fastchart_target_load_source_image(const char *path,
         }
     }
 
-    zend_string *raw =
-        php_stream_copy_to_mem(stream, FC_IMAGE_MAX_BYTES + 1, 0);
-    php_stream_close(stream);
+    zend_string *raw = fc_stream_copy_and_close(stream, FC_IMAGE_MAX_BYTES + 1);
     if (!raw) return -1;
     size_t n = ZSTR_LEN(raw);
     if (n == 0 || n > FC_IMAGE_MAX_BYTES) {

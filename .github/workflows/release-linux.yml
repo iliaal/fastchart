@@ -199,7 +199,7 @@ jobs:
         with:
           release-tag: ${{ github.event.release.tag_name }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          configure-flags: '--enable-fastchart --with-fastchart-static-codecs=${{ env.STATIC_DEPS_PREFIX }}'
+          configure-flags: '--enable-fastchart --enable-fastchart-dev --with-fastchart-static-codecs=${{ env.STATIC_DEPS_PREFIX }}'
 
       - name: Build and upload prebuilt binary (macOS, release)
         if: github.event_name == 'release' && startsWith(matrix.os, 'macos-')
@@ -207,7 +207,7 @@ jobs:
         with:
           release-tag: ${{ github.event.release.tag_name }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          configure-flags: '--enable-fastchart'
+          configure-flags: '--enable-fastchart --enable-fastchart-dev'
 
       # === workflow_dispatch path ===
       # Manual runs build the .so the same way but skip the upload —
@@ -220,7 +220,7 @@ jobs:
         run: |
           set -e
           phpize
-          ./configure --enable-fastchart \
+          ./configure --enable-fastchart --enable-fastchart-dev \
             --with-fastchart-static-codecs="$STATIC_DEPS_PREFIX"
           make -j$(nproc)
           ls -la modules/
@@ -230,7 +230,7 @@ jobs:
         run: |
           set -e
           phpize
-          ./configure --enable-fastchart
+          ./configure --enable-fastchart --enable-fastchart-dev
           make -j$(sysctl -n hw.ncpu)
           ls -la modules/
 

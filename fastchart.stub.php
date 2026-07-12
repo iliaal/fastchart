@@ -713,8 +713,10 @@ abstract class Chart
      * SVG, PNG, and PDF ignore it. Default `0` means "use the
      * per-format default": JPEG uses the value set via
      * `setJpegQuality()` (default 88), WebP uses 90. Explicit values
-     * must be in `1..100`. Returns the byte count written. Honors
-     * `open_basedir`. `.pdf` requires the `--with-pdfio` build;
+     * must be in `1..100`. Returns the byte count written. Only local
+     * filesystem paths are accepted, and writes replace the destination
+     * atomically. Honors `open_basedir`. `.pdf` requires the
+     * `--with-pdfio` build;
      * without it, writing a `.pdf` path throws "PDF support not
      * compiled in". `.gif` / `.avif` extensions raise a clear
      * "dropped in v1.0" Error.
@@ -856,7 +858,8 @@ final class LineChart extends Chart
      * parallel to the primary series: each entry is either a single
      * positive number (symmetric ±error) or `[lo, hi]` for an
      * asymmetric bar. Pass `[]` to clear. Drawn as vertical stems
-     * with horizontal caps in the configured axis color.
+     * with horizontal caps in the configured axis color. Throws
+     * `\ValueError` above 2048 entries without changing prior error bars.
      */
     public function setErrorBars(array $errors): static {}
 
@@ -1054,7 +1057,8 @@ final class ScatterChart extends Chart
     /**
      * Per-point error bar magnitudes parallel to setPoints().
      * Each entry is either a single positive number (symmetric)
-     * or `[lo, hi]` (asymmetric). Pass `[]` to clear.
+     * or `[lo, hi]` (asymmetric). Pass `[]` to clear. Throws
+     * `\ValueError` above 4096 entries without changing prior error bars.
      */
     public function setErrorBars(array $errors): static {}
 
@@ -2139,8 +2143,8 @@ final class VennDiagram extends Chart
     /**
      * The sets (2 or 3). Each entry:
      * `['label' => string?, 'size' => number?, 'color' => int?]`.
-     * `size` drives the circle area (default 1). Extra sets beyond 3
-     * are ignored.
+     * `size` drives the circle area (default 1). Passing more than 3 sets
+     * throws `\ValueError` without changing prior sets or intersections.
      */
     public function setSets(array $sets): static {}
 
@@ -2387,9 +2391,10 @@ abstract class Symbol
      * applies to JPEG / WebP and is ignored for PNG and SVG. Default
      * `0` means "use per-format default": JPEG uses the value set
      * via `setJpegQuality()` (default 88), WebP uses 90. Explicit
-     * values must be in `1..100`. Honours `open_basedir`. Returns
-     * bytes written. `.gif` / `.avif` raise a clear "dropped in
-     * v1.0" Error.
+     * values must be in `1..100`. Only local filesystem paths are
+     * accepted, and writes replace the destination atomically. Honours
+     * `open_basedir`. Returns bytes written. `.gif` / `.avif` raise a
+     * clear "dropped in v1.0" Error.
      */
     public function renderToFile(string $path, int $quality = 0): int {}
 }

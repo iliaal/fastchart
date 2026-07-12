@@ -381,7 +381,12 @@ jobs:
           php run-tests.php --show-diff \
             tests/200_pdf_render_basic.phpt tests/201_pdf_render_to_file.phpt \
             2>&1 | tee /tmp/pdf-tests.txt
+          rc=${PIPESTATUS[0]}
           set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::isolated PDF test runner exited $rc"
+            exit "$rc"
+          fi
           if ! grep -qP '^Tests passed\s*:\s*2\b' /tmp/pdf-tests.txt; then
             echo "::error::PDF tests did not both pass (pdfio not linked? see SKIP reasons above)"
             exit 1
@@ -508,6 +513,7 @@ jobs:
         # a gate against regressions in the FT_Library / target /
         # encoder lifecycles.
         run: |
+          set -o pipefail
           /tmp/php-asan/bin/php \
             -d extension=$(pwd)/modules/fastchart.so \
             scripts/asan-render-smoke.php 2>&1 | tee /tmp/render-asan.txt
@@ -614,7 +620,7 @@ jobs:
           # add it explicitly.
           export PKG_CONFIG_PATH="$(brew --prefix jpeg-turbo)/lib/pkgconfig:$(brew --prefix freetype)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
           phpize
-          ./configure --enable-fastchart
+          ./configure --enable-fastchart --enable-fastchart-dev
           make -j$(sysctl -n hw.ncpu)
 
       - name: Verify gd capabilities (guard against silent mass-skips)

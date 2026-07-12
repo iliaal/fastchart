@@ -145,9 +145,9 @@ int fastchart_zval_to_long(zval *zv, zend_long *out)
  * Setters validate the path against open_basedir at the time the user
  * calls them, but draw() runs arbitrarily later. open_basedir can be
  * narrowed via ini_set() between the setter and the render, so the
- * resolver re-checks before handing the path to FreeType (which
- * stat()s and open()s it). On a runtime narrowing, fall through to
- * the default font_path or NULL. */
+ * resolver re-checks before the target opens the path through a PHP
+ * stream and retains the bytes for FreeType. On a runtime narrowing,
+ * fall through to the default font_path or NULL. */
 static const char *check_font_path(const zend_string *path)
 {
     if (!path) return NULL;

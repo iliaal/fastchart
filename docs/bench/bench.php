@@ -9,8 +9,8 @@
  * Run:
  *   php -d extension=./modules/fastchart.so docs/bench/bench.php
  *
- * Iteration count via env:
- *   FC_BENCH_ITERS=100
+ * Iteration counts via env:
+ *   FC_BENCH_WARMUP=3 FC_BENCH_ITERS=100
  *
  * Data shape stays constant across formats so the only variable is
  * the encode pipeline.
@@ -18,8 +18,9 @@
 
 require __DIR__ . '/../examples/_bootstrap.php';
 
-$N      = (int)(getenv('FC_BENCH_ITERS') ?: 50);
-$WARMUP = 3;
+$N = (int)(getenv('FC_BENCH_ITERS') ?: 50);
+$warmup_env = getenv('FC_BENCH_WARMUP');
+$WARMUP = $warmup_env === false ? 3 : (int)$warmup_env;
 
 /* Deterministic data so runs are comparable. */
 mt_srand(42);
@@ -299,7 +300,321 @@ $builders = [
                 ['from' => 85, 'to' => 100, 'color' => 0xE34A6F],
             ])
             ->setValueFormat('%.0f%%'),
+
+    'BulletChart' => fn($w, $h) =>
+        (new FastChart\BulletChart($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Revenue vs plan')
+            ->setRange(0, 120)
+            ->setBands([
+                ['from' => 0, 'to' => 60, 'color' => 0xE5E7EB],
+                ['from' => 60, 'to' => 90, 'color' => 0xCBD5E1],
+                ['from' => 90, 'to' => 120, 'color' => 0x94A3B8],
+            ])
+            ->setValue(78)
+            ->setTarget(95),
+
+    'ParetoChart' => fn($w, $h) =>
+        (new FastChart\ParetoChart($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Defect categories')
+            ->setBars([
+                ['label' => 'Soldering', 'value' => 142],
+                ['label' => 'Plating', 'value' => 88],
+                ['label' => 'Etching', 'value' => 61],
+                ['label' => 'Drilling', 'value' => 34],
+                ['label' => 'Other', 'value' => 12],
+            ])
+            ->setShowValues(true),
+
+    'CalendarHeatmap' => function ($w, $h) use ($font) {
+        $data = [];
+        $start = strtotime('2025-01-01');
+        for ($i = 0; $i < 365; $i++) {
+            $data[date('Y-m-d', $start + $i * 86400)] =
+                5 + ($i % 7 < 5 ? 8 : 0) + ($i % 11);
+        }
+        return (new FastChart\CalendarHeatmap($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Daily activity')
+            ->setData($data)
+            ->setColorRamp(0xEBEDEF, 0x216E39);
+    },
+
+    'SunburstChart' => fn($w, $h) =>
+        (new FastChart\SunburstChart($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Workload by team')
+            ->setHierarchy(['label' => 'Eng', 'children' => [
+                ['label' => 'Backend', 'children' => [
+                    ['label' => 'API', 'value' => 18],
+                    ['label' => 'Workers', 'value' => 12],
+                ]],
+                ['label' => 'Frontend', 'children' => [
+                    ['label' => 'Web', 'value' => 14],
+                    ['label' => 'Mobile', 'value' => 10],
+                ]],
+                ['label' => 'Infra', 'children' => [
+                    ['label' => 'CI', 'value' => 7],
+                    ['label' => 'Security', 'value' => 4],
+                ]],
+            ]]),
+
+    'SankeyChart' => fn($w, $h) =>
+        (new FastChart\SankeyChart($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Order flow')
+            ->setNodes([
+                ['label' => 'Store'], ['label' => 'Hardware'],
+                ['label' => 'Services'], ['label' => 'Cloud'],
+                ['label' => 'Direct'], ['label' => 'Partner'],
+            ])
+            ->setLinks([
+                ['from' => 0, 'to' => 1, 'value' => 80],
+                ['from' => 0, 'to' => 2, 'value' => 55],
+                ['from' => 0, 'to' => 3, 'value' => 65],
+                ['from' => 1, 'to' => 4, 'value' => 50],
+                ['from' => 1, 'to' => 5, 'value' => 30],
+                ['from' => 2, 'to' => 4, 'value' => 35],
+                ['from' => 2, 'to' => 5, 'value' => 20],
+                ['from' => 3, 'to' => 4, 'value' => 40],
+                ['from' => 3, 'to' => 5, 'value' => 25],
+            ]),
+
+    'MarimekkoChart' => fn($w, $h) =>
+        (new FastChart\MarimekkoChart($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Revenue mix')
+            ->setColumns([
+                ['label' => 'NA', 'segments' => [
+                    ['label' => 'Hardware', 'value' => 80],
+                    ['label' => 'Services', 'value' => 50],
+                    ['label' => 'Cloud', 'value' => 70],
+                ]],
+                ['label' => 'EMEA', 'segments' => [
+                    ['label' => 'Hardware', 'value' => 45],
+                    ['label' => 'Services', 'value' => 35],
+                    ['label' => 'Cloud', 'value' => 25],
+                ]],
+                ['label' => 'APAC', 'segments' => [
+                    ['label' => 'Hardware', 'value' => 30],
+                    ['label' => 'Services', 'value' => 15],
+                    ['label' => 'Cloud', 'value' => 40],
+                ]],
+            ]),
+
+    'VectorChart' => function ($w, $h) use ($font) {
+        $vectors = [];
+        for ($x = 0; $x <= 10; $x++) {
+            for ($y = 0; $y <= 10; $y++) {
+                $vectors[] = ['x' => $x, 'y' => $y,
+                    'dx' => -($y - 5) * 0.3,
+                    'dy' => ($x - 5) * 0.3];
+            }
+        }
+        return (new FastChart\VectorChart($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Vector field')
+            ->setVectors($vectors)
+            ->setColorRamp(0xDDE7FF, 0x1E3A8A);
+    },
+
+    'ArcDiagram' => fn($w, $h) =>
+        (new FastChart\ArcDiagram($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Module dependencies')
+            ->setNodes([
+                ['label' => 'cli'], ['label' => 'config'],
+                ['label' => 'core'], ['label' => 'render'],
+                ['label' => 'codec'], ['label' => 'io'],
+            ])
+            ->setLinks([
+                ['from' => 0, 'to' => 1, 'value' => 3],
+                ['from' => 0, 'to' => 2, 'value' => 6],
+                ['from' => 2, 'to' => 3, 'value' => 5],
+                ['from' => 3, 'to' => 4, 'value' => 4],
+                ['from' => 4, 'to' => 5, 'value' => 2],
+            ]),
+
+    'ChordDiagram' => fn($w, $h) =>
+        (new FastChart\ChordDiagram($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Travel flows')
+            ->setNodes([
+                ['label' => 'Berlin'], ['label' => 'London'],
+                ['label' => 'Paris'], ['label' => 'Madrid'],
+            ])
+            ->setLinks([
+                ['from' => 0, 'to' => 1, 'value' => 14],
+                ['from' => 1, 'to' => 0, 'value' => 22],
+                ['from' => 1, 'to' => 2, 'value' => 30],
+                ['from' => 2, 'to' => 3, 'value' => 18],
+                ['from' => 3, 'to' => 0, 'value' => 12],
+            ]),
+
+    'NetworkChart' => fn($w, $h) =>
+        (new FastChart\NetworkChart($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Team network')
+            ->setNodes([
+                ['label' => 'Core'], ['label' => 'Web'],
+                ['label' => 'API'], ['label' => 'Data'],
+                ['label' => 'Ops'], ['label' => 'CI'],
+                ['label' => 'Queue'], ['label' => 'BI'],
+            ])
+            ->setLinks([
+                ['from' => 0, 'to' => 1, 'value' => 5],
+                ['from' => 0, 'to' => 2, 'value' => 5],
+                ['from' => 0, 'to' => 3, 'value' => 5],
+                ['from' => 0, 'to' => 4, 'value' => 5],
+                ['from' => 4, 'to' => 5, 'value' => 2],
+                ['from' => 2, 'to' => 6, 'value' => 2],
+                ['from' => 3, 'to' => 7, 'value' => 2],
+            ])
+            ->setSeed(11)
+            ->setIterations(200),
+
+    'PopulationPyramid' => fn($w, $h) =>
+        (new FastChart\PopulationPyramid($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Population by age')
+            ->setCategories(['0-9', '10-19', '20-29', '30-39',
+                '40-49', '50-59', '60-69', '70+'])
+            ->setLeftSeries(['label' => 'Male',
+                'data' => [6.1, 6.4, 7.2, 7.0, 6.3, 5.4, 3.9, 2.6]])
+            ->setRightSeries(['label' => 'Female',
+                'data' => [5.8, 6.1, 6.9, 6.8, 6.2, 5.6, 4.3, 3.4]]),
+
+    'ViolinPlot' => fn($w, $h) =>
+        (new FastChart\ViolinPlot($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Latency distributions')
+            ->setGroups([
+                ['label' => 'auth', 'values' => array_map(
+                    fn($i) => 48 + sin($i) * 9, range(0, 199))],
+                ['label' => 'catalog', 'values' => array_map(
+                    fn($i) => 72 + cos($i * 0.7) * 14, range(0, 199))],
+                ['label' => 'search', 'values' => array_map(
+                    fn($i) => 60 + sin($i * 0.3) * 16, range(0, 199))],
+            ]),
+
+    'CirclePacking' => fn($w, $h) =>
+        (new FastChart\CirclePacking($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Source size')
+            ->setHierarchy(['label' => 'src', 'children' => [
+                ['label' => 'render', 'children' => [
+                    ['label' => 'svg', 'value' => 34],
+                    ['label' => 'target', 'value' => 40],
+                ]],
+                ['label' => 'charts', 'children' => [
+                    ['label' => 'bar', 'value' => 30],
+                    ['label' => 'stock', 'value' => 39],
+                    ['label' => 'pie', 'value' => 13],
+                ]],
+            ]]),
+
+    'Pictogram' => fn($w, $h) =>
+        (new FastChart\Pictogram($w, $h))
+            ->setFontPath($font)
+            ->setTitle('2FA adoption')
+            ->setTotal(100)
+            ->setValue(73)
+            ->setIconCount(100)
+            ->setColumns(10)
+            ->setShape(FastChart\Pictogram::SHAPE_PERSON),
+
+    'VennDiagram' => fn($w, $h) =>
+        (new FastChart\VennDiagram($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Skill overlap')
+            ->setSets([
+                ['label' => 'Backend', 'size' => 120],
+                ['label' => 'Frontend', 'size' => 100],
+                ['label' => 'DevOps', 'size' => 80],
+            ])
+            ->setIntersections([
+                ['sets' => [0, 1], 'size' => 30],
+                ['sets' => [0, 2], 'size' => 28],
+                ['sets' => [1, 2], 'size' => 18],
+            ]),
+
+    'WordCloud' => fn($w, $h) =>
+        (new FastChart\WordCloud($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Issue tags')
+            ->setWords([
+                ['text' => 'rendering', 'weight' => 42],
+                ['text' => 'performance', 'weight' => 38],
+                ['text' => 'svg', 'weight' => 31],
+                ['text' => 'memory', 'weight' => 28],
+                ['text' => 'fonts', 'weight' => 24],
+                ['text' => 'webp', 'weight' => 19],
+                ['text' => 'tests', 'weight' => 18],
+                ['text' => 'docs', 'weight' => 16],
+            ]),
+
+    'SerpentineTimeline' => fn($w, $h) =>
+        (new FastChart\SerpentineTimeline($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Release roadmap')
+            ->setEvents([
+                ['label' => 'Kickoff', 'date' => 'Jan'],
+                ['label' => 'Prototype', 'date' => 'Feb'],
+                ['label' => 'Alpha', 'date' => 'Mar'],
+                ['label' => 'Beta', 'date' => 'May'],
+                ['label' => 'RC', 'date' => 'Jun'],
+                ['label' => 'GA', 'date' => 'Jul'],
+            ])
+            ->setColumns(4),
+
+    'Dendrogram' => fn($w, $h) =>
+        (new FastChart\Dendrogram($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Chart taxonomy')
+            ->setHierarchy(['label' => 'charts', 'children' => [
+                ['label' => 'cartesian', 'children' => [
+                    ['label' => 'line'], ['label' => 'bar']]],
+                ['label' => 'radial', 'children' => [
+                    ['label' => 'radar'], ['label' => 'gauge']]],
+            ]]),
+
+    'Partition' => fn($w, $h) =>
+        (new FastChart\Partition($w, $h))
+            ->setFontPath($font)
+            ->setTitle('Source size')
+            ->setHierarchy(['label' => 'src', 'children' => [
+                ['label' => 'render', 'children' => [
+                    ['label' => 'svg', 'value' => 34],
+                    ['label' => 'target', 'value' => 40],
+                ]],
+                ['label' => 'charts', 'children' => [
+                    ['label' => 'bar', 'value' => 30],
+                    ['label' => 'stock', 'value' => 39],
+                ]],
+            ]]),
 ];
+
+$chart_classes = [];
+foreach (get_declared_classes() as $class) {
+    if (!is_subclass_of($class, FastChart\Chart::class)) {
+        continue;
+    }
+    $reflection = new ReflectionClass($class);
+    if (!$reflection->isAbstract()) {
+        $chart_classes[] = $reflection->getShortName();
+    }
+}
+sort($chart_classes);
+$benchmarked_classes = array_keys($builders);
+sort($benchmarked_classes);
+if ($chart_classes !== $benchmarked_classes) {
+    throw new LogicException(sprintf(
+        'Benchmark inventory mismatch; missing=[%s], extra=[%s]',
+        implode(', ', array_diff($chart_classes, $benchmarked_classes)),
+        implode(', ', array_diff($benchmarked_classes, $chart_classes))
+    ));
+}
 
 $W = 1920;
 $H = 1080;
