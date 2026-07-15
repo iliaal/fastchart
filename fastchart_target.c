@@ -18,13 +18,21 @@
 #include "Zend/zend_smart_str.h"
 #include "Zend/zend_exceptions.h"
 #include "ext/standard/base64.h"
+#include "main/fopen_wrappers.h"
 #include "main/php_streams.h"
+#include "main/streams/php_stream_plain_wrapper.h"
 
+#include <fcntl.h>
 #include <limits.h>
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef PHP_WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -466,13 +474,36 @@ static unsigned char *fastchart_load_font_bytes(const char *font_path,
                                                 size_t *out_len)
 {
     *out_len = 0;
-    int er = EG(error_reporting);
-    EG(error_reporting) = 0;
-    php_stream *stream = php_stream_open_wrapper((char *)font_path, "rb",
-        IGNORE_PATH | IGNORE_URL, NULL);
-    EG(error_reporting) = er;
+    if (php_check_open_basedir_ex(font_path, 0) != 0) return NULL;
+
+    int flags = O_RDONLY;
+#ifdef O_NONBLOCK
+    flags |= O_NONBLOCK;
+#endif
+#ifdef O_BINARY
+    flags |= O_BINARY;
+#endif
+    int fd = VCWD_OPEN(font_path, flags);
+    if (fd < 0) return NULL;
+
+    zend_stat_t st;
+    if (zend_fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) ||
+        st.st_size <= 0 || (uintmax_t)st.st_size > FC_FONT_MAX_BYTES) {
+#ifdef PHP_WIN32
+        _close(fd);
+#else
+        close(fd);
+#endif
+        return NULL;
+    }
+
+    php_stream *stream = php_stream_fopen_from_fd(fd, "rb", NULL);
     if (!stream) {
-        if (EG(exception)) zend_clear_exception();
+#ifdef PHP_WIN32
+        _close(fd);
+#else
+        close(fd);
+#endif
         return NULL;
     }
 

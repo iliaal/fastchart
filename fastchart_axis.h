@@ -53,6 +53,11 @@ typedef struct {
  * (gauge, radar, polar, surface, contour) need to call it directly. */
 void fastchart_begin_render(fastchart_obj *chart, fastchart_target_t *t);
 
+/* Replace a bespoke renderer's default plot bounds when setPlotRect()
+ * is active. The caller supplies its auto-layout bounds first. */
+bool fastchart_apply_plot_rect(const fastchart_obj *chart,
+                               int *x0, int *y0, int *x1, int *y1);
+
 /* Compute the plot rectangle inside the canvas after subtracting space
  * for title (top), x-axis labels (bottom), and y-axis labels (left).
  * Right margin grows when the chart has a secondary Y axis. Axis
@@ -241,6 +246,14 @@ int fastchart_x_to_pixel(double x,
  * out-of-range fraction before the int cast — used for icon/overlay
  * positions whose source coordinate is unbounded user input. */
 int fastchart_frac_to_px(double frac, int lo, int hi);
+
+/* Normalize value from the directed interval [start, end] into [0, 1]
+ * without overflowing when finite endpoints span opposite DBL_MAX-scale
+ * magnitudes. */
+double fastchart_normalize_finite(double value, double start, double end);
+
+/* Interpolate between finite endpoints without forming end - start. */
+double fastchart_lerp_finite(double start, double end, double fraction);
 
 /* User-format tick label (printf-style format string already
  * validated by the setter). Caller-supplied buffer; truncates on

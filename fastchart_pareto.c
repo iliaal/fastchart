@@ -95,6 +95,8 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
     int plot_x1 = W - 60;
     int plot_y0 = top_pad;
     int plot_y1 = H - 48;
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &plot_x0, &plot_y0, &plot_x1, &plot_y1);
     if (plot_x1 <= plot_x0 || plot_y1 <= plot_y0) {
         zend_value_error(
             "FastChart\\ParetoChart::draw() canvas is too small for margins");

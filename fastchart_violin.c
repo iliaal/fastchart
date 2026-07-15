@@ -91,6 +91,8 @@ int fastchart_violin_render_to_target(fastchart_violin_obj *self, fastchart_targ
     int label_band = (int)(base_size * 1.6);
     int plot_x0 = 40, plot_x1 = W - 16;
     int plot_y0 = top_pad + 8, plot_y1 = H - 12 - label_band;
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &plot_x0, &plot_y0, &plot_x1, &plot_y1);
     double plot_h = plot_y1 - plot_y0;
     if (plot_x1 - plot_x0 < 10 || plot_h < 10) return 0;
 

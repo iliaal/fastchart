@@ -144,6 +144,17 @@ int fastchart_sunburst_render_to_target(fastchart_sunburst_obj *self, fastchart_
     int cy = top_pad + (H - top_pad) / 2;
     int outer_r = (avail / 2) - 20;
     if (outer_r < 32) outer_r = 32;
+    int plot_x0 = cx - outer_r, plot_y0 = cy - outer_r;
+    int plot_x1 = cx + outer_r, plot_y1 = cy + outer_r;
+    if (fastchart_apply_plot_rect((fastchart_obj *)self,
+            &plot_x0, &plot_y0, &plot_x1, &plot_y1)) {
+        cx = (plot_x0 + plot_x1) / 2;
+        cy = (plot_y0 + plot_y1) / 2;
+        int plot_w = plot_x1 - plot_x0;
+        int plot_h = plot_y1 - plot_y0;
+        outer_r = (plot_w < plot_h ? plot_w : plot_h) / 2;
+        if (outer_r < 1) return 0;
+    }
     /* Innermost ring (depth 1) starts at a small radius so depth 0
      * (root) is a small donut hole carrying the root label. Ring
      * width tapers slightly toward the outside so all max_depth

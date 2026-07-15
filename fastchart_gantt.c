@@ -44,11 +44,10 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
     if (self->gantt_has_range_start) t_min = self->gantt_range_start;
     if (self->gantt_has_range_end)   t_max = self->gantt_range_end;
     if (t_max <= t_min) {
-        /* Tasks accept any zend_long timestamp; t_min == ZEND_LONG_MAX
-         * makes `t_min + 86400` signed overflow UB. Saturate to keep
-         * the arithmetic safe. */
+        /* Keep a non-zero day-wide span at either zend_long boundary. */
         if (t_min > ZEND_LONG_MAX - 86400) {
             t_max = ZEND_LONG_MAX;
+            t_min = t_max - 86400;
         } else {
             t_max = t_min + 86400;
         }

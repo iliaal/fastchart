@@ -1148,7 +1148,13 @@ struct plutosvg_document {
     void* closure;
     float width;
     float height;
+    size_t element_count;
+    size_t attribute_count;
 };
+
+#define MAX_DOCUMENT_ELEMENTS 65536
+#define MAX_DOCUMENT_ATTRIBUTES 262144
+#define MAX_DOCUMENT_DEPTH 256
 
 static plutosvg_document_t* plutosvg_document_create(float width, float height, plutovg_destroy_func_t destroy_func, void* closure)
 {
@@ -1161,6 +1167,8 @@ static plutosvg_document_t* plutosvg_document_create(float width, float height, 
     document->closure = closure;
     document->width = width;
     document->height = height;
+    document->element_count = 0;
+    document->attribute_count = 0;
     return document;
 }
 
@@ -1176,20 +1184,24 @@ void plutosvg_document_destroy(plutosvg_document_t* document)
     free(document);
 }
 
-static void add_attribute(element_t* element, plutosvg_document_t* document, int id, const char* data, size_t length)
+static bool add_attribute(element_t* element, plutosvg_document_t* document, int id, const char* data, size_t length)
 {
+    if(document->attribute_count >= MAX_DOCUMENT_ATTRIBUTES)
+        return false;
+    document->attribute_count += 1;
     attribute_t* attribute = heap_alloc(document->heap, sizeof(attribute_t));
     attribute->id = id;
     attribute->value.data = data;
     attribute->value.length = length;
     attribute->next = element->attributes;
     element->attributes = attribute;
+    return true;
 }
 
 #define IS_CSS_STARTNAMECHAR(c) (IS_ALPHA(c) || c == '_')
 #define IS_CSS_NAMECHAR(c) (IS_CSS_STARTNAMECHAR(c) || IS_NUM(c) || c == '-')
 
-static void parse_style(const char* data, int length, element_t* element, plutosvg_document_t* document)
+static bool parse_style(const char* data, int length, element_t* element, plutosvg_document_t* document)
 {
     const char* it = data;
     const char* end = it + length;
@@ -1200,17 +1212,18 @@ static void parse_style(const char* data, int length, element_t* element, plutos
         int id = cssattributeid(data, it - data);
         skip_ws(&it, end);
         if(it >= end || *it != ':')
-            return;
+            return true;
         ++it;
         skip_ws(&it, end);
         data = it;
         while(it < end && *it != ';')
             ++it;
         length = rtrim(data, it) - data;
-        if(id && element)
-            add_attribute(element, document, id, data, length);
+        if(id && element && !add_attribute(element, document, id, data, length))
+            return false;
         skip_ws_delim(&it, end, ';');
     }
+    return true;
 }
 
 static bool parse_attributes(const char** begin, const char* end, element_t* element, plutosvg_document_t* document)
@@ -1238,13 +1251,18 @@ static bool parse_attributes(const char** begin, const char* end, element_t* ele
         int length = rtrim(data, it) - data;
         if(id && element) {
             if(id == ATTR_ID) {
+                if(document->attribute_count >= MAX_DOCUMENT_ATTRIBUTES)
+                    return false;
+                document->attribute_count += 1;
                 if(document->id_cache == NULL)
                     document->id_cache = hashmap_create();
                 hashmap_put(document->id_cache, document->heap, data, length, element);
             } else if(id == ATTR_STYLE) {
-                parse_style(data, length, element, document);
+                if(!parse_style(data, length, element, document))
+                    return false;
             } else {
-                add_attribute(element, document, id, data, length);
+                if(!add_attribute(element, document, id, data, length))
+                    return false;
             }
         }
 
@@ -1278,6 +1296,7 @@ plutosvg_document_t* plutosvg_document_load_from_data(const char* data, int leng
     plutosvg_document_t* document = plutosvg_document_create(width, height, destroy_func, closure);
     element_t* current = NULL;
     int ignoring = 0;
+    int depth = 0;
     while(it < end) {
         if(current == NULL) {
             while(it < end && IS_WS(*it))
@@ -1365,6 +1384,7 @@ plutosvg_document_t* plutosvg_document_load_from_data(const char* data, int leng
                 if(id != current->id)
                     goto error;
                 current = current->parent;
+                depth -= 1;
             } else {
                 --ignoring;
             }
@@ -1391,6 +1411,9 @@ plutosvg_document_t* plutosvg_document_load_from_data(const char* data, int leng
             } else {
                 if(document->root_element && current == NULL)
                     goto error;
+                if(document->element_count >= MAX_DOCUMENT_ELEMENTS)
+                    goto error;
+                document->element_count += 1;
                 element = heap_alloc(document->heap, sizeof(element_t));
                 element->id = id;
                 element->parent = NULL;
@@ -1419,8 +1442,12 @@ plutosvg_document_t* plutosvg_document_load_from_data(const char* data, int leng
         if(!parse_attributes(&it, end, element, document))
             goto error;
         if(it < end && *it == '>') {
-            if(element)
+            if(element) {
+                if(depth >= MAX_DOCUMENT_DEPTH)
+                    goto error;
                 current = element;
+                depth += 1;
+            }
             ++it;
             continue;
         }

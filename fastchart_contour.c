@@ -55,13 +55,8 @@ static void cell_to_pixel(int col, int row, double col_f, double row_f,
  * fractional coord and round to a wild int via cast. */
 static double t_cross(double a, double b, double level)
 {
-    double d = b - a;
-    if (d == 0 || !isfinite(d)) return 0.5;
-    double t = (level - a) / d;
-    if (!isfinite(t)) return 0.5;
-    if (t < 0.0) return 0.0;
-    if (t > 1.0) return 1.0;
-    return t;
+    if (a == b) return 0.5;
+    return fastchart_normalize_finite(level, a, b);
 }
 
 int fastchart_contour_render_to_target(fastchart_contour_obj *self, fastchart_target_t *t)
@@ -107,7 +102,8 @@ int fastchart_contour_render_to_target(fastchart_contour_obj *self, fastchart_ta
     if (n_levels == 0) {
         n_levels = 5;
         for (int k = 0; k < 5; k++) {
-            levels[k] = vmin + (vmax - vmin) * (k + 1) / (n_levels + 1);
+            levels[k] = fastchart_lerp_finite(
+                vmin, vmax, (double)(k + 1) / (double)(n_levels + 1));
         }
     }
 
@@ -130,8 +126,10 @@ int fastchart_contour_render_to_target(fastchart_contour_obj *self, fastchart_ta
     int y0 = top;
     int x1 = W - margin;
     int y1 = H - margin;
-    if (x1 - x0 < 50) x1 = x0 + 50;
-    if (y1 - y0 < 50) y1 = y0 + 50;
+    bool forced_plot = fastchart_apply_plot_rect((fastchart_obj *)self,
+                                                  &x0, &y0, &x1, &y1);
+    if (!forced_plot && x1 - x0 < 50) x1 = x0 + 50;
+    if (!forced_plot && y1 - y0 < 50) y1 = y0 + 50;
 
     double cell_w = (double)(x1 - x0) / (double)(cols - 1);
     double cell_h = (double)(y1 - y0) / (double)(rows - 1);
@@ -144,9 +142,6 @@ int fastchart_contour_render_to_target(fastchart_contour_obj *self, fastchart_ta
     if (self->contour_filled) {
         int low = (int)self->color_ramp_low;
         int high = (int)self->color_ramp_high;
-        double span = vmax - vmin;
-        if (span <= 0) span = 1.0;
-
         int lut[256];
         for (int k = 0; k < 256; k++) {
             int rgb = fastchart_lerp_rgb(low, high, (double)k / 255.0);
@@ -160,13 +155,9 @@ int fastchart_contour_render_to_target(fastchart_contour_obj *self, fastchart_ta
                 double v10 = G(i + 1, j);
                 double v11 = G(i + 1, j + 1);
                 if (isnan(v00) || isnan(v01) || isnan(v10) || isnan(v11)) continue;
-                double avg = (v00 + v01 + v10 + v11) * 0.25;
-                double tv = (avg - vmin) / span;
-                /* avg can overflow to Inf for finite cells near DBL_MAX and
-                 * span can be Inf for mixed-sign extremes, so tv can be NaN;
-                 * clamp in double space to keep the int cast defined. The
-                 * negated comparison catches NaN. */
-                if (!(tv >= 0.0)) tv = 0.0; else if (tv > 1.0) tv = 1.0;
+                double avg = v00 * 0.25 + v01 * 0.25
+                    + v10 * 0.25 + v11 * 0.25;
+                double tv = fastchart_normalize_finite(avg, vmin, vmax);
                 int idx = (int)(tv * 255.0 + 0.5);
                 int color = lut[idx];
                 int px0 = x0 + (int)(j * cell_w);

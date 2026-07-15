@@ -143,7 +143,7 @@ int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self, fastchart_ta
                 color = pal.bg;  /* missing data leaves the canvas bg showing */
                 cell_rgb = (int)(fastchart_target_color_to_rgba(t, pal.bg) & 0xFFFFFF);
             } else {
-                double tv = (v - v_min) / (v_max - v_min);
+                double tv = fastchart_normalize_finite(v, v_min, v_max);
                 cell_rgb = interp_color(rgb_lo, rgb_hi, tv);
                 color = fastchart_target_color_rgb(t, cell_rgb);
             }

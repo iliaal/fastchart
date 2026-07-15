@@ -385,6 +385,17 @@ void fastchart_begin_render(fastchart_obj *chart, fastchart_target_t *t)
     (void)t;
 }
 
+bool fastchart_apply_plot_rect(const fastchart_obj *chart,
+                               int *x0, int *y0, int *x1, int *y1)
+{
+    if (!chart->has_plot_rect) return false;
+    *x0 = chart->plot_x0;
+    *y0 = chart->plot_y0;
+    *x1 = chart->plot_x1;
+    *y1 = chart->plot_y1;
+    return true;
+}
+
 void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
                               int has_y_axis, int has_x_axis,
                               const char *const *cat_y_labels,
@@ -850,6 +861,42 @@ int fastchart_frac_to_px(double frac, int lo, int hi)
     if (frac < 0.0) frac = 0.0;
     if (frac > 1.0) frac = 1.0;
     return lo + (int)(frac * (hi - lo) + 0.5);
+}
+
+double fastchart_normalize_finite(double value, double start, double end)
+{
+    if (!isfinite(value) || !isfinite(start) || !isfinite(end)
+        || start == end) {
+        return 0.0;
+    }
+    if (value == start) return 0.0;
+    if (value == end) return 1.0;
+
+    double span = end - start;
+    double fraction;
+    if (isfinite(span)) {
+        fraction = (value - start) / span;
+    } else {
+        double scale = fmax(fabs(start), fabs(end));
+        double scaled_start = start / scale;
+        double scaled_end = end / scale;
+        fraction = (value / scale - scaled_start)
+            / (scaled_end - scaled_start);
+    }
+    if (!isfinite(fraction)) return 0.0;
+    if (fraction < 0.0) return 0.0;
+    if (fraction > 1.0) return 1.0;
+    return fraction;
+}
+
+double fastchart_lerp_finite(double start, double end, double fraction)
+{
+    if (fraction <= 0.0) return start;
+    if (fraction >= 1.0) return end;
+    if ((start < 0.0 && end < 0.0) || (start > 0.0 && end > 0.0)) {
+        return start + (end - start) * fraction;
+    }
+    return start * (1.0 - fraction) + end * fraction;
 }
 
 int fastchart_y_categorical_center(const fastchart_rect *plot, int idx, int n)

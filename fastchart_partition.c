@@ -148,6 +148,8 @@ int fastchart_partition_render_to_target(fastchart_partition_obj *self,
 
     int plot_x0 = 16, plot_x1 = W - 16;
     int plot_y0 = top_pad + 8, plot_y1 = H - 16;
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &plot_x0, &plot_y0, &plot_x1, &plot_y1);
     if (plot_x1 - plot_x0 < 20 || plot_y1 - plot_y0 < 20) return 0;
 
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);

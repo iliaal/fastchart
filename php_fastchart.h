@@ -285,6 +285,8 @@ extern zend_class_entry *fastchart_qrcode_ce;
      * get_gc handler). */ \
     struct fastchart_combo_overlay *combo_overlays; \
     int n_combo_overlays; \
+    size_t text_annotation_bytes; \
+    uint32_t text_annotation_count; \
     /* Per-render font cache: 4 slots (one per role) holding the \
      * resolved path (NULL on basedir reject). Invalidated at the top \
      * of every render via fastchart_compute_layout so an ini_set \
@@ -747,6 +749,12 @@ typedef struct {
  * ~20 MB SVG). 8 KiB bounds one string's worst-case contribution to
  * ~2 MB. Scalar setters throw on excess; array-element labels drop. */
 #define FASTCHART_MAX_TEXT_BYTES       8192
+
+/* Bound the combined text accepted by collection-style APIs. The
+ * per-string limit above is insufficient for glyph-path output because
+ * many individually valid labels can still amplify into a huge SVG. */
+#define FASTCHART_MAX_RENDER_TEXT_BYTES (64 * 1024)
+#define FASTCHART_MAX_TEXT_ANNOTATIONS  128
 
 #define FASTCHART_MAX_MARIMEKKO_COLS   128       /* per chart */
 #define FASTCHART_MAX_MARIMEKKO_SEGS   64        /* per column */

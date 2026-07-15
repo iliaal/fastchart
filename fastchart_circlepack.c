@@ -206,6 +206,8 @@ int fastchart_circlepack_render_to_target(fastchart_circlepack_obj *self, fastch
 
     int plot_y0 = top_pad + 8, plot_y1 = H - 12;
     int plot_x0 = 12, plot_x1 = W - 12;
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &plot_x0, &plot_y0, &plot_x1, &plot_y1);
     double avail = (plot_x1 - plot_x0) < (plot_y1 - plot_y0)
         ? (plot_x1 - plot_x0) : (plot_y1 - plot_y0);
     if (avail < 20.0) return 0;   /* canvas too small to draw into */

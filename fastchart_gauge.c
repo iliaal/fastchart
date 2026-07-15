@@ -92,6 +92,18 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
      */
     int block_h = radius + label_pad;
     int cy = top + ((H - top) - block_h) / 2 + radius;
+    int plot_x0 = cx - radius, plot_y0 = cy - radius;
+    int plot_x1 = cx + radius, plot_y1 = cy;
+    if (fastchart_apply_plot_rect((fastchart_obj *)self,
+            &plot_x0, &plot_y0, &plot_x1, &plot_y1)) {
+        int plot_w = plot_x1 - plot_x0;
+        int plot_h = plot_y1 - plot_y0;
+        radius = plot_w / 2 < plot_h ? plot_w / 2 : plot_h;
+        if (radius < 1) return 0;
+        diameter = radius * 2;
+        cx = (plot_x0 + plot_x1) / 2;
+        cy = plot_y1;
+    }
 
     double mn = self->gauge_min;
     double mx = self->gauge_max;

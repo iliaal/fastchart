@@ -65,6 +65,8 @@ int fastchart_marimekko_render_to_target(fastchart_marimekko_obj *self, fastchar
     int plot_x0 = 20, plot_x1 = W - 20;
     int plot_y0 = top_pad + 4;
     int plot_y1 = H - 32;        /* room for column labels below */
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &plot_x0, &plot_y0, &plot_x1, &plot_y1);
     int avail_w = plot_x1 - plot_x0;
     int avail_h = plot_y1 - plot_y0;
     if (avail_w < 32 || avail_h < 32) {

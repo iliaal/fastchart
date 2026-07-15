@@ -17,6 +17,13 @@
 #include "php.h"
 #include "php_ini.h"
 #include "php_streams.h"
+#if PHP_VERSION_ID >= 80400
+#include "ext/random/php_random_csprng.h"
+#elif PHP_VERSION_ID >= 80200
+#include "ext/random/php_random.h"
+#else
+#include "ext/standard/php_random.h"
+#endif
 #include "ext/standard/info.h"
 #include "Zend/zend_exceptions.h"
 #include "Zend/zend_smart_str.h"
@@ -338,6 +345,8 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
 
     b->combo_overlays = NULL;
     b->n_combo_overlays = 0;
+    b->text_annotation_bytes = 0;
+    b->text_annotation_count = 0;
 
 	b->image_map_entries = NULL;
 	b->n_image_map_entries = 0;
@@ -2278,7 +2287,8 @@ static void fastchart_violin_addref_extras(fastchart_violin_obj *o)
 #define FASTCHART_MAX_PACK_DEPTH 24
 
 static fastchart_pack_node *fastchart_pack_build(HashTable *ht, int depth,
-                                                 int *count, int *overflow)
+                                                 int *count, int *overflow,
+                                                 size_t *label_bytes)
 {
     if (depth > FASTCHART_MAX_PACK_DEPTH) {
         *overflow = 1;
@@ -2294,7 +2304,15 @@ static fastchart_pack_node *fastchart_pack_build(HashTable *ht, int depth,
 
     const char *lbl = fastchart_label_or_null(
         zend_hash_str_find(ht, "label", sizeof("label") - 1));
-    node->label = lbl ? estrdup(lbl) : NULL;
+    if (lbl) {
+        size_t len = strlen(lbl);
+        if (len > FASTCHART_MAX_RENDER_TEXT_BYTES - *label_bytes) {
+            *overflow = 3;
+            return node;
+        }
+        node->label = estrdup(lbl);
+        *label_bytes += len;
+    }
 
     zval *zc = zend_hash_str_find(ht, "color", sizeof("color") - 1);
     if (zc) ZVAL_DEREF(zc);
@@ -2330,9 +2348,10 @@ static fastchart_pack_node *fastchart_pack_build(HashTable *ht, int depth,
                 }
                 if (e) ZVAL_DEREF(e);
                 if (Z_TYPE_P(e) != IS_ARRAY) continue;
-                fastchart_pack_node *child =
-                    fastchart_pack_build(Z_ARRVAL_P(e), depth + 1, count, overflow);
+                fastchart_pack_node *child = fastchart_pack_build(
+                    Z_ARRVAL_P(e), depth + 1, count, overflow, label_bytes);
                 if (child) node->children[kept++] = child;
+                if (*overflow) break;
             } ZEND_HASH_FOREACH_END();
             node->child_count = kept;
             if (kept == 0) { efree(node->children); node->children = NULL; }
@@ -3784,6 +3803,19 @@ ZEND_METHOD(FastChart_Chart, addTextAnnotation)
     }
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
+    if (self->text_annotation_count >= FASTCHART_MAX_TEXT_ANNOTATIONS) {
+        zend_value_error(
+            "FastChart\\Chart::addTextAnnotation() accepts at most %d annotations",
+            FASTCHART_MAX_TEXT_ANNOTATIONS);
+        RETURN_THROWS();
+    }
+    if (ZSTR_LEN(text) > FASTCHART_MAX_RENDER_TEXT_BYTES -
+                         self->text_annotation_bytes) {
+        zend_value_error(
+            "FastChart\\Chart::addTextAnnotation() aggregate text exceeds "
+            "the %d-byte limit", FASTCHART_MAX_RENDER_TEXT_BYTES);
+        RETURN_THROWS();
+    }
     zval *list_zv = zend_hash_str_find(Z_ARRVAL(self->config),
                                        "text_annotations", sizeof("text_annotations") - 1);
     if (!list_zv || Z_TYPE_P(list_zv) != IS_ARRAY) {
@@ -3800,6 +3832,8 @@ ZEND_METHOD(FastChart_Chart, addTextAnnotation)
     add_assoc_long(&entry, "y", y);
     if (!color_is_null) add_assoc_long(&entry, "color", color);
     add_next_index_zval(list_zv, &entry);
+    self->text_annotation_bytes += ZSTR_LEN(text);
+    self->text_annotation_count++;
 
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
@@ -4316,10 +4350,9 @@ ZEND_METHOD(FastChart_SurfaceChart, setShowCellValues)
     }
     fastchart_surface_obj *self = Z_FASTCHART_SURFACE_OBJ_P(ZEND_THIS);
     self->surface_show_values = show;
-    if (fmt) {
-        if (self->surface_value_format) zend_string_release(self->surface_value_format);
-        self->surface_value_format = ZSTR_LEN(fmt) == 0 ? NULL : zend_string_copy(fmt);
-    }
+    if (self->surface_value_format) zend_string_release(self->surface_value_format);
+    self->surface_value_format = fmt && ZSTR_LEN(fmt) > 0
+        ? zend_string_copy(fmt) : NULL;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -4682,7 +4715,14 @@ static int fastchart_svg_to_pixels(
         ZSTR_VAL(svg), ZSTR_LEN(svg),
         FC_IMAGE_MAX_DIM, max_pixels,
         pix, &w, &h);
-    if (rc == -1 || rc == -2) {
+    if (rc == -1) {
+        zend_value_error(
+            "%s() SVG could not be parsed, has no resolvable intrinsic "
+            "dimensions, or exceeds parser complexity limits",
+            method_name);
+        return -1;
+    }
+    if (rc == -2) {
         zend_value_error(
             "%s() SVG has no resolvable intrinsic dimensions "
             "(percentage widths and missing viewBox are not supported)",
@@ -7135,15 +7175,16 @@ int fastchart_write_zstr_to_file(zend_string *path, zend_string *payload,
      * path prefix so the same grant covers it. */
     php_stream *stream = NULL;
     zend_string *tmp_path = NULL;
+    uint64_t random_suffix;
+    if (php_random_bytes_throw(&random_suffix, sizeof(random_suffix)) == FAILURE) {
+        return -1;
+    }
+    zend_stat_t destination_st;
+    bool destination_exists = VCWD_STAT(p, &destination_st) == 0;
     for (int attempt = 0; attempt < 8; attempt++) {
-        /* time + payload address + attempt: unique enough per call
-         * (the address separates concurrent ZTS writers), portable to
-         * PHP 8.1 (zend_hrtime.h is 8.3+), and any residual collision
-         * just fails the O_EXCL open and retries. */
         char suffix[64];
-        int slen = snprintf(suffix, sizeof(suffix), ".fctmp-%llx-%llx-%d",
-            (unsigned long long)time(NULL),
-            (unsigned long long)(uintptr_t)payload, attempt);
+        int slen = snprintf(suffix, sizeof(suffix), ".fctmp-%016llx-%d",
+            (unsigned long long)random_suffix, attempt);
         if (slen <= 0) break;
         tmp_path = zend_string_alloc(plen + (size_t)slen, 0);
         memcpy(ZSTR_VAL(tmp_path), p, plen);
@@ -7166,6 +7207,19 @@ int fastchart_write_zstr_to_file(zend_string *path, zend_string *payload,
         return -1;
     }
 
+    zend_stat_t temporary_st;
+    if (VCWD_STAT(ZSTR_VAL(tmp_path), &temporary_st) != 0 ||
+        VCWD_CHMOD(ZSTR_VAL(tmp_path), 0600) != 0) {
+        php_stream_close(stream);
+        VCWD_UNLINK(ZSTR_VAL(tmp_path));
+        zend_throw_error(NULL, "%s could not secure temporary file for %s",
+                         where, p);
+        zend_string_release(tmp_path);
+        return -1;
+    }
+    int final_mode = (int)((destination_exists ? destination_st.st_mode
+                                               : temporary_st.st_mode) & 07777);
+
     php_stream * volatile live = stream;
 	ssize_t written;
 	int close_rc;
@@ -7186,6 +7240,14 @@ int fastchart_write_zstr_to_file(zend_string *path, zend_string *payload,
         zend_throw_error(NULL,
             "FastChart: short write to %s (%zd of %zu bytes)",
             p, written, sz);
+        zend_string_release(tmp_path);
+        return -1;
+    }
+
+    if (VCWD_CHMOD(ZSTR_VAL(tmp_path), final_mode) != 0) {
+        VCWD_UNLINK(ZSTR_VAL(tmp_path));
+        zend_throw_error(NULL, "%s could not preserve permissions for %s",
+                         where, p);
         zend_string_release(tmp_path);
         return -1;
     }
@@ -10746,8 +10808,10 @@ ZEND_METHOD(FastChart_CirclePacking, setHierarchy)
     fastchart_circlepack_obj *self = Z_FASTCHART_CIRCLEPACK_OBJ_P(ZEND_THIS);
 
     int count = 0, overflow = 0;
+    size_t label_bytes = 0;
     fastchart_pack_node *built =
-        fastchart_pack_build(Z_ARRVAL_P(root), 0, &count, &overflow);
+        fastchart_pack_build(Z_ARRVAL_P(root), 0, &count, &overflow,
+                             &label_bytes);
 
     if (overflow) {
         fastchart_pack_free(built);
@@ -10755,10 +10819,15 @@ ZEND_METHOD(FastChart_CirclePacking, setHierarchy)
             zend_value_error(
                 "FastChart\\CirclePacking::setHierarchy(): hierarchy nesting "
                 "exceeds the supported depth (max %d)", FASTCHART_MAX_PACK_DEPTH);
-        } else {
+        } else if (overflow == 2) {
             zend_value_error(
                 "FastChart\\CirclePacking::setHierarchy(): hierarchy accepts "
                 "at most %d nodes", FASTCHART_MAX_PACK_NODES);
+        } else {
+            zend_value_error(
+                "FastChart\\CirclePacking::setHierarchy(): aggregate label "
+                "text exceeds the %d-byte limit",
+                FASTCHART_MAX_RENDER_TEXT_BYTES);
         }
         RETURN_THROWS();
     }
@@ -10777,7 +10846,10 @@ ZEND_METHOD(FastChart_Pictogram, setValue)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_DOUBLE(v)
     ZEND_PARSE_PARAMETERS_END();
-    if (!isfinite(v)) v = 0.0;
+    if (!isfinite(v)) {
+        zend_value_error("FastChart\\Pictogram::setValue() requires a finite value");
+        RETURN_THROWS();
+    }
     fastchart_pictogram_obj *self = Z_FASTCHART_PICTOGRAM_OBJ_P(ZEND_THIS);
     self->value = v;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -10817,8 +10889,10 @@ ZEND_METHOD(FastChart_Pictogram, setColumns)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(n)
     ZEND_PARSE_PARAMETERS_END();
-    if (n < 0) n = 0;
-    if (n > 1000) n = 1000;
+    if (n < 0 || n > 1000) {
+        zend_value_error("FastChart\\Pictogram::setColumns() must be in [0, 1000]");
+        RETURN_THROWS();
+    }
     fastchart_pictogram_obj *self = Z_FASTCHART_PICTOGRAM_OBJ_P(ZEND_THIS);
     self->columns = n;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -11148,8 +11222,10 @@ ZEND_METHOD(FastChart_Dendrogram, setHierarchy)
     fastchart_dendrogram_obj *self = Z_FASTCHART_DENDROGRAM_OBJ_P(ZEND_THIS);
 
     int count = 0, overflow = 0;
+    size_t label_bytes = 0;
     fastchart_pack_node *built =
-        fastchart_pack_build(Z_ARRVAL_P(root), 0, &count, &overflow);
+        fastchart_pack_build(Z_ARRVAL_P(root), 0, &count, &overflow,
+                             &label_bytes);
 
     if (overflow) {
         fastchart_pack_free(built);
@@ -11157,10 +11233,14 @@ ZEND_METHOD(FastChart_Dendrogram, setHierarchy)
             zend_value_error(
                 "FastChart\\Dendrogram::setHierarchy(): hierarchy nesting "
                 "exceeds the supported depth (max %d)", FASTCHART_MAX_PACK_DEPTH);
-        } else {
+        } else if (overflow == 2) {
             zend_value_error(
                 "FastChart\\Dendrogram::setHierarchy(): hierarchy accepts "
                 "at most %d nodes", FASTCHART_MAX_PACK_NODES);
+        } else {
+            zend_value_error(
+                "FastChart\\Dendrogram::setHierarchy(): aggregate label text "
+                "exceeds the %d-byte limit", FASTCHART_MAX_RENDER_TEXT_BYTES);
         }
         RETURN_THROWS();
     }
@@ -11211,8 +11291,10 @@ ZEND_METHOD(FastChart_Partition, setHierarchy)
     fastchart_partition_obj *self = Z_FASTCHART_PARTITION_OBJ_P(ZEND_THIS);
 
     int count = 0, overflow = 0;
+    size_t label_bytes = 0;
     fastchart_pack_node *built =
-        fastchart_pack_build(Z_ARRVAL_P(root), 0, &count, &overflow);
+        fastchart_pack_build(Z_ARRVAL_P(root), 0, &count, &overflow,
+                             &label_bytes);
 
     if (overflow) {
         fastchart_pack_free(built);
@@ -11220,10 +11302,14 @@ ZEND_METHOD(FastChart_Partition, setHierarchy)
             zend_value_error(
                 "FastChart\\Partition::setHierarchy(): hierarchy nesting "
                 "exceeds the supported depth (max %d)", FASTCHART_MAX_PACK_DEPTH);
-        } else {
+        } else if (overflow == 2) {
             zend_value_error(
                 "FastChart\\Partition::setHierarchy(): hierarchy accepts "
                 "at most %d nodes", FASTCHART_MAX_PACK_NODES);
+        } else {
+            zend_value_error(
+                "FastChart\\Partition::setHierarchy(): aggregate label text "
+                "exceeds the %d-byte limit", FASTCHART_MAX_RENDER_TEXT_BYTES);
         }
         RETURN_THROWS();
     }

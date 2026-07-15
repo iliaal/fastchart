@@ -78,7 +78,10 @@ int fastchart_bullet_render_to_target(fastchart_bullet_obj *self, fastchart_targ
     int margin_x = 60;
     int bar_x0 = margin_x;
     int bar_x1 = W - margin_x;
-    if (bar_x1 <= bar_x0) {
+    int override_y0 = top_pad, override_y1 = H;
+    bool forced_plot = fastchart_apply_plot_rect((fastchart_obj *)self,
+        &bar_x0, &override_y0, &bar_x1, &override_y1);
+    if (!forced_plot && bar_x1 <= bar_x0) {
         zend_value_error(
             "FastChart\\BulletChart::draw() canvas is too narrow "
             "for label margins (need at least 121 px wide)");
@@ -93,6 +96,14 @@ int fastchart_bullet_render_to_target(fastchart_bullet_obj *self, fastchart_targ
     int perf_inset = band_h / 4;
     int perf_y0 = band_y0 + perf_inset;
     int perf_y1 = band_y1 - perf_inset;
+    if (forced_plot) {
+        band_y0 = override_y0;
+        band_y1 = override_y1;
+        band_h = band_y1 - band_y0;
+        perf_inset = band_h / 4;
+        perf_y0 = band_y0 + perf_inset;
+        perf_y1 = band_y1 - perf_inset;
+    }
 
     /* Band backdrop. */
     fastchart_target_rect(t, bar_x0, band_y0,

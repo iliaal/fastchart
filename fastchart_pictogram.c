@@ -106,6 +106,8 @@ int fastchart_pictogram_render_to_target(fastchart_pictogram_obj *self, fastchar
 
     int plot_x0 = 16, plot_x1 = W - 16;
     int plot_y0 = top_pad + 8, plot_y1 = H - 16;
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &plot_x0, &plot_y0, &plot_x1, &plot_y1);
     double cell_w = (double)(plot_x1 - plot_x0) / cols;
     double cell_h = (double)(plot_y1 - plot_y0) / rows;
     if (cell_w < 2.0 || cell_h < 2.0) return 0;

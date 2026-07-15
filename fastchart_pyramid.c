@@ -85,6 +85,8 @@ int fastchart_pyramid_render_to_target(fastchart_pyramid_obj *self, fastchart_ta
     int legend_h = (self->left.label || self->right.label) ? (int)(size + 12) : 0;
     int plot_x0 = 16, plot_x1 = W - 16;
     int plot_y0 = top_pad + legend_h + 6, plot_y1 = H - 16;
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &plot_x0, &plot_y0, &plot_x1, &plot_y1);
     double plot_w = plot_x1 - plot_x0;
     double plot_h = plot_y1 - plot_y0;
     /* A single very wide category label could push center_gap past the
@@ -97,8 +99,9 @@ int fastchart_pyramid_render_to_target(fastchart_pyramid_obj *self, fastchart_ta
     }
     if (plot_w < center_gap + 20 || plot_h < 10) return 0;
 
-    double cxl = W / 2.0 - center_gap / 2.0;   /* inner edge of left bars */
-    double cxr = W / 2.0 + center_gap / 2.0;    /* inner edge of right bars */
+    double plot_cx = (plot_x0 + plot_x1) / 2.0;
+    double cxl = plot_cx - center_gap / 2.0;   /* inner edge of left bars */
+    double cxr = plot_cx + center_gap / 2.0;    /* inner edge of right bars */
     double half_w = (plot_w - center_gap) / 2.0;
     if (half_w < 1.0) half_w = 1.0;
 
@@ -146,7 +149,7 @@ int fastchart_pyramid_render_to_target(fastchart_pyramid_obj *self, fastchart_ta
         }
         if (font && self->categories[i]) {
             fastchart_text_draw(t, font, size, pal.text,
-                                (int)(W / 2.0), (int)(plot_y0 + i * row_h + row_h / 2.0 + size * 0.35),
+                                (int)plot_cx, (int)(plot_y0 + i * row_h + row_h / 2.0 + size * 0.35),
                                 FASTCHART_ALIGN_CENTER, self->categories[i], NULL, 0);
         }
     }

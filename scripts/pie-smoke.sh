@@ -73,7 +73,10 @@ composer --version | head -1
 echo
 
 echo "---- 5. Download PIE ----"
-curl -sSL https://github.com/php/pie/releases/latest/download/pie.phar -o /usr/local/bin/pie
+PIE_VERSION=1.4.8
+PIE_SHA256=ef9f19c2698334aa8ce8fc458c8cf2a31a2fd6a29230216dbde3422343cf952d
+curl -fsSL "https://github.com/php/pie/releases/download/${PIE_VERSION}/pie.phar" -o /usr/local/bin/pie
+echo "${PIE_SHA256}  /usr/local/bin/pie" | sha256sum -c -
 chmod +x /usr/local/bin/pie
 ls -la /usr/local/bin/pie
 pie --version 2>&1 | head -3
@@ -84,35 +87,27 @@ echo "---- 6. pie install (against Packagist, real-user path) ----"
 # already serves the new version. This is the canonical user install:
 # `pie install iliaal/fastchart` resolves to the freshly-tagged release,
 # picks up the prebuilt zip when a matching <php-ver, arch, libc> lane
-# exists on the release, and falls back to source-build otherwise. The
-# manual phpize+make+install fallback in Step 7 below covers the
-# source-build path that PIE's composer-default lane exercises.
-PIE_OK=0
+# exists on the release, and falls back to source-build otherwise.
 echo "   pie install iliaal/fastchart"
+set +e
 pie install \
     --with-php-config=/usr/local/bin/php-config \
     --auto-install-build-tools \
-    iliaal/fastchart 2>&1 | tee /tmp/pie.out | tail -25 || true
-
-if php -m | grep -qi fastchart; then
-    PIE_OK=1
-    echo "   PIE install: success"
+    iliaal/fastchart 2>&1 | tee /tmp/pie.out | tail -25
+PIE_RC=${PIPESTATUS[0]}
+set -e
+if [ "$PIE_RC" -ne 0 ]; then
+    echo "   PIE install failed with exit code $PIE_RC"
+    exit "$PIE_RC"
 fi
-
-echo "   overall PIE result: PIE_OK=$PIE_OK"
+if ! php -m | grep -qi '^fastchart$'; then
+    echo "   PIE returned success but fastchart is not loaded"
+    exit 1
+fi
+echo "   PIE install: success"
 echo
 
 echo "---- 7. Verify extension loads ----"
-if [ "$PIE_OK" = "0" ]; then
-    echo "   *** PIE did not install the extension; falling back to manual phpize+make+install ***"
-    cd /tmp/src
-    phpize >/dev/null
-    ./configure --enable-fastchart >/dev/null
-    make -j"$(nproc)" 2>&1 | tail -3
-    make install 2>&1 | tail -3
-    docker-php-ext-enable fastchart
-    echo "   [fallback] manual install SUCCEEDED"
-fi
 php -m | grep -i fastchart
 php -r 'echo "fastchart version: ", phpversion("fastchart"), PHP_EOL;'
 php -r 'echo "FastChart\\Chart::version(): ", FastChart\Chart::version(), PHP_EOL;'

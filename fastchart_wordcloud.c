@@ -101,6 +101,8 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
 
     int plot_x0 = 8, plot_x1 = W - 8;
     int plot_y0 = top_pad + 6, plot_y1 = H - 8;
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &plot_x0, &plot_y0, &plot_x1, &plot_y1);
     double cx = (plot_x0 + plot_x1) / 2.0;
     double cy = (plot_y0 + plot_y1) / 2.0;
 

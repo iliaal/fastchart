@@ -142,13 +142,15 @@ int fastchart_venn_render_to_target(fastchart_venn_obj *self, fastchart_target_t
                 infeasible = 0;
             }
         } else {
-            /* d01 ~ 0: sets 0 and 1 fully overlap (co-located at the
-             * origin). Keep them concentric and place set 2 at its solved
-             * distance, so genuine full-overlap input renders as nested
-             * circles instead of being scattered into a separated triad. */
-            cx[2] = d02;
-            cy[2] = 0.0;
-            infeasible = 0;
+            double tolerance = 1e-6 * fmax(1.0, fmax(d02, d12));
+            if (fabs(d02 - d12) <= tolerance) {
+                /* Co-located sets require the third centre to have the same
+                 * distance from both; otherwise one requested overlap would
+                 * be silently ignored. */
+                cx[2] = (d02 + d12) * 0.5;
+                cy[2] = 0.0;
+                infeasible = 0;
+            }
         }
         if (infeasible) {
             /* Symmetric placement so all three sets stay visible; the
@@ -173,6 +175,8 @@ int fastchart_venn_render_to_target(fastchart_venn_obj *self, fastchart_target_t
     }
     int plot_x0 = 16, plot_x1 = W - 16;
     int plot_y0 = top_pad + 8, plot_y1 = H - 16;
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &plot_x0, &plot_y0, &plot_x1, &plot_y1);
     if (plot_x1 - plot_x0 < 20 || plot_y1 - plot_y0 < 20) return 0;
     double bw = maxx - minx, bh = maxy - miny;
     if (bw < 1e-6) bw = 1.0;

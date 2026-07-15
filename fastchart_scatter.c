@@ -49,6 +49,26 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
         if (points[i].x > x_max) x_max = points[i].x;
     }
 
+    if (self->err_lo && self->err_n > 0) {
+        int lim = n < self->err_n ? n : self->err_n;
+        for (int i = 0; i < lim; i++) {
+            double lo = self->err_lo[i];
+            double hi = self->err_hi[i];
+            if (!isnan(lo)) {
+                double edge = points[i].y - lo;
+                if (isfinite(edge)
+                    && (self->y_axis_scale != FASTCHART_SCALE_LOG || edge > 0.0)
+                    && edge < y_min) {
+                    y_min = edge;
+                }
+            }
+            if (!isnan(hi)) {
+                double edge = points[i].y + hi;
+                if (isfinite(edge) && edge > y_max) y_max = edge;
+            }
+        }
+    }
+
     fastchart_value_range yrange;
     if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
         if (fastchart_value_range_compute_log(y_min, y_max, &yrange) != 0) {
@@ -299,7 +319,7 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
             double frac_x = (xrange.max - xrange.min) > 0
                 ? (points[i].x - xrange.min) / (xrange.max - xrange.min)
                 : 0.5;
-            int px = plot.x0 + (int)(frac_x * (plot.x1 - plot.x0) + 0.5);
+            int px = fastchart_frac_to_px(frac_x, plot.x0, plot.x1);
             int py = fastchart_y_to_pixel(points[i].y, &yrange, &plot);
             self->image_map_areas[k].shape = FASTCHART_IMAGE_MAP_CIRCLE;
             self->image_map_areas[k].n_coords = 3;

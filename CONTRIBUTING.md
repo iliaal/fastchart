@@ -14,7 +14,7 @@
   Probed via pkg-config in `config.m4`. plutovg + plutosvg are
   vendored under `vendor/` — no install needed.
 - ext/gd is **not** a runtime requirement. The test suite uses ext/gd
-  in roughly 90 of the 298 phpt files to round-trip raster output for pixel
+  in roughly 90 PHPT files to round-trip raster output for pixel
   inspection; those tests SKIP cleanly when ext/gd isn't available.
   If you want to run the full suite, build ext/gd once against your
   PHP install (recipe in AGENTS.md).
@@ -132,7 +132,7 @@ Before filing, try to reproduce against the latest `master` branch.
 
 For maintainers cutting a new version: run `/release-ext` (or the
 `/release` shim). It reads `.release-config`, runs the build matrix
-(PHP-8.3, 8.4, 8.5), tags bare semver, drives the changelog
+(PHP 8.1 through 8.5), tags bare semver, drives the changelog
 date-stamping. CHANGELOG follows Keep-a-Changelog; the
 `PHP_FASTCHART_VERSION` literal in `php_fastchart.h` always holds
 the next-to-tag version (no `-dev` suffix).

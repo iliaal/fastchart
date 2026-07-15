@@ -85,6 +85,8 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
     int margin = 48;
     int plot_x0 = margin, plot_x1 = W - margin;
     int plot_y0 = top_pad + margin / 2, plot_y1 = H - margin;
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &plot_x0, &plot_y0, &plot_x1, &plot_y1);
     double plot_w = plot_x1 - plot_x0;
     double plot_h = plot_y1 - plot_y0;
     if (plot_w < 20.0 || plot_h < 20.0) return 0;

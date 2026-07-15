@@ -2,9 +2,9 @@ name: Release Linux & macOS binaries
 
 # Triggered when a GitHub Release is published. Builds .so binaries for
 # Linux glibc (x86_64 + arm64) and macOS arm64 at PHP 8.4 and 8.5 (NTS
-# only, ZTS lives in the Windows lane), uploads each as a release asset
-# via php/pie-ext-binary-builder using PIE's pre-packaged-binary naming
-# convention.
+# only, ZTS lives in the Windows lane). Each matrix slot builds, verifies,
+# and packages its binary before a separate write-scoped job uploads the
+# release assets using PIE's pre-packaged-binary naming convention.
 #
 # Linux build statically links the four codec deps (freetype, libpng,
 # libjpeg-turbo, libwebp). Otherwise the resulting .so picks up the
@@ -41,8 +41,8 @@ name: Release Linux & macOS binaries
 # in the php-ext block, so PIE prefers the prebuilt asset and falls
 # back to source-build when no asset matches.
 #
-# Third-party actions are pinned to commit SHAs because this job has
-# contents:write -- a moved tag would inherit the release-write token.
+# Third-party actions are pinned to commit SHAs. Only the final upload job
+# receives contents:write.
 
 on:
   release:
@@ -62,13 +62,17 @@ env:
   PNG_VERSION: '1.6.43'
   JPEG_VERSION: '3.0.4'
   WEBP_VERSION: '1.4.0'
+  FT_SHA256: '0550350666d427c74daeb85d5ac7bb353acba5f76956395995311a9c6f063289'
+  PNG_SHA256: 'e804e465d4b109b5ad285a8fb71f0dd3f74f0068f91ce3cdfde618180c174925'
+  JPEG_SHA256: '99130559e7d62e8d695f2c0eaeef912c5828d5b84a0537dcb24c9678c9d5b76b'
+  WEBP_SHA256: '61f873ec69e3be1b99535634340d5bde750b2e4447caa1db9f61be3fd49ab1e5'
 
 jobs:
   build:
     name: ${{ matrix.os }} php ${{ matrix.php }}
     runs-on: ${{ matrix.os }}
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -102,18 +106,18 @@ jobs:
           # Everything else gets built from source as a static archive
           # so the .so has no codec-lib NEEDED entries.
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake nasm pkg-config zlib1g-dev
+            build-essential cmake nasm pkg-config zip zlib1g-dev
 
       - name: Cache static codec libs (Linux)
         if: startsWith(matrix.os, 'ubuntu-')
         id: static-deps-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/static-deps
-          # Key on runner OS + lib versions. Bumping any of the env
-          # versions above forces a rebuild; same versions reuse the
-          # cached static archives across runs (~4min savings per slot).
-          key: static-deps-${{ matrix.os }}-ft${{ env.FT_VERSION }}-png${{ env.PNG_VERSION }}-jpeg${{ env.JPEG_VERSION }}-webp${{ env.WEBP_VERSION }}-v2
+          # Key on runner OS + verified archive digests. A version or
+          # checksum change forces a rebuild; identical inputs reuse the
+          # static archives across runs (~4min savings per slot).
+          key: static-deps-${{ matrix.os }}-${{ env.FT_SHA256 }}-${{ env.PNG_SHA256 }}-${{ env.JPEG_SHA256 }}-${{ env.WEBP_SHA256 }}
 
       - name: Build static codec libs (Linux, cache miss)
         if: startsWith(matrix.os, 'ubuntu-') && steps.static-deps-cache.outputs.cache-hit != 'true'
@@ -127,39 +131,43 @@ jobs:
           # Disable every optional integration (zlib/bz2/png/brotli/
           # harfbuzz) so the static archive links only against libc.
           # PIC mandatory for the .a → .so inclusion downstream.
-          curl -sSL -o ft.tar.xz "https://download.savannah.gnu.org/releases/freetype/freetype-${FT_VERSION}.tar.xz"
+          curl -fsSL -o ft.tar.xz "https://download.savannah.gnu.org/releases/freetype/freetype-${FT_VERSION}.tar.xz"
+          echo "${FT_SHA256}  ft.tar.xz" | sha256sum -c -
           tar xf ft.tar.xz && cd "freetype-${FT_VERSION}"
           ./configure --prefix="$PREFIX" --enable-static --disable-shared \
             --with-zlib=no --with-bzip2=no --with-png=no --with-brotli=no \
             --with-harfbuzz=no CFLAGS=-fPIC
-          make -j$(nproc) install
+          make -j"$(nproc)" install
           cd ..
 
           # --- libpng (linked against system zlib) ---
-          curl -sSL -o png.tar.gz "https://download.sourceforge.net/libpng/libpng-${PNG_VERSION}.tar.gz"
+          curl -fsSL -o png.tar.gz "https://download.sourceforge.net/libpng/libpng-${PNG_VERSION}.tar.gz"
+          echo "${PNG_SHA256}  png.tar.gz" | sha256sum -c -
           tar xf png.tar.gz && cd "libpng-${PNG_VERSION}"
           ./configure --prefix="$PREFIX" --enable-static --disable-shared CFLAGS=-fPIC
-          make -j$(nproc) install
+          make -j"$(nproc)" install
           cd ..
 
           # --- libjpeg-turbo (cmake; ENABLE_SHARED=0 produces libjpeg.a) ---
-          curl -sSL -o jpeg.tar.gz "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/${JPEG_VERSION}/libjpeg-turbo-${JPEG_VERSION}.tar.gz"
+          curl -fsSL -o jpeg.tar.gz "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/${JPEG_VERSION}/libjpeg-turbo-${JPEG_VERSION}.tar.gz"
+          echo "${JPEG_SHA256}  jpeg.tar.gz" | sha256sum -c -
           tar xf jpeg.tar.gz && cd "libjpeg-turbo-${JPEG_VERSION}"
           mkdir build && cd build
           cmake -DCMAKE_INSTALL_PREFIX="$PREFIX" \
                 -DCMAKE_INSTALL_LIBDIR=lib \
                 -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
                 -DENABLE_SHARED=0 -DENABLE_STATIC=1 -DWITH_TURBOJPEG=0 ..
-          make -j$(nproc) install
+          make -j"$(nproc)" install
           cd ../..
 
           # --- libwebp (static, no demux/mux extras) ---
-          curl -sSL -o webp.tar.gz "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${WEBP_VERSION}.tar.gz"
+          curl -fsSL -o webp.tar.gz "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${WEBP_VERSION}.tar.gz"
+          echo "${WEBP_SHA256}  webp.tar.gz" | sha256sum -c -
           tar xf webp.tar.gz && cd "libwebp-${WEBP_VERSION}"
           ./configure --prefix="$PREFIX" --enable-static --disable-shared \
             --disable-libwebpmux --disable-libwebpdemux --disable-libwebpextras \
             CFLAGS=-fPIC
-          make -j$(nproc) install
+          make -j"$(nproc)" install
           cd ..
 
           # Clean source trees out of the cache path so only PREFIX/
@@ -175,7 +183,8 @@ jobs:
             echo "PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig"
           } >> "$GITHUB_ENV"
           echo "Static prefix contents:"
-          ls -la "$PREFIX/lib"/*.a "$PREFIX/lib/pkgconfig"/ 2>&1 | head -20
+          find "$PREFIX/lib" -maxdepth 2 \
+            \( -name '*.a' -o -name '*.pc' \) -print | head -20
 
       - name: Install build deps (macOS)
         if: startsWith(matrix.os, 'macos-')
@@ -189,65 +198,30 @@ jobs:
             echo "PKG_CONFIG_PATH=$(brew --prefix jpeg-turbo)/lib/pkgconfig:$(brew --prefix freetype)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
           } >> "$GITHUB_ENV"
 
-      # === release: published path ===
-      # On release events, build AND upload via pie-ext-binary-builder.
-      # The action's release-asset upload step requires a real release
-      # to exist, so it only fires on github.event_name == 'release'.
-      - name: Build and upload prebuilt binary (Linux, release)
-        if: github.event_name == 'release' && startsWith(matrix.os, 'ubuntu-')
-        uses: php/pie-ext-binary-builder@e35d497ffaac8ded7f05c62597d4387d849644d7 # 0.0.3
-        with:
-          release-tag: ${{ github.event.release.tag_name }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          configure-flags: '--enable-fastchart --enable-fastchart-dev --with-fastchart-static-codecs=${{ env.STATIC_DEPS_PREFIX }}'
-
-      - name: Build and upload prebuilt binary (macOS, release)
-        if: github.event_name == 'release' && startsWith(matrix.os, 'macos-')
-        uses: php/pie-ext-binary-builder@e35d497ffaac8ded7f05c62597d4387d849644d7 # 0.0.3
-        with:
-          release-tag: ${{ github.event.release.tag_name }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          configure-flags: '--enable-fastchart --enable-fastchart-dev'
-
-      # === workflow_dispatch path ===
-      # Manual runs build the .so the same way but skip the upload —
-      # there's no release to upload to. Lets a maintainer validate
-      # release-linux.yml changes (e.g. the static-codec recipe) end
-      # to end without burning a fresh release tag. The Verify step
-      # below still asserts the same compatibility guarantees.
-      - name: Build prebuilt binary (Linux, dispatch validation)
-        if: github.event_name == 'workflow_dispatch' && startsWith(matrix.os, 'ubuntu-')
+      - name: Build prebuilt binary (Linux)
+        if: startsWith(matrix.os, 'ubuntu-')
         run: |
           set -e
           phpize
           ./configure --enable-fastchart --enable-fastchart-dev \
             --with-fastchart-static-codecs="$STATIC_DEPS_PREFIX"
-          make -j$(nproc)
-          ls -la modules/
+          make -j"$(nproc)"
+          find modules -maxdepth 1 -type f -print
 
-      - name: Build prebuilt binary (macOS, dispatch validation)
-        if: github.event_name == 'workflow_dispatch' && startsWith(matrix.os, 'macos-')
+      - name: Build prebuilt binary (macOS)
+        if: startsWith(matrix.os, 'macos-')
         run: |
           set -e
           phpize
           ./configure --enable-fastchart --enable-fastchart-dev
-          make -j$(sysctl -n hw.ncpu)
-          ls -la modules/
+          make -j"$(sysctl -n hw.ncpu)"
+          find modules -maxdepth 1 -type f -print
 
       - name: Verify codec libs are static (Linux)
         if: startsWith(matrix.os, 'ubuntu-')
         run: |
-          # PIE builds in a workspace under $HOME/.pie or
-          # $HOME/work/_temp; the .so lands in modules/. Find whichever
-          # path pie-ext-binary-builder used and assert no codec-lib
-          # NEEDED entries.
-          SO=$(find "$HOME" -name fastchart.so -path '*/modules/*' 2>/dev/null | head -1)
-          if [ -z "$SO" ]; then
-            SO=$(find / -name fastchart.so -path '*/modules/*' 2>/dev/null | head -1)
-          fi
-          if [ -z "$SO" ]; then
-            echo "fastchart.so not found after build"; exit 1
-          fi
+          SO="$PWD/modules/fastchart.so"
+          test -f "$SO"
           echo "Inspecting $SO ($(stat -c '%s' "$SO") bytes)"
           echo "--- NEEDED entries ---"
           readelf -d "$SO" | grep NEEDED || true
@@ -262,11 +236,8 @@ jobs:
       # inspection above proves the codecs are statically linked but
       # never dlopens the object or renders a pixel — a .so that loads
       # readelf-clean can still abort at MINIT or crash the encoder.
-      # This runs on the SAME fastchart.so that pie-ext-binary-builder
-      # packaged (packaging is tar/zip, no strip step mutates the code),
-      # located the same way the Verify step finds it. Covers the release
-      # path (built under $HOME by the action) and the workflow_dispatch
-      # path (built into ./modules). Renders PNG/JPEG/WebP from a titled
+      # This runs on the same fastchart.so that the later packaging step
+      # archives. Renders PNG/JPEG/WebP from a titled
       # LineChart and a QrCode, then validates each with
       # getimagesizefromstring (header-parse only — no ext/gd needed for
       # PNG/JPEG/WebP) asserting exact dimensions and non-trivial length.
@@ -274,13 +245,8 @@ jobs:
       - name: Smoke-test built binary (load + render + decode)
         run: |
           set -e
-          SO=$(find "$HOME" -name fastchart.so -path '*/modules/*' 2>/dev/null | head -1)
-          if [ -z "$SO" ]; then
-            SO=$(find "$PWD" -name fastchart.so -path '*/modules/*' 2>/dev/null | head -1)
-          fi
-          if [ -z "$SO" ]; then
-            echo "::error::fastchart.so not found for smoke test"; exit 1
-          fi
+          SO="$PWD/modules/fastchart.so"
+          test -f "$SO"
           echo "Smoke-testing $SO"
           cat > "$RUNNER_TEMP/release-smoke.php" <<'PHP'
           <?php
@@ -322,3 +288,61 @@ jobs:
           echo "release smoke passed\n";
           PHP
           php -d extension="$SO" "$RUNNER_TEMP/release-smoke.php"
+
+      - name: Package verified binary
+        id: package
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          MATRIX_OS: ${{ matrix.os }}
+        run: |
+          set -e
+          TAG="${RELEASE_TAG:-validation-${GITHUB_SHA::12}}"
+          PHP_MM=$(php-config --version | cut -d. -f1,2)
+          case "$MATRIX_OS" in
+            ubuntu-24.04) TARGET='x86_64-linux-glibc' ;;
+            ubuntu-24.04-arm) TARGET='arm64-linux-glibc' ;;
+            macos-14) TARGET='arm64-darwin-bsdlibc' ;;
+            *) echo "::error::unsupported package target: $MATRIX_OS"; exit 1 ;;
+          esac
+          PACKAGE="php_fastchart-${TAG}_php${PHP_MM}-${TARGET}.zip"
+          zip -j "$PACKAGE" modules/fastchart.so
+          echo "package=$PACKAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Stage verified binary
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: prebuilt-${{ matrix.os }}-php${{ matrix.php }}
+          path: ${{ steps.package.outputs.package }}
+          if-no-files-found: error
+          retention-days: 7
+
+  upload-release:
+    name: Upload verified release binaries
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: prebuilt-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify release asset set
+        run: |
+          set -e
+          count=$(find release-assets -maxdepth 1 -type f -name '*.zip' | wc -l)
+          if [ "$count" -ne 6 ]; then
+            echo "::error::expected 6 verified release archives, found $count"
+            find release-assets -maxdepth 1 -type f -print
+            exit 1
+          fi
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" release-assets/*.zip --repo "$GITHUB_REPOSITORY" --clobber

@@ -8,9 +8,9 @@ loaded; ext/gd is no longer required at runtime:
 php -d extension=fastchart docs/examples/01_line_basic.php
 ```
 
-Together the 71 scripts exercise every public method on the
-`FastChart\*` classes, so this gallery doubles as
-live documentation: if a knob exists, an example demonstrates it.
+The 71 runnable examples cover every chart and symbol family and
+demonstrate the main configurations. The PHPT suite under `tests/`
+covers the complete public API and edge cases.
 
 Every script `require`s `_bootstrap.php` to resolve a TrueType font
 path (DejaVu on common Linux distros, Helvetica on macOS) into a

@@ -135,6 +135,8 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
     int grid_x1 = W - right_pad;
     int grid_y0 = top_pad + month_label_h + 4;
     int grid_y1 = H - 12;
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &grid_x0, &grid_y0, &grid_x1, &grid_y1);
     int avail_w = grid_x1 - grid_x0;
     int avail_h = grid_y1 - grid_y0;
     if (avail_w <= 14 || avail_h <= 7 * 6) {

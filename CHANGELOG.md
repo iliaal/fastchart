@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   setter time; `Code128` keeps its 4096-pixel ceiling.
 - Static pdfio / codec archives no longer re-export their symbols from
   `fastchart.so` (`--exclude-libs=ALL` whenever the linker supports it).
+- Caller-supplied SVG is rejected above 65,536 elements, 262,144
+  attributes, or 256 nesting levels, bounding parser memory and recursion.
+- Graph and hierarchy labels have a 64 KiB aggregate text budget;
+  charts accept at most 128 text annotations with 64 KiB total text.
 
 ### Fixed
 
@@ -37,6 +41,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over-cap input instead of silently truncating.
 - First-party code now builds under the full warning set (`-Werror` in
   dev); vendor `-Wno-*` flags no longer blanket fastchart TUs.
+- Extreme finite ranges render without integer-cast undefined behavior in
+  Scatter, Surface, Heatmap, Contour, Gantt, Sankey, and Venn charts.
+- Line and Scatter auto-ranging includes error bars; negative Area stream
+  data uses the same baseline in range calculation and rendering.
+- All-gap Bar series no longer emit a phantom image-map hotspot.
+- `setFontPath()` rejects FIFOs and other non-regular files without
+  blocking, while preserving PHP stream and `open_basedir` handling.
+- `renderToFile()` preserves an existing destination's mode and applies
+  the process umask to new files before the atomic rename.
+- The 24 specialized chart renderers now honor `setPlotRect()`.
 
 ### CI
 
@@ -46,8 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uses the same `--with-pdfio` option as Unix and PIE metadata.
 - The published benchmark covers all 38 concrete chart classes and rejects
   future class/benchmark inventory drift.
-- Release binaries are load-tested (dlopen, render, decode) before
-  upload.
+- Release binaries are built with read-only permissions, then load-tested,
+  rendered, decoded, and packaged before a separate write-scoped upload job.
+- Release dependency archives and PIE are version-and-checksum pinned;
+  PIE smoke failures can no longer pass through a manual-build fallback.
 - Test lanes probe gd capabilities and enforce per-lane skip ceilings;
   the PDF lane gates the module's dynamic-symbol surface.
 - New stub-drift job regenerates `fastchart_arginfo.h` and fails on

@@ -77,7 +77,8 @@ jobs:
             libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev pkg-config
       - name: Download PIE
         run: |
-          curl -fsSL -o /tmp/pie.phar https://github.com/php/pie/releases/latest/download/pie.phar
+          curl -fsSL -o /tmp/pie.phar https://github.com/php/pie/releases/download/1.4.8/pie.phar
+          echo 'ef9f19c2698334aa8ce8fc458c8cf2a31a2fd6a29230216dbde3422343cf952d  /tmp/pie.phar' | sha256sum -c -
           chmod +x /tmp/pie.phar
       - name: PIE build smoke
         run: |

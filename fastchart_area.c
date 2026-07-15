@@ -141,6 +141,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             for (int s = 0; s < n_series; s++) {
                 double v = area_read_value(&series[s], i);
                 if (isnan(v)) continue;
+                if (stream && v < 0.0) v = 0.0;
                 bool right = self->secondary_y && !stream && series[s].right_axis;
                 if (right) {
                     cum_r += v;
@@ -481,6 +482,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             for (int i = 0; i < max_len && n_pts < 2048; i++) {
                 double v = area_read_value(&series[s], i);
                 if (isnan(v)) v = 0;
+                if (stream && v < 0.0) v = 0.0;
                 double soff = stream_off ? stream_off[i] : 0.0;
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
                 int y = fastchart_y_to_pixel(cum[i] + v + soff, rng, &plot);
@@ -516,6 +518,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             for (int i = 0; i < max_len; i++) {
                 double v = area_read_value(&series[s], i);
                 if (isnan(v)) v = 0;
+                if (stream && v < 0.0) v = 0.0;
                 double soff = stream_off ? stream_off[i] : 0.0;
                 int x = fastchart_x_categorical_center(&plot, i, max_len);
                 int y = fastchart_y_to_pixel(cum[i] + v + soff, rng, &plot);

@@ -187,8 +187,10 @@ abstract class Chart
      *   `<g transform="...">` to compose multiple chart fragments
      *   instead.
      *
-     * Caps: SVG input ≤ 16 MB, output ≤ 4096 px per side and
-     * ≤ 16M total pixels. Malformed XML or out-of-range dimensions
+     * Caps: SVG input ≤ 16 MB, ≤ 65,536 elements,
+     * ≤ 262,144 attributes, and ≤ 256 nesting levels; output
+     * ≤ 4096 px per side and ≤ 16M total pixels. Malformed XML or
+     * out-of-range dimensions
      * throw `\ValueError`. Rasterizer or encoder failure throws
      * `\Error`.
      */
@@ -227,7 +229,9 @@ abstract class Chart
      * unbounded title balloons the document. The same 8192-byte cap
      * applies to every rendered-text setter (axis titles, annotation
      * and band/line labels); oversized array-element labels are
-     * dropped rather than throwing.
+     * dropped rather than throwing. Graph node labels, hierarchy
+     * labels, and text annotations each have a 65536-byte aggregate
+     * budget. A chart accepts at most 128 text annotations.
      */
     public function setTitle(string $title): static {}
     public function setTheme(int $theme): static {}

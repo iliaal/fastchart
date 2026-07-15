@@ -57,6 +57,21 @@ static int bar_per_point_color(zend_long *point_colors, int idx, int fallback,
     return fastchart_target_color_rgb(t, (int)c);
 }
 
+static bool bar_category_has_data(const fastchart_series_t *series,
+                                  int n_series, int category, bool floating)
+{
+    for (int s = 0; s < n_series; s++) {
+        if (category >= series[s].len || isnan(series[s].values[category])) {
+            continue;
+        }
+        if (!floating || (series[s].values_max &&
+                          !isnan(series[s].values_max[category]))) {
+            return true;
+        }
+    }
+    return false;
+}
+
 typedef struct {
     int left;   /* left edge of the paddable inner region */
     int inner;  /* inner width available for bars */
@@ -296,8 +311,11 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
          * height so any click in the column registers on the bar's
          * data point — more usable than a tight bar-bounding-box,
          * especially for very short bars. */
-        fastchart_push_image_map_rect((fastchart_obj *)self, i,
-            slot_left, plot.y0, slot_inner, plot.y1 - plot.y0);
+        if (self->n_image_map_entries > i &&
+            bar_category_has_data(series, n_series, i, floating)) {
+            fastchart_push_image_map_rect((fastchart_obj *)self, i,
+                slot_left, plot.y0, slot_inner, plot.y1 - plot.y0);
+        }
 
         if (floating) {
             /* Floating bar: each series carries [min, max] per slot;
@@ -598,8 +616,11 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
 
         /* One hot-spot per category row — full plot width, mirroring
          * the vertical path's full-height column rects. */
-        fastchart_push_image_map_rect((fastchart_obj *)self, i,
-            plot.x0, slot_top, plot.x1 - plot.x0, slot_inner);
+        if (self->n_image_map_entries > i &&
+            bar_category_has_data(series, n_series, i, floating)) {
+            fastchart_push_image_map_rect((fastchart_obj *)self, i,
+                plot.x0, slot_top, plot.x1 - plot.x0, slot_inner);
+        }
 
         if (floating) {
             for (int s = 0; s < n_series; s++) {

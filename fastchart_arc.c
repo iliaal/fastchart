@@ -82,6 +82,8 @@ int fastchart_arc_render_to_target(fastchart_arc_obj *self, fastchart_target_t *
     int label_band = (int)(base_size * 3.0);
     int plot_x0 = side_pad, plot_x1 = W - side_pad;
     int plot_y0 = top_pad + 8, plot_y1 = H - 12;
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &plot_x0, &plot_y0, &plot_x1, &plot_y1);
     if (plot_x1 <= plot_x0) { efree(incident); return 0; }
 
     /* Baseline placement + available arc height per orientation. */

@@ -210,12 +210,24 @@ int fastchart_sankey_render_to_target(fastchart_sankey_obj *self, fastchart_targ
      * plot region stays clear of label collisions with ribbons. */
     int plot_x0 = 140, plot_x1 = W - 140;
     int plot_y0 = top_pad + 12, plot_y1 = H - 16;
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &plot_x0, &plot_y0, &plot_x1, &plot_y1);
     int avail_h = plot_y1 - plot_y0;
     int node_gap = 8;
     /* Reserve gap space for the most crowded column. */
     int max_count = 1;
     for (int c = 0; c < n_layers; c++) {
         if (col_counts[c] > max_count) max_count = col_counts[c];
+    }
+    if (avail_h < max_count * 2) {
+        efree(L);
+        efree(col_totals);
+        efree(col_counts);
+        return 0;
+    }
+    if (max_count > 1) {
+        int max_gap = (avail_h - max_count * 2) / (max_count - 1);
+        if (node_gap > max_gap) node_gap = max_gap;
     }
     /* Clamp the numerator to 0 instead of falling back to an absolute
      * 1.0 px/unit scale: the fallback severed the "pixel heights bounded
@@ -225,23 +237,27 @@ int fastchart_sankey_render_to_target(fastchart_sankey_obj *self, fastchart_targ
     double px_avail = avail_h - (max_count - 1) * node_gap;
     if (px_avail < 0.0) px_avail = 0.0;
     double px_per_unit = px_avail / col_max;
-    if (!isfinite(px_per_unit)) {
-        efree(L); efree(col_totals); efree(col_counts);
-        zend_throw_error(NULL,
-            "FastChart\\SankeyChart::draw() flow total overflow");
-        return -1;
-    }
+    bool ratio_scale = !isfinite(px_per_unit) || px_per_unit == 0.0;
 
     /* Position nodes column by column, top-aligned. */
-    double col_x_step = (double)(plot_x1 - plot_x0) / (n_layers > 1 ? n_layers - 1 : 1);
     int node_w = 14;
+    if (plot_x1 - plot_x0 < node_w) {
+        efree(L);
+        efree(col_totals);
+        efree(col_counts);
+        return 0;
+    }
+    double col_x_step = (double)(plot_x1 - plot_x0 - node_w)
+        / (n_layers > 1 ? n_layers - 1 : 1);
     for (int c = 0; c < n_layers; c++) {
         double y = plot_y0;
         for (int i = 0; i < self->node_count; i++) {
             if (L[i].layer != c) continue;
             double sz = L[i].in_total > L[i].out_total
                 ? L[i].in_total : L[i].out_total;
-            double h = sz * px_per_unit;
+            double h = ratio_scale
+                ? (sz / col_max) * px_avail
+                : sz * px_per_unit;
             if (!isfinite(h)) {
                 efree(L); efree(col_totals); efree(col_counts);
                 zend_throw_error(NULL,
@@ -264,7 +280,9 @@ int fastchart_sankey_render_to_target(fastchart_sankey_obj *self, fastchart_targ
         const fastchart_sankey_link *lk = &self->links[e];
         sankey_node_layout *src = &L[lk->from];
         sankey_node_layout *dst = &L[lk->to];
-        double h = lk->value * px_per_unit;
+        double h = ratio_scale
+            ? (lk->value / col_max) * px_avail
+            : lk->value * px_per_unit;
         if (!isfinite(h)) {
             efree(L); efree(col_totals); efree(col_counts);
             zend_throw_error(NULL,

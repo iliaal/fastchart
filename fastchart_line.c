@@ -77,6 +77,31 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
             }
         }
     }
+    if (self->err_lo && self->err_n > 0 && n_series > 0) {
+        bool right = self->secondary_y && series[0].right_axis;
+        double *dmin = right ? &dmin_r : &dmin_l;
+        double *dmax = right ? &dmax_r : &dmax_l;
+        int lim = series[0].len < self->err_n
+            ? series[0].len : self->err_n;
+        for (int i = 0; i < lim; i++) {
+            double value = series[0].values[i];
+            if (isnan(value)) continue;
+            double lo = self->err_lo[i];
+            double hi = self->err_hi[i];
+            if (!isnan(lo)) {
+                double edge = value - lo;
+                if (isfinite(edge)
+                    && (self->y_axis_scale != FASTCHART_SCALE_LOG || edge > 0.0)
+                    && edge < *dmin) {
+                    *dmin = edge;
+                }
+            }
+            if (!isnan(hi)) {
+                double edge = value + hi;
+                if (isfinite(edge) && edge > *dmax) *dmax = edge;
+            }
+        }
+    }
     if (!seen_l) {
         zend_throw_error(NULL,
             "FastChart\\LineChart::draw() found no numeric values for the primary Y axis");
@@ -167,9 +192,9 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
             }
         }
 
-        /* Error bars on the first (left-axis) series only -- multi-
-         * series line charts get crowded fast otherwise. */
-        if (err_lo && err_n > 0 && s == 0 && !right) {
+        /* Error bars attach to the first series only -- multi-series
+         * line charts get crowded fast otherwise. */
+        if (err_lo && err_n > 0 && s == 0) {
             int lim = n < err_n ? n : err_n;
             for (int i = 0; i < lim; i++) {
                 if (!pts[i].valid) continue;

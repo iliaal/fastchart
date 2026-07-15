@@ -80,6 +80,8 @@ int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self, fa
         bar_x0 = (W - margin_x) / 2 - 12;
         bar_x1 = bar_x0 + 24;
     }
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &bar_x0, &bar_y0, &bar_x1, &bar_y1);
 
     /* Background fill (the inactive part of the bar). */
     fastchart_target_rect(t, bar_x0, bar_y0,

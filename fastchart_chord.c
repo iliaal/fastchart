@@ -143,15 +143,26 @@ int fastchart_chord_render_to_target(fastchart_chord_obj *self, fastchart_target
         ang += size + pad;
     }
 
-    double cx = W / 2.0;
-    double cy = top_pad + (H - top_pad) / 2.0;
-    double usable = (double)(W < (H - top_pad) ? W : (H - top_pad));
-    double label_margin = 64.0;
-    double R = usable / 2.0 - label_margin;
-    if (R < 20.0) R = 20.0;
+    int plot_x0 = 0, plot_y0 = top_pad;
+    int plot_x1 = W, plot_y1 = H;
+    bool forced_plot = fastchart_apply_plot_rect((fastchart_obj *)self,
+        &plot_x0, &plot_y0, &plot_x1, &plot_y1);
+    double cx = (plot_x0 + plot_x1) / 2.0;
+    double cy = (plot_y0 + plot_y1) / 2.0;
+    int plot_w = plot_x1 - plot_x0;
+    int plot_h = plot_y1 - plot_y0;
+    double usable = (double)(plot_w < plot_h ? plot_w : plot_h);
     double band = 14.0;
+    double label_margin = forced_plot ? band / 2.0 + 1.0 : 64.0;
+    double R = usable / 2.0 - label_margin;
+    if (forced_plot) {
+        if (R < 1.0) { efree(L); return 0; }
+    } else if (R < 20.0) {
+        R = 20.0;
+    }
     double R_in = R - band / 2.0 - 2.0;     /* ribbon attach radius */
-    if (R_in < 10.0) R_in = 10.0;
+    if (forced_plot && R_in < 1.0) { efree(L); return 0; }
+    if (!forced_plot && R_in < 10.0) R_in = 10.0;
 
     double max_val = 0.0;
     for (int e = 0; e < self->link_count; e++) {

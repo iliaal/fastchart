@@ -69,10 +69,14 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
     int top = (self->title && ZSTR_LEN(self->title) > 0) ? 32 : 12;
     int margin_x = 50;
     int margin_b = 30;
-    int plot_w = W - 2 * margin_x;
-    int plot_h = H - top - margin_b;
-    if (plot_w < 50) plot_w = 50;
-    if (plot_h < 50) plot_h = 50;
+    int plot_x0 = margin_x, plot_y0 = top;
+    int plot_x1 = W - margin_x - 1, plot_y1 = H - margin_b - 1;
+    bool forced_plot = fastchart_apply_plot_rect((fastchart_obj *)self,
+        &plot_x0, &plot_y0, &plot_x1, &plot_y1);
+    int plot_w = plot_x1 - plot_x0 + 1;
+    int plot_h = plot_y1 - plot_y0 + 1;
+    if (!forced_plot && plot_w < 50) plot_w = 50;
+    if (!forced_plot && plot_h < 50) plot_h = 50;
 
     /* Cell boundaries are derived from the normalized plot span (not a
      * clamped integer cell size) so a dense grid whose column/row count
@@ -86,9 +90,6 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
      * a target color per cell. */
     int low = (int)self->color_ramp_low;
     int high = (int)self->color_ramp_high;
-    double span = vmax - vmin;
-    if (span <= 0) span = 1.0;
-
     int color_lut[256];
     int rgb_lut[256];
     for (int k = 0; k < 256; k++) {
@@ -105,19 +106,15 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
         for (int x_idx = 0; x_idx < cols; x_idx++) {
             double v = grid[y_idx * cols + x_idx];
             if (isnan(v)) continue;
-            double tv = (v - vmin) / span;
-            /* A grid spanning finite extremes (span overflowed to inf)
-             * yields inf/inf = NaN; the idx clamp is on the int result,
-             * too late to stop (int)NaN UB. Clamp tv finite first. */
-            if (!isfinite(tv)) tv = 0.0;
+            double tv = fastchart_normalize_finite(v, vmin, vmax);
             int idx = (int)(tv * 255.0 + 0.5);
             if (idx < 0) idx = 0; else if (idx > 255) idx = 255;
             int color = color_lut[idx];
             int rgb = rgb_lut[idx];
-            int x0 = margin_x + x_idx * plot_w / cols;
-            int y0 = top + y_idx * plot_h / rows;
-            int x1 = margin_x + (x_idx + 1) * plot_w / cols - 1;
-            int y1 = top + (y_idx + 1) * plot_h / rows - 1;
+            int x0 = plot_x0 + x_idx * plot_w / cols;
+            int y0 = plot_y0 + y_idx * plot_h / rows;
+            int x1 = plot_x0 + (x_idx + 1) * plot_w / cols - 1;
+            int y1 = plot_y0 + (y_idx + 1) * plot_h / rows - 1;
             if (x1 < x0 || y1 < y0) continue;  /* grid denser than pixels */
             fastchart_target_rect(t, x0, y0, x1 - x0 + 1, y1 - y0 + 1, color, 1, 0);
             if (edge_handle >= 0) {
@@ -147,16 +144,16 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
     }
 
     /* Outer frame around the heatmap. */
-    int frame_x1 = margin_x + plot_w - 1;
-    int frame_y1 = top + plot_h - 1;
+    int frame_x1 = plot_x0 + plot_w - 1;
+    int frame_y1 = plot_y0 + plot_h - 1;
     if (self->border_sides & FASTCHART_BORDER_TOP)
-        fastchart_target_line(t, margin_x, top, frame_x1, top, pal.border, 1, FASTCHART_DASH_SOLID);
+        fastchart_target_line(t, plot_x0, plot_y0, frame_x1, plot_y0, pal.border, 1, FASTCHART_DASH_SOLID);
     if (self->border_sides & FASTCHART_BORDER_BOTTOM)
-        fastchart_target_line(t, margin_x, frame_y1, frame_x1, frame_y1, pal.border, 1, FASTCHART_DASH_SOLID);
+        fastchart_target_line(t, plot_x0, frame_y1, frame_x1, frame_y1, pal.border, 1, FASTCHART_DASH_SOLID);
     if (self->border_sides & FASTCHART_BORDER_LEFT)
-        fastchart_target_line(t, margin_x, top, margin_x, frame_y1, pal.border, 1, FASTCHART_DASH_SOLID);
+        fastchart_target_line(t, plot_x0, plot_y0, plot_x0, frame_y1, pal.border, 1, FASTCHART_DASH_SOLID);
     if (self->border_sides & FASTCHART_BORDER_RIGHT)
-        fastchart_target_line(t, frame_x1, top, frame_x1, frame_y1, pal.border, 1, FASTCHART_DASH_SOLID);
+        fastchart_target_line(t, frame_x1, plot_y0, frame_x1, frame_y1, pal.border, 1, FASTCHART_DASH_SOLID);
 
     /* Title. */
     fastchart_draw_floating_title(t, (fastchart_obj *)self, &pal, W / 2, 24);

@@ -86,6 +86,18 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
     int cy = (top + H) / 2;
     int radius = (W < H ? W : H) / 2 - 40;
     if (radius < 40) radius = 40;
+    int plot_x0 = cx - radius, plot_y0 = cy - radius;
+    int plot_x1 = cx + radius, plot_y1 = cy + radius;
+    bool forced_plot = fastchart_apply_plot_rect((fastchart_obj *)self,
+        &plot_x0, &plot_y0, &plot_x1, &plot_y1);
+    if (forced_plot) {
+        cx = (plot_x0 + plot_x1) / 2;
+        cy = (plot_y0 + plot_y1) / 2;
+        int plot_w = plot_x1 - plot_x0;
+        int plot_h = plot_y1 - plot_y0;
+        radius = (plot_w < plot_h ? plot_w : plot_h) / 2;
+        if (radius < 1) return 0;
+    }
 
     /* Concentric grid + radial spokes every 30°. */
     const int rings = 4;
@@ -307,7 +319,9 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
     fastchart_draw_floating_title(t, (fastchart_obj *)self, &pal, W / 2, 24);
 
     if (legend_count > 0) {
-        fastchart_rect plot = { 10, top, W - 10, H - 10 };
+        fastchart_rect plot = forced_plot
+            ? (fastchart_rect){ plot_x0, plot_y0, plot_x1, plot_y1 }
+            : (fastchart_rect){ 10, top, W - 10, H - 10 };
         fastchart_draw_legend(t, (fastchart_obj *)self, &plot, &pal,
                               legend_count, legend_colors, legend_labels);
     }

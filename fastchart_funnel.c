@@ -68,6 +68,8 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
     int x_right = W - side_pad;
     int y0 = top_pad;
     int y1 = H - 12;
+    fastchart_apply_plot_rect((fastchart_obj *)self,
+                              &x_left, &y0, &x_right, &y1);
     if (x_right <= x_left || y1 <= y0) {
         zend_value_error(
             "FastChart\\Funnel::draw() canvas is too narrow for label margins");

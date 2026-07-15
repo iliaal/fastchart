@@ -182,6 +182,9 @@ instead. Added 2026-05-15 in commit (this round).
 ### 7. Size limits on input SVG
 
 Hard cap at 16 MB SVG bytes to prevent DoS via plutosvg's parser.
+The parser also rejects documents above 65,536 elements, 262,144
+attributes, or 256 levels of nesting. These structural limits bound
+parser memory and recursion even when the input stays below 16 MB.
 Rejected with `\ValueError`.
 
 ## Implementation sketch
