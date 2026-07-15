@@ -2,6 +2,12 @@
 Atomic renderToFile replacement preserves modes and new files honor umask
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+if (PHP_OS_FAMILY === 'Windows') {
+	die('skip POSIX file modes are not available on Windows');
+}
+?>
 --FILE--
 <?php
 
