@@ -105,7 +105,7 @@ $pdfOk = true;
 try {
 	$pdfOk = str_starts_with($chart->renderPdf(), '%PDF');
 } catch (Error $e) {
-	$pdfOk = $e->getMessage() === 'PDF support not compiled in';
+	$pdfOk = str_contains($e->getMessage(), 'PDF support not compiled in');
 }
 $formats = str_starts_with($png, "\x89PNG")
 	&& str_starts_with($jpeg, "\xFF\xD8")
