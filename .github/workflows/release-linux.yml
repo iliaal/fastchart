@@ -1,10 +1,11 @@
 name: Release Linux & macOS binaries
 
-# Triggered when a GitHub Release is published. Builds .so binaries for
-# Linux glibc (x86_64 + arm64) and macOS arm64 at PHP 8.4 and 8.5 (NTS
-# only, ZTS lives in the Windows lane). Each matrix slot builds, verifies,
-# and packages its binary before a separate write-scoped job uploads the
-# release assets using PIE's pre-packaged-binary naming convention.
+# Release/manual runs build .so binaries for Linux glibc (x86_64 + arm64)
+# and macOS arm64 at PHP 8.4 and 8.5 (NTS only, ZTS lives in the Windows
+# lane). A path-filtered pull request run exercises one representative
+# Linux/PHP 8.4 static-codec build before the release exists. Release and
+# manual matrix slots package their binaries; only a release event uploads
+# them using PIE's pre-packaged-binary naming convention.
 #
 # Linux build statically links the four codec deps (freetype, libpng,
 # libjpeg-turbo, libwebp). Otherwise the resulting .so picks up the
@@ -45,6 +46,14 @@ name: Release Linux & macOS binaries
 # receives contents:write.
 
 on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/release-linux.yml'
+      - 'config.m4'
+      - 'fastchart*.c'
+      - 'fastchart*.h'
+      - 'vendor/**'
   release:
     types: [published]
   # workflow_dispatch lets a maintainer re-run the prebuilt build
@@ -79,13 +88,11 @@ jobs:
         # ubuntu-24.04 (x86_64), ubuntu-24.04-arm (arm64),
         # macos-14 (Apple Silicon arm64). Pinned over `*-latest` to
         # avoid silent runner shifts that would change the toolchain /
-        # glibc baseline on published release assets without a repo
-        # diff.
-        os:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
-          - macos-14
-        php: ['8.4', '8.5']
+        # glibc baseline on published release assets without a repo diff.
+        # Pull requests run only the representative x86_64/PHP 8.4 slot;
+        # release and manual events retain the full 3x2 matrix.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-14"]') }}
+        php: ${{ fromJSON(github.event_name == 'pull_request' && '["8.4"]' || '["8.4","8.5"]') }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -290,6 +297,7 @@ jobs:
           php -d extension="$SO" "$RUNNER_TEMP/release-smoke.php"
 
       - name: Package verified binary
+        if: github.event_name != 'pull_request'
         id: package
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
@@ -309,6 +317,7 @@ jobs:
           echo "package=$PACKAGE" >> "$GITHUB_OUTPUT"
 
       - name: Stage verified binary
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: prebuilt-${{ matrix.os }}-php${{ matrix.php }}

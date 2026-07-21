@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+shopt -s inherit_errexit
+
+readonly REAL_PKG_CONFIG="${FASTCHART_REAL_PKG_CONFIG:-/usr/bin/pkg-config}"
+
+main() {
+	local argument
+
+	if [[ ! -x "${REAL_PKG_CONFIG}" ]]; then
+		printf 'real pkg-config is not executable: %s\n' \
+			"${REAL_PKG_CONFIG}" >&2
+		exit 1
+	fi
+
+	for argument in "$@"; do
+		case "${argument}" in
+		libpng | libjpeg | libwebp)
+			exit 1
+			;;
+		*) ;;
+		esac
+	done
+
+	exec "${REAL_PKG_CONFIG}" "$@"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+	main "$@"
+fi

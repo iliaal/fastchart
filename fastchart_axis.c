@@ -14,6 +14,7 @@
 #include "config.h"
 #endif
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -371,10 +372,8 @@ void fastchart_begin_render(fastchart_obj *chart, fastchart_target_t *t)
      * first call after this point. Any per-draw shadow color handle is
      * recomputed against the current render target on first use.
      *
-     * Renderers that call fastchart_compute_layout get this for free
-     * (compute_layout calls us). Non-layout renderers (gauge, radar,
-     * polar, surface, contour) must call this directly at draw entry,
-     * before resolving any fonts or palette colors. */
+     * Chart dispatch calls this once before entering any concrete
+     * renderer, before font, palette, or background work. */
     chart->font_cache_valid = false;
     chart->shadow_color_valid = false;
 
@@ -389,10 +388,17 @@ bool fastchart_apply_plot_rect(const fastchart_obj *chart,
                                int *x0, int *y0, int *x1, int *y1)
 {
     if (!chart->has_plot_rect) return false;
-    *x0 = chart->plot_x0;
-    *y0 = chart->plot_y0;
-    *x1 = chart->plot_x1;
-    *y1 = chart->plot_y1;
+	int max_x = chart->width > 0 ? (int)chart->width - 1 : 0;
+	int max_y = chart->height > 0 ? (int)chart->height - 1 : 0;
+
+	*x0 = chart->plot_x0 < 0 ? 0
+		: (chart->plot_x0 > max_x ? max_x : chart->plot_x0);
+	*y0 = chart->plot_y0 < 0 ? 0
+		: (chart->plot_y0 > max_y ? max_y : chart->plot_y0);
+	*x1 = chart->plot_x1 < 0 ? 0
+		: (chart->plot_x1 > max_x ? max_x : chart->plot_x1);
+	*y1 = chart->plot_y1 < 0 ? 0
+		: (chart->plot_y1 > max_y ? max_y : chart->plot_y1);
     return true;
 }
 
@@ -402,20 +408,18 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
                               int n_cat_y_labels,
                               fastchart_rect *out_plot)
 {
-    fastchart_begin_render(chart, t);
-
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
 
     /* Hard plot rectangle bypass: when setPlotRect() was called,
      * skip auto-layout entirely and clamp to canvas bounds. */
     if (chart->has_plot_rect) {
-        out_plot->x0 = chart->plot_x0 < 0 ? 0 : chart->plot_x0;
-        out_plot->y0 = chart->plot_y0 < 0 ? 0 : chart->plot_y0;
-        out_plot->x1 = chart->plot_x1 > W - 1 ? W - 1 : chart->plot_x1;
-        out_plot->y1 = chart->plot_y1 > H - 1 ? H - 1 : chart->plot_y1;
-        if (out_plot->x1 < out_plot->x0 + 10) out_plot->x1 = out_plot->x0 + 10;
-        if (out_plot->y1 < out_plot->y0 + 10) out_plot->y1 = out_plot->y0 + 10;
+		out_plot->x0 = 0;
+		out_plot->y0 = 0;
+		out_plot->x1 = W - 1;
+		out_plot->y1 = H - 1;
+		fastchart_apply_plot_rect(chart, &out_plot->x0, &out_plot->y0,
+			&out_plot->x1, &out_plot->y1);
         return;
     }
 
@@ -619,6 +623,27 @@ void fastchart_render_cartesian_setup(fastchart_obj *chart,
     fastchart_draw_title(t, chart, out_plot, out_pal);
 }
 
+static void fastchart_value_range_compute_indexed(double dmin, double dmax,
+		int target_ticks, fastchart_value_range *out)
+{
+	double scale = fmax(fabs(dmin), fabs(dmax));
+	double scaled_span = dmax / scale - dmin / scale;
+	double step = scale * (scaled_span / (double)(target_ticks - 1));
+
+	if (!isfinite(step) || step <= 0.0) {
+		step = DBL_MAX;
+	}
+	out->min = dmin;
+	out->max = dmax;
+	out->tick_step = step;
+	out->log_scale = 0;
+	out->n_ticks = target_ticks;
+	for (int i = 0; i < target_ticks; i++) {
+		out->ticks[i] = fastchart_lerp_finite(dmin, dmax,
+			(double)i / (double)(target_ticks - 1));
+	}
+}
+
 void fastchart_value_range_compute(double dmin, double dmax,
                                    int target_ticks,
                                    fastchart_value_range *out)
@@ -631,21 +656,28 @@ void fastchart_value_range_compute(double dmin, double dmax,
     if (!isfinite(dmin) || !isfinite(dmax) || dmin > dmax) {
         dmin = 0.0;
         dmax = 1.0;
-    } else if (dmax - dmin < 1e-12) {
+    } else if (isfinite(dmax - dmin) && dmax - dmin < 1e-12) {
         if (fabs(dmin) < 1e-12) {
             dmax = 1.0;
         } else {
             double pad = fabs(dmin) * 0.1;
-            dmin -= pad;
-            dmax += pad;
+			double padded_min = dmin - pad;
+			double padded_max = dmax + pad;
+
+			if (isfinite(padded_min)) dmin = padded_min;
+			if (isfinite(padded_max)) dmax = padded_max;
         }
     }
 
+	if (!isfinite(dmax - dmin)) {
+		fastchart_value_range_compute_indexed(dmin, dmax, target_ticks, out);
+		return;
+	}
+
     /* Pick a "nice" tick step using the 1/2/5 × 10^N progression.
-     * Bail to a [0, 1] fallback if any intermediate goes non-finite —
-     * extreme but finite input magnitudes (e.g. dmax - dmin near
-     * DBL_MAX) can push log10 / pow / division through Inf and the
-     * later (int)cast in the renderer would be UB. */
+     * Extreme finite ranges can overflow the ordinary span or rounded
+     * endpoints; those use indexed interpolation so the literal data
+     * range is retained without feeding Inf into pixel mapping. */
     double range = dmax - dmin;
     double rough_step = range / (double)(target_ticks - 1);
     double mag = isfinite(rough_step) && rough_step > 0
@@ -661,7 +693,8 @@ void fastchart_value_range_compute(double dmin, double dmax,
     double nice_min = floor(dmin / step) * step;
     double nice_max = ceil(dmax / step) * step;
     if (!isfinite(nice_min) || !isfinite(nice_max) || !isfinite(step) || step <= 0) {
-        nice_min = 0.0; nice_max = 1.0; step = 1.0;
+		fastchart_value_range_compute_indexed(dmin, dmax, target_ticks, out);
+		return;
     }
 
     out->min = nice_min;
@@ -682,15 +715,20 @@ void fastchart_value_range_compute(double dmin, double dmax,
     }
 }
 
-void fastchart_value_range_apply_override(const fastchart_obj *chart,
-                                          fastchart_value_range *out)
+int fastchart_value_range_apply_override(const fastchart_obj *chart,
+                                         fastchart_value_range *out)
 {
-    if (!chart->has_y_min && !chart->has_y_max && !chart->has_y_interval) return;
-    if (out->log_scale) return;  /* log-scale ignores forced bounds */
+    if (!chart->has_y_min && !chart->has_y_max && !chart->has_y_interval)
+		return 0;
+    if (out->log_scale) return 0;  /* log-scale ignores forced bounds */
 
     double mn = chart->has_y_min ? chart->y_min : out->min;
     double mx = chart->has_y_max ? chart->y_max : out->max;
-    if (mx <= mn) return;  /* malformed override; leave the auto range */
+    if (mx <= mn) {
+		zend_value_error(
+			"FastChart\\Chart::setYAxisRange() resolved min must be < resolved max");
+		return -1;
+	}
 
     out->min = mn;
     out->max = mx;
@@ -702,7 +740,12 @@ void fastchart_value_range_apply_override(const fastchart_obj *chart,
          * bottom slice of the plot and leaving the rest blank. Stride
          * the interval by the smallest integer multiple that fits so
          * ticks stay on user-requested values and span the range. */
-        double span = mx - mn;
+		double span = mx - mn;
+		if (!isfinite(span)) {
+			fastchart_value_range_compute_indexed(mn, mx,
+				FASTCHART_MAX_TICKS, out);
+			return 0;
+		}
         double k = ceil(span / (step * (double)(FASTCHART_MAX_TICKS - 1)));
         if (k > 1.0 && isfinite(k)) step *= k;
         out->tick_step = step;
@@ -743,6 +786,7 @@ void fastchart_value_range_apply_override(const fastchart_obj *chart,
         out->min = mn;
         out->max = mx;
     }
+	return 0;
 }
 
 int fastchart_value_range_compute_log(double dmin, double dmax,
@@ -809,14 +853,10 @@ int fastchart_y_to_pixel(double y,
         if (l_span < 1e-12) return plot->y1;
         frac = (log10(y) - range->log_min) / l_span;
     } else {
-        double span = range->max - range->min;
-        if (span < 1e-12) return plot->y1;
-        frac = (y - range->min) / span;
+		frac = fastchart_normalize_finite(y, range->min, range->max);
     }
-    /* A forced range whose span overflows to +Inf (setYAxisRange with
-     * near-DBL_MAX bounds) makes frac Inf/Inf = NaN, which passes both
-     * clamps below (every NaN compare is false) and reaches (int)NaN — UB.
-     * Reject it explicitly, mirroring fastchart_frac_to_px. */
+    /* Keep the cast guarded even though the finite linear normalizer and
+     * log path are expected to produce a finite fraction. */
     if (!isfinite(frac)) return plot->y1;
     if (frac < 0) frac = 0;
     if (frac > 1) frac = 1;
@@ -837,11 +877,9 @@ int fastchart_x_to_pixel(double x,
         if (l_span < 1e-12) return plot->x0;
         frac = (log10(x) - range->log_min) / l_span;
     } else {
-        double span = range->max - range->min;
-        if (span < 1e-12) return plot->x0;
-        frac = (x - range->min) / span;
+		frac = fastchart_normalize_finite(x, range->min, range->max);
     }
-    /* See fastchart_y_to_pixel: an overflowed span makes frac NaN. */
+    /* See fastchart_y_to_pixel: keep the float-to-int cast guarded. */
     if (!isfinite(frac)) return plot->x0;
     if (frac < 0) frac = 0;
     if (frac > 1) frac = 1;
@@ -907,15 +945,17 @@ int fastchart_y_categorical_center(const fastchart_rect *plot, int idx, int n)
     return plot->y0 + (int)(step * (idx + 0.5));
 }
 
-/* Source-image emission via SVG <image href="data:...;base64,...">.
+/* Source-image emission via one SVG image definition per path plus
+ * transformed <use> placements.
  *
  * setBackgroundImage() and addIconAt() store the file path; at draw
- * time the target loads the file once through the PHP stream layer
+ * time the target loads each distinct file once through the PHP stream layer
  * (which enforces open_basedir natively — no TOCTOU between a
- * pre-check and the actual open) and base64-encodes it into an
- * <image> element. The byte and dimension caps are enforced on the
- * loaded buffer inside fastchart_target_load_source_image. PNG and
- * JPEG only — plutosvg's data-URI loader handles those two. */
+ * pre-check and the actual open). After the definition is emitted,
+ * only its status, dimensions, MIME, and id remain cached; raw and
+ * base64 bytes are released. The target loader enforces byte and
+ * dimension caps. PNG and JPEG only — plutosvg's data-URI loader
+ * handles those two. */
 
 static int composite_bg_image(fastchart_target_t *t, int W, int H,
                               const char *path)
@@ -930,13 +970,8 @@ void fastchart_blit_icon(fastchart_target_t *t, const fastchart_icon *icon,
 {
     if (!icon || !icon->path || !*icon->path) return;
 
-    /* Single source-image load — opens through the PHP stream layer
-     * with open_basedir enforced, caps bytes / dimensions, and sniffs
-     * MIME + width/height from the loaded buffer. */
-    fastchart_image_buf_t buf;
-    if (fastchart_target_load_source_image(icon->path, &buf) != 0) return;
-    int sw = buf.width;
-    int sh = buf.height;
+    int sw, sh;
+    if (fastchart_target_image_dims(t, icon->path, &sw, &sh) != 0) return;
 
     int max_w = icon->max_w > 0 ? icon->max_w : sw;
     int max_h = icon->max_h > 0 ? icon->max_h : sh;
@@ -957,8 +992,7 @@ void fastchart_blit_icon(fastchart_target_t *t, const fastchart_icon *icon,
     /* Center on (px, py). */
     int x = px - dw / 2;
     int y = py - dh / 2;
-    fastchart_target_image_emit(t, x, y, dw, dh, &buf);
-    fastchart_target_image_release(&buf);
+    fastchart_target_image(t, x, y, dw, dh, icon->path);
 }
 
 /* Translate libgd's 0..127 (0=opaque, 127=transparent) per-band alpha

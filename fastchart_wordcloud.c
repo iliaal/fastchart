@@ -36,10 +36,13 @@
 
 typedef struct { double x0, y0, x1, y1; } wc_box;
 
+typedef struct {
+	double dx;
+	double dy;
+} wc_spiral_point;
+
 int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchart_target_t *t)
 {
-    fastchart_begin_render((fastchart_obj *)self, t);
-
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
@@ -109,6 +112,9 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
     wc_box *placed = ecalloc(n, sizeof(*placed));
     int placed_n = 0;
     long spiral_budget = 2000000L;
+	wc_spiral_point *spiral = NULL;
+	int spiral_n = 0;
+	int spiral_cap = 0;
 
     /* Uniform bucket grid over the canvas: collision candidates come
      * from the cells a box overlaps instead of the whole placed list,
@@ -153,11 +159,24 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
         double bx = cx, by = cy;
         int ok = 0;
         for (long s = 0; s < 60000 && !ok && spiral_budget > 0; s++, spiral_budget--) {
-            double tt = (double)s;
-            double ang = tt * 2.39996322972865332;
-            double rad = 1.5 * sqrt(tt);
-            bx = cx + rad * cos(ang);
-            by = cy + rad * sin(ang);
+			if (s == spiral_n) {
+				if (spiral_n >= spiral_cap) {
+					int new_cap = spiral_cap > 0 ? spiral_cap * 2 : 1024;
+					if (new_cap > 60000) new_cap = 60000;
+					spiral = spiral
+						? erealloc(spiral, (size_t)new_cap * sizeof(*spiral))
+						: emalloc((size_t)new_cap * sizeof(*spiral));
+					spiral_cap = new_cap;
+				}
+				double tt = (double)s;
+				double ang = tt * 2.39996322972865332;
+				double rad = 1.5 * sqrt(tt);
+				spiral[s].dx = rad * cos(ang);
+				spiral[s].dy = rad * sin(ang);
+				spiral_n++;
+			}
+			bx = cx + spiral[s].dx;
+			by = cy + spiral[s].dy;
             wc_box cand = { bx - hw, by - hh, bx + hw, by + hh };
             if (cand.x0 < plot_x0 || cand.x1 > plot_x1 ||
                 cand.y0 < plot_y0 || cand.y1 > plot_y1) {
@@ -252,6 +271,7 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
     efree(cell_head);
     efree(node_box);
     efree(node_next);
+	if (spiral) efree(spiral);
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
 }

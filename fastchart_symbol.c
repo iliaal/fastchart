@@ -221,10 +221,11 @@ static void fastchart_symbol_logical_dims(fastchart_symbol_obj *self,
     *out_h = h;
 }
 
-static int dispatch_symbol_svg_render(fastchart_symbol_obj *self,
-                                       zend_class_entry *ce,
-                                       fastchart_target_t *t)
+static int dispatch_symbol_svg_render(void *object, zend_class_entry *ce,
+		struct fastchart_target *target)
 {
+	fastchart_symbol_obj *self = object;
+	fastchart_target_t *t = target;
     if (ce == fastchart_code128_ce)
         return fastchart_code128_render_to_target((fastchart_code128_obj *)self, t);
     if (ce == fastchart_qrcode_ce)
@@ -255,11 +256,9 @@ static int dispatch_symbol_svg_render(fastchart_symbol_obj *self,
  * ignores it; JPEG falls back to self->jpeg_quality if 0; WebP falls
  * back to 90 if 0.
  */
-static int fastchart_symbol_render_to_buf(fastchart_symbol_obj *self,
-                                          zend_class_entry *ce,
-                                          int format, int quality,
-                                          const char *where,
-                                          smart_str *enc_buf_out)
+static int fastchart_symbol_render_to_sink(fastchart_symbol_obj *self,
+		zend_class_entry *ce, int format, int quality, const char *where,
+		fastchart_sink_t *sink)
 {
     if (!self->data || ZSTR_LEN(self->data) == 0) {
         zend_throw_error(NULL,
@@ -291,21 +290,11 @@ static int fastchart_symbol_render_to_buf(fastchart_symbol_obj *self,
     }
 
     smart_str svg_buf = {0};
-    fc_svg_emit_doc_open(&svg_buf, (int)lw, (int)lh);
-    fc_svg_emit_g_open(&svg_buf, "fastchart-symbol");
-
-    fastchart_target_t t;
-    fastchart_target_from_svg(&t, &svg_buf, (int)lw, (int)lh,
-                               (int)self->dpi, FASTCHART_SVG_TEXT_PATHS);
-
-    if (dispatch_symbol_svg_render(self, ce, &t) != 0 || EG(exception)) {
-        fastchart_target_release(&t);
-        smart_str_free(&svg_buf);
+    if (fastchart_build_svg(&svg_buf, (int)lw, (int)lh, (int)self->dpi,
+			FASTCHART_SVG_TEXT_PATHS, 0, "fastchart-symbol", NULL,
+			dispatch_symbol_svg_render, self, ce) != 0) {
         return -1;
     }
-    fc_svg_emit_g_close(&svg_buf);
-    fc_svg_emit_doc_close(&svg_buf);
-    smart_str_0(&svg_buf);
 
     fastchart_pixels_t pix;
     fastchart_pixels_init(&pix, alloc_w, alloc_h);
@@ -313,37 +302,53 @@ static int fastchart_symbol_render_to_buf(fastchart_symbol_obj *self,
     if (fastchart_rasterize_svg(
             ZSTR_VAL(svg_buf.s), ZSTR_LEN(svg_buf.s),
             alloc_w, alloc_h, &pix) != 0) {
-        fastchart_target_release(&t);
-        smart_str_free(&svg_buf);
-        zend_throw_error(NULL, "FastChart\\Symbol: plutovg rasterization failed");
-        return -1;
+		smart_str_free(&svg_buf);
+		zend_throw_error(NULL, "FastChart\\Symbol: plutovg rasterization failed");
+		return -1;
     }
     zend_string_release(svg_buf.s);
-    fastchart_target_release(&t);
 
-    int rc = -1;
-    switch (format) {
-    case 0:
-        rc = fastchart_encode_png(enc_buf_out, &pix);
-        break;
-    case 1:
-        rc = fastchart_encode_jpeg(enc_buf_out, &pix,
-            (quality > 0) ? quality : (int)self->jpeg_quality,
-            (int)self->bg_rgb);
-        break;
-    case 2:
-        rc = fastchart_encode_webp(enc_buf_out, &pix,
-            (quality > 0) ? quality : 90, (int)self->webp_mode);
-        break;
-    }
-    fastchart_pixels_release(&pix);
-    if (rc != 0 || !enc_buf_out->s) {
-        smart_str_free(enc_buf_out);
-        zend_throw_error(NULL, "FastChart\\Symbol: encoder produced no output");
-        return -1;
-    }
-    smart_str_0(enc_buf_out);
-    return 0;
+	volatile int rc = -1;
+	zend_try {
+		switch (format) {
+		case 0:
+			rc = fastchart_encode_png_sink(sink, &pix);
+			break;
+		case 1:
+			rc = fastchart_encode_jpeg_sink(sink, &pix,
+				(quality > 0) ? quality : (int)self->jpeg_quality,
+				(int)self->bg_rgb);
+			break;
+		case 2:
+			rc = fastchart_encode_webp_sink(sink, &pix,
+				(quality > 0) ? quality : 90, (int)self->webp_mode);
+			break;
+		}
+	} zend_catch {
+		fastchart_pixels_release(&pix);
+		zend_bailout();
+	} zend_end_try();
+	fastchart_pixels_release(&pix);
+	if (rc != 0 || sink->failed || sink->bytes_written == 0) {
+		zend_throw_error(NULL, "FastChart\\Symbol: encoder produced no output");
+		return -1;
+	}
+	return 0;
+}
+
+static int fastchart_symbol_render_to_buf(fastchart_symbol_obj *self,
+		zend_class_entry *ce, int format, int quality, const char *where,
+		smart_str *enc_buf_out)
+{
+	fastchart_sink_t sink;
+	fastchart_sink_init_smart_str(&sink, enc_buf_out);
+	if (fastchart_symbol_render_to_sink(self, ce, format, quality, where,
+			&sink) != 0) {
+		smart_str_free(enc_buf_out);
+		return -1;
+	}
+	smart_str_0(enc_buf_out);
+	return 0;
 }
 
 static void fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAMETERS,
@@ -388,35 +393,10 @@ static void fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAMETERS,
     }
 
     smart_str buf = {0};
-    if (!fragment_only) {
-        fc_svg_emit_doc_open(&buf, (int)lw, (int)lh);
-    }
-    fc_svg_emit_g_open(&buf, "fastchart-symbol");
-
-    fastchart_target_t t;
-    fastchart_target_from_svg(&t, &buf, (int)lw, (int)lh, (int)self->dpi,
-                               (int)self->svg_text_mode);
-    if (id_prefix && ZSTR_LEN(id_prefix) > 0) {
-        memcpy(t.u.svg.id_ns, ZSTR_VAL(id_prefix), ZSTR_LEN(id_prefix));
-        t.u.svg.id_ns[ZSTR_LEN(id_prefix)] = '\0';
-    }
-
-    if (dispatch_symbol_svg_render(self, ce, &t) != 0 || EG(exception)) {
-        fastchart_target_release(&t);
-        smart_str_free(&buf);
-        RETURN_THROWS();
-    }
-
-    fc_svg_emit_g_close(&buf);
-    if (!fragment_only) {
-        fc_svg_emit_doc_close(&buf);
-    }
-    smart_str_0(&buf);
-    fastchart_target_release(&t);
-
-    if (!buf.s) {
-        zend_throw_error(NULL, "FastChart: SVG renderer produced no output");
-        RETURN_THROWS();
+    if (fastchart_build_svg(&buf, (int)lw, (int)lh, (int)self->dpi,
+			(int)self->svg_text_mode, fragment_only, "fastchart-symbol",
+			id_prefix, dispatch_symbol_svg_render, self, ce) != 0) {
+		RETURN_THROWS();
     }
     RETURN_STR(buf.s);
 }
@@ -446,26 +426,10 @@ static void fastchart_symbol_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS,
     }
 
     smart_str buf = {0};
-    fc_svg_emit_doc_open(&buf, (int)lw, (int)lh);
-    fc_svg_emit_g_open(&buf, "fastchart-symbol");
-
-    fastchart_target_t t;
-    fastchart_target_from_svg(&t, &buf, (int)lw, (int)lh, (int)self->dpi,
-                               (int)self->svg_text_mode);
-
-    if (dispatch_symbol_svg_render(self, ce, &t) != 0 || EG(exception)) {
-        fastchart_target_release(&t);
-        smart_str_free(&buf);
-        RETURN_THROWS();
-    }
-    fc_svg_emit_g_close(&buf);
-    fc_svg_emit_doc_close(&buf);
-    smart_str_0(&buf);
-    fastchart_target_release(&t);
-
-    if (!buf.s) {
-        zend_throw_error(NULL, "FastChart: SVG renderer produced no output");
-        RETURN_THROWS();
+    if (fastchart_build_svg(&buf, (int)lw, (int)lh, (int)self->dpi,
+			(int)self->svg_text_mode, 0, "fastchart-symbol", NULL,
+			dispatch_symbol_svg_render, self, ce) != 0) {
+		RETURN_THROWS();
     }
 
     zend_long written = 0;
@@ -809,25 +773,33 @@ ZEND_METHOD(FastChart_Symbol, renderToFile)
         RETURN_THROWS();
     }
 
-    fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
-    zend_class_entry *ce = Z_OBJCE_P(ZEND_THIS);
-
-    smart_str enc_buf = {0};
-    if (fastchart_symbol_render_to_buf(self, ce, format, (int)quality,
-                                       "FastChart\\Symbol::renderToFile()",
-                                       &enc_buf) != 0) {
-        RETURN_THROWS();
-    }
-
-    zend_long written = 0;
-    if (fastchart_write_zstr_to_file(path, enc_buf.s,
-                                     "FastChart\\Symbol::renderToFile()",
-                                     &written) != 0) {
-        zend_string_release(enc_buf.s);
-        RETURN_THROWS();
-    }
-    zend_string_release(enc_buf.s);
-    RETURN_LONG(written);
+	fastchart_atomic_file_t file;
+	if (fastchart_atomic_file_open(&file, path,
+			"FastChart\\Symbol::renderToFile()") != 0) {
+		RETURN_THROWS();
+	}
+	fastchart_sink_t sink;
+	fastchart_sink_init_stream(&sink, file.stream);
+	fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
+	zend_class_entry *ce = Z_OBJCE_P(ZEND_THIS);
+	volatile int rc = -1;
+	zend_try {
+		rc = fastchart_symbol_render_to_sink(self, ce, format, (int)quality,
+			"FastChart\\Symbol::renderToFile()", &sink);
+	} zend_catch {
+		fastchart_atomic_file_abort(&file);
+		zend_bailout();
+	} zend_end_try();
+	if (rc != 0) {
+		fastchart_atomic_file_abort(&file);
+		RETURN_THROWS();
+	}
+	zend_long written = 0;
+	if (fastchart_atomic_file_commit(&file, sink.bytes_written,
+			&written) != 0) {
+		RETURN_THROWS();
+	}
+	RETURN_LONG(written);
 }
 
 /* ---------------- Code128 setters --------------------------------- */

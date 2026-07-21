@@ -107,11 +107,6 @@ int fastchart_contour_render_to_target(fastchart_contour_obj *self, fastchart_ta
         }
     }
 
-    /* Per-render entry: invalidate the font cache (so a runtime
-     * open_basedir narrowing between draws is honored) and stamp DPI
-     * on the canvas. Must come BEFORE any palette / text work. */
-    fastchart_begin_render((fastchart_obj *)self, t);
-
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);

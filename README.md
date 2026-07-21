@@ -145,11 +145,9 @@ $chart->setWebpMode(FastChart\Chart::WEBP_DRAWING);   // back to default
 
 Raster memory: the physical canvas (`setSize()` × `setDpi()/96`) is
 capped at 16384 px per dimension and 64M pixels total. Peak raster
-memory is roughly two RGBA frame buffers — a working buffer counted
-against PHP's `memory_limit`, plus the rasterizer's own surface,
-which is `malloc`-backed and **not** visible to `memory_limit` —
-plus encoder workspace. At the 64M-pixel cap that is ~512 MiB+.
-`memory_limit` alone will not bound the render; use the
+memory is one RGBA frame counted against PHP's `memory_limit`, plus
+encoder workspace. At the 64M-pixel cap the frame is ~256 MiB.
+Use the
 `fastchart.max_render_pixels` INI (`PHP_INI_SYSTEM`, default
 67108864) to enforce a lower per-render pixel ceiling process-wide —
 renders above it throw `ValueError` before any frame buffer is

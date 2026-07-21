@@ -193,79 +193,89 @@ static void fc_unpremul_row_scalar(const unsigned char *src,
 }
 
 /* Render an already-loaded plutosvg document into pix. Owns the
- * surface (destroys it); does NOT own the document. Returns 0 on
- * success, -1 on rasterize failure.
+ * canvas and wrapper surface; does NOT own the document or pixel
+ * buffer. Returns 0 on success, -1 on rasterize failure.
  *
  * pix->rgba MUST be pre-allocated by the caller with capacity
  * target_w * target_h * 4 BEFORE any vendor (malloc'd) state is
- * created: a request-memory allocation inside this window would let a
- * memory_limit bailout longjmp past the vendor destroys and leak the
- * surface (up to 256 MB) persistently — malloc memory the Zend
- * allocator never counts or reclaims. This function performs no Zend
+ * created. The wrapper and canvas are malloc-backed and explicitly
+ * released from the bailout path. This function performs no Zend
  * allocation. */
 static int fastchart_rasterize_doc(plutosvg_document_t *doc,
                                     int target_w, int target_h,
                                     fastchart_pixels_t *pix)
 {
-	plutovg_surface_t *surf =
-	    plutosvg_document_render_to_surface(doc, NULL, target_w, target_h,
-	                                        NULL, NULL, NULL);
-	if (!surf) return -1;
+	plutovg_surface_t * volatile surf = NULL;
+	plutovg_canvas_t * volatile canvas = NULL;
+	volatile int rc = -1;
+	float doc_w = plutosvg_document_get_width(doc);
+	float doc_h = plutosvg_document_get_height(doc);
 
-	pix->w = target_w;
-	pix->h = target_h;
-	pix->has_alpha = 1;
-
-	int sw = plutovg_surface_get_width(surf);
-	int sh = plutovg_surface_get_height(surf);
-	if (sw != target_w || sh != target_h) {
-		/* Defensive: plutosvg renders at the requested size, but the
-		 * caller's buffer is sized target_w * target_h — reject rather
-		 * than overrun if that invariant ever breaks. */
-		if ((size_t)sw * (size_t)sh > (size_t)target_w * (size_t)target_h) {
-			plutovg_surface_destroy(surf);
-			return -1;
-		}
-		pix->w = sw;
-		pix->h = sh;
+	if (!isfinite(doc_w) || !isfinite(doc_h) || doc_w <= 0 || doc_h <= 0) {
+		return -1;
 	}
 
-	const unsigned char *src = plutovg_surface_get_data(surf);
-	int                  stride = plutovg_surface_get_stride(surf);
+	memset(pix->rgba, 0, (size_t)target_w * (size_t)target_h * 4);
+	zend_try {
+		surf = plutovg_surface_create_for_data(pix->rgba, target_w,
+		                                       target_h, target_w * 4);
+		if (surf) {
+			canvas = plutovg_canvas_create((plutovg_surface_t *)surf);
+		}
+		if (canvas) {
+			plutovg_canvas_scale((plutovg_canvas_t *)canvas,
+			                     target_w / doc_w, target_h / doc_h);
+			if (plutosvg_document_render(doc, NULL,
+			        (plutovg_canvas_t *)canvas, NULL, NULL, NULL)) {
+				pix->w = target_w;
+				pix->h = target_h;
+				pix->has_alpha = 1;
 
-		if (!fc_inv_alpha_ready) fc_init_inv_alpha();
+				if (!fc_inv_alpha_ready) fc_init_inv_alpha();
 
-	/* Two-stage un-premultiply:
-	 *   - opaque-row SIMD shuffle for runs of all-FF alpha (fastchart's
-	 *     usual case — chart backgrounds and bar fills are opaque)
-	 *   - scalar+LUT for translucent pixels and the row remainder
-	 *
-	 * The any_translucent flag tracks whether any pixel needed the
-	 * un-premultiply path. If the whole surface is opaque, the encoders
-	 * skip alpha entirely (see pix->has_alpha = 0 below) — smaller PNG
-	 * files, faster JPEG/WebP encode, no alpha plane in WebP. */
-	int any_translucent = 0;
+				/* Two-stage un-premultiply:
+				 *   - opaque-row SIMD shuffle for runs of all-FF alpha
+				 *   - scalar+LUT for translucent pixels and row tails */
+				int any_translucent = 0;
 #ifdef FC_HAVE_X86_SIMD
-	int use_ssse3 = fc_cpu_has_ssse3();
+				int use_ssse3 = fc_cpu_has_ssse3();
 #endif
-	for (int y = 0; y < pix->h; y++) {
-		const unsigned char *row = src + y * stride;
-		unsigned char       *dst = pix->rgba + (size_t)y * pix->w * 4;
-		int x = 0;
+				for (int y = 0; y < pix->h; y++) {
+					const unsigned char *row =
+					    pix->rgba + (size_t)y * pix->w * 4;
+					unsigned char *dst =
+					    pix->rgba + (size_t)y * pix->w * 4;
+					int x = 0;
 #ifdef FC_HAVE_ARM_NEON
-		x = fc_unpremul_row_neon(row, dst, pix->w, &any_translucent);
+					x = fc_unpremul_row_neon(row, dst, pix->w,
+					                           &any_translucent);
 #elif defined(FC_HAVE_X86_SIMD)
-		if (use_ssse3) {
-			x = fc_unpremul_row_ssse3(row, dst, pix->w, &any_translucent);
-		}
+					if (use_ssse3) {
+						x = fc_unpremul_row_ssse3(row, dst, pix->w,
+						                           &any_translucent);
+					}
 #endif
-		fc_unpremul_row_scalar(row, dst, x, pix->w, &any_translucent);
-	}
-
-	pix->has_alpha = any_translucent ? 1 : 0;
-
-	plutovg_surface_destroy(surf);
-	return 0;
+					fc_unpremul_row_scalar(row, dst, x, pix->w,
+					                         &any_translucent);
+				}
+				pix->has_alpha = any_translucent ? 1 : 0;
+				rc = 0;
+			}
+		}
+		if (canvas) {
+			plutovg_canvas_destroy((plutovg_canvas_t *)canvas);
+			canvas = NULL;
+		}
+		if (surf) {
+			plutovg_surface_destroy((plutovg_surface_t *)surf);
+			surf = NULL;
+		}
+	} zend_catch {
+		if (canvas) plutovg_canvas_destroy((plutovg_canvas_t *)canvas);
+		if (surf) plutovg_surface_destroy((plutovg_surface_t *)surf);
+		zend_bailout();
+	} zend_end_try();
+	return (int)rc;
 }
 
 int fastchart_rasterize_svg(const char *svg, size_t svg_len,
@@ -292,7 +302,17 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
 		return -1;
 	}
 
-	int rc = fastchart_rasterize_doc(doc, target_w, target_h, pix);
+	int rc;
+	zend_try {
+		rc = fastchart_rasterize_doc(doc, target_w, target_h, pix);
+	} zend_catch {
+		plutosvg_document_destroy(doc);
+		if (pix->rgba) {
+			efree(pix->rgba);
+			pix->rgba = NULL;
+		}
+		zend_bailout();
+	} zend_end_try();
 	plutosvg_document_destroy(doc);
 	if (rc != 0) {
 		efree(pix->rgba);
@@ -359,6 +379,10 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 		rc = fastchart_rasterize_doc(doc, iw, ih, pix);
 	} zend_catch {
 		plutosvg_document_destroy(doc);
+		if (pix->rgba) {
+			efree(pix->rgba);
+			pix->rgba = NULL;
+		}
 		zend_bailout();
 	} zend_end_try();
 	plutosvg_document_destroy(doc);

@@ -41,8 +41,6 @@ static int violin_dcmp(const void *a, const void *b)
 
 int fastchart_violin_render_to_target(fastchart_violin_obj *self, fastchart_target_t *t)
 {
-    fastchart_begin_render((fastchart_obj *)self, t);
-
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);

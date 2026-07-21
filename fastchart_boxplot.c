@@ -65,7 +65,10 @@ int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_ta
     } else {
         fastchart_value_range_compute(dmin, dmax, 6, &range);
     }
-    fastchart_value_range_apply_override((fastchart_obj *)self, &range);
+	if (fastchart_value_range_apply_override((fastchart_obj *)self,
+			&range) != 0) {
+		return -1;
+	}
 
     fastchart_rect plot;
     fastchart_palette pal;

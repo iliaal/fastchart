@@ -54,7 +54,11 @@ plutovg_surface_t* plutovg_surface_create(int width, int height)
 
 plutovg_surface_t* plutovg_surface_create_for_data(unsigned char* data, int width, int height, int stride)
 {
+    if(data == NULL || width <= 0 || height <= 0 || stride <= 0 || width > stride / 4)
+        return NULL;
     plutovg_surface_t* surface = malloc(sizeof(plutovg_surface_t));
+    if(surface == NULL)
+        return NULL;
     plutovg_init_reference(surface);
     surface->width = width;
     surface->height = height;

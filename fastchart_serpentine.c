@@ -33,8 +33,6 @@
 
 int fastchart_serpentine_render_to_target(fastchart_serpentine_obj *self, fastchart_target_t *t)
 {
-    fastchart_begin_render((fastchart_obj *)self, t);
-
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
@@ -67,14 +65,10 @@ int fastchart_serpentine_render_to_target(fastchart_serpentine_obj *self, fastch
     int plot_y0 = top_pad + 12, plot_y1 = H - 16;
     /* Honor setPlotRect so the timeline can be composited into a sub-region
      * of a shared canvas instead of always spanning the full image. */
-    if (((fastchart_obj *)self)->has_plot_rect) {
-        plot_x0 = ((fastchart_obj *)self)->plot_x0;
-        plot_y0 = ((fastchart_obj *)self)->plot_y0;
-        plot_x1 = ((fastchart_obj *)self)->plot_x1;
-        plot_y1 = ((fastchart_obj *)self)->plot_y1;
-    }
-    double plot_w = plot_x1 - plot_x0;
-    double plot_h = plot_y1 - plot_y0;
+	fastchart_apply_plot_rect((fastchart_obj *)self, &plot_x0, &plot_y0,
+		&plot_x1, &plot_y1);
+    double plot_w = plot_x1 - plot_x0 + 1;
+    double plot_h = plot_y1 - plot_y0 + 1;
     if (plot_w < 20 || plot_h < 20) return 0;
 
     int per_row = (int)self->per_row;

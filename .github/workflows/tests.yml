@@ -85,6 +85,57 @@ jobs:
           php /tmp/pie.phar repository:add path .
           php /tmp/pie.phar build iliaal/fastchart:*@dev --enable-fastchart
 
+  missing-codecs:
+    name: PHP 8.4 - optional codecs unavailable
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: phpize, php-config
+          coverage: none
+      - name: Install mandatory build dependency
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libfreetype-dev pkg-config
+      - name: Build without optional codecs
+        run: |
+          set -o pipefail
+          chmod +x scripts/ci-pkg-config-without-codecs
+          mkdir -p "$RUNNER_TEMP/fastchart-no-codecs-bin"
+          ln -s "$PWD/scripts/ci-pkg-config-without-codecs" \
+            "$RUNNER_TEMP/fastchart-no-codecs-bin/pkg-config"
+          export PATH="$RUNNER_TEMP/fastchart-no-codecs-bin:$PATH"
+          phpize
+          ./configure --enable-fastchart --enable-fastchart-dev \
+            2>&1 | tee "$RUNNER_TEMP/configure-no-codecs.log"
+          for library in libpng libjpeg libwebp; do
+            if ! grep -Fq "$library not found" \
+                "$RUNNER_TEMP/configure-no-codecs.log"; then
+              echo "::error::$library was not disabled by the pkg-config shim"
+              exit 1
+            fi
+          done
+          if grep -Eq '^#define HAVE_LIB(PNG|JPEG|WEBP) 1' config.h; then
+            echo "::error::an optional codec define is present in config.h"
+            grep -E '^#define HAVE_LIB(PNG|JPEG|WEBP) 1' config.h
+            exit 1
+          fi
+          make -j"$(nproc)"
+      - name: Verify SVG-only runtime and exact codec errors
+        run: |
+          SO="$PWD/modules/fastchart.so"
+          test -f "$SO"
+          if readelf -d "$SO" | grep NEEDED | \
+              grep -qiE 'libpng|libjpeg|libwebp'; then
+            echo "::error::missing-codec build directly links an optional codec"
+            exit 1
+          fi
+          php -n -d extension="$SO" scripts/ci-missing-codecs.php
+
   musl-smoke:
     name: musl load smoke (Alpine + clang)
     runs-on: ubuntu-latest

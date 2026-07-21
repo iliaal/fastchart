@@ -30,8 +30,6 @@
 
 int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_target_t *t)
 {
-    fastchart_begin_render((fastchart_obj *)self, t);
-
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);

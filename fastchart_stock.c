@@ -204,7 +204,10 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
         }
     } else {
         fastchart_value_range_compute(y_min, y_max, 6, &yrange);
-        fastchart_value_range_apply_override((fastchart_obj *)self, &yrange);
+		if (fastchart_value_range_apply_override((fastchart_obj *)self,
+				&yrange) != 0) {
+			return -1;
+		}
     }
 
     fastchart_palette pal;
@@ -751,8 +754,8 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
             for (int s = 0; s < 3; s++) {
                 if (!all_series[s]) continue;
                 for (int i = 0; i < upto; i++) {
-                    double d = all_series[s][i];
-                    if (isnan(d)) continue;
+					double d = all_series[s][i];
+					if (!isfinite(d)) continue;
                     if (!valid) { pmin = pmax = d; valid = 1; }
                     else { if (d < pmin) pmin = d; if (d > pmax) pmax = d; }
                 }

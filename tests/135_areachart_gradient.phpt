@@ -21,7 +21,7 @@ $svg1 = (new FastChart\AreaChart(200, 120))
 echo "non_stacked_gradient: ",
     (strpos($svg1, '<linearGradient') !== false ? "yes" : "no"), "\n";
 
-/* Stacked — both layers should pick up the gradient. */
+/* Stacked — both layers share one identical gradient definition. */
 $svg2 = (new FastChart\AreaChart(200, 120))
     ->setSeries([
         ['data' => [1, 3, 2, 5, 4]],
@@ -44,6 +44,6 @@ echo "ok\n";
 ?>
 --EXPECT--
 non_stacked_gradient: yes
-stacked_gradient_count: 2
+stacked_gradient_count: 1
 no_setter_gradient: no
 ok

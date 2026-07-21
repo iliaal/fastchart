@@ -244,6 +244,10 @@ typedef struct element {
     struct element* first_child;
     struct element* next_sibling;
     struct attribute* attributes;
+    /* LOCAL-PATCH (fastchart repeated images): an <image> referenced by
+     * many <use> nodes decodes its data URI once for the document. */
+    plutovg_surface_t* image;
+    bool image_loaded;
 } element_t;
 
 typedef struct heap_chunk {
@@ -1172,10 +1176,24 @@ static plutosvg_document_t* plutosvg_document_create(float width, float height, 
     return document;
 }
 
+static void element_destroy_images(element_t* element)
+{
+    if(element == NULL)
+        return;
+    element_t* child = element->first_child;
+    while(child) {
+        element_destroy_images(child);
+        child = child->next_sibling;
+    }
+    if(element->image)
+        plutovg_surface_destroy(element->image);
+}
+
 void plutosvg_document_destroy(plutosvg_document_t* document)
 {
     if(document == NULL)
         return;
+    element_destroy_images(document->root_element);
     plutovg_path_destroy(document->path);
     hashmap_destroy(document->id_cache);
     heap_destroy(document->heap);
@@ -1421,6 +1439,8 @@ plutosvg_document_t* plutosvg_document_load_from_data(const char* data, int leng
                 element->first_child = NULL;
                 element->last_child = NULL;
                 element->attributes = NULL;
+                element->image = NULL;
+                element->image_loaded = false;
                 if(document->root_element == NULL) {
                     if(element->id != TAG_SVG)
                         goto error;
@@ -2477,8 +2497,13 @@ static void transform_view_rect(const view_position_t* position, plutovg_rect_t*
     }
 }
 
-static plutovg_surface_t* load_image(const element_t* element)
+static plutovg_surface_t* load_image(element_t* element)
 {
+    if(element->image_loaded) {
+        return element->image
+            ? plutovg_surface_reference(element->image) : NULL;
+    }
+    element->image_loaded = true;
     const string_t* value = find_attribute(element, ATTR_HREF, false);
     if(value == NULL)
         return NULL;
@@ -2490,16 +2515,19 @@ static plutovg_surface_t* load_image(const element_t* element)
         return NULL;
     }
 
-    if(skip_string(&it, end, ";base64,"))
-        return plutovg_surface_load_from_image_base64(it, end - it);
-    return NULL;
+    if(skip_string(&it, end, ";base64,")) {
+        element->image =
+            plutovg_surface_load_from_image_base64(it, end - it);
+    }
+    return element->image
+        ? plutovg_surface_reference(element->image) : NULL;
 }
 
 static void draw_image(const element_t* element, render_context_t* context, render_state_t* state, float x, float y, float width, float height)
 {
     if(state->mode == render_mode_bounding)
         return;
-    plutovg_surface_t* image = load_image(element);
+    plutovg_surface_t* image = load_image((element_t*)element);
     if(image == NULL)
         return;
     float image_width = plutovg_surface_get_width(image);

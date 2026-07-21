@@ -49,6 +49,7 @@
  * are shared with the SVG rasterizer via fastchart_rasterize.h. */
 #define FC_IMAGE_MAX_BYTES   (8 * 1024 * 1024)
 #define FC_FONT_MAX_BYTES    (16 * 1024 * 1024)
+#define FC_FONT_CACHE_BYTES  FC_FONT_MAX_BYTES
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -80,6 +81,7 @@ void fastchart_target_from_svg(fastchart_target_t *t, smart_str *buf,
     t->u.svg.dpi = 96;
     t->u.svg.next_clip_id = 1;
     t->u.svg.next_grad_id = 1;
+    t->u.svg.next_image_id = 1;
     t->u.svg.text_mode = (text_mode == FASTCHART_SVG_TEXT_NATIVE)
         ? FASTCHART_SVG_TEXT_NATIVE
         : FASTCHART_SVG_TEXT_PATHS;
@@ -524,6 +526,17 @@ static unsigned char *fastchart_load_font_bytes(const char *font_path,
     return data;
 }
 
+static void fastchart_ft_face_slot_release(fc_ft_face_slot *slot)
+{
+    if (slot->face) {
+        fastchart_glyph_cache_drop_face(slot->face);
+        FT_Done_Face(slot->face);
+    }
+    free(slot->path);
+    free(slot->data);
+    memset(slot, 0, sizeof(*slot));
+}
+
 FT_Face fastchart_ft_face(const char *font_path)
 {
     if (!font_path) return NULL;
@@ -572,15 +585,24 @@ FT_Face fastchart_ft_face(const char *font_path)
         return NULL;
     }
 
-    /* Evict the tail slot, shift right, install at slot 0. */
-    int tail = FC_FT_FACE_CACHE_N - 1;
-    if (cache[tail].face) {
-        fastchart_glyph_cache_drop_face(cache[tail].face);
-        FT_Done_Face(cache[tail].face);
+    /* Keep the retained backing bytes within one maximum-size font.
+     * Typical fonts still occupy all four LRU slots; unusually large
+     * faces evict as many cold entries as their bytes require. */
+    size_t cached_bytes = 0;
+    int used = 0;
+    for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
+        if (!cache[i].path) break;
+        cached_bytes += cache[i].data_len;
+        used++;
     }
-    if (cache[tail].path) free(cache[tail].path);
-    if (cache[tail].data) free(cache[tail].data);
-    for (int i = tail; i > 0; i--) {
+
+    while (used > 0 && (used >= FC_FT_FACE_CACHE_N ||
+            cached_bytes > FC_FONT_CACHE_BYTES - data_len)) {
+        used--;
+        cached_bytes -= cache[used].data_len;
+        fastchart_ft_face_slot_release(&cache[used]);
+    }
+    for (int i = used; i > 0; i--) {
         cache[i] = cache[i - 1];
     }
     cache[0].path = path_copy;
@@ -759,6 +781,13 @@ void fastchart_target_resolve_font_family(fastchart_target_t *t,
 
 void fastchart_target_release(fastchart_target_t *t)
 {
+    for (int i = 0; i < t->image_cache_n; i++) {
+		fastchart_target_image_cache_entry *entry = &t->image_cache[i];
+		if (entry->path) efree(entry->path);
+		if (entry->bytes) zend_string_release(entry->bytes);
+		memset(entry, 0, sizeof(*entry));
+    }
+    t->image_cache_n = 0;
     if (t->color_rgba) {
         efree(t->color_rgba);
         t->color_rgba = NULL;
@@ -919,13 +948,12 @@ static int fc_sniff_image_dims_mem(const unsigned char *b, size_t n,
  * file one byte over gets rejected (php_stream_copy_to_mem with a
  * smaller cap would silently truncate). On success populates *out
  * with the bytes, sniffed MIME type, and declared width/height, then
- * applies the dimension caps. Returns 0 / -1; on -1 nothing is
- * allocated. */
-int fastchart_target_load_source_image(const char *path,
-                                       fastchart_image_buf_t *out)
+ * applies the dimension caps. Returns 0 / -1; on -1 the cache entry
+ * retains only its path. */
+static int fastchart_load_source_image(const char *path,
+                                       fastchart_target_image_cache_entry *out)
 {
     if (!path || !*path || !out) return -1;
-    memset(out, 0, sizeof(*out));
 
     /* Stat BEFORE open: open(2) on a FIFO with no writer blocks
      * indefinitely (the plain-files wrapper forced by IGNORE_URL
@@ -1014,33 +1042,33 @@ int fastchart_target_load_source_image(const char *path,
     return 0;
 }
 
-void fastchart_target_image_release(fastchart_image_buf_t *buf)
+static fastchart_target_image_cache_entry *fastchart_target_image_cache_get(
+    fastchart_target_t *t, const char *path)
 {
-    if (buf && buf->bytes) {
-        zend_string_release(buf->bytes);
-        buf->bytes = NULL;
+    if (!t || !path || !*path) return NULL;
+    for (int i = 0; i < t->image_cache_n; i++) {
+        fastchart_target_image_cache_entry *entry = &t->image_cache[i];
+        if (strcmp(entry->path, path) == 0) return entry;
     }
+
+    if (t->image_cache_n >= FASTCHART_TARGET_IMAGE_CACHE) return NULL;
+    fastchart_target_image_cache_entry *entry =
+        &t->image_cache[t->image_cache_n++];
+	memset(entry, 0, sizeof(*entry));
+	entry->path = estrdup(path);
+	entry->loaded = fastchart_load_source_image(path, entry) == 0 ? 1 : -1;
+	return entry;
 }
 
-void fastchart_target_image_emit(fastchart_target_t *t,
-                                 int x, int y, int w, int h,
-                                 const fastchart_image_buf_t *buf)
+int fastchart_target_image_dims(fastchart_target_t *t, const char *path,
+                                int *width, int *height)
 {
-    if (!t || !buf || !buf->bytes || !buf->mime) return;
-    if (w <= 0 || h <= 0) return;
-#ifdef HAVE_FASTCHART_PDF
-    /* v1 PDF backend does not embed raster images; emit nothing so the
-     * caller falls through to its solid-fill backup (same contract the
-     * SVG path honors for unsupported source formats). */
-    if (t->kind == FASTCHART_TARGET_PDF) return;
-#endif
-
-    zend_string *b64 = php_base64_encode(
-        (const unsigned char *)ZSTR_VAL(buf->bytes),
-        ZSTR_LEN(buf->bytes));
-    if (!b64) return;
-    fc_svg_emit_image_uri(t->u.svg.buf, x, y, w, h, buf->mime, ZSTR_VAL(b64));
-    zend_string_release(b64);
+    fastchart_target_image_cache_entry *entry =
+        fastchart_target_image_cache_get(t, path);
+	if (!entry || entry->loaded != 1) return -1;
+    if (width) *width = entry->width;
+    if (height) *height = entry->height;
+    return 0;
 }
 
 void fastchart_target_image(fastchart_target_t *t,
@@ -1049,10 +1077,76 @@ void fastchart_target_image(fastchart_target_t *t,
 {
     if (w <= 0 || h <= 0) return;
 
-    fastchart_image_buf_t buf;
-    if (fastchart_target_load_source_image(path, &buf) != 0) return;
-    fastchart_target_image_emit(t, x, y, w, h, &buf);
-    fastchart_target_image_release(&buf);
+    fastchart_target_image_cache_entry *entry =
+        fastchart_target_image_cache_get(t, path);
+	if (!entry || entry->loaded != 1 || !entry->mime) return;
+#ifdef HAVE_FASTCHART_PDF
+    /* v1 PDF does not embed raster images. Keep the path cache shared so
+     * icon dimension lookup retains its existing behavior. */
+	if (t->kind == FASTCHART_TARGET_PDF) {
+		if (entry->bytes) {
+			zend_string_release(entry->bytes);
+			entry->bytes = NULL;
+		}
+		return;
+	}
+#endif
+
+	if (entry->svg_id == 0) {
+		if (!entry->bytes) return;
+		zend_string *base64 = php_base64_encode(
+			(const unsigned char *)ZSTR_VAL(entry->bytes),
+			ZSTR_LEN(entry->bytes));
+		if (!base64) return;
+		entry->svg_id = t->u.svg.next_image_id;
+		entry->svg_width = w;
+		entry->svg_height = h;
+		if (t->u.svg.next_image_id < INT_MAX) t->u.svg.next_image_id++;
+		zend_try {
+			fc_svg_emit_image_def(t->u.svg.buf, t->u.svg.id_ns,
+				entry->svg_id, w, h, entry->mime, ZSTR_VAL(base64));
+		} zend_catch {
+			zend_string_release(base64);
+			zend_string_release(entry->bytes);
+			entry->bytes = NULL;
+			zend_bailout();
+		} zend_end_try();
+		zend_string_release(base64);
+		zend_string_release(entry->bytes);
+		entry->bytes = NULL;
+	}
+	fc_svg_emit_image_use(t->u.svg.buf, t->u.svg.id_ns, entry->svg_id,
+		x, y, w, h, entry->svg_width, entry->svg_height);
+}
+
+static int fastchart_target_svg_gradient_id(fastchart_target_t *t,
+                                             uint32_t from_rgb,
+                                             uint32_t to_rgb, int dir,
+                                             int *emit_definition)
+{
+    for (int i = 0; i < t->u.svg.gradient_cache_n; i++) {
+        fastchart_target_gradient_cache_entry *entry =
+            &t->u.svg.gradient_cache[i];
+        if (entry->from_rgb == from_rgb && entry->to_rgb == to_rgb
+            && entry->dir == dir) {
+            *emit_definition = 0;
+            return entry->id;
+        }
+    }
+
+    int id = t->u.svg.next_grad_id;
+    if (t->u.svg.next_grad_id < INT_MAX) t->u.svg.next_grad_id++;
+    *emit_definition = 1;
+
+    if (t->u.svg.gradient_cache_n < FASTCHART_TARGET_GRADIENT_CACHE) {
+        fastchart_target_gradient_cache_entry *entry =
+            &t->u.svg.gradient_cache[t->u.svg.gradient_cache_n++];
+        entry->from_rgb = from_rgb;
+        entry->to_rgb = to_rgb;
+        entry->dir = dir;
+        entry->id = id;
+    }
+    return id;
 }
 
 void fastchart_target_gradient_rect(fastchart_target_t *t,
@@ -1068,10 +1162,16 @@ void fastchart_target_gradient_rect(fastchart_target_t *t,
         return;
     }
 #endif
-    int id = t->u.svg.next_grad_id;
-    if (t->u.svg.next_grad_id < INT_MAX) t->u.svg.next_grad_id++;
-    fc_svg_emit_gradient_rect(t->u.svg.buf, t->u.svg.id_ns, id, x, y, w, h,
-                               from_rgb, to_rgb, dir);
+    int emit_definition;
+    int id = fastchart_target_svg_gradient_id(t, from_rgb, to_rgb, dir,
+                                               &emit_definition);
+    if (emit_definition) {
+        fc_svg_emit_gradient_rect(t->u.svg.buf, t->u.svg.id_ns, id,
+                                   x, y, w, h, from_rgb, to_rgb, dir);
+    } else {
+        fc_svg_emit_gradient_rect_ref(t->u.svg.buf, t->u.svg.id_ns, id,
+                                       x, y, w, h);
+    }
 }
 
 void fastchart_target_gradient_polygon(fastchart_target_t *t,
@@ -1099,9 +1199,15 @@ void fastchart_target_gradient_polygon(fastchart_target_t *t,
         return;
     }
 #endif
-    int id = t->u.svg.next_grad_id;
-    if (t->u.svg.next_grad_id < INT_MAX) t->u.svg.next_grad_id++;
-    fc_svg_emit_gradient_polygon(t->u.svg.buf, t->u.svg.id_ns, id, xs, ys, n,
-                                  from_rgb, to_rgb, dir);
+    int emit_definition;
+    int id = fastchart_target_svg_gradient_id(t, from_rgb, to_rgb, dir,
+                                               &emit_definition);
+    if (emit_definition) {
+        fc_svg_emit_gradient_polygon(t->u.svg.buf, t->u.svg.id_ns, id,
+                                      xs, ys, n, from_rgb, to_rgb, dir);
+    } else {
+        fc_svg_emit_gradient_polygon_ref(t->u.svg.buf, t->u.svg.id_ns, id,
+                                          xs, ys, n);
+    }
     if (n > 256) { efree(xs); efree(ys); }
 }

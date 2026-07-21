@@ -99,7 +99,10 @@ int fastchart_bubble_render_to_target(fastchart_bubble_obj *self, fastchart_targ
         }
     } else {
         fastchart_value_range_compute(ymin, ymax, 6, &yrange);
-        fastchart_value_range_apply_override((fastchart_obj *)self, &yrange);
+		if (fastchart_value_range_apply_override((fastchart_obj *)self,
+				&yrange) != 0) {
+			return -1;
+		}
     }
 
     fastchart_value_range xrange;

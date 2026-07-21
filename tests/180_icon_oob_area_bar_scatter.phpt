@@ -15,8 +15,16 @@ fastchart
 
 $png = __DIR__ . '/__icon.png';
 
-function ix($svg) { return preg_match('#<image\s+x="(-?\d+)"#', $svg, $m) ? (int)$m[1] : -987654321; }
-function iy($svg) { return preg_match('#<image\s+x="-?\d+"\s+y="(-?\d+)"#', $svg, $m) ? (int)$m[1] : -987654321; }
+function ix($svg) {
+	return preg_match('/<use href="#[^"]*fci\d+" '
+		. 'x="(-?\d+)" y="-?\d+"\/>/',
+        $svg, $m) ? (int)$m[1] : -987654321;
+}
+function iy($svg) {
+	return preg_match('/<use href="#[^"]*fci\d+" '
+		. 'x="-?\d+" y="(-?\d+)"\/>/',
+        $svg, $m) ? (int)$m[1] : -987654321;
+}
 function on_canvas($v) { return ($v >= -50 && $v <= 400) ? 'ok' : "BAD ($v)"; }
 
 $area = (new FastChart\AreaChart(300, 200))

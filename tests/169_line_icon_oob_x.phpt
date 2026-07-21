@@ -30,10 +30,11 @@ $svg = (new FastChart\LineChart(200, 200))
 
 @unlink($png);
 
-/* Find the <image .../> tag — it's the icon (background image not
- * configured). Pull out the integer x attribute. */
-if (!preg_match('#<image\s+x="(-?\d+)"#', $svg, $m)) {
-    echo "no_image_emitted: REGRESSION (icon not drawn at all)\n";
+/* Image bytes live in one definition; placement is carried by <use>. */
+if (!preg_match('/<use href="#[^"]*fci\d+" '
+	. 'x="(-?\d+)" y="-?\d+"\/>/',
+    $svg, $m)) {
+    echo "no_use_emitted: REGRESSION (icon not drawn at all)\n";
     exit;
 }
 $x = (int)$m[1];
@@ -57,7 +58,9 @@ $svg2 = (new FastChart\LineChart(200, 200))
     ->renderSvg();
 @unlink($png2);
 
-preg_match('#<image\s+x="(-?\d+)"#', $svg2, $m2);
+preg_match('/<use href="#[^"]*fci\d+" '
+	. 'x="(-?\d+)" y="-?\d+"\/>/',
+    $svg2, $m2);
 $x2 = isset($m2[1]) ? (int)$m2[1] : -9999;
 echo "in_range_icon_emitted: ",
     ($x2 >= 0 && $x2 <= 200 ? "ok" : "BAD ($x2)"), "\n";

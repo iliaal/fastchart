@@ -11,7 +11,8 @@ fastchart
  * solid-fill overlays. The fix composes the alpha byte into the
  * gradient stops so layered shapes show through. */
 
-/* Translucent (default alpha = 64 in gd 0..127). */
+/* Translucent (default alpha = 64 in gd 0..127). Identical series
+ * gradients share one definition without changing the stop alpha. */
 $svg_tx = (new FastChart\AreaChart(200, 120))
     ->setSeries([
         ['data' => [1, 3, 2, 5, 4]],
@@ -67,7 +68,7 @@ echo "ok\n";
 ?>
 --EXPECT--
 translucent_uses_rgba_stop: yes
-translucent_gradient_count: 2
+translucent_gradient_count: 1
 opaque_uses_hex_stop: yes
 stacked_uses_hex_stop: yes
 bar_uses_hex_stop: yes

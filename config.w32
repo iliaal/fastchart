@@ -24,6 +24,11 @@ ARG_WITH("pdfio", "fastchart: enable PDF output via pdfio (msweet.org)", "no");
 
 if (PHP_FASTCHART != "no") {
 
+    if (PHP_VERSION < 8 ||
+        (PHP_VERSION == 8 && PHP_MINOR_VERSION < 1)) {
+        ERROR("fastchart requires PHP 8.1.0 or later");
+    }
+
     // FreeType is mandatory (text rendering: glyph metrics, family
     // name resolution, FT_Outline_Decompose for SVG_TEXT_PATHS).
     if (CHECK_LIB("freetype_a.lib;freetype.lib", "fastchart", PHP_FASTCHART) &&

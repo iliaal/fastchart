@@ -9,8 +9,8 @@
   | Author: Ilia Alshanetsky <ilia@ilia.ws>                              |
   +----------------------------------------------------------------------+
 
-  Raster encoders: RGBA pixel buffer -> PNG / JPEG / WebP, appended
-  into a caller-owned smart_str.
+  Raster encoders: RGBA pixel buffer -> PNG / JPEG / WebP, written to
+  a caller-owned sink.
 
   libpng:        the high-level API (png_set_compression_level default
                  6, RGBA streamed row by row).
@@ -70,6 +70,7 @@ static int fc_enc_cpu_has_ssse3(void)
     return cached;
 }
 
+#ifdef HAVE_LIBJPEG
 /* Pack `n_pixels` opaque RGBA pixels at src into RGB at dst via SSSE3
  * _mm_shuffle_epi8 (4 pixels per instruction). Returns the count of
  * pixels processed (always a multiple of 4); the caller handles the
@@ -98,8 +99,9 @@ static int fc_enc_pack_rgba_to_rgb_ssse3(const uint8_t *src, uint8_t *dst,
     return simd_end;
 }
 #endif
+#endif
 
-#ifdef FC_ENC_HAVE_ARM_NEON
+#if defined(HAVE_LIBJPEG) && defined(FC_ENC_HAVE_ARM_NEON)
 /* Keep the NEON helper outside libjpeg's setjmp frame; AArch64 GCC can
  * otherwise warn about clobbered vector temporaries when it inlines this. */
 __attribute__((noinline))
@@ -155,30 +157,98 @@ void fastchart_pixels_release(fastchart_pixels_t *pix)
 	pix->w = pix->h = 0;
 }
 
+/* --------------------------- sinks --------------------------------- */
+
+static int fc_smart_str_sink_write(void *context, const uint8_t *data,
+	size_t length)
+{
+	smart_str_appendl((smart_str *)context, (const char *)data, length);
+	return 0;
+}
+
+static int fc_stream_sink_write(void *context, const uint8_t *data,
+	size_t length)
+{
+	php_stream *stream = (php_stream *)context;
+	size_t offset = 0;
+
+	while (offset < length) {
+		ssize_t written = php_stream_write(stream,
+			(const char *)data + offset, length - offset);
+		if (written <= 0 || (size_t)written > length - offset) {
+			return -1;
+		}
+		offset += (size_t)written;
+	}
+	return 0;
+}
+
+#if defined(HAVE_LIBPNG) || defined(HAVE_LIBJPEG) || defined(HAVE_LIBWEBP)
+static int fc_sink_write(fastchart_sink_t *sink, const uint8_t *data,
+	size_t length)
+{
+	if (sink == NULL || sink->write == NULL || sink->failed) {
+		return -1;
+	}
+	if (length == 0) {
+		return 0;
+	}
+	if (length > SIZE_MAX - sink->bytes_written) {
+		sink->failed = 1;
+		return -1;
+	}
+	if (sink->write(sink->context, data, length) != 0) {
+		sink->failed = 1;
+		return -1;
+	}
+	sink->bytes_written += length;
+	return 0;
+}
+#endif
+
+void fastchart_sink_init_smart_str(fastchart_sink_t *sink, smart_str *out)
+{
+	sink->write = fc_smart_str_sink_write;
+	sink->context = out;
+	sink->bytes_written = 0;
+	sink->failed = 0;
+}
+
+void fastchart_sink_init_stream(fastchart_sink_t *sink, php_stream *stream)
+{
+	sink->write = fc_stream_sink_write;
+	sink->context = stream;
+	sink->bytes_written = 0;
+	sink->failed = 0;
+}
+
 /* --------------------------- PNG ----------------------------------- */
 
 #ifdef HAVE_LIBPNG
-static void png_smart_write(png_structp png, png_bytep data, png_size_t len)
+static void png_sink_write(png_structp png, png_bytep data, png_size_t len)
 {
-	smart_str *out = (smart_str *)png_get_io_ptr(png);
-	smart_str_appendl(out, (const char *)data, len);
+	fastchart_sink_t *sink = (fastchart_sink_t *)png_get_io_ptr(png);
+	if (fc_sink_write(sink, data, len) != 0) {
+		png_error(png, "write failed");
+	}
 }
 
-static void png_smart_flush(png_structp png)
+static void png_sink_flush(png_structp png)
 {
 	(void)png;
 }
 
-static void png_smart_error(png_structp png, png_const_charp msg)
+static void png_sink_error(png_structp png, png_const_charp msg)
 {
 	(void)msg;
 	longjmp(png_jmpbuf(png), 1);
 }
 
-int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix)
+int fastchart_encode_png_sink(fastchart_sink_t *sink,
+	const fastchart_pixels_t *pix)
 {
 	png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING,
-	                                          NULL, png_smart_error, NULL);
+	                                          NULL, png_sink_error, NULL);
 	if (!png) return -1;
 	png_infop info = png_create_info_struct(png);
 	if (!info) {
@@ -186,11 +256,8 @@ int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix)
 		return -1;
 	}
 
-	/* png_smart_write appends into the caller's smart_str, so a
-	 * memory_limit bailout can fire inside the live libpng session and
-	 * longjmp past the destroy — leaking the write struct + zlib state
-	 * (malloc'd, invisible to memory_limit) in a long-running worker.
-	 * Release the vendor state before re-entering the bailout. */
+	/* Sink callbacks can bail out inside the live libpng session. Release
+	 * the vendor state before re-entering the bailout. */
 	volatile int rc = 0;
 	zend_try {
 
@@ -200,7 +267,7 @@ int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix)
 		goto done;
 	}
 
-	png_set_write_fn(png, out, png_smart_write, png_smart_flush);
+	png_set_write_fn(png, sink, png_sink_write, png_sink_flush);
 
 	/* Chart output is flat fills and anti-aliased edges, never
 	 * photographic. libpng's default per-row adaptive filtering (try
@@ -251,13 +318,27 @@ done:;
 	return rc;
 }
 
+int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix)
+{
+	fastchart_sink_t sink;
+	fastchart_sink_init_smart_str(&sink, out);
+	return fastchart_encode_png_sink(&sink, pix);
+}
+
 int fastchart_have_libpng(void)         { return 1; }
 const char *fastchart_libpng_version(void) { return PNG_LIBPNG_VER_STRING; }
 #else  /* !HAVE_LIBPNG */
+int fastchart_encode_png_sink(fastchart_sink_t *sink,
+	const fastchart_pixels_t *pix)
+{
+	(void)sink; (void)pix;
+	return -2;
+}
 int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix)
 {
-	(void)out; (void)pix;
-	return -2;
+	fastchart_sink_t sink;
+	fastchart_sink_init_smart_str(&sink, out);
+	return fastchart_encode_png_sink(&sink, pix);
 }
 int fastchart_have_libpng(void)         { return 0; }
 const char *fastchart_libpng_version(void) { return NULL; }
@@ -277,20 +358,20 @@ static void fc_jpeg_error_exit(j_common_ptr cinfo)
 	longjmp(e->jmp, 1);
 }
 
-/* Custom destination manager appending straight into the caller's
- * smart_str, mirroring png_smart_write. jpeg_mem_dest is avoided on
+/* Custom destination manager writing straight into the caller's sink.
+ * jpeg_mem_dest is avoided on
  * purpose: it publishes the final buffer address only at
  * term_destination, so once its internal buffer grows past the initial
  * allocation the caller-side pointer dangles at a block
  * empty_mem_output_buffer already freed — an error_exit longjmp
  * mid-encode would then double-free it and leak the live grown buffer.
- * Streaming into the smart_str leaves no malloc'd intermediate to
+ * Streaming into the sink leaves no malloc'd intermediate to
  * clean up on either path. */
 #define FC_JPEG_STAGE_SZ 8192
 
 struct fc_jpeg_dest {
 	struct jpeg_destination_mgr base;
-	smart_str *out;
+	fastchart_sink_t *sink;
 	JOCTET stage[FC_JPEG_STAGE_SZ];
 };
 
@@ -306,7 +387,9 @@ static boolean fc_jpeg_empty_output_buffer(j_compress_ptr cinfo)
 	struct fc_jpeg_dest *d = (struct fc_jpeg_dest *)cinfo->dest;
 	/* libjpeg's contract: flush the WHOLE stage buffer here regardless
 	 * of free_in_buffer (jdatadst.c documents the same). */
-	smart_str_appendl(d->out, (const char *)d->stage, FC_JPEG_STAGE_SZ);
+	if (fc_sink_write(d->sink, d->stage, FC_JPEG_STAGE_SZ) != 0) {
+		ERREXIT(cinfo, JERR_FILE_WRITE);
+	}
 	d->base.next_output_byte = d->stage;
 	d->base.free_in_buffer   = FC_JPEG_STAGE_SZ;
 	return TRUE;
@@ -317,12 +400,14 @@ static void fc_jpeg_term_destination(j_compress_ptr cinfo)
 	struct fc_jpeg_dest *d = (struct fc_jpeg_dest *)cinfo->dest;
 	size_t used = FC_JPEG_STAGE_SZ - d->base.free_in_buffer;
 	if (used > 0) {
-		smart_str_appendl(d->out, (const char *)d->stage, used);
+		if (fc_sink_write(d->sink, d->stage, used) != 0) {
+			ERREXIT(cinfo, JERR_FILE_WRITE);
+		}
 	}
 }
 
-int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
-                          int quality, int bg_rgb)
+int fastchart_encode_jpeg_sink(fastchart_sink_t *sink,
+	const fastchart_pixels_t *pix, int quality, int bg_rgb)
 {
 	if (quality < 1)   quality = 1;
 	if (quality > 100) quality = 100;
@@ -333,7 +418,7 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 	err.base.error_exit = fc_jpeg_error_exit;
 
 	struct fc_jpeg_dest dest;
-	dest.out = out;
+	dest.sink = sink;
 
 	/* `volatile` keeps the pointer's live value in memory across the
 	 * setjmp boundary. Per C99 §7.13.2.1, automatic-storage locals
@@ -349,18 +434,16 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
 	volatile int created = 0;
 	volatile int rc = 0;
 
-	/* The destination callbacks append into the caller's smart_str, so
-	 * a memory_limit bailout can fire mid-session and longjmp past
-	 * jpeg_destroy_compress — with optimize_coding libjpeg is holding
-	 * whole-image coefficient buffers (malloc'd, invisible to
-	 * memory_limit). Release them before re-entering the bailout. */
+	/* Sink callbacks can bail out mid-session while optimize_coding holds
+	 * whole-image coefficient buffers. Release them before re-entering
+	 * the bailout. */
 	zend_try {
 
 	if (setjmp(err.jmp)) {
 		if (created) jpeg_destroy_compress(&cinfo);
 		if (rgb_row)  efree(rgb_row);
-		/* Partial bytes already streamed into `out` are the caller's
-		 * to discard (smart_str_free on the error branch) — same
+		/* Partial bytes already streamed into the sink are the caller's
+		 * to discard — same
 		 * convention as the PNG encoder. */
 		rc = -1;
 		goto done;
@@ -469,6 +552,14 @@ done:;
 	return rc;
 }
 
+int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
+	int quality, int bg_rgb)
+{
+	fastchart_sink_t sink;
+	fastchart_sink_init_smart_str(&sink, out);
+	return fastchart_encode_jpeg_sink(&sink, pix, quality, bg_rgb);
+}
+
 int fastchart_have_libjpeg(void) { return 1; }
 /* Value reported in the MINFO row labelled "libjpeg". LIBJPEG_TURBO_-
  * VERSION expands to bare 2.1.2 in jconfig.h (not a string literal),
@@ -486,11 +577,18 @@ const char *fastchart_libjpeg_version(void)
 #endif
 }
 #else  /* !HAVE_LIBJPEG */
-int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
-                          int quality, int bg_rgb)
+int fastchart_encode_jpeg_sink(fastchart_sink_t *sink,
+	const fastchart_pixels_t *pix, int quality, int bg_rgb)
 {
-	(void)out; (void)pix; (void)quality; (void)bg_rgb;
+	(void)sink; (void)pix; (void)quality; (void)bg_rgb;
 	return -2;
+}
+int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
+	int quality, int bg_rgb)
+{
+	fastchart_sink_t sink;
+	fastchart_sink_init_smart_str(&sink, out);
+	return fastchart_encode_jpeg_sink(&sink, pix, quality, bg_rgb);
 }
 int fastchart_have_libjpeg(void)         { return 0; }
 const char *fastchart_libjpeg_version(void) { return NULL; }
@@ -513,8 +611,15 @@ const char *fastchart_libjpeg_version(void) { return NULL; }
  *
  * The encoder still produces a baseline-compatible .webp stream that
  * every conformant decoder accepts. */
-int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
-                          int quality, int mode)
+static int fc_webp_sink_write(const uint8_t *data, size_t data_size,
+	const WebPPicture *picture)
+{
+	fastchart_sink_t *sink = (fastchart_sink_t *)picture->custom_ptr;
+	return fc_sink_write(sink, data, data_size) == 0;
+}
+
+int fastchart_encode_webp_sink(fastchart_sink_t *sink,
+	const fastchart_pixels_t *pix, int quality, int mode)
 {
 	float q = (float)quality;
 	if (q < 1.0f)   q = 1.0f;
@@ -548,19 +653,23 @@ int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
 	}
 	config.thread_level = 1;
 
-	WebPPicture picture;
-	if (!WebPPictureInit(&picture)) {
+	/* The picture lives on the heap because WebPEncode mutates it after
+	 * zend_try's setjmp. The pointer remains valid in the bailout handler
+	 * even when the callback aborts from inside the encoder. */
+	WebPPicture *picture = emalloc(sizeof(*picture));
+	if (!WebPPictureInit(picture)) {
+		efree(picture);
 		return -1;
 	}
-	picture.width  = pix->w;
-	picture.height = pix->h;
+	picture->width  = pix->w;
+	picture->height = pix->h;
 	/* Lossless must import straight into the ARGB plane: with
 	 * use_argb == 0 libwebp converts RGBA to YUV420 at import time
 	 * (4:2:0 chroma decimation — lossy per webp/encode.h), and VP8L
 	 * would encode the degraded pixels. Lossy modes keep the YUV
 	 * import; it is their native fast path and the opaque-detect
 	 * note below depends on it. */
-	picture.use_argb = (mode == FASTCHART_WEBP_LOSSLESS);
+	picture->use_argb = (mode == FASTCHART_WEBP_LOSSLESS);
 
 	/* Always import RGBA — no manual RGB pack. When the input is
 	 * opaque (pix->has_alpha == 0, set by fastchart_rasterize_doc's
@@ -569,34 +678,33 @@ int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
 	 * conversion. Saves a w*h*3 emalloc and a per-pixel scalar
 	 * copy that previously dominated the encoder's CPU on opaque
 	 * charts. */
-	if (!WebPPictureImportRGBA(&picture, pix->rgba, pix->w * 4)) {
-		WebPPictureFree(&picture);
+	if (!WebPPictureImportRGBA(picture, pix->rgba, pix->w * 4)) {
+		WebPPictureFree(picture);
+		efree(picture);
 		return -1;
 	}
 
-	WebPMemoryWriter writer;
-	WebPMemoryWriterInit(&writer);
-	picture.writer     = WebPMemoryWrite;
-	picture.custom_ptr = &writer;
-
-	int enc_ok = WebPEncode(&config, &picture);
-	WebPPictureFree(&picture);
-
-	if (!enc_ok || writer.size == 0) {
-		WebPMemoryWriterClear(&writer);
-		return -1;
-	}
-	/* The append can bail on memory_limit with the malloc'd encoded
-	 * file (writer.mem) live — release it before re-entering the
-	 * bailout. */
+	picture->writer = fc_webp_sink_write;
+	picture->custom_ptr = sink;
+	volatile int enc_ok = 0;
 	zend_try {
-		smart_str_appendl(out, (const char *)writer.mem, writer.size);
+		enc_ok = WebPEncode(&config, picture);
 	} zend_catch {
-		WebPMemoryWriterClear(&writer);
+		WebPPictureFree(picture);
+		efree(picture);
 		zend_bailout();
 	} zend_end_try();
-	WebPMemoryWriterClear(&writer);
-	return 0;
+	WebPPictureFree(picture);
+	efree(picture);
+	return enc_ok && !sink->failed ? 0 : -1;
+}
+
+int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
+	int quality, int mode)
+{
+	fastchart_sink_t sink;
+	fastchart_sink_init_smart_str(&sink, out);
+	return fastchart_encode_webp_sink(&sink, pix, quality, mode);
 }
 
 int fastchart_have_libwebp(void) { return 1; }
@@ -618,11 +726,18 @@ const char *fastchart_libwebp_version(void)
 	return fc_webp_ver;
 }
 #else  /* !HAVE_LIBWEBP */
-int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
-                          int quality, int mode)
+int fastchart_encode_webp_sink(fastchart_sink_t *sink,
+	const fastchart_pixels_t *pix, int quality, int mode)
 {
-	(void)out; (void)pix; (void)quality; (void)mode;
+	(void)sink; (void)pix; (void)quality; (void)mode;
 	return -2;
+}
+int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
+	int quality, int mode)
+{
+	fastchart_sink_t sink;
+	fastchart_sink_init_smart_str(&sink, out);
+	return fastchart_encode_webp_sink(&sink, pix, quality, mode);
 }
 int fastchart_have_libwebp(void)         { return 0; }
 const char *fastchart_libwebp_version(void) { return NULL; }

@@ -57,8 +57,6 @@ int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self, fastchart_ta
         return -1;
     }
 
-    fastchart_begin_render((fastchart_obj *)self, t);
-
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
@@ -81,10 +79,7 @@ int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self, fastchart_ta
     }
 
     int x0 = 12, y0 = top_pad, x1 = W - 13, y1 = H - 13;
-    if (self->has_plot_rect) {
-        x0 = (int)self->plot_x0; y0 = (int)self->plot_y0;
-        x1 = (int)self->plot_x1; y1 = (int)self->plot_y1;
-    }
+	fastchart_apply_plot_rect((fastchart_obj *)self, &x0, &y0, &x1, &y1);
 
     int rows = self->grid.rows;
     int cols = self->grid.cols;

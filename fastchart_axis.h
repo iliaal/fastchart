@@ -44,13 +44,9 @@ typedef struct {
     double ticks[FASTCHART_MAX_TICKS];
 } fastchart_value_range;
 
-/* Per-render entry hook. Invalidates the font-path cache and any
- * per-target shadow-color cache so the next resolve_font / shadow
- * draw re-runs open_basedir checks against the current ini state and
- * uses the current render target. Every renderer must call this at
- * draw entry, BEFORE any palette / text / background work.
- * fastchart_compute_layout already calls it; non-layout renderers
- * (gauge, radar, polar, surface, contour) need to call it directly. */
+/* Per-render entry hook called once by Chart dispatch before entering
+ * a concrete renderer. Invalidates the font-path cache and per-target
+ * shadow-color cache so the next resolution uses current state. */
 void fastchart_begin_render(fastchart_obj *chart, fastchart_target_t *t);
 
 /* Replace a bespoke renderer's default plot bounds when setPlotRect()
@@ -101,9 +97,10 @@ void fastchart_value_range_compute(double dmin, double dmax,
 /* Apply the chart's setYAxisRange() overrides on top of an
  * already-computed `out`. If the user forced min/max, ticks are
  * regenerated using the (also optional) forced interval. No-op if
- * the chart has no overrides. */
-void fastchart_value_range_apply_override(const fastchart_obj *chart,
-                                          fastchart_value_range *out);
+ * the chart has no overrides. Returns -1 after throwing when a partial
+ * override conflicts with the automatically-resolved endpoint. */
+int fastchart_value_range_apply_override(const fastchart_obj *chart,
+                                         fastchart_value_range *out);
 
 /* Log10 value range; ticks at powers of ten that bracket the data.
  * Both `dmin` and `dmax` must be strictly positive. Returns 0 on
@@ -270,18 +267,19 @@ const char **fastchart_borrow_category_labels(fastchart_obj *b, int n);
  * renderers as they draw each data-point geometry. `idx` selects
  * the matching entry in chart->image_map_entries; the helper is a
  * no-op when no setImageMap() data covers that index (so renderers
- * can call it unconditionally without branching). The rect form
+ * can call it unconditionally without branching). Each pushed area
+ * owns references to the entry's immutable strings. The rect form
  * stores (x, y, w, h); getImageMap() converts to <area> coords at
- * emit time. The poly form takes pairs of (x, y) — n_xy is the
- * total int count (2 * vertex_count) and must not exceed
+ * emit time. The poly form takes pairs of (x, y) — n_xy is the total
+ * int count (2 * vertex_count) and must not exceed
  * FASTCHART_IMAGE_MAP_MAX_COORDS. */
 void fastchart_push_image_map_rect(fastchart_obj *b, int idx,
                                     int x, int y, int w, int h);
 void fastchart_push_image_map_poly(fastchart_obj *b, int idx,
                                     const int *xy, int n_xy);
-/* Clear the previous render's hot-spots. Renderers call this once
- * at the top of draw() so image_map_areas only reflects the most
- * recent render. */
+/* Release the previous render's string references and clear its
+ * hot-spots while retaining reusable area-array capacity. Renderers
+ * call this once at the top of draw(). */
 void fastchart_reset_image_map_areas(fastchart_obj *b);
 void fastchart_reserve_image_map_areas(fastchart_obj *b, int cap);
 

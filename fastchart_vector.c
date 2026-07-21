@@ -33,8 +33,6 @@
  * don't overlap. */
 int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_target_t *t)
 {
-    fastchart_begin_render((fastchart_obj *)self, t);
-
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
@@ -100,7 +98,8 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
      * setYAxisVisible suppress the whole axis, gridlines included). */
     if (y_vis) {
         for (int i = 0; i < yr.n_ticks; i++) {
-            double frac = (yr.ticks[i] - yr.min) / (yr.max - yr.min);
+			double frac = fastchart_normalize_finite(yr.ticks[i], yr.min,
+				yr.max);
             int y = plot.y1 - (int)(frac * (plot.y1 - plot.y0));
             fastchart_target_line(t, plot.x0, y, plot.x1, y,
                                   pal.grid, 1, FASTCHART_DASH_SOLID);
@@ -115,7 +114,8 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
     }
     if (x_vis) {
         for (int i = 0; i < xr.n_ticks; i++) {
-            double frac = (xr.ticks[i] - xr.min) / (xr.max - xr.min);
+			double frac = fastchart_normalize_finite(xr.ticks[i], xr.min,
+				xr.max);
             int x = plot.x0 + (int)(frac * (plot.x1 - plot.x0));
             fastchart_target_line(t, x, plot.y0, x, plot.y1,
                                   pal.grid, 1, FASTCHART_DASH_SOLID);
@@ -176,10 +176,10 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
         /* Anchor arrows against the displayed (nice) axis range so they
          * line up with the grid ticks and labels, not the raw data
          * min/max. */
-        double axu = (xr.max > xr.min)
-            ? (self->vectors[i].x - xr.min) / (xr.max - xr.min) : 0.5;
-        double ayu = (yr.max > yr.min)
-            ? (self->vectors[i].y - yr.min) / (yr.max - yr.min) : 0.5;
+		double axu = fastchart_normalize_finite(self->vectors[i].x,
+			xr.min, xr.max);
+		double ayu = fastchart_normalize_finite(self->vectors[i].y,
+			yr.min, yr.max);
         /* A finite-but-extreme coordinate can land far outside a small
          * fallback axis range, so axu/ayu overflow the pixel span and
          * the (int) cast is UB. Drop NaN/Inf, clamp the rest to [0,1]. */

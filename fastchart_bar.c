@@ -242,7 +242,10 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
         }
     } else {
         fastchart_value_range_compute(dmin, dmax, 6, &range);
-        fastchart_value_range_apply_override((fastchart_obj *)self, &range);
+		if (fastchart_value_range_apply_override((fastchart_obj *)self,
+				&range) != 0) {
+			return -1;
+		}
     }
 
     fastchart_rect plot;
@@ -542,7 +545,10 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
         }
     } else {
         fastchart_value_range_compute(dmin, dmax, 6, &range);
-        fastchart_value_range_apply_override((fastchart_obj *)self, &range);
+		if (fastchart_value_range_apply_override((fastchart_obj *)self,
+				&range) != 0) {
+			return -1;
+		}
     }
 
     /* Borrow category labels up front so layout can size the left

@@ -30,6 +30,22 @@
 #define FASTCHART_RENDER_HELPERS_H
 
 #include "php.h"
+#include "main/php_streams.h"
+#include "Zend/zend_smart_str.h"
+
+struct fastchart_target;
+
+typedef int (*fastchart_svg_render_cb)(void *object,
+	zend_class_entry *ce, struct fastchart_target *target);
+
+/* Build one SVG envelope around a Chart or Symbol render callback.
+ * Full documents include the XML/SVG wrapper; fragments contain only
+ * the requested classed group. On failure the target and output are
+ * released here. On success the caller owns out->s. */
+int fastchart_build_svg(smart_str *out, int width, int height, int dpi,
+	int text_mode, int fragment_only, const char *group_class,
+	zend_string *id_prefix, fastchart_svg_render_cb render,
+	void *object, zend_class_entry *ce);
 
 /* Resolve the physical (allocated) canvas dimensions from logical
  * width/height + DPI. Honours the 16384px / 64M-pixel cap. Throws a
@@ -52,6 +68,22 @@ int fastchart_format_from_path(const char *path, size_t len);
 /* Case-insensitive ASCII check for a `.svg` tail using the same
  * bounded last-extension parsing as fastchart_format_from_path(). */
 int fastchart_path_ends_with_svg(const char *path, size_t len);
+
+typedef struct {
+	php_stream *stream;
+	zend_string *path;
+	zend_string *tmp_path;
+	const char *where;
+	int final_mode;
+} fastchart_atomic_file_t;
+
+/* Create a mode-0600 sibling temporary file for an eventual atomic rename.
+ * The caller must commit or abort every successful open. */
+int fastchart_atomic_file_open(fastchart_atomic_file_t *file,
+	zend_string *path, const char *where);
+void fastchart_atomic_file_abort(fastchart_atomic_file_t *file);
+int fastchart_atomic_file_commit(fastchart_atomic_file_t *file,
+	size_t written, zend_long *written_out);
 
 /* Write `payload` to `path` through the Zend stream layer. `where`
  * prefixes the open-failure message, e.g. "FastChart\\Chart::renderToFile()".

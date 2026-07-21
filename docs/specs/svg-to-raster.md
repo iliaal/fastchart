@@ -155,10 +155,13 @@ dimension cap (constraint #4). A 10x10 root SVG carrying a
 4097x4097 embedded PNG would allocate ~67 MB inside plutosvg
 before our cap check sees the actual rasterized dims.
 
-The entry point rejects any SVG that contains the substring
-`data:image/` (case-insensitive). Callers who need to composite
-raster content with a chart fragment should decode their images
-separately. Added 2026-05-15 in commit f0c967a.
+The public `svgTo*()` entry points reject any SVG that contains the
+substring `data:image/` (case-insensitive). Callers who need to
+composite raster content with a chart fragment should decode their
+images separately. Instance-side chart rendering is different: the
+trusted builder validates source files first and may embed their
+validated bytes before calling the internal rasterizer directly.
+Added 2026-05-15 in commit f0c967a.
 
 ### 6. `<use>` elements are rejected
 
@@ -173,11 +176,21 @@ on commodity hardware — a billion-laughs equivalent.
 A source-count cap was tried (commit bacedd1, 256-tag limit) and
 proved insufficient: nesting amplifies expansion independently of
 source count, so 71 source `<use>` tags can hit the worst case.
-The entry point now rejects ANY `<use>` occurrence (substring
-scan with tag-name boundary check, case-insensitive). fastchart's
-own SVG output never emits `<use>`; callers stitching multiple
-fragments position content inline via `<g transform="...">`
-instead. Added 2026-05-15 in commit (this round).
+The public entry point rejects ANY `<use>` occurrence (substring scan
+with tag-name boundary check, case-insensitive). This remains true for
+SVG returned by `renderSvg()` or `drawSvgFragment()`: callers cannot
+feed image-bearing generated SVG back through `svgTo*()`.
+
+The trusted chart builder uses a deliberately bounded exception in the
+instance render pipeline. Repeated source images are emitted as at most
+33 unit `<image>` definitions (one background plus the 32-icon public
+cap), each referenced by flat, one-level `<use>` placements. No emitted
+definition contains another `<use>`, so fan-out cannot amplify with
+depth. PlutoSVG also caches the decoded surface on the referenced image
+element for the lifetime of that parsed document. `renderPng()`,
+`renderJpeg()`, and `renderWebp()` pass this validated output directly to
+the internal rasterizer; they do not relax validation for caller-supplied
+SVG. Added 2026-05-15 in commit (this round).
 
 ### 7. Size limits on input SVG
 

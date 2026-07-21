@@ -7,10 +7,9 @@ fastchart.max_render_pixels=1000000
 --FILE--
 <?php
 
-/* The rasterizer allocates ~8 bytes/pixel across two full frames, one
- * of them malloc-backed and outside memory_limit. The INI is the
- * operator-enforced ceiling; PHP_INI_SYSTEM so a script can't raise
- * it back. Built-in 64M cap still applies above the INI. */
+/* The rasterizer allocates one PHP-accounted RGBA frame. The INI is
+ * the operator-enforced ceiling; PHP_INI_SYSTEM so a script can't
+ * raise it back. Built-in 64M cap still applies above the INI. */
 
 echo "ini value: ", ini_get('fastchart.max_render_pixels'), "\n";
 echo "ini_set blocked: ",

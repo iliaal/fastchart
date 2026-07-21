@@ -68,11 +68,6 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
     if (self->polar_max_radius > 0) rmax = self->polar_max_radius;
     if (rmax <= 0) rmax = 1.0;
 
-    /* Per-render entry: invalidate the font cache (so a runtime
-     * open_basedir narrowing between draws is honored) and stamp DPI
-     * on the canvas. Must come BEFORE any palette / text work. */
-    fastchart_begin_render((fastchart_obj *)self, t);
-
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);

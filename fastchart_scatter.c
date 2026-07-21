@@ -30,6 +30,7 @@
 
 int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_target_t *t)
 {
+	fastchart_reset_image_map_areas((fastchart_obj *)self);
     if (self->point_count == 0) {
         zend_throw_error(NULL,
             "FastChart\\ScatterChart::draw() requires setPoints() with one or more [x, y] pairs");
@@ -77,7 +78,10 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
         }
     } else {
         fastchart_value_range_compute(y_min, y_max, 6, &yrange);
-        fastchart_value_range_apply_override((fastchart_obj *)self, &yrange);
+		if (fastchart_value_range_apply_override((fastchart_obj *)self,
+				&yrange) != 0) {
+			return -1;
+		}
     }
 
     /* X range. */
@@ -116,9 +120,8 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
     int err_n = self->err_n;
 
     for (int i = 0; i < n; i++) {
-        double frac_x = (xrange.max - xrange.min) > 0
-            ? (points[i].x - xrange.min) / (xrange.max - xrange.min)
-            : 0.5;
+		double frac_x = fastchart_normalize_finite(points[i].x,
+			xrange.min, xrange.max);
         int px = fastchart_frac_to_px(frac_x, plot.x0, plot.x1);
         int py = fastchart_y_to_pixel(points[i].y, &yrange, &plot);
 
@@ -260,8 +263,8 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
             double y = 0;
             double xp = 1.0;
             for (int k = 0; k <= deg; k++) { y += coeffs[k] * xp; xp *= xn; }
-            double frac = (xrange.max - xrange.min) > 0
-                ? (x - xrange.min) / (xrange.max - xrange.min) : 0.5;
+			double frac = fastchart_normalize_finite(x, xrange.min,
+				xrange.max);
             int px = fastchart_frac_to_px(frac, plot.x0, plot.x1);
             int py = fastchart_y_to_pixel(y, &yrange, &plot);
             if (s > 0) {
@@ -288,52 +291,43 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
         fastchart_obj *base = (fastchart_obj *)self;
         for (int i = 0; i < base->n_icons; i++) {
             const fastchart_icon *ic = &base->icons[i];
-            double frac_x = (xrange.max - xrange.min) > 0
-                ? (ic->x - xrange.min) / (xrange.max - xrange.min)
-                : 0.5;
+			double frac_x = fastchart_normalize_finite(ic->x,
+				xrange.min, xrange.max);
             int px = fastchart_frac_to_px(frac_x, plot.x0, plot.x1);
             int py = fastchart_y_to_pixel(ic->y, &yrange, &plot);
             fastchart_blit_icon(t, ic, px, py);
         }
     }
 
-    /* Build the image-map area list from typed points. The href and
-     * tooltip pointers borrow from points[i] — same lifetime since
-     * the area list is freed/repopulated on every render. */
-	if (self->image_map_areas) {
-		efree(self->image_map_areas);
-		self->image_map_areas = NULL;
-	}
-	self->n_image_map_areas = 0;
-	self->image_map_areas_cap = 0;
+    /* Build a self-owning image-map artifact from the parsed points. */
     int href_count = 0;
     for (int i = 0; i < n; i++) {
         if (points[i].href) href_count++;
     }
 	if (href_count > 0) {
-		self->image_map_areas = ecalloc((size_t)href_count, sizeof(fastchart_image_map_area));
-		self->image_map_areas_cap = href_count;
+		fastchart_reserve_image_map_areas((fastchart_obj *)self, href_count);
 		int k = 0;
         for (int i = 0; i < n; i++) {
             if (!points[i].href) continue;
-            double frac_x = (xrange.max - xrange.min) > 0
-                ? (points[i].x - xrange.min) / (xrange.max - xrange.min)
-                : 0.5;
+			double frac_x = fastchart_normalize_finite(points[i].x,
+				xrange.min, xrange.max);
             int px = fastchart_frac_to_px(frac_x, plot.x0, plot.x1);
             int py = fastchart_y_to_pixel(points[i].y, &yrange, &plot);
-            self->image_map_areas[k].shape = FASTCHART_IMAGE_MAP_CIRCLE;
-            self->image_map_areas[k].n_coords = 3;
-            self->image_map_areas[k].coords[0] = px;
-            self->image_map_areas[k].coords[1] = py;
+            fastchart_image_map_area *area = &self->image_map_areas[k];
+            area->shape = FASTCHART_IMAGE_MAP_CIRCLE;
+            area->n_coords = 3;
+            area->coords[0] = px;
+            area->coords[1] = py;
             int radius = marker_size / 2;
             if (radius < 1) radius = 1;
-            self->image_map_areas[k].coords[2] = radius;
-            self->image_map_areas[k].href = points[i].href;
-            self->image_map_areas[k].tooltip = points[i].tooltip;
-            self->image_map_areas[k].orig_index = i;
+            area->coords[2] = radius;
+            area->href = zend_string_copy(points[i].href);
+            area->tooltip = points[i].tooltip
+                ? zend_string_copy(points[i].tooltip) : NULL;
+            area->orig_index = i;
             k++;
+            self->n_image_map_areas = k;
         }
-        self->n_image_map_areas = k;
     }
     return 0;
 }

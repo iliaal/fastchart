@@ -80,8 +80,6 @@ static int chord_bezier_samples(double x0, double y0, double xc, double yc,
 
 int fastchart_chord_render_to_target(fastchart_chord_obj *self, fastchart_target_t *t)
 {
-    fastchart_begin_render((fastchart_obj *)self, t);
-
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);

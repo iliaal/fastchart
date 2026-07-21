@@ -274,7 +274,10 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
         }
     } else {
         fastchart_value_range_compute(dmin_l, dmax_l, 6, &range_l);
-        fastchart_value_range_apply_override((fastchart_obj *)self, &range_l);
+		if (fastchart_value_range_apply_override((fastchart_obj *)self,
+				&range_l) != 0) {
+			return -1;
+		}
     }
     if (n_right > 0) {
         if (self->y_axis_scale == FASTCHART_SCALE_LOG) {

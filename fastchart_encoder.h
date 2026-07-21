@@ -10,9 +10,10 @@
   +----------------------------------------------------------------------+
 
   Raster encoder layer. Takes a plain RGBA pixel buffer (top-down,
-  pre-multiplied or straight alpha — caller's choice) and produces a
-  PHP smart_str of encoded bytes. Replaces the former
-  fastchart_encode_image() helper.
+  pre-multiplied or straight alpha — caller's choice) and writes encoded
+  bytes into a generic sink. Smart-string wrappers preserve the original
+  in-memory API; stream sinks let renderToFile avoid a second full encoded
+  buffer.
 
   Each of libpng / libjpeg-turbo / libwebp is independently probed
   by config.m4. Missing libs drop their corresponding output format;
@@ -25,6 +26,7 @@
 #define FASTCHART_ENCODER_H
 
 #include "php.h"
+#include "main/php_streams.h"
 #include "zend_smart_str.h"
 #include <stdint.h>
 
@@ -36,6 +38,22 @@ typedef struct {
 	int      dpi;         /* 0 = don't write density metadata; else stamps pHYs/density */
 	int      png_level;   /* zlib compression level 0..9; -1 = library default (6) */
 } fastchart_pixels_t;
+
+typedef int (*fastchart_sink_write_fn)(void *context,
+	const uint8_t *data, size_t length);
+
+typedef struct {
+	fastchart_sink_write_fn write;
+	void                   *context;
+	size_t                  bytes_written;
+	int                     failed;
+} fastchart_sink_t;
+
+/* Sink callbacks return zero only after consuming the full write. Stream
+ * sinks retry partial writes and become permanently failed if the stream
+ * makes no forward progress. */
+void fastchart_sink_init_smart_str(fastchart_sink_t *sink, smart_str *out);
+void fastchart_sink_init_stream(fastchart_sink_t *sink, php_stream *stream);
 
 /* One-time module-load init: prewarms the SSSE3 capability cache so
  * its lazy first-call branch can't race under ZTS. */
@@ -51,6 +69,8 @@ void fastchart_pixels_release(fastchart_pixels_t *pix);
 /* Encode pix into PNG bytes. Returns 0 on success, -1 on encode
  * failure, -2 if libpng is not compiled in. */
 int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix);
+int fastchart_encode_png_sink(fastchart_sink_t *sink,
+	const fastchart_pixels_t *pix);
 
 /* Encode pix into JPEG bytes. quality is 1..100; clamped if out of
  * range. JPEG can't carry alpha, so transparent pixels are flattened
@@ -58,6 +78,8 @@ int fastchart_encode_png(smart_str *out, const fastchart_pixels_t *pix);
  * -2 if libjpeg-turbo is not compiled in. */
 int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
                           int quality, int bg_rgb);
+int fastchart_encode_jpeg_sink(fastchart_sink_t *sink,
+	const fastchart_pixels_t *pix, int quality, int bg_rgb);
 
 /* WebP encoding mode. See setWebpMode() in fastchart.stub.php for the
  * caller-facing description. DRAWING is the default and is tuned for
@@ -72,6 +94,8 @@ int fastchart_encode_jpeg(smart_str *out, const fastchart_pixels_t *pix,
  * encoder uses lossless compression. -2 if libwebp is not compiled in. */
 int fastchart_encode_webp(smart_str *out, const fastchart_pixels_t *pix,
                           int quality, int mode);
+int fastchart_encode_webp_sink(fastchart_sink_t *sink,
+	const fastchart_pixels_t *pix, int quality, int mode);
 
 /* Build-time availability + version strings. The "_version" helpers
  * return NULL when the lib isn't compiled in. */

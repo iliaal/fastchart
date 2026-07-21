@@ -113,12 +113,12 @@ void fc_svg_emit_clip_open(smart_str *buf, const char *id_ns, int id,
                             double x, double y, double w, double h);
 void fc_svg_emit_clip_close(smart_str *buf);
 
-/* Emit <image x y width height href="data:<mime>;base64,..."/>.
- * mime is e.g. "image/png"; b64 is a NUL-terminated base64-encoded
- * payload. preserveAspectRatio="none" so the image stretches to the
- * declared box (background-image semantics). */
-void fc_svg_emit_image_uri(smart_str *buf, int x, int y, int w, int h,
-                            const char *mime, const char *b64);
+/* Emit a namespaced unit <image> definition and transformed placements
+ * that reference it. The unit image stretches to each use's w/h box. */
+void fc_svg_emit_image_def(smart_str *buf, const char *id_ns, int id,
+	int width, int height, const char *mime, const char *b64);
+void fc_svg_emit_image_use(smart_str *buf, const char *id_ns, int id,
+	int x, int y, int w, int h, int source_w, int source_h);
 
 /* Emit a <defs><linearGradient/></defs><rect/> pair. `id` is a unique
  * integer used to construct the gradient id ("fcgN"). dir is 0 for
@@ -130,6 +130,10 @@ void fc_svg_emit_gradient_rect(smart_str *buf, const char *id_ns, int id,
                                 uint32_t from_rgb, uint32_t to_rgb,
                                 int dir);
 
+/* Emit only a rectangle referencing an existing gradient definition. */
+void fc_svg_emit_gradient_rect_ref(smart_str *buf, const char *id_ns, int id,
+                                    double x, double y, double w, double h);
+
 /* Same but with a polygon shape. The gradient's userSpaceOnUse
  * bounding box is (x0,y0)..(x1,y1) computed from the point min/max
  * so the gradient maps to the polygon's actual extent. */
@@ -137,5 +141,10 @@ void fc_svg_emit_gradient_polygon(smart_str *buf, const char *id_ns, int id,
                                    const int *xs, const int *ys, int n,
                                    uint32_t from_rgb, uint32_t to_rgb,
                                    int dir);
+
+/* Emit only a polygon referencing an existing gradient definition. */
+void fc_svg_emit_gradient_polygon_ref(smart_str *buf, const char *id_ns,
+                                       int id, const int *xs, const int *ys,
+                                       int n);
 
 #endif /* FASTCHART_SVG_H */

@@ -176,8 +176,6 @@ static void squarify(const double *areas, const int *order, int n,
 
 int fastchart_treemap_render_to_target(fastchart_treemap_obj *self, fastchart_target_t *t)
 {
-    fastchart_begin_render((fastchart_obj *)self, t);
-
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
@@ -201,14 +199,10 @@ int fastchart_treemap_render_to_target(fastchart_treemap_obj *self, fastchart_ta
 
     /* Plot rect: full canvas minus title at top + 12px padding all
      * other sides. setPlotRect overrides per the usual base-class
-     * contract (treemap layout is purely inside its rect, so we
-     * honor the user's bounds verbatim). */
+     * contract. */
     int x0 = 12, y0 = top, x1 = W - 13, y1 = H - 13;
-    if (self->has_plot_rect) {
-        x0 = (int)self->plot_x0; y0 = (int)self->plot_y0;
-        x1 = (int)self->plot_x1; y1 = (int)self->plot_y1;
-    }
-    if (x1 <= x0 || y1 <= y0) {
+	fastchart_apply_plot_rect((fastchart_obj *)self, &x0, &y0, &x1, &y1);
+    if (x1 < x0 || y1 < y0) {
         zend_throw_error(NULL,
             "FastChart\\Treemap::draw() plot area is empty after layout reservation");
         return -1;
@@ -330,4 +324,3 @@ int fastchart_treemap_render_to_target(fastchart_treemap_obj *self, fastchart_ta
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
 }
-

@@ -76,7 +76,12 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
 
     fastchart_value_range range;
     fastchart_value_range_compute(y_min, y_max, 6, &range);
-    fastchart_value_range_apply_override((fastchart_obj *)self, &range);
+	if (fastchart_value_range_apply_override((fastchart_obj *)self,
+			&range) != 0) {
+		efree(bar_lo);
+		efree(bar_hi);
+		return -1;
+	}
 
     fastchart_rect plot;
     /* Borrow the bar labels for the categorical x-axis margin so

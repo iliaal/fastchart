@@ -32,8 +32,6 @@
  * Caller controls bar order — the rendering does NOT re-sort. */
 int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_target_t *t)
 {
-    fastchart_begin_render((fastchart_obj *)self, t);
-
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
@@ -74,7 +72,10 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
     fastchart_value_range_compute(0, y_max, 5, &yr);
     /* Honor a forced left-axis range (setYAxisRange), like the other value
      * charts. Pareto bars are 0-based, so only the max is meaningful here. */
-    fastchart_value_range_apply_override((fastchart_obj *)self, &yr);
+	if (fastchart_value_range_apply_override((fastchart_obj *)self,
+			&yr) != 0) {
+		return -1;
+	}
     double y_axis_max = yr.max > 0 ? yr.max : y_max;
 
     /* Plot rect: leave room on left for bar-axis ticks, right for

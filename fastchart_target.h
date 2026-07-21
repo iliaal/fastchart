@@ -98,6 +98,8 @@ const struct fc_glyph_cache_entry *fastchart_resolve_glyph(
 
 #define FASTCHART_TARGET_CLIP_DEPTH  8
 #define FASTCHART_TARGET_FONT_CACHE  4
+#define FASTCHART_TARGET_GRADIENT_CACHE 32
+#define FASTCHART_TARGET_IMAGE_CACHE 33
 
 /* Dash patterns. The SVG backend translates to stroke-dasharray;
  * the values are kept identical to v0.x for source compat. */
@@ -125,6 +127,25 @@ typedef struct {
     char family[64];
 } fastchart_target_font_cache_entry;
 
+typedef struct {
+    uint32_t from_rgb;
+    uint32_t to_rgb;
+    int dir;
+    int id;
+} fastchart_target_gradient_cache_entry;
+
+typedef struct {
+	char *path;
+	zend_string *bytes;
+	const char *mime;
+	int width;
+	int height;
+	int svg_id;
+	int svg_width;
+	int svg_height;
+	int loaded;
+} fastchart_target_image_cache_entry;
+
 typedef struct fastchart_target {
     int kind;
     /* SVG backend state. `u.svg.X` access kept for source-compat with
@@ -138,6 +159,10 @@ typedef struct fastchart_target {
             int dpi;
             int next_clip_id;
             int next_grad_id;
+            int next_image_id;
+            fastchart_target_gradient_cache_entry
+                gradient_cache[FASTCHART_TARGET_GRADIENT_CACHE];
+            int gradient_cache_n;
             int text_mode;
             /* Optional NCName prefix for clip/gradient ids. Fragments
              * stitched into one host document otherwise all emit
@@ -156,6 +181,12 @@ typedef struct fastchart_target {
             int dpi;
         } pdf;
     } u;
+
+    /* One background path plus the public 32-icon cap. Failed loads
+     * retain only their path so repeated placements do not repeat I/O. */
+    fastchart_target_image_cache_entry
+        image_cache[FASTCHART_TARGET_IMAGE_CACHE];
+    int image_cache_n;
 
     /* Shared color table. handle = index. Grown on demand (ramp-heavy
      * charts — heatmap / treemap / word cloud — can allocate many more
@@ -212,9 +243,9 @@ int fastchart_target_pdf_finish(fastchart_target_t *t);
  * Only call from a zend_catch block. No-op for non-PDF targets. */
 void fastchart_target_pdf_abort(fastchart_target_t *t);
 
-/* Frees heap state attached to the target (color table + hash). Safe
- * to call on a target with no heap state. Resets the counters so the
- * target is ready for reuse. */
+/* Frees heap state attached to the target (source-image cache, color
+ * table, and hash). Safe to call on a target with no heap state. Resets
+ * the counters so the target is ready for reuse. */
 void fastchart_target_release(fastchart_target_t *t);
 
 /* Allocate a color handle for (r,g,b,a). 0..255 each; a=255 is opaque.
@@ -265,43 +296,25 @@ void fastchart_target_clip_push(fastchart_target_t *t,
                                  int x, int y, int w, int h);
 void fastchart_target_clip_pop(fastchart_target_t *t);
 
-/* Image blit: emit <image href="data:image/<mime>;base64,..."/> for
- * the file at `path`. The implementation opens the file once through
- * the PHP stream layer (which enforces open_basedir natively — no
- * TOCTOU window) and enforces the source-image byte and dimension
- * caps on the loaded buffer. If anything fails (missing file, too
- * large, unsupported format, open_basedir refusal), the call emits
- * nothing — background-image / icon callers fall through to their
- * solid-fill backup. PNG and JPEG only; WebP/GIF/AVIF source files
- * are silently skipped because plutosvg's data-URI loader handles
- * just those two. */
+/* Image blit. Each distinct path is opened and base64-encoded once per
+ * target, then emitted as one namespaced unit-image definition plus a
+ * transformed <use> placement. Failed loads are cached too. The PHP
+ * stream layer enforces open_basedir and the loader enforces source byte,
+ * dimension, format, and regular-file caps. PNG and JPEG only. */
 void fastchart_target_image(fastchart_target_t *t,
                              int x, int y, int w, int h,
                              const char *path);
 
-/* Two-step source-image load + emit, for callers that need the
- * declared width/height to compute layout (e.g. icon aspect-ratio
- * scaling). Same single-open / open_basedir-honoring semantics as
- * fastchart_target_image. After a successful _load, the caller may
- * inspect buf.width / buf.height and call _emit at any target
- * coordinates, then _release the bytes. */
-typedef struct {
-    zend_string *bytes;
-    const char  *mime;   /* "image/png" or "image/jpeg" */
-    int width;
-    int height;
-} fastchart_image_buf_t;
-
-int  fastchart_target_load_source_image(const char *path,
-                                        fastchart_image_buf_t *out);
-void fastchart_target_image_emit(fastchart_target_t *t,
-                                 int x, int y, int w, int h,
-                                 const fastchart_image_buf_t *buf);
-void fastchart_target_image_release(fastchart_image_buf_t *buf);
+/* Return cached source dimensions for aspect-ratio placement. The first
+ * lookup performs the same load as fastchart_target_image; later calls
+ * reuse either its success or failure result. */
+int fastchart_target_image_dims(fastchart_target_t *t, const char *path,
+                                int *width, int *height);
 
 /* Gradient fills. `dir` is 0 (vertical) or 1 (horizontal); from/to
- * are 0xRRGGBB with alpha implied 0xFF. The target allocates a
- * unique gradient id per call. */
+ * are 0xRRGGBB, optionally with alpha in the high byte. The SVG
+ * backend reuses definitions with identical endpoints and direction
+ * within one target. */
 void fastchart_target_gradient_rect(fastchart_target_t *t,
                                      int x, int y, int w, int h,
                                      uint32_t from_rgb, uint32_t to_rgb,

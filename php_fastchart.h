@@ -88,10 +88,9 @@ ZEND_BEGIN_MODULE_GLOBALS(fastchart)
     fc_glyph_cache_entry   glyph_cache[FC_GLYPH_CACHE_N];
     fc_measure_cache_entry measure_cache[FC_MEASURE_CACHE_N];
     /* fastchart.max_render_pixels: operator ceiling on the physical
-     * raster pixel count. The rasterizer allocates ~8 bytes/pixel
-     * across two full frames, half of it malloc-backed and invisible
-     * to memory_limit, so this is the knob that actually bounds a
-     * render's native footprint. Clamped to the built-in 64M cap. */
+     * raster pixel count. The RGBA frame uses four PHP-accounted bytes
+     * per pixel, plus native encoder workspace. Clamped to the built-in
+     * 64M cap. */
     zend_long              max_render_pixels;
 ZEND_END_MODULE_GLOBALS(fastchart)
 
@@ -445,11 +444,9 @@ typedef struct {
  *   shape == FASTCHART_IMAGE_MAP_POLY:   coords holds n_coords pairs
  *                                        of (x, y); n_coords = 2 * verts.
  *
- * href is owned and may borrow from the chart's image_map_entries.
- * For circle hotspots from ScatterChart, href/tooltip borrow the
- * per-point fastchart_scatter_point fields (same lifetime). For
- * rect/poly hotspots from Bar/Pie/Line, href/tooltip borrow
- * fastchart_image_map_entry slots populated by setImageMap(). */
+ * Each active area owns references to its immutable href/tooltip
+ * strings. Render artifacts therefore remain independent of the
+ * source image-map entries or ScatterChart points that produced them. */
 #define FASTCHART_IMAGE_MAP_CIRCLE 0
 #define FASTCHART_IMAGE_MAP_RECT   1
 #define FASTCHART_IMAGE_MAP_POLY   2
@@ -463,8 +460,8 @@ typedef struct fastchart_image_map_area {
     int shape;
     int n_coords;
     int coords[FASTCHART_IMAGE_MAP_MAX_COORDS];
-    const char *href;
-    const char *tooltip;
+    zend_string *href;
+    zend_string *tooltip;
     int orig_index;   /* position in the original setSeries/setSlices/setPoints */
 } fastchart_image_map_area;
 
@@ -472,8 +469,8 @@ typedef struct fastchart_image_map_area {
  * stored on Chart base. Each entry is indexed by its position in
  * setSeries() / setSlices() / setPoints(). Both pointers are owned. */
 typedef struct fastchart_image_map_entry {
-    char *href;
-    char *tooltip;
+    zend_string *href;
+    zend_string *tooltip;
 } fastchart_image_map_entry;
 
 /* ScatterChart point. series_idx selects the per-series palette
@@ -484,8 +481,8 @@ typedef struct {
     double y;
     int series_idx;       /* 0..MAX_SCATTER_SERIES-1 */
     int color_rgb;        /* -1 = use palette */
-    char *href;           /* owned, may be NULL */
-    char *tooltip;        /* owned, may be NULL */
+    zend_string *href;    /* owned reference, may be NULL */
+    zend_string *tooltip; /* owned reference, may be NULL */
 } fastchart_scatter_point;
 
 #define FASTCHART_MAX_SCATTER_POINTS 4096
@@ -844,6 +841,12 @@ typedef struct {
     zend_long candle_style;
     fastchart_candle *candles;          /* malloc'd, owned */
     int candle_count;
+    double *close_stats_values;         /* normalized closes, centered */
+    double close_stats_origin;
+    double close_stats_scale;
+    bool close_stats_scaled;
+    double *close_stats_cache;          /* latest Bollinger sigma */
+    int close_stats_cache_period;
     bool any_volume;
     bool volume_pane;
     int *volume_colors;                 /* malloc'd, parallel to candles up to volume_colors_count; -1 = use up/down default */
@@ -1132,6 +1135,12 @@ typedef struct {
     int link_count;
     zend_long seed;                    /* PRNG seed for deterministic layout */
     zend_long iterations;              /* Fruchterman-Reingold passes */
+	double *layout_x;                    /* cached final logical coordinates */
+	double *layout_y;
+	int layout_count;
+	int layout_x0, layout_y0;
+	int layout_x1, layout_y1;
+	bool layout_valid;
     zend_object std;
 } fastchart_network_obj;
 

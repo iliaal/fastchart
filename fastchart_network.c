@@ -50,8 +50,6 @@ static inline double fc_xs_unit(uint32_t *s)
 
 int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_target_t *t)
 {
-    fastchart_begin_render((fastchart_obj *)self, t);
-
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
@@ -92,110 +90,135 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
     if (plot_w < 20.0 || plot_h < 20.0) return 0;
 
     int n = self->node_count;
-    double *px = ecalloc(n, sizeof(*px));
-    double *py = ecalloc(n, sizeof(*py));
-    double *dx = ecalloc(n, sizeof(*dx));
-    double *dy = ecalloc(n, sizeof(*dy));
     int *degree = ecalloc(n, sizeof(*degree));
     for (int e = 0; e < self->link_count; e++) {
         degree[self->links[e].from]++;
         degree[self->links[e].to]++;
     }
+	double *px = self->layout_x;
+	double *py = self->layout_y;
+	bool cache_hit = self->layout_valid && px && py
+		&& self->layout_count == n
+		&& self->layout_x0 == plot_x0 && self->layout_y0 == plot_y0
+		&& self->layout_x1 == plot_x1 && self->layout_y1 == plot_y1;
 
-    uint32_t rng = (uint32_t)self->seed;
-    if (rng == 0) rng = 1;
-    for (int i = 0; i < n; i++) {
-        px[i] = plot_x0 + fc_xs_unit(&rng) * plot_w;
-        py[i] = plot_y0 + fc_xs_unit(&rng) * plot_h;
-    }
+	if (!cache_hit) {
+		px = ecalloc((size_t)n, sizeof(*px));
+		py = ecalloc((size_t)n, sizeof(*py));
+		double *dx = ecalloc((size_t)n, sizeof(*dx));
+		double *dy = ecalloc((size_t)n, sizeof(*dy));
 
-    double area = plot_w * plot_h;
-    double k = 0.8 * sqrt(area / (double)n);
-    if (k < 1.0) k = 1.0;
-    double k2 = k * k;                  /* loop-invariant; hoisted */
-    int iters = (int)self->iterations;
-    if (iters < 1) iters = 1;
+		uint32_t rng = (uint32_t)self->seed;
+		if (rng == 0) rng = 1;
+		for (int i = 0; i < n; i++) {
+			px[i] = plot_x0 + fc_xs_unit(&rng) * plot_w;
+			py[i] = plot_y0 + fc_xs_unit(&rng) * plot_h;
+		}
+
+		double area = plot_w * plot_h;
+		double k = 0.8 * sqrt(area / (double)n);
+		if (k < 1.0) k = 1.0;
+		double k2 = k * k;
+		int iters = (int)self->iterations;
+		if (iters < 1) iters = 1;
     /* Repulsion is O(n^2) per pass, so total work is O(n^2 * iters).
      * Scale the iteration count down for large graphs so a single
      * render can't pin a CPU on adversarial input (n up to 512,
      * user-settable iters up to 5000). Small graphs keep their full
      * requested count. */
-    long pairs = (long)n * n;
-    long budget = 60000000L;           /* ~ pair-steps per render */
-    if (pairs > 0 && (long)iters * pairs > budget) {
-        iters = (int)(budget / pairs);
-        if (iters < 1) iters = 1;
-    }
-    double temp0 = plot_w * 0.1;
+		long pairs = (long)n * n;
+		long budget = 60000000L;
+		if (pairs > 0 && (long)iters * pairs > budget) {
+			iters = (int)(budget / pairs);
+			if (iters < 1) iters = 1;
+		}
+		double temp0 = plot_w * 0.1;
 
-    for (int it = 0; it < iters; it++) {
-        for (int i = 0; i < n; i++) { dx[i] = 0.0; dy[i] = 0.0; }
+		for (int it = 0; it < iters; it++) {
+			for (int i = 0; i < n; i++) { dx[i] = 0.0; dy[i] = 0.0; }
 
-        /* Repulsion between every pair. */
-        for (int i = 0; i < n; i++) {
-            for (int j = i + 1; j < n; j++) {
-                double ddx = px[i] - px[j];
-                double ddy = py[i] - py[j];
-                double dist = sqrt(ddx * ddx + ddy * ddy);
-                if (dist < 0.01) {
-                    /* Coincident: deterministic nudge from the PRNG. */
-                    ddx = fc_xs_unit(&rng) - 0.5;
-                    ddy = fc_xs_unit(&rng) - 0.5;
-                    dist = sqrt(ddx * ddx + ddy * ddy) + 0.01;
-                }
-                double force = k2 / dist;
-                double ux = ddx / dist, uy = ddy / dist;
-                dx[i] += ux * force; dy[i] += uy * force;
-                dx[j] -= ux * force; dy[j] -= uy * force;
-            }
-        }
-        /* Attraction along edges. */
-        for (int e = 0; e < self->link_count; e++) {
-            int a = self->links[e].from, b = self->links[e].to;
-            double ddx = px[a] - px[b];
-            double ddy = py[a] - py[b];
-            double dist = sqrt(ddx * ddx + ddy * ddy);
-            if (dist < 0.01) dist = 0.01;
-            double force = (dist * dist) / k;
-            double ux = ddx / dist, uy = ddy / dist;
-            dx[a] -= ux * force; dy[a] -= uy * force;
-            dx[b] += ux * force; dy[b] += uy * force;
-        }
+			/* Repulsion between every pair. */
+			for (int i = 0; i < n; i++) {
+				for (int j = i + 1; j < n; j++) {
+					double ddx = px[i] - px[j];
+					double ddy = py[i] - py[j];
+					double dist = sqrt(ddx * ddx + ddy * ddy);
+					if (dist < 0.01) {
+						ddx = fc_xs_unit(&rng) - 0.5;
+						ddy = fc_xs_unit(&rng) - 0.5;
+						dist = sqrt(ddx * ddx + ddy * ddy) + 0.01;
+					}
+					double force = k2 / dist;
+					double ux = ddx / dist, uy = ddy / dist;
+					dx[i] += ux * force; dy[i] += uy * force;
+					dx[j] -= ux * force; dy[j] -= uy * force;
+				}
+			}
+			/* Attraction along edges. */
+			for (int e = 0; e < self->link_count; e++) {
+				int a = self->links[e].from, b = self->links[e].to;
+				double ddx = px[a] - px[b];
+				double ddy = py[a] - py[b];
+				double dist = sqrt(ddx * ddx + ddy * ddy);
+				if (dist < 0.01) dist = 0.01;
+				double force = (dist * dist) / k;
+				double ux = ddx / dist, uy = ddy / dist;
+				dx[a] -= ux * force; dy[a] -= uy * force;
+				dx[b] += ux * force; dy[b] += uy * force;
+			}
 
-        double temp = temp0 * (1.0 - (double)it / iters);
-        if (temp < 0.5) temp = 0.5;
-        for (int i = 0; i < n; i++) {
-            double dlen = sqrt(dx[i] * dx[i] + dy[i] * dy[i]);
-            if (dlen > 0.0) {
-                double step = dlen < temp ? dlen : temp;
-                px[i] += (dx[i] / dlen) * step;
-                py[i] += (dy[i] / dlen) * step;
-            }
-            if (px[i] < plot_x0) px[i] = plot_x0;
-            if (px[i] > plot_x1) px[i] = plot_x1;
-            if (py[i] < plot_y0) py[i] = plot_y0;
-            if (py[i] > plot_y1) py[i] = plot_y1;
-        }
-    }
+			double temp = temp0 * (1.0 - (double)it / iters);
+			if (temp < 0.5) temp = 0.5;
+			for (int i = 0; i < n; i++) {
+				double dlen = sqrt(dx[i] * dx[i] + dy[i] * dy[i]);
+				if (dlen > 0.0) {
+					double step = dlen < temp ? dlen : temp;
+					px[i] += (dx[i] / dlen) * step;
+					py[i] += (dy[i] / dlen) * step;
+				}
+				if (px[i] < plot_x0) px[i] = plot_x0;
+				if (px[i] > plot_x1) px[i] = plot_x1;
+				if (py[i] < plot_y0) py[i] = plot_y0;
+				if (py[i] > plot_y1) py[i] = plot_y1;
+			}
+		}
 
-    /* Rescale the final bounding box to fill the plot rect. */
-    double minx = px[0], maxx = px[0], miny = py[0], maxy = py[0];
-    for (int i = 1; i < n; i++) {
-        if (px[i] < minx) minx = px[i];
-        if (px[i] > maxx) maxx = px[i];
-        if (py[i] < miny) miny = py[i];
-        if (py[i] > maxy) maxy = py[i];
-    }
-    double spanx = maxx - minx, spany = maxy - miny;
-    int pad = 24;
-    for (int i = 0; i < n; i++) {
-        px[i] = spanx > 1e-6
-            ? plot_x0 + pad + (px[i] - minx) / spanx * (plot_w - 2 * pad)
-            : (plot_x0 + plot_x1) / 2.0;
-        py[i] = spany > 1e-6
-            ? plot_y0 + pad + (py[i] - miny) / spany * (plot_h - 2 * pad)
-            : (plot_y0 + plot_y1) / 2.0;
-    }
+		/* Rescale the final bounding box to fill the plot rect. */
+		double minx = px[0], maxx = px[0], miny = py[0], maxy = py[0];
+		for (int i = 1; i < n; i++) {
+			if (px[i] < minx) minx = px[i];
+			if (px[i] > maxx) maxx = px[i];
+			if (py[i] < miny) miny = py[i];
+			if (py[i] > maxy) maxy = py[i];
+		}
+		double spanx = maxx - minx, spany = maxy - miny;
+		int pad = 24;
+		for (int i = 0; i < n; i++) {
+			px[i] = spanx > 1e-6
+				? plot_x0 + pad + (px[i] - minx) / spanx *
+					(plot_w - 2 * pad)
+				: (plot_x0 + plot_x1) / 2.0;
+			py[i] = spany > 1e-6
+				? plot_y0 + pad + (py[i] - miny) / spany *
+					(plot_h - 2 * pad)
+				: (plot_y0 + plot_y1) / 2.0;
+		}
+		efree(dx);
+		efree(dy);
+
+		double *old_x = self->layout_x;
+		double *old_y = self->layout_y;
+		self->layout_x = px;
+		self->layout_y = py;
+		self->layout_count = n;
+		self->layout_x0 = plot_x0;
+		self->layout_y0 = plot_y0;
+		self->layout_x1 = plot_x1;
+		self->layout_y1 = plot_y1;
+		self->layout_valid = true;
+		if (old_x) efree(old_x);
+		if (old_y) efree(old_y);
+	}
 
     /* Edges first. */
     double max_val = 0.0;
@@ -240,7 +263,7 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
                             ZSTR_VAL(self->title), NULL, 0);
     }
 
-    efree(px); efree(py); efree(dx); efree(dy); efree(degree);
+	efree(degree);
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
 }
