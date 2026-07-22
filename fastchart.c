@@ -7253,6 +7253,9 @@ static int fastchart_atomic_check_pinned_parent(
 # endif
 # define FASTCHART_STATUS_OBJECT_NAME_NOT_FOUND ((NTSTATUS)0xc0000034L)
 # define FASTCHART_STATUS_OBJECT_NAME_COLLISION ((NTSTATUS)0xc0000035L)
+/* winternl.h omits this stable NT information-class value. */
+# define FASTCHART_FILE_RENAME_INFORMATION_CLASS \
+	((FILE_INFORMATION_CLASS)10)
 
 typedef NTSTATUS (NTAPI *fastchart_nt_create_file_fn)(
 	PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, PIO_STATUS_BLOCK,
@@ -7391,7 +7394,8 @@ static bool fastchart_windows_rename_handle(HANDLE source,
 	memcpy(information->file_name, name, name_bytes);
 	IO_STATUS_BLOCK status_block;
 	NTSTATUS status = nt_set_information_file(source, &status_block,
-		information, (ULONG)info_size, FileRenameInformation);
+		information, (ULONG)info_size,
+		FASTCHART_FILE_RENAME_INFORMATION_CLASS);
 	free(information);
 	return NT_SUCCESS(status);
 }
