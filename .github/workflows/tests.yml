@@ -715,7 +715,7 @@ jobs:
             grep -E '^FAIL\b|^FAILED TEST|^BORK' /tmp/test-output.txt || true
             exit 1
           fi
-          if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
+          if grep -Eq '^Tests failed[[:space:]]*:[[:space:]]*[1-9]' /tmp/test-output.txt; then
             echo "::error::Tests failed on PHP ${{ matrix.php }} - macOS"
             grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
             exit 1
@@ -723,14 +723,14 @@ jobs:
           # Skip ceiling. macOS loads gd and is built without pdfio.
           # Legitimate skips mirror Linux (7 PDF + up to 12 font +
           # locale), plus macOS-only environment skips: /proc-gated
-          # (136_source_image_non_regular) always skips (no procfs) and
-          # the comma-decimal-locale test typically skips. Budget 30 to
-          # cover the extra macOS environment skips over Linux's 25.
+          # source-image and atomic-output race tests skip without procfs,
+          # and the comma-decimal-locale test typically skips. Budget 35
+          # covers those five platform-gated atomic-output tests.
           SKIPPED=$(grep -oE '^Tests skipped[[:space:]]*:[[:space:]]*[0-9]+' /tmp/test-output.txt | grep -oE '[0-9]+' | head -1)
           SKIPPED=${SKIPPED:-0}
-          echo "Tests skipped: $SKIPPED (ceiling 30)"
-          if [ "$SKIPPED" -gt 30 ]; then
-            echo "::error::Skip count $SKIPPED exceeds ceiling 30 on PHP ${{ matrix.php }} - macOS — a capability likely vanished; tests are hiding in the skip counter"
+          echo "Tests skipped: $SKIPPED (ceiling 35)"
+          if [ "$SKIPPED" -gt 35 ]; then
+            echo "::error::Skip count $SKIPPED exceeds ceiling 35 on PHP ${{ matrix.php }} - macOS — a capability likely vanished; tests are hiding in the skip counter"
             grep -E '^SKIP\b' /tmp/test-output.txt || true
             exit 1
           fi
