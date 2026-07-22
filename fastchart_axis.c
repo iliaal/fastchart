@@ -1002,11 +1002,10 @@ void fastchart_blit_icon(fastchart_target_t *t, const fastchart_icon *icon,
 	fastchart_target_image(t, x, y, dw, dh, icon->path);
 }
 
-/* Translate libgd's 0..127 (0=opaque, 127=transparent) per-band alpha
+/* Translate the 0..127 per-band alpha (0=opaque, 127=transparent)
  * to the 0..255 (255=opaque) convention used by fastchart_target_color.
- * The inverse of the gd_alpha = (255 - a) >> 1 mapping in
- * fastchart_target_color, with the +1 rounding so a band->alpha=0
- * round-trips to fully opaque. */
+ * The inverse of the (255 - a) >> 1 mapping in fastchart_target_color,
+ * with +1 rounding so alpha=0 round-trips to fully opaque. */
 static inline int band_alpha_to_255(int gd_alpha)
 {
     return fastchart_gd_alpha_to_byte(gd_alpha);
@@ -1946,8 +1945,7 @@ void fastchart_draw_overlays_categorical(fastchart_target_t *t, fastchart_obj *c
             int r = (int)((rgba >> 16) & 0xFFu);
             int g = (int)((rgba >>  8) & 0xFFu);
             int b = (int)( rgba        & 0xFFu);
-            /* Match the old gdImageColorAllocateAlpha(..., 80) blend:
-             * 80 in libgd 0..127 -> 255 - 80*2 = 95 in 0..255. */
+            /* 80 in the legacy 0..127 alpha convention -> 95 in 0..255. */
             int alpha_color = fastchart_target_color(t, r, g, b, 95);
 
             /* Sized for every valid point: a fixed cap would truncate the

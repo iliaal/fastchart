@@ -122,6 +122,21 @@ typedef struct fastchart_point {
     int y;
 } fastchart_point_t;
 
+/* Split a fastchart_point_t array into parallel xs/ys int arrays.
+ * xs_in/ys_in should point to stack buffers; the macro overwrites
+ * them with heap-allocated arrays when n > 256. */
+#define FASTCHART_SPLIT_POINTS(pts_, n_, xs_in_, ys_in_) \
+    do { \
+        if ((n_) > 256) { \
+            (xs_in_) = emalloc(sizeof(int) * (size_t)(n_)); \
+            (ys_in_) = emalloc(sizeof(int) * (size_t)(n_)); \
+        } \
+        for (int _i = 0; _i < (n_); _i++) { \
+            (xs_in_)[_i] = (pts_)[_i].x; \
+            (ys_in_)[_i] = (pts_)[_i].y; \
+        } \
+    } while (0)
+
 typedef struct {
     const char *path;
     char family[64];

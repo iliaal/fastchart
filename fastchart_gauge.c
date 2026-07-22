@@ -26,8 +26,7 @@
 #include <math.h>
 
 /* Map a gauge value v in [min, max] to an angle in degrees on a
- * 180° arc (180° = left/min, 0° = right/max in libgd's clockwise
- * coordinate system). */
+ * 180° arc (180° = left/min, 0° = right/max, CW convention). */
 static double gauge_value_to_deg(double v, double mn, double mx)
 {
     if (!(v >= mn)) v = mn;
@@ -104,9 +103,9 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
     double mx = self->gauge_max;
     double v = self->gauge_value;
 
-    /* Draw zones (or a single fill). libgd arc angles are clockwise
-     * with 0° at 3-o'clock; a 180° arc covers 180° (left) to 360°
-     * (right). Zones are pre-parsed into typed C state by setZones. */
+    /* Draw zones (or a single fill). CW angles: 0° at 3-o'clock;
+     * a 180° arc covers 180° (left) to 360° (right). Zones are
+     * pre-parsed into typed C state by setZones. */
     int default_color = pal.series[0];
 
     int is_solid = self->gauge_style == FASTCHART_GAUGE_STYLE_SOLID;
@@ -146,13 +145,10 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
             if (zn->color_rgb >= 0) {
                 color = fastchart_target_color_rgb(t, zn->color_rgb);
             }
-            /* Map gauge values directly into libgd's arc-angle frame:
+            /* Map gauge values directly into the arc-angle frame:
              *   value=min  -> 180° (left edge of upper half)
              *   value=max  -> 360° (right edge of upper half)
-             * Increasing value sweeps CCW through the top. The old
-             * code routed via gauge_value_to_deg [180..0] plus a
-             * +=180 / %360 dance, which collapsed the leftmost zone
-             * to a 1° sliver because value=0 wrapped 360 -> 0. */
+             * Increasing value sweeps CCW through the top. */
             double frac_a = (zn->from - mn) / (mx - mn);
             double frac_b = (zn->to   - mn) / (mx - mn);
             if (!(frac_a >= 0.0)) frac_a = 0.0;

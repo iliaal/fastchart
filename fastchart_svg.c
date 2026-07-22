@@ -311,19 +311,9 @@ void fc_svg_emit_line(smart_str *buf,
     FC_APPENDS(buf, "/>\n");
 }
 
-void fc_svg_emit_rect(smart_str *buf,
-                      double x, double y, double w, double h,
-                      uint32_t rgba, int fill, int thickness)
+static void fc_svg_emit_fill_stroke(smart_str *buf,
+                                    uint32_t rgba, int fill, int thickness)
 {
-    FC_APPENDS(buf, "<rect x=\"");
-    fc_svg_fmt_num(buf, x);
-    FC_APPENDS(buf, "\" y=\"");
-    fc_svg_fmt_num(buf, y);
-    FC_APPENDS(buf, "\" width=\"");
-    fc_svg_fmt_num(buf, w);
-    FC_APPENDS(buf, "\" height=\"");
-    fc_svg_fmt_num(buf, h);
-    smart_str_appendc(buf, '"');
     if (fill) {
         FC_APPENDS(buf, " fill=\"");
         fc_svg_fmt_color(buf, rgba);
@@ -338,6 +328,22 @@ void fc_svg_emit_rect(smart_str *buf,
             smart_str_appendc(buf, '"');
         }
     }
+}
+
+void fc_svg_emit_rect(smart_str *buf,
+                      double x, double y, double w, double h,
+                      uint32_t rgba, int fill, int thickness)
+{
+    FC_APPENDS(buf, "<rect x=\"");
+    fc_svg_fmt_num(buf, x);
+    FC_APPENDS(buf, "\" y=\"");
+    fc_svg_fmt_num(buf, y);
+    FC_APPENDS(buf, "\" width=\"");
+    fc_svg_fmt_num(buf, w);
+    FC_APPENDS(buf, "\" height=\"");
+    fc_svg_fmt_num(buf, h);
+    smart_str_appendc(buf, '"');
+    fc_svg_emit_fill_stroke(buf, rgba, fill, thickness);
     FC_APPENDS(buf, "/>\n");
 }
 
@@ -354,20 +360,7 @@ void fc_svg_emit_polygon(smart_str *buf,
         smart_str_append_long(buf, ys[i]);
     }
     smart_str_appendc(buf, '"');
-    if (fill) {
-        FC_APPENDS(buf, " fill=\"");
-        fc_svg_fmt_color(buf, rgba);
-        smart_str_appendc(buf, '"');
-    } else {
-        FC_APPENDS(buf, " fill=\"none\" stroke=\"");
-        fc_svg_fmt_color(buf, rgba);
-        smart_str_appendc(buf, '"');
-        if (thickness > 1) {
-            FC_APPENDS(buf, " stroke-width=\"");
-            smart_str_append_long(buf, thickness);
-            smart_str_appendc(buf, '"');
-        }
-    }
+    fc_svg_emit_fill_stroke(buf, rgba, fill, thickness);
     FC_APPENDS(buf, "/>\n");
 }
 
@@ -418,20 +411,7 @@ void fc_svg_emit_ellipse(smart_str *buf,
         fc_svg_fmt_num(buf, ry);
         smart_str_appendc(buf, '"');
     }
-    if (fill) {
-        FC_APPENDS(buf, " fill=\"");
-        fc_svg_fmt_color(buf, rgba);
-        smart_str_appendc(buf, '"');
-    } else {
-        FC_APPENDS(buf, " fill=\"none\" stroke=\"");
-        fc_svg_fmt_color(buf, rgba);
-        smart_str_appendc(buf, '"');
-        if (thickness > 1) {
-            FC_APPENDS(buf, " stroke-width=\"");
-            smart_str_append_long(buf, thickness);
-            smart_str_appendc(buf, '"');
-        }
-    }
+    fc_svg_emit_fill_stroke(buf, rgba, fill, thickness);
     FC_APPENDS(buf, "/>\n");
 }
 
@@ -440,11 +420,8 @@ void fc_svg_emit_path_arc(smart_str *buf,
                            double start_deg, double end_deg,
                            uint32_t rgba, int fill, int thickness)
 {
-    /* libgd's gdImageFilledArc has 0° at east, increasing clockwise.
-     * SVG: x = cx + rx*cos(theta), y = cy + ry*sin(theta) in screen
-     * coords where +y is south. sin(90°) = +1 (south), matching
-     * libgd's CW convention. So no axis flip is needed; the two
-     * coordinate systems agree. */
+    /* Angle convention: 0° at east, increasing clockwise (matching
+     * SVG's screen coords where +y is south). No axis flip needed. */
     double sweep = end_deg - start_deg;
     if (sweep < 0) sweep += 360.0;  /* normalise */
 

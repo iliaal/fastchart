@@ -286,8 +286,7 @@ int fastchart_encode_png_sink(fastchart_sink_t *sink,
 	             PNG_FILTER_TYPE_DEFAULT);
 
 	if (pix->dpi > 0) {
-		/* DPI -> pixels per meter: 1 inch = 0.0254 m. Mirrors what
-		 * libgd's gdImageSetResolution writes into pHYs. */
+		/* DPI -> pixels per meter: 1 inch = 0.0254 m. */
 		png_uint_32 ppm = (png_uint_32)((double)pix->dpi / 0.0254 + 0.5);
 		png_set_pHYs(png, info, ppm, ppm, PNG_RESOLUTION_METER);
 	}

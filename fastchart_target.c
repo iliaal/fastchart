@@ -289,19 +289,9 @@ void fastchart_target_polygon(fastchart_target_t *t,
                                int color, int fill, int thickness)
 {
     if (n < 2) return;
-    /* SVG path needs separate int arrays. Stack-buffer up to 256
-     * points, else heap. Charts rarely exceed ~64 points in a polygon
-     * (markers are 3-8; area fills can be larger but still bounded). */
     int xs_stack[256], ys_stack[256];
     int *xs = xs_stack, *ys = ys_stack;
-    if (n > 256) {
-        xs = emalloc(sizeof(int) * (size_t)n);
-        ys = emalloc(sizeof(int) * (size_t)n);
-    }
-    for (int i = 0; i < n; i++) {
-        xs[i] = pts[i].x;
-        ys[i] = pts[i].y;
-    }
+    FASTCHART_SPLIT_POINTS(pts, n, xs, ys);
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) {
@@ -321,14 +311,7 @@ void fastchart_target_polyline(fastchart_target_t *t,
     if (n < 2) return;
     int xs_stack[256], ys_stack[256];
     int *xs = xs_stack, *ys = ys_stack;
-    if (n > 256) {
-        xs = emalloc(sizeof(int) * (size_t)n);
-        ys = emalloc(sizeof(int) * (size_t)n);
-    }
-    for (int i = 0; i < n; i++) {
-        xs[i] = pts[i].x;
-        ys[i] = pts[i].y;
-    }
+    FASTCHART_SPLIT_POINTS(pts, n, xs, ys);
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) {
@@ -1183,14 +1166,7 @@ void fastchart_target_gradient_polygon(fastchart_target_t *t,
     if (n < 3) return;
     int xs_stack[256], ys_stack[256];
     int *xs = xs_stack, *ys = ys_stack;
-    if (n > 256) {
-        xs = emalloc(sizeof(int) * (size_t)n);
-        ys = emalloc(sizeof(int) * (size_t)n);
-    }
-    for (int i = 0; i < n; i++) {
-        xs[i] = pts[i].x;
-        ys[i] = pts[i].y;
-    }
+    FASTCHART_SPLIT_POINTS(pts, n, xs, ys);
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) {
         fc_pdf_emit_gradient_polygon(t->u.pdf.state, xs, ys, n,

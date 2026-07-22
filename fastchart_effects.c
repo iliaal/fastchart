@@ -19,7 +19,6 @@
 #include "php.h"
 #include "fastchart_effects.h"
 #include "fastchart_target.h"
-#include "fastchart_text.h"
 
 int fastchart_lerp_rgb(int from, int to, double t)
 {
@@ -38,15 +37,12 @@ int fastchart_lerp_rgb(int from, int to, double t)
 
 
 
-/* Translate the chart's libgd-convention shadow alpha (0..127,
- * 0 = fully opaque, 127 = fully transparent) into the 0..255
- * (255 = fully opaque) alpha used by fastchart_target_color.
+/* Translate the chart's shadow alpha (0..127, 0 = fully opaque,
+ * 127 = fully transparent) into the 0..255 (255 = fully opaque)
+ * alpha used by fastchart_target_color.
  *
- * The old `255 - a * 2` formula left a one-unit floor: input 127
- * mapped to 1/255, not 0, so a user requesting an invisible drop
- * shadow still got a faint rgba(0,0,0,0.004) trace in the SVG.
- * Proportional scaling rounds 127 cleanly to 0 while preserving
- * the same opaque endpoint at input 0. */
+ * The proportional formula rounds 127 cleanly to 0 while preserving
+ * the opaque endpoint at input 0. */
 static int shadow_alpha_to_255(const fastchart_obj *chart)
 {
     return fastchart_gd_alpha_to_byte((int)chart->shadow_alpha);
