@@ -85,3 +85,4 @@ tests/**/*.php.out
 
 # codesage MCP server runtime (sock/pid/log)
 /codesage/
+.worktrees

@@ -87,6 +87,10 @@ ZEND_BEGIN_MODULE_GLOBALS(fastchart)
     fc_ft_face_slot        ft_face_cache[FC_FT_FACE_CACHE_N];
     fc_glyph_cache_entry   glyph_cache[FC_GLYPH_CACHE_N];
     fc_measure_cache_entry measure_cache[FC_MEASURE_CACHE_N];
+#if defined(__linux__)
+	uint64_t               renameat2_unsupported_devs[8];
+	int                    renameat2_unsupported_count;
+#endif
     /* fastchart.max_render_pixels: operator ceiling on the physical
      * raster pixel count. The RGBA frame uses four PHP-accounted bytes
      * per pixel, plus native encoder workspace. Clamped to the built-in
@@ -460,8 +464,8 @@ typedef struct fastchart_image_map_area {
     int shape;
     int n_coords;
     int coords[FASTCHART_IMAGE_MAP_MAX_COORDS];
-    zend_string *href;
-    zend_string *tooltip;
+	zend_string *href;
+	zend_string *tooltip;
     int orig_index;   /* position in the original setSeries/setSlices/setPoints */
 } fastchart_image_map_area;
 
@@ -469,8 +473,8 @@ typedef struct fastchart_image_map_area {
  * stored on Chart base. Each entry is indexed by its position in
  * setSeries() / setSlices() / setPoints(). Both pointers are owned. */
 typedef struct fastchart_image_map_entry {
-    zend_string *href;
-    zend_string *tooltip;
+	zend_string *href;
+	zend_string *tooltip;
 } fastchart_image_map_entry;
 
 /* ScatterChart point. series_idx selects the per-series palette
@@ -481,8 +485,8 @@ typedef struct {
     double y;
     int series_idx;       /* 0..MAX_SCATTER_SERIES-1 */
     int color_rgb;        /* -1 = use palette */
-    zend_string *href;    /* owned reference, may be NULL */
-    zend_string *tooltip; /* owned reference, may be NULL */
+	zend_string *href;    /* owned reference, may be NULL */
+	zend_string *tooltip; /* owned reference, may be NULL */
 } fastchart_scatter_point;
 
 #define FASTCHART_MAX_SCATTER_POINTS 4096
@@ -841,12 +845,9 @@ typedef struct {
     zend_long candle_style;
     fastchart_candle *candles;          /* malloc'd, owned */
     int candle_count;
-    double *close_stats_values;         /* normalized closes, centered */
-    double close_stats_origin;
-    double close_stats_scale;
-    bool close_stats_scaled;
-    double *close_stats_cache;          /* latest Bollinger sigma */
-    int close_stats_cache_period;
+	bool close_stats_scaled_windows;
+	double *close_stats_cache;          /* latest Bollinger sigma */
+	int close_stats_cache_period;
     bool any_volume;
     bool volume_pane;
     int *volume_colors;                 /* malloc'd, parallel to candles up to volume_colors_count; -1 = use up/down default */

@@ -656,7 +656,7 @@ void fastchart_value_range_compute(double dmin, double dmax,
     if (!isfinite(dmin) || !isfinite(dmax) || dmin > dmax) {
         dmin = 0.0;
         dmax = 1.0;
-    } else if (isfinite(dmax - dmin) && dmax - dmin < 1e-12) {
+	} else if (isfinite(dmax - dmin) && dmax - dmin < 1e-12) {
         if (fabs(dmin) < 1e-12) {
             dmax = 1.0;
         } else {
@@ -718,13 +718,13 @@ void fastchart_value_range_compute(double dmin, double dmax,
 int fastchart_value_range_apply_override(const fastchart_obj *chart,
                                          fastchart_value_range *out)
 {
-    if (!chart->has_y_min && !chart->has_y_max && !chart->has_y_interval)
+	if (!chart->has_y_min && !chart->has_y_max && !chart->has_y_interval)
 		return 0;
-    if (out->log_scale) return 0;  /* log-scale ignores forced bounds */
+	if (out->log_scale) return 0;  /* log-scale ignores forced bounds */
 
     double mn = chart->has_y_min ? chart->y_min : out->min;
     double mx = chart->has_y_max ? chart->y_max : out->max;
-    if (mx <= mn) {
+	if (mx <= mn) {
 		zend_value_error(
 			"FastChart\\Chart::setYAxisRange() resolved min must be < resolved max");
 		return -1;
@@ -833,58 +833,66 @@ int fastchart_value_range_compute_log(double dmin, double dmax,
     return 0;
 }
 
-int fastchart_y_to_pixel(double y,
-                         const fastchart_value_range *range,
-                         const fastchart_rect *plot)
+int fastchart_y_to_pixel(double y, const fastchart_value_range *range,
+		const fastchart_rect *plot)
 {
-    /* Self-guard against NaN/Inf: the frac clamps below don't catch NaN
-     * (every NaN comparison is false), so a non-finite y would reach the
-     * (int) cast — UB. Callers should reject non-finite upstream; this is
-     * the chokepoint 60+ callers funnel through, so make it robust. */
-    if (!isfinite(y)) return plot->y1;
-    double frac;
-    if (range->log_scale) {
-        /* Clamp y to the positive range before taking the log so a
-         * single bad point doesn't drop the whole series. The
-         * strict-mode check happens upstream in each chart's
-         * extraction; here we just keep the math defined. */
-        if (y <= 0.0) return plot->y1;
-        double l_span = range->log_span;
-        if (l_span < 1e-12) return plot->y1;
-        frac = (log10(y) - range->log_min) / l_span;
-    } else {
-		frac = fastchart_normalize_finite(y, range->min, range->max);
-    }
-    /* Keep the cast guarded even though the finite linear normalizer and
-     * log path are expected to produce a finite fraction. */
-    if (!isfinite(frac)) return plot->y1;
-    if (frac < 0) frac = 0;
-    if (frac > 1) frac = 1;
-    int h = plot->y1 - plot->y0;
-    return plot->y1 - (int)(frac * (double)h + 0.5);
+	/* Callers reject non-finite data upstream; keep this shared cast
+	 * chokepoint defined even when a malformed value gets through. */
+	if (!isfinite(y)) return plot->y1;
+	double frac;
+	if (range->log_scale) {
+		if (y <= 0.0) return plot->y1;
+		double l_span = range->log_span;
+		if (l_span < 1e-12) return plot->y1;
+		frac = (log10(y) - range->log_min) / l_span;
+	} else {
+		double span = range->max - range->min;
+		if (EXPECTED(isfinite(span) && span != 0.0)) {
+			frac = (y - range->min) / span;
+			if (UNEXPECTED(!isfinite(frac))) {
+				frac = fastchart_normalize_finite(
+					y, range->min, range->max);
+			}
+		} else {
+			frac = fastchart_normalize_finite(
+				y, range->min, range->max);
+		}
+	}
+	if (!isfinite(frac)) return plot->y1;
+	if (frac < 0.0) frac = 0.0;
+	if (frac > 1.0) frac = 1.0;
+	int h = plot->y1 - plot->y0;
+	return plot->y1 - (int)(frac * (double)h + 0.5);
 }
 
-int fastchart_x_to_pixel(double x,
-                         const fastchart_value_range *range,
-                         const fastchart_rect *plot)
+int fastchart_x_to_pixel(double x, const fastchart_value_range *range,
+		const fastchart_rect *plot)
 {
-    /* Self-guard against NaN/Inf (see fastchart_y_to_pixel). */
-    if (!isfinite(x)) return plot->x0;
-    double frac;
-    if (range->log_scale) {
-        if (x <= 0.0) return plot->x0;
-        double l_span = range->log_span;
-        if (l_span < 1e-12) return plot->x0;
-        frac = (log10(x) - range->log_min) / l_span;
-    } else {
-		frac = fastchart_normalize_finite(x, range->min, range->max);
-    }
-    /* See fastchart_y_to_pixel: keep the float-to-int cast guarded. */
-    if (!isfinite(frac)) return plot->x0;
-    if (frac < 0) frac = 0;
-    if (frac > 1) frac = 1;
-    int w = plot->x1 - plot->x0;
-    return plot->x0 + (int)(frac * (double)w + 0.5);
+	if (!isfinite(x)) return plot->x0;
+	double frac;
+	if (range->log_scale) {
+		if (x <= 0.0) return plot->x0;
+		double l_span = range->log_span;
+		if (l_span < 1e-12) return plot->x0;
+		frac = (log10(x) - range->log_min) / l_span;
+	} else {
+		double span = range->max - range->min;
+		if (EXPECTED(isfinite(span) && span != 0.0)) {
+			frac = (x - range->min) / span;
+			if (UNEXPECTED(!isfinite(frac))) {
+				frac = fastchart_normalize_finite(
+					x, range->min, range->max);
+			}
+		} else {
+			frac = fastchart_normalize_finite(
+				x, range->min, range->max);
+		}
+	}
+	if (!isfinite(frac)) return plot->x0;
+	if (frac < 0.0) frac = 0.0;
+	if (frac > 1.0) frac = 1.0;
+	int w = plot->x1 - plot->x0;
+	return plot->x0 + (int)(frac * (double)w + 0.5);
 }
 
 int fastchart_frac_to_px(double frac, int lo, int hi)
@@ -903,28 +911,27 @@ int fastchart_frac_to_px(double frac, int lo, int hi)
 
 double fastchart_normalize_finite(double value, double start, double end)
 {
-    if (!isfinite(value) || !isfinite(start) || !isfinite(end)
-        || start == end) {
-        return 0.0;
-    }
-    if (value == start) return 0.0;
-    if (value == end) return 1.0;
+	if (!isfinite(value) || !isfinite(start) || !isfinite(end)) {
+		return 0.0;
+	}
+	double span = end - start;
+	if (EXPECTED(isfinite(span) && span != 0.0)) {
+		double fraction = (value - start) / span;
+		if (fraction <= 0.0) return 0.0;
+		if (fraction >= 1.0) return 1.0;
+		return fraction;
+	}
+	if (start == end) return 0.0;
 
-    double span = end - start;
-    double fraction;
-    if (isfinite(span)) {
-        fraction = (value - start) / span;
-    } else {
-        double scale = fmax(fabs(start), fabs(end));
-        double scaled_start = start / scale;
-        double scaled_end = end / scale;
-        fraction = (value / scale - scaled_start)
-            / (scaled_end - scaled_start);
-    }
-    if (!isfinite(fraction)) return 0.0;
-    if (fraction < 0.0) return 0.0;
-    if (fraction > 1.0) return 1.0;
-    return fraction;
+	double scale = fmax(fabs(start), fabs(end));
+	double scaled_start = start / scale;
+	double scaled_end = end / scale;
+	double fraction = (value / scale - scaled_start)
+		/ (scaled_end - scaled_start);
+	if (!isfinite(fraction)) return 0.0;
+	if (fraction < 0.0) return 0.0;
+	if (fraction > 1.0) return 1.0;
+	return fraction;
 }
 
 double fastchart_lerp_finite(double start, double end, double fraction)
@@ -970,8 +977,8 @@ void fastchart_blit_icon(fastchart_target_t *t, const fastchart_icon *icon,
 {
     if (!icon || !icon->path || !*icon->path) return;
 
-    int sw, sh;
-    if (fastchart_target_image_dims(t, icon->path, &sw, &sh) != 0) return;
+	int sw, sh;
+	if (fastchart_target_image_dims(t, icon->path, &sw, &sh) != 0) return;
 
     int max_w = icon->max_w > 0 ? icon->max_w : sw;
     int max_h = icon->max_h > 0 ? icon->max_h : sh;
@@ -992,7 +999,7 @@ void fastchart_blit_icon(fastchart_target_t *t, const fastchart_icon *icon,
     /* Center on (px, py). */
     int x = px - dw / 2;
     int y = py - dh / 2;
-    fastchart_target_image(t, x, y, dw, dh, icon->path);
+	fastchart_target_image(t, x, y, dw, dh, icon->path);
 }
 
 /* Translate libgd's 0..127 (0=opaque, 127=transparent) per-band alpha

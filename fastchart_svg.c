@@ -887,8 +887,8 @@ void fc_svg_emit_image_def(smart_str *buf, const char *id_ns, int id,
 		int width, int height, const char *mime, const char *b64)
 {
     if (!mime || !b64) return;
-    FC_APPENDS(buf, "<defs><image id=\"");
-    if (id_ns && *id_ns) smart_str_appends(buf, id_ns);
+	FC_APPENDS(buf, "<defs><image id=\"");
+	if (id_ns && *id_ns) smart_str_appends(buf, id_ns);
 	FC_APPENDS(buf, "fci");
 	smart_str_append_long(buf, id);
 	FC_APPENDS(buf, "\" width=\"");
@@ -899,7 +899,7 @@ void fc_svg_emit_image_def(smart_str *buf, const char *id_ns, int id,
     smart_str_appends(buf, mime);
     FC_APPENDS(buf, ";base64,");
     smart_str_appends(buf, b64);
-    FC_APPENDS(buf, "\"/></defs>");
+	FC_APPENDS(buf, "\"/></defs>");
 }
 
 static void fc_svg_emit_scale(smart_str *buf, double value)
@@ -912,8 +912,8 @@ static void fc_svg_emit_scale(smart_str *buf, double value)
 void fc_svg_emit_image_use(smart_str *buf, const char *id_ns, int id,
 		int x, int y, int w, int h, int source_w, int source_h)
 {
-    FC_APPENDS(buf, "<use href=\"#");
-    if (id_ns && *id_ns) smart_str_appends(buf, id_ns);
+	FC_APPENDS(buf, "<use href=\"#");
+	if (id_ns && *id_ns) smart_str_appends(buf, id_ns);
 	FC_APPENDS(buf, "fci");
 	smart_str_append_long(buf, id);
 	if (w == source_w && h == source_h) {
@@ -925,14 +925,14 @@ void fc_svg_emit_image_use(smart_str *buf, const char *id_ns, int id,
 		return;
 	}
 	FC_APPENDS(buf, "\" transform=\"translate(");
-    smart_str_append_long(buf, x);
-    smart_str_appendc(buf, ' ');
-    smart_str_append_long(buf, y);
-    FC_APPENDS(buf, ") scale(");
+	smart_str_append_long(buf, x);
+	smart_str_appendc(buf, ' ');
+	smart_str_append_long(buf, y);
+	FC_APPENDS(buf, ") scale(");
 	fc_svg_emit_scale(buf, (double)w / (double)source_w);
 	smart_str_appendc(buf, ' ');
 	fc_svg_emit_scale(buf, (double)h / (double)source_h);
-    FC_APPENDS(buf, ")\"/>\n");
+	FC_APPENDS(buf, ")\"/>\n");
 }
 
 /* Internal: emit a <linearGradient id="fcgN" ...> + two <stop>s.
@@ -1004,14 +1004,14 @@ void fc_svg_emit_gradient_rect(smart_str *buf, const char *id_ns, int id,
                                 int dir)
 {
     fc_svg_emit_gradient_def(buf, id_ns, id, from_rgb, to_rgb, dir);
-    fc_svg_emit_gradient_rect_ref(buf, id_ns, id, x, y, w, h);
+	fc_svg_emit_gradient_rect_ref(buf, id_ns, id, x, y, w, h);
 }
 
 void fc_svg_emit_gradient_polygon_ref(smart_str *buf, const char *id_ns,
                                        int id, const int *xs, const int *ys,
                                        int n)
 {
-    if (n < 2) return;
+	if (n < 2) return;
     FC_APPENDS(buf, "<polygon points=\"");
     for (int i = 0; i < n; i++) {
         if (i) smart_str_appendc(buf, ' ');
@@ -1031,7 +1031,7 @@ void fc_svg_emit_gradient_polygon(smart_str *buf, const char *id_ns, int id,
                                    uint32_t from_rgb, uint32_t to_rgb,
                                    int dir)
 {
-    if (n < 2) return;
-    fc_svg_emit_gradient_def(buf, id_ns, id, from_rgb, to_rgb, dir);
-    fc_svg_emit_gradient_polygon_ref(buf, id_ns, id, xs, ys, n);
+	if (n < 2) return;
+	fc_svg_emit_gradient_def(buf, id_ns, id, from_rgb, to_rgb, dir);
+	fc_svg_emit_gradient_polygon_ref(buf, id_ns, id, xs, ys, n);
 }

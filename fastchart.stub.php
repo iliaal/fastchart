@@ -296,7 +296,9 @@ abstract class Chart
      * Force Y-axis bounds and (optionally) tick interval. Pass
      * null for any argument to keep the auto-computed value.
      * Forced ranges still go through "nice" tick rounding unless
-     * `$interval` is supplied.
+     * `$interval` is supplied. If one forced endpoint conflicts with
+     * the other endpoint after data-driven auto-ranging, rendering
+     * throws \ValueError.
      */
     public function setYAxisRange(?float $min = null, ?float $max = null, ?float $interval = null): static {}
 

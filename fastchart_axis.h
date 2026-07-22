@@ -110,8 +110,7 @@ int fastchart_value_range_compute_log(double dmin, double dmax,
 
 /* Map a data y-value to a pixel y (gd: 0 at top). */
 int fastchart_y_to_pixel(double y,
-                         const fastchart_value_range *range,
-                         const fastchart_rect *plot);
+	const fastchart_value_range *range, const fastchart_rect *plot);
 
 /* Paint the canvas-wide background honoring the compositing flags
  * (has_plot_rect / transparent_bg / bg_image_path). For charts that draw
@@ -236,8 +235,7 @@ int fastchart_y_categorical_center(const fastchart_rect *plot, int idx, int n);
  * (mirror of fastchart_y_to_pixel). Used by horizontal bar charts
  * where X carries the value axis instead of the category axis. */
 int fastchart_x_to_pixel(double x,
-                         const fastchart_value_range *range,
-                         const fastchart_rect *plot);
+	const fastchart_value_range *range, const fastchart_rect *plot);
 
 /* Map a [0,1] fraction onto the pixel span [lo, hi]. Clamps an
  * out-of-range fraction before the int cast — used for icon/overlay

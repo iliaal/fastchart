@@ -47,6 +47,24 @@ function is_red_at($im, array $use): bool
         && ($c & 0xFF) < 40;
 }
 
+$vendor = file_get_contents(
+	__DIR__ . '/../vendor/plutosvg/source/plutosvg.c'
+);
+$load = strpos($vendor, 'static plutovg_surface_t* load_image');
+$cachedHit = strpos($vendor, 'if(element->image_loaded)', $load);
+$decode = strpos($vendor,
+	'plutovg_surface_load_from_image_base64', $load);
+echo 'vendor decode cache: ',
+	$load !== false
+	&& $cachedHit !== false
+	&& $decode !== false
+	&& $cachedHit < $decode
+	&& substr_count(substr($vendor, $load),
+		'plutovg_surface_load_from_image_base64') === 1
+	&& str_contains($vendor, 'image_cache_prepare_frequencies(document)')
+	&& str_contains($vendor, 'plutovg_surface_reference(element->image)')
+		? "yes\n" : "NO\n";
+
 $red = __DIR__ . '/__icon.png';
 $blue = __DIR__ . '/__icon82.png';
 $data = array_fill(0, 32, 50.0);
@@ -150,6 +168,7 @@ try {
 
 ?>
 --EXPECT--
+vendor decode cache: yes
 one-path definitions: 1
 one-path data uris: 1
 one-path uses: 32

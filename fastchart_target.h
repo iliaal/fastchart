@@ -128,10 +128,10 @@ typedef struct {
 } fastchart_target_font_cache_entry;
 
 typedef struct {
-    uint32_t from_rgb;
-    uint32_t to_rgb;
-    int dir;
-    int id;
+	uint32_t from_rgb;
+	uint32_t to_rgb;
+	int dir;
+	int id;
 } fastchart_target_gradient_cache_entry;
 
 typedef struct {
@@ -182,11 +182,11 @@ typedef struct fastchart_target {
         } pdf;
     } u;
 
-    /* One background path plus the public 32-icon cap. Failed loads
+	/* One background path plus the public 32-icon cap. Failed loads
      * retain only their path so repeated placements do not repeat I/O. */
-    fastchart_target_image_cache_entry
+	fastchart_target_image_cache_entry
         image_cache[FASTCHART_TARGET_IMAGE_CACHE];
-    int image_cache_n;
+	int image_cache_n;
 
     /* Shared color table. handle = index. Grown on demand (ramp-heavy
      * charts — heatmap / treemap / word cloud — can allocate many more

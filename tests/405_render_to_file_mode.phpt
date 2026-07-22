@@ -33,7 +33,17 @@ chmod($symbol, 0644);
 clearstatcache(true, $symbol);
 printf("symbol replace: %04o\n", fileperms($symbol) & 0777);
 
+$dropbox = "$dir/dropbox";
+mkdir($dropbox, 0333);
+$dropboxPath = "$dropbox/out.svg";
+$chart->renderToFile($dropboxPath);
+echo 'search-only parent: ',
+	is_file($dropboxPath) ? "yes\n" : "NO\n";
+
 umask($oldUmask);
+@unlink($dropboxPath);
+chmod($dropbox, 0700);
+@rmdir($dropbox);
 @unlink($new);
 @unlink($symbol);
 @rmdir($dir);
@@ -42,3 +52,4 @@ umask($oldUmask);
 new: 0640
 chart replace: 0600
 symbol replace: 0644
+search-only parent: yes

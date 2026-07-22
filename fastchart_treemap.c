@@ -202,7 +202,7 @@ int fastchart_treemap_render_to_target(fastchart_treemap_obj *self, fastchart_ta
      * contract. */
     int x0 = 12, y0 = top, x1 = W - 13, y1 = H - 13;
 	fastchart_apply_plot_rect((fastchart_obj *)self, &x0, &y0, &x1, &y1);
-    if (x1 < x0 || y1 < y0) {
+	if (x1 < x0 || y1 < y0) {
         zend_throw_error(NULL,
             "FastChart\\Treemap::draw() plot area is empty after layout reservation");
         return -1;

@@ -245,8 +245,7 @@ static int dispatch_symbol_svg_render(void *object, zend_class_entry *ce,
  * stream). The two call sites previously duplicated 60+ lines each.
  *
  * On error: sets a PHP exception and returns -1. On success: returns
- * 0 and leaves the encoded bytes in *enc_buf_out (caller owns; must
- * release enc_buf_out->s with zend_string_release).
+ * 0 after writing all encoded bytes to the caller-owned sink.
  *
  * `where` tags the codec-missing message (the only error string that
  * varies across call sites): "FastChart\\Symbol" for the in-memory
@@ -290,7 +289,7 @@ static int fastchart_symbol_render_to_sink(fastchart_symbol_obj *self,
     }
 
     smart_str svg_buf = {0};
-    if (fastchart_build_svg(&svg_buf, (int)lw, (int)lh, (int)self->dpi,
+	if (fastchart_build_svg(&svg_buf, (int)lw, (int)lh, (int)self->dpi,
 			FASTCHART_SVG_TEXT_PATHS, 0, "fastchart-symbol", NULL,
 			dispatch_symbol_svg_render, self, ce) != 0) {
         return -1;
@@ -393,7 +392,7 @@ static void fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAMETERS,
     }
 
     smart_str buf = {0};
-    if (fastchart_build_svg(&buf, (int)lw, (int)lh, (int)self->dpi,
+	if (fastchart_build_svg(&buf, (int)lw, (int)lh, (int)self->dpi,
 			(int)self->svg_text_mode, fragment_only, "fastchart-symbol",
 			id_prefix, dispatch_symbol_svg_render, self, ce) != 0) {
 		RETURN_THROWS();
@@ -426,7 +425,7 @@ static void fastchart_symbol_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS,
     }
 
     smart_str buf = {0};
-    if (fastchart_build_svg(&buf, (int)lw, (int)lh, (int)self->dpi,
+	if (fastchart_build_svg(&buf, (int)lw, (int)lh, (int)self->dpi,
 			(int)self->svg_text_mode, 0, "fastchart-symbol", NULL,
 			dispatch_symbol_svg_render, self, ce) != 0) {
 		RETURN_THROWS();

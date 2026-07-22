@@ -171,6 +171,16 @@ function make_stock_rows(int $count): array
     return $rows;
 }
 
+function make_stock_outlier_rows(int $count): array
+{
+    $rows = [];
+    for ($i = 0; $i < $count; $i++) {
+        $close = $i === 0 ? 1.0e308 : 100.0 + sin($i * 0.1);
+        $rows[] = [1700000000 + $i, $close, $close, $close, $close, 1000];
+    }
+    return $rows;
+}
+
 function stock_variance_runner(array $rows, int $period): Closure
 {
     return static function (bool $capture) use ($rows, $period): array {
@@ -220,6 +230,33 @@ function stock_extrema_runner(array $rows, array $periods): Closure
                 'setter_calls' => 3,
                 'setters' => ['addStochastic', 'addWilliamsR', 'addAroon'],
                 'timed_scope' => 'indicator setters only; setOhlcv and SVG excluded',
+            ],
+        ];
+    };
+}
+
+function scatter_linear_axis_runner(): Closure
+{
+    $points = [];
+    for ($i = 0; $i < 4096; $i++) {
+        $points[] = [1000000.0 + ($i * 0.25), 50.0 + sin($i / 17.0)];
+    }
+    $chart = (new FastChart\ScatterChart(1200, 700))
+        ->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE)
+        ->setPoints($points);
+
+    return static function (bool $capture) use ($chart): array {
+        $start = hrtime(true);
+        $output = $chart->renderSvg();
+        $duration = hrtime(true) - $start;
+
+        return [
+            'duration_ns' => $duration,
+            'output' => $output,
+            'counters' => [
+                'points' => 4096,
+                'axis_span_kind' => 'ordinary finite positive',
+                'timed_scope' => 'renderSvg',
             ],
         ];
     };
@@ -328,6 +365,69 @@ function icon_png_runner(string $icon): Closure
             'duration_ns' => $duration,
             'output' => $output,
             'counters' => $counters,
+        ];
+    };
+}
+
+function write_solid_png(string $path, int $red, int $green, int $blue): void
+{
+    $color = sprintf('#%02x%02x%02x', $red, $green, $blue);
+    $svg = '<svg xmlns="http://www.w3.org/2000/svg" '
+        . 'width="1152" height="1152" viewBox="0 0 1152 1152">'
+        . '<rect width="1152" height="1152" fill="' . $color . '"/>'
+        . '</svg>';
+    $png = FastChart\Chart::svgToPng($svg);
+    file_put_contents($path, $png);
+}
+
+function icon_pressure_runner(): Closure
+{
+    $dir = sys_get_temp_dir() . '/fastchart-bench-icons-'
+        . bin2hex(random_bytes(6));
+    mkdir($dir, 0700);
+    $paths = [];
+    for ($i = 0; $i < 13; $i++) {
+        $path = $dir . '/icon-' . $i . '.png';
+        write_solid_png($path,
+            ($i * 37) & 0xff, ($i * 67) & 0xff, ($i * 97) & 0xff);
+        $paths[] = $path;
+    }
+    register_shutdown_function(static function () use ($paths, $dir): void {
+        foreach ($paths as $path) @unlink($path);
+        @rmdir($dir);
+    });
+
+    $values = array_fill(0, 32, 50.0);
+    $chart = (new FastChart\LineChart(960, 360))
+        ->setPlotRect(20, 20, 939, 339)
+        ->setYAxisRange(0.0, 100.0)
+        ->setSeries($values);
+    for ($i = 0; $i < 12; $i++) {
+        $chart->addIconAt((float)$i, 50.0, $paths[$i], 24, 24);
+    }
+    $chart->addIconAt(12.0, 50.0, $paths[12], 24, 24);
+    for ($i = 0; $i < 12; $i++) {
+        $chart->addIconAt((float)($i + 13), 50.0, $paths[$i], 24, 24);
+    }
+    for ($i = 25; $i < 32; $i++) {
+        $chart->addIconAt((float)$i, 50.0, $paths[12], 24, 24);
+    }
+
+    return static function (bool $capture) use ($chart): array {
+        $start = hrtime(true);
+        $output = $chart->renderPng();
+        $duration = hrtime(true) - $start;
+        return [
+            'duration_ns' => $duration,
+            'output' => $capture ? $output : null,
+            'counters' => [
+                'distinct_images' => 13,
+                'placements' => 32,
+                'decoded_working_set_bytes' => 13 * 1152 * 1152 * 4,
+                'cache_limit_bytes' => 64 * 1024 * 1024,
+                'hot_tail_placements' => 8,
+                'timed_scope' => 'renderPng under decoded-image cache pressure',
+            ],
         ];
     };
 }
@@ -682,6 +782,7 @@ if ($options['help']) {
 }
 
 $stock_rows = make_stock_rows(4096);
+$stock_outlier_rows = make_stock_outlier_rows(4096);
 $icon = realpath(__DIR__ . '/../docs/examples/11_plot_bands_annotations.png');
 if ($icon === false || !is_readable($icon)) {
     cli_error('tracked icon fixture is missing or unreadable');
@@ -709,6 +810,20 @@ $definitions = [
         'default_warmup' => 1,
         'factory' => static fn(): Closure => stock_variance_runner($stock_rows, 2048),
     ],
+    'stock_variance_outlier_default' => [
+        'description' => '4096 candles with one extreme outlier, period 20',
+        'default_iterations' => 20,
+        'default_warmup' => 3,
+        'factory' => static fn(): Closure =>
+            stock_variance_runner($stock_outlier_rows, 20),
+    ],
+    'stock_variance_outlier_worst' => [
+        'description' => '4096 candles with one extreme outlier, period 2048',
+        'default_iterations' => 10,
+        'default_warmup' => 2,
+        'factory' => static fn(): Closure =>
+            stock_variance_runner($stock_outlier_rows, 2048),
+    ],
     'stock_extrema_default' => [
         'description' => '4096-candle Stochastic/Williams/Aroon default windows',
         'default_iterations' => 5,
@@ -728,6 +843,12 @@ $definitions = [
             'williams_r' => 2048,
             'aroon' => 2048,
         ]),
+    ],
+    'scatter_linear_axis' => [
+        'description' => '4096-point Scatter render on ordinary linear axes',
+        'default_iterations' => 20,
+        'default_warmup' => 3,
+        'factory' => static fn(): Closure => scatter_linear_axis_runner(),
     ],
     'wordcloud_300x200' => array_merge([
         'description' => '256-word WordCloud render at 300x200',
@@ -758,6 +879,12 @@ $definitions = [
         'default_iterations' => 1,
         'default_warmup' => 0,
         'factory' => static fn(): Closure => icon_png_runner($icon),
+    ],
+    'icons_png_pressure' => [
+        'description' => '13 decoded 1152px images with a repeated hot tail',
+        'default_iterations' => 5,
+        'default_warmup' => 1,
+        'factory' => static fn(): Closure => icon_pressure_runner(),
     ],
     'gradients_svg' => [
         'description' => '1000 bars sharing one gradient rendered to SVG',
@@ -815,6 +942,7 @@ $groups = [
     'smoke' => [
         'stock_variance_default',
         'stock_extrema_default',
+        'scatter_linear_axis',
         'wordcloud_300x200',
         'icons_svg',
         'gradients_svg',
@@ -823,13 +951,18 @@ $groups = [
     'stock' => [
         'stock_variance_default',
         'stock_variance_worst',
+        'stock_variance_outlier_default',
+        'stock_variance_outlier_worst',
         'stock_extrema_default',
         'stock_extrema_worst',
     ],
+    'axes' => ['scatter_linear_axis'],
     'wordcloud' => ['wordcloud_300x200', 'wordcloud_1000x800'],
-    'icons' => ['icons_svg', 'icons_png'],
+    'icons' => ['icons_svg', 'icons_png', 'icons_png_pressure'],
     'network' => ['network_cold', 'network_hot'],
-    'resources' => ['icons_svg', 'icons_png', 'gradients_svg'],
+    'resources' => [
+        'icons_svg', 'icons_png', 'icons_png_pressure', 'gradients_svg',
+    ],
     'memory' => ['raster_large_png', 'font_cache_warm'],
     'file_sinks' => ['file_sink_png', 'file_sink_jpeg', 'file_sink_webp'],
     'all' => array_keys($definitions),

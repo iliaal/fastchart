@@ -17,6 +17,8 @@
 #include "php.h"
 #include "php_ini.h"
 #include "php_streams.h"
+#include "main/fopen_wrappers.h"
+#include "main/streams/php_stream_plain_wrapper.h"
 #if PHP_VERSION_ID >= 80400
 #include "ext/random/php_random_csprng.h"
 #elif PHP_VERSION_ID >= 80200
@@ -29,12 +31,34 @@
 #include "Zend/zend_smart_str.h"
 
 #include <limits.h>
+#include <errno.h>
 #include <float.h>
 #include <math.h>
+#include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#ifdef PHP_WIN32
+# include <io.h>
+# include <winternl.h>
+# include "win32/ioutil.h"
+#else
+# include <unistd.h>
+#endif
+#if defined(__linux__)
+# include <sys/syscall.h>
+# if defined(SYS_renameat2)
+#  define FASTCHART_HAVE_RENAMEAT2 1
+#  ifndef RENAME_NOREPLACE
+#   define RENAME_NOREPLACE (1 << 0)
+#  endif
+#  ifndef RENAME_EXCHANGE
+#   define RENAME_EXCHANGE (1 << 1)
+#  endif
+# endif
+#endif
 
 #include "php_fastchart.h"
 #include "fastchart_render_helpers.h"
@@ -1317,12 +1341,9 @@ static void fastchart_stock_init_extras(fastchart_stock_obj *o)
     o->candle_style = FASTCHART_STYLE_CANDLE;
     o->candles = NULL;
     o->candle_count = 0;
-    o->close_stats_values = NULL;
-    o->close_stats_origin = 0.0;
-    o->close_stats_scale = 1.0;
-    o->close_stats_scaled = false;
-    o->close_stats_cache = NULL;
-    o->close_stats_cache_period = 0;
+	o->close_stats_scaled_windows = false;
+	o->close_stats_cache = NULL;
+	o->close_stats_cache_period = 0;
     o->any_volume = false;
     o->volume_pane = false;
     o->volume_colors = NULL;
@@ -1351,14 +1372,10 @@ static void fastchart_stock_init_extras(fastchart_stock_obj *o)
 static void fastchart_stock_release_extras(fastchart_stock_obj *o)
 {
     if (o->candles)        { efree(o->candles);        o->candles = NULL; }
-    if (o->close_stats_values) {
-        efree(o->close_stats_values);
-        o->close_stats_values = NULL;
-    }
-    if (o->close_stats_cache) {
+	if (o->close_stats_cache) {
         efree(o->close_stats_cache);
         o->close_stats_cache = NULL;
-    }
+	}
     if (o->volume_colors)  { efree(o->volume_colors);  o->volume_colors = NULL; }
     for (int i = 0; i < o->indicator_pane_count; i++) {
         if (o->indicator_panes[i].name)    efree(o->indicator_panes[i].name);
@@ -1398,22 +1415,14 @@ static void fastchart_stock_addref_extras(fastchart_stock_obj *o)
     } else {
         o->candles = NULL;
     }
-    if (o->close_stats_values && o->candle_count > 0) {
-        size_t bytes = (size_t)o->candle_count * sizeof(double);
-        double *copy = emalloc(bytes);
-        memcpy(copy, o->close_stats_values, bytes);
-        o->close_stats_values = copy;
-    } else {
-        o->close_stats_values = NULL;
-    }
-    if (o->close_stats_cache && o->candle_count > 0) {
+	if (o->close_stats_cache && o->candle_count > 0) {
         size_t bytes = (size_t)o->candle_count * sizeof(double);
         double *copy = emalloc(bytes);
         memcpy(copy, o->close_stats_cache, bytes);
         o->close_stats_cache = copy;
-    } else {
+	} else {
         o->close_stats_cache = NULL;
-    }
+	}
     if (o->volume_colors && o->volume_colors_count > 0) {
         size_t bytes = (size_t)o->volume_colors_count * sizeof(int);
         int *copy = emalloc(bytes);
@@ -4300,7 +4309,7 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints)
         } ZEND_HASH_FOREACH_END();
     }
 
-    /* Drop references owned by the previous render artifact before
+	/* Drop references owned by the previous render artifact before
      * replacing the parsed point references below. */
     fastchart_reset_image_map_areas((fastchart_obj *)self);
     /* Drop any existing parsed state. */
@@ -5666,11 +5675,24 @@ ZEND_METHOD(FastChart_StockChart, setOhlcv)
     fastchart_candle *parsed = emalloc((size_t)n_input * sizeof(fastchart_candle));
     int n = 0;
     bool any_volume = false;
+	double stats_center = 0.0;
+	double stats_max_delta = 0.0;
+	bool stats_requires_scaled_windows = false;
     {
         zval *row;
         ZEND_HASH_FOREACH_VAL(ht, row) {
             if (n >= n_input) break;
             if (fastchart_parse_candle(row, &parsed[n]) != 0) continue;
+			if (n == 0) {
+				stats_center = parsed[n].close;
+			} else {
+				double delta = parsed[n].close - stats_center;
+				if (!isfinite(delta)) {
+					stats_requires_scaled_windows = true;
+				} else if (fabs(delta) > stats_max_delta) {
+					stats_max_delta = fabs(delta);
+				}
+			}
             if (parsed[n].has_volume) any_volume = true;
             n++;
         } ZEND_HASH_FOREACH_END();
@@ -5692,48 +5714,17 @@ ZEND_METHOD(FastChart_StockChart, setOhlcv)
         parsed = trimmed;
     }
 
-	double stats_center = parsed[0].close;
-	double stats_max_abs = fabs(stats_center);
-	double stats_max_delta = 0.0;
-	bool stats_scale = false;
-	for (int i = 1; i < n; i++) {
-		double magnitude = fabs(parsed[i].close);
-		if (magnitude > stats_max_abs) stats_max_abs = magnitude;
-		double delta = parsed[i].close - stats_center;
-		if (!isfinite(delta)) {
-			stats_scale = true;
-		} else if (fabs(delta) > stats_max_delta) {
-			stats_max_delta = fabs(delta);
-		}
-	}
-	double stats_limit = sqrt(DBL_MAX / ((double)n * 4.0));
-	if (stats_max_delta > stats_limit
-			|| (stats_max_delta > 0.0
-				&& stats_max_delta < sqrt(DBL_MIN))) {
-		stats_scale = true;
-	}
-	double stats_value_scale = stats_scale && stats_max_abs > 0.0
-		? stats_max_abs : 1.0;
-	double stats_origin = stats_scale
-		? stats_center / stats_value_scale : stats_center;
-	double *stats_values = emalloc((size_t)n * sizeof(double));
-	for (int i = 0; i < n; i++) {
-		double value = stats_scale
-			? parsed[i].close / stats_value_scale : parsed[i].close;
-		stats_values[i] = value - stats_origin;
-	}
-
     if (self->candles) efree(self->candles);
-    if (self->close_stats_values) efree(self->close_stats_values);
-    if (self->close_stats_cache) efree(self->close_stats_cache);
+	if (self->close_stats_cache) efree(self->close_stats_cache);
     self->candles = parsed;
     self->candle_count = n;
-    self->close_stats_values = stats_values;
-    self->close_stats_origin = stats_origin;
-    self->close_stats_scale = stats_value_scale;
-    self->close_stats_scaled = stats_scale;
-    self->close_stats_cache = NULL;
-    self->close_stats_cache_period = 0;
+	double stats_limit = sqrt(DBL_MAX / ((double)n * 4.0));
+	self->close_stats_scaled_windows = stats_requires_scaled_windows
+		|| stats_max_delta > stats_limit
+		|| (stats_max_delta > 0.0
+			&& stats_max_delta < sqrt(DBL_MIN));
+	self->close_stats_cache = NULL;
+	self->close_stats_cache_period = 0;
     self->any_volume = any_volume;
 
     /* Price overlays (Bollinger Bands, Parabolic SAR) carry a/b/c
@@ -6758,7 +6749,7 @@ static int fastchart_chart_render_to_sink(fastchart_obj *self,
     /* Build the SVG in PATHS mode regardless of self->svg_text_mode —
      * plutovg has no text-rendering support. */
     smart_str svg_buf = {0};
-    if (fastchart_build_svg(&svg_buf,
+	if (fastchart_build_svg(&svg_buf,
 			(int)self->width, (int)self->height, (int)self->dpi,
 			FASTCHART_SVG_TEXT_PATHS, 0, "fastchart", NULL,
 			dispatch_svg_render, self, ce) != 0) {
@@ -6900,7 +6891,7 @@ static void fastchart_render_to_svg(INTERNAL_FUNCTION_PARAMETERS, int fragment_o
     }
 
     smart_str buf = {0};
-    if (fastchart_build_svg(&buf,
+	if (fastchart_build_svg(&buf,
 			(int)self->width, (int)self->height, (int)self->dpi,
 			(int)self->svg_text_mode, fragment_only, "fastchart", id_prefix,
 			dispatch_svg_render, self, Z_OBJCE_P(ZEND_THIS)) != 0) {
@@ -7099,7 +7090,7 @@ ZEND_METHOD(FastChart_Chart, setImageMap)
         idx++;
     } ZEND_HASH_FOREACH_END();
 
-    /* Reset only after replacement parsing succeeds, so a rejected
+	/* Reset only after replacement parsing succeeds, so a rejected
      * map does not erase the previous valid artifact. */
     fastchart_reset_image_map_areas(self);
     fastchart_image_map_entries_free(self);
@@ -7110,9 +7101,8 @@ ZEND_METHOD(FastChart_Chart, setImageMap)
 
 /* --------------------- renderToFile -------------------------------
  *
- * Path extension picks the format. Honors open_basedir. Writes via
- * the Zend stream layer so wrapper paths (file://, sftp://) work
- * within open_basedir constraints. */
+ * Path extension picks the format. Local filesystem writes honor
+ * open_basedir and use descriptor-backed atomic replacement. */
 /* Non-static so Symbol::renderToFile reuses the same extension table.
  * Declared in fastchart_render_helpers.h. */
 int fastchart_format_from_path(const char *path, size_t len)
@@ -7176,17 +7166,430 @@ static bool fastchart_path_is_wrapper(const char *p, size_t len)
     for (size_t i = 0; i + 3 <= len; i++) {
         if (p[i] == ':' && p[i + 1] == '/' && p[i + 2] == '/') return true;
     }
-    return false;
+	return false;
+}
+
+#ifndef PHP_WIN32
+static bool fastchart_atomic_same_file(const zend_stat_t *a,
+		const zend_stat_t *b)
+{
+	return a->st_dev == b->st_dev && a->st_ino == b->st_ino;
+}
+
+static bool fastchart_atomic_same_snapshot(const zend_stat_t *a,
+		const zend_stat_t *b)
+{
+	return fastchart_atomic_same_file(a, b)
+		&& a->st_size == b->st_size
+		&& a->st_mtime == b->st_mtime
+		&& a->st_ctime == b->st_ctime;
+}
+
+static int fastchart_atomic_unlink_same(int dir_fd, zend_string *name,
+		const zend_stat_t *expected)
+{
+	zend_stat_t current;
+	if (fstatat(dir_fd, ZSTR_VAL(name), &current,
+			AT_SYMLINK_NOFOLLOW) != 0) {
+		return -1;
+	}
+	if (!fastchart_atomic_same_file(expected, &current)) return 0;
+	return unlinkat(dir_fd, ZSTR_VAL(name), 0) == 0 ? 1 : -1;
+}
+
+static int fastchart_atomic_check_pinned_parent(
+		fastchart_atomic_file_t *file)
+{
+#if defined(__linux__) || defined(__APPLE__)
+	char resolved[MAXPATHLEN];
+	size_t length;
+#ifdef __linux__
+	char fd_path[64];
+	int fd_path_len = snprintf(fd_path, sizeof(fd_path),
+		"/proc/self/fd/%d", file->dir_fd);
+	if (fd_path_len <= 0 || (size_t)fd_path_len >= sizeof(fd_path)) {
+		return -1;
+	}
+	ssize_t resolved_len = readlink(fd_path, resolved,
+		sizeof(resolved) - 1);
+	if (resolved_len <= 0) return -1;
+	length = (size_t)resolved_len;
+	resolved[length] = '\0';
+#else
+	if (fcntl(file->dir_fd, F_GETPATH, resolved) != 0) return -1;
+	length = strlen(resolved);
+#endif
+	size_t basename_length = ZSTR_LEN(file->final_name);
+	if (length + basename_length + 2 > sizeof(resolved)) return -1;
+	resolved[length++] = '/';
+	memcpy(resolved + length, ZSTR_VAL(file->final_name),
+		basename_length + 1);
+	if (php_check_open_basedir(resolved)) return -1;
+#else
+	(void)file;
+#endif
+	return 0;
+}
+#endif
+
+#ifdef PHP_WIN32
+# ifndef NT_SUCCESS
+#  define NT_SUCCESS(status) (((NTSTATUS)(status)) >= 0)
+# endif
+# ifndef FILE_OPEN
+#  define FILE_OPEN 0x00000001u
+# endif
+# ifndef FILE_CREATE
+#  define FILE_CREATE 0x00000002u
+# endif
+# ifndef FILE_NON_DIRECTORY_FILE
+#  define FILE_NON_DIRECTORY_FILE 0x00000040u
+# endif
+# ifndef FILE_SYNCHRONOUS_IO_NONALERT
+#  define FILE_SYNCHRONOUS_IO_NONALERT 0x00000020u
+# endif
+# ifndef FILE_OPEN_REPARSE_POINT
+#  define FILE_OPEN_REPARSE_POINT 0x00200000u
+# endif
+# define FASTCHART_STATUS_OBJECT_NAME_NOT_FOUND ((NTSTATUS)0xc0000034L)
+# define FASTCHART_STATUS_OBJECT_NAME_COLLISION ((NTSTATUS)0xc0000035L)
+
+typedef NTSTATUS (NTAPI *fastchart_nt_create_file_fn)(
+	PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, PIO_STATUS_BLOCK,
+	PLARGE_INTEGER, ULONG, ULONG, ULONG, ULONG, PVOID, ULONG);
+
+typedef NTSTATUS (NTAPI *fastchart_nt_set_information_file_fn)(
+	HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, FILE_INFORMATION_CLASS);
+
+typedef struct {
+	BOOLEAN replace_if_exists;
+	HANDLE root_directory;
+	ULONG file_name_length;
+	WCHAR file_name[1];
+} fastchart_file_rename_information;
+
+static fastchart_nt_create_file_fn fastchart_windows_nt_create_file(void)
+{
+	HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+	if (!ntdll) return NULL;
+	FARPROC address = GetProcAddress(ntdll, "NtCreateFile");
+	fastchart_nt_create_file_fn function = NULL;
+	if (!address || sizeof(function) != sizeof(address)) return NULL;
+	memcpy(&function, &address, sizeof(function));
+	return function;
+}
+
+static fastchart_nt_set_information_file_fn
+fastchart_windows_nt_set_information_file(void)
+{
+	HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+	if (!ntdll) return NULL;
+	FARPROC address = GetProcAddress(ntdll, "NtSetInformationFile");
+	fastchart_nt_set_information_file_fn function = NULL;
+	if (!address || sizeof(function) != sizeof(address)) return NULL;
+	memcpy(&function, &address, sizeof(function));
+	return function;
+}
+
+static bool fastchart_windows_unicode_string(UNICODE_STRING *name,
+		wchar_t *value)
+{
+	size_t length = wcslen(value);
+	if (length > (USHRT_MAX / sizeof(wchar_t)) - 1) return false;
+	name->Buffer = value;
+	name->Length = (USHORT)(length * sizeof(wchar_t));
+	name->MaximumLength = (USHORT)((length + 1) * sizeof(wchar_t));
+	return true;
+}
+
+static NTSTATUS fastchart_windows_open_relative(HANDLE dir_handle,
+		wchar_t *name_value, ACCESS_MASK access, ULONG disposition,
+		ULONG options, HANDLE *handle)
+{
+	fastchart_nt_create_file_fn nt_create_file =
+		fastchart_windows_nt_create_file();
+	if (!nt_create_file) return (NTSTATUS)0xc0000002L;
+	UNICODE_STRING name;
+	if (!fastchart_windows_unicode_string(&name, name_value)) {
+		return (NTSTATUS)0xc0000106L;
+	}
+	OBJECT_ATTRIBUTES attributes;
+	InitializeObjectAttributes(&attributes, &name, OBJ_CASE_INSENSITIVE,
+		dir_handle, NULL);
+	IO_STATUS_BLOCK status_block;
+	return nt_create_file(handle, access, &attributes, &status_block, NULL,
+		FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, disposition, options,
+		NULL, 0);
+}
+
+static int fastchart_windows_destination_exists(HANDLE dir_handle,
+		wchar_t *name, bool *exists, bool *is_directory,
+		uint64_t *volume_serial, uint64_t *file_index,
+		uint64_t *size, uint64_t *last_write)
+{
+	HANDLE destination = INVALID_HANDLE_VALUE;
+	NTSTATUS status = fastchart_windows_open_relative(dir_handle, name,
+		FILE_READ_ATTRIBUTES | SYNCHRONIZE, FILE_OPEN,
+		FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+		&destination);
+	if (status == FASTCHART_STATUS_OBJECT_NAME_NOT_FOUND) {
+		*exists = false;
+		*is_directory = false;
+		*volume_serial = 0;
+		*file_index = 0;
+		*size = 0;
+		*last_write = 0;
+		return 0;
+	}
+	if (!NT_SUCCESS(status)) return -1;
+	BY_HANDLE_FILE_INFORMATION information;
+	bool queried = GetFileInformationByHandle(destination, &information);
+	CloseHandle(destination);
+	if (!queried) return -1;
+	*exists = true;
+	*is_directory = (information.dwFileAttributes
+		& FILE_ATTRIBUTE_DIRECTORY) != 0;
+	*volume_serial = information.dwVolumeSerialNumber;
+	*file_index = ((uint64_t)information.nFileIndexHigh << 32)
+		| information.nFileIndexLow;
+	*size = ((uint64_t)information.nFileSizeHigh << 32)
+		| information.nFileSizeLow;
+	*last_write = ((uint64_t)information.ftLastWriteTime.dwHighDateTime << 32)
+		| information.ftLastWriteTime.dwLowDateTime;
+	return 0;
+}
+
+static void fastchart_windows_delete_handle(HANDLE handle)
+{
+	if (handle == NULL || handle == INVALID_HANDLE_VALUE) return;
+	FILE_DISPOSITION_INFO disposition = {TRUE};
+	SetFileInformationByHandle(handle, FileDispositionInfo,
+		&disposition, sizeof(disposition));
+}
+
+static bool fastchart_windows_rename_handle(HANDLE source,
+		HANDLE dir_handle, const wchar_t *name, bool replace)
+{
+	fastchart_nt_set_information_file_fn nt_set_information_file =
+		fastchart_windows_nt_set_information_file();
+	if (!nt_set_information_file) return false;
+	size_t name_length = wcslen(name);
+	if (name_length > ULONG_MAX / sizeof(wchar_t)) return false;
+	size_t name_bytes = name_length * sizeof(wchar_t);
+	if (name_bytes > SIZE_MAX
+			- sizeof(fastchart_file_rename_information)) {
+		return false;
+	}
+	size_t info_size = sizeof(fastchart_file_rename_information) + name_bytes;
+	if (info_size > ULONG_MAX) return false;
+	fastchart_file_rename_information *information =
+		calloc(1, info_size);
+	if (!information) return false;
+	information->replace_if_exists = replace ? TRUE : FALSE;
+	information->root_directory = dir_handle;
+	information->file_name_length = (ULONG)name_bytes;
+	memcpy(information->file_name, name, name_bytes);
+	IO_STATUS_BLOCK status_block;
+	NTSTATUS status = nt_set_information_file(source, &status_block,
+		information, (ULONG)info_size, FileRenameInformation);
+	free(information);
+	return NT_SUCCESS(status);
+}
+
+static wchar_t *fastchart_windows_resolved_directory(HANDLE handle,
+		size_t *length_out)
+{
+	DWORD capacity = MAXPATHLEN;
+	wchar_t *path = malloc(((size_t)capacity + 1) * sizeof(wchar_t));
+	if (!path) return NULL;
+	DWORD length = GetFinalPathNameByHandleW(handle, path, capacity,
+		FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+	if (length >= capacity) {
+		wchar_t *larger = realloc(path,
+			((size_t)length + 1) * sizeof(wchar_t));
+		if (!larger) {
+			free(path);
+			return NULL;
+		}
+		path = larger;
+		capacity = length + 1;
+		length = GetFinalPathNameByHandleW(handle, path, capacity,
+			FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+	}
+	if (length == 0 || length >= capacity) {
+		free(path);
+		return NULL;
+	}
+	if (length >= 8 && wcsncmp(path, L"\\\\?\\UNC\\", 8) == 0) {
+		memmove(path + 2, path + 8,
+			((size_t)length - 8 + 1) * sizeof(wchar_t));
+		path[0] = L'\\';
+		path[1] = L'\\';
+		length -= 6;
+	} else if (length >= 4 && wcsncmp(path, L"\\\\?\\", 4) == 0) {
+		memmove(path, path + 4,
+			((size_t)length - 4 + 1) * sizeof(wchar_t));
+		length -= 4;
+	}
+	*length_out = length;
+	return path;
+}
+
+static int fastchart_windows_check_pinned_parent(
+		fastchart_atomic_file_t *file)
+{
+	size_t resolved_dir_length;
+	wchar_t *resolved_dir = fastchart_windows_resolved_directory(
+		file->dir_handle, &resolved_dir_length);
+	if (!resolved_dir) return -1;
+	size_t final_name_length = wcslen(file->final_name_w);
+	if (resolved_dir_length > SIZE_MAX - final_name_length - 2) {
+		free(resolved_dir);
+		return -1;
+	}
+	size_t path_length = resolved_dir_length + final_name_length + 1;
+	wchar_t *path = malloc((path_length + 1) * sizeof(wchar_t));
+	if (!path) {
+		free(resolved_dir);
+		return -1;
+	}
+	memcpy(path, resolved_dir,
+		resolved_dir_length * sizeof(wchar_t));
+	path[resolved_dir_length] = L'\\';
+	memcpy(path + resolved_dir_length + 1, file->final_name_w,
+		(final_name_length + 1) * sizeof(wchar_t));
+	free(resolved_dir);
+	size_t multibyte_length;
+	char *multibyte = php_win32_ioutil_conv_w_to_any(path,
+		path_length, &multibyte_length);
+	(void)multibyte_length;
+	free(path);
+	if (!multibyte) return -1;
+	int result = php_check_open_basedir(multibyte) ? -1 : 0;
+	free(multibyte);
+	return result;
+}
+#endif
+
+static int fastchart_atomic_file_chmod(fastchart_atomic_file_t *file,
+		int mode)
+{
+#ifndef PHP_WIN32
+	int fd;
+	if (php_stream_cast(file->stream, PHP_STREAM_AS_FD,
+			(void *)&fd, 0) != SUCCESS) {
+		return -1;
+	}
+	return fchmod(fd, mode);
+#else
+	(void)file;
+	(void)mode;
+	return 0;
+#endif
+}
+
+#ifdef FASTCHART_HAVE_RENAMEAT2
+static bool fastchart_renameat2_unsupported(zend_stat_t *st)
+{
+	uint64_t dev = (uint64_t)st->st_dev;
+	for (int i = 0; i < FASTCHART_G(renameat2_unsupported_count); i++) {
+		if (FASTCHART_G(renameat2_unsupported_devs)[i] == dev) return true;
+	}
+	return false;
+}
+
+static void fastchart_mark_renameat2_unsupported(zend_stat_t *st)
+{
+	if (fastchart_renameat2_unsupported(st)) return;
+	uint64_t dev = (uint64_t)st->st_dev;
+	int count = FASTCHART_G(renameat2_unsupported_count);
+	if (count < 8) {
+		FASTCHART_G(renameat2_unsupported_devs)[count] = dev;
+		FASTCHART_G(renameat2_unsupported_count) = count + 1;
+	} else {
+		FASTCHART_G(renameat2_unsupported_devs)[dev & 7u] = dev;
+	}
+}
+#endif
+
+#if defined(__linux__)
+static int fastchart_atomic_install_fd(int source_fd, int dir_fd,
+		const char *name)
+{
+#ifdef AT_EMPTY_PATH
+	if (linkat(source_fd, "", dir_fd, name, AT_EMPTY_PATH) == 0) {
+		return 0;
+	}
+#endif
+	char fd_path[64];
+	int fd_path_len = snprintf(fd_path, sizeof(fd_path),
+		"/proc/self/fd/%d", source_fd);
+	if (fd_path_len <= 0 || (size_t)fd_path_len >= sizeof(fd_path)) {
+		errno = ENAMETOOLONG;
+		return -1;
+	}
+	return linkat(AT_FDCWD, fd_path, dir_fd, name, AT_SYMLINK_FOLLOW);
+}
+#endif
+
+static void fastchart_atomic_file_release_location(
+		fastchart_atomic_file_t *file)
+{
+#ifndef PHP_WIN32
+	if (file->dir_fd >= 0) {
+		close(file->dir_fd);
+		file->dir_fd = -1;
+	}
+	if (file->final_name) {
+		zend_string_release(file->final_name);
+		file->final_name = NULL;
+	}
+	if (file->tmp_name) {
+		zend_string_release(file->tmp_name);
+		file->tmp_name = NULL;
+	}
+#else
+	if (file->temp_handle
+			&& file->temp_handle != INVALID_HANDLE_VALUE) {
+		CloseHandle(file->temp_handle);
+		file->temp_handle = INVALID_HANDLE_VALUE;
+	}
+	if (file->dir_handle
+			&& file->dir_handle != INVALID_HANDLE_VALUE) {
+		CloseHandle(file->dir_handle);
+		file->dir_handle = INVALID_HANDLE_VALUE;
+	}
+	if (file->final_name_w) {
+		free(file->final_name_w);
+		file->final_name_w = NULL;
+	}
+	if (file->tmp_name_w) {
+		free(file->tmp_name_w);
+		file->tmp_name_w = NULL;
+	}
+#endif
 }
 
 void fastchart_atomic_file_abort(fastchart_atomic_file_t *file)
 {
+#ifdef PHP_WIN32
+	fastchart_windows_delete_handle(file->temp_handle);
+#endif
 	if (file->stream) {
 		php_stream_close(file->stream);
 		file->stream = NULL;
 	}
 	if (file->tmp_path) {
-		VCWD_UNLINK(ZSTR_VAL(file->tmp_path));
+#ifndef PHP_WIN32
+		if (file->dir_fd >= 0 && file->tmp_name
+				&& file->temp_stat_ready) {
+			(void)fastchart_atomic_unlink_same(file->dir_fd,
+				file->tmp_name, &file->temp_stat);
+		}
+#else
+		/* The retained handle identifies the temporary object even if its
+		 * visible name was replaced. */
+#endif
 		zend_string_release(file->tmp_path);
 		file->tmp_path = NULL;
 	}
@@ -7194,12 +7597,19 @@ void fastchart_atomic_file_abort(fastchart_atomic_file_t *file)
 		zend_string_release(file->path);
 		file->path = NULL;
 	}
+	fastchart_atomic_file_release_location(file);
 }
 
 int fastchart_atomic_file_open(fastchart_atomic_file_t *file,
 		zend_string *path, const char *where)
 {
 	memset(file, 0, sizeof(*file));
+#ifndef PHP_WIN32
+	file->dir_fd = -1;
+#else
+	file->dir_handle = INVALID_HANDLE_VALUE;
+	file->temp_handle = INVALID_HANDLE_VALUE;
+#endif
 	const char *p = ZSTR_VAL(path);
 	size_t plen = ZSTR_LEN(path);
 
@@ -7208,61 +7618,365 @@ int fastchart_atomic_file_open(fastchart_atomic_file_t *file,
 		return -1;
 	}
 
-    /* Plain local path: write to a sibling temp file in the same
-     * directory, then rename into place. A failed or short write can
-     * only ever leave a stray temp behind (unlinked here) — never a
-     * truncated file at the caller's destination, and never a
-     * clobbered pre-existing good file. open_basedir was already
-     * checked on the final path by the caller; the temp shares that
-     * path prefix so the same grant covers it. */
+	/* Pin and revalidate the resolved parent before creating a sibling
+	 * temporary file. Finalization stays relative to that parent so a
+	 * mutable symlink or junction cannot redirect later operations. */
 	uint64_t random_suffix;
 	if (php_random_bytes_throw(&random_suffix, sizeof(random_suffix)) == FAILURE) {
 		return -1;
-    }
-    zend_stat_t destination_st;
-    bool destination_exists = VCWD_STAT(p, &destination_st) == 0;
-    for (int attempt = 0; attempt < 8; attempt++) {
-        char suffix[64];
-        int slen = snprintf(suffix, sizeof(suffix), ".fctmp-%016llx-%d",
-            (unsigned long long)random_suffix, attempt);
-        if (slen <= 0) break;
+	}
+	zend_stat_t destination_st = {0};
+	zend_stat_t destination_mode_st = {0};
+	bool destination_exists;
+	bool destination_mode_exists;
+	int new_file_mode = -1;
+	bool temp_stat_ready = false;
+
+#ifndef PHP_WIN32
+	const char *slash = strrchr(p, '/');
+	const char *basename = slash ? slash + 1 : p;
+	if (*basename == '\0') {
+		zend_throw_error(NULL, "%s cannot replace directory %s", where, p);
+		return -1;
+	}
+	zend_string *dir_path;
+	if (slash == NULL) {
+		dir_path = zend_string_init(".", 1, 0);
+	} else {
+		size_t dir_len = slash == p ? 1 : (size_t)(slash - p);
+		dir_path = zend_string_init(p, dir_len, 0);
+	}
+	file->final_name = zend_string_init(basename, strlen(basename), 0);
+#ifdef O_PATH
+	int dir_flags = O_PATH;
+#elif defined(O_SEARCH)
+	int dir_flags = O_SEARCH;
+#else
+	int dir_flags = O_RDONLY;
+#endif
+#ifdef O_DIRECTORY
+	dir_flags |= O_DIRECTORY;
+#endif
+#ifdef O_CLOEXEC
+	dir_flags |= O_CLOEXEC;
+#endif
+	file->dir_fd = VCWD_OPEN(ZSTR_VAL(dir_path), dir_flags);
+	if (file->dir_fd < 0) {
+		zend_throw_error(NULL, "%s could not open parent directory for %s",
+			where, p);
+		zend_string_release(dir_path);
+		fastchart_atomic_file_release_location(file);
+		return -1;
+	}
+	char resolved_dir[MAXPATHLEN];
+	bool resolved = false;
+#ifdef __linux__
+	char fd_path[64];
+	int fd_path_len = snprintf(fd_path, sizeof(fd_path),
+		"/proc/self/fd/%d", file->dir_fd);
+	if (fd_path_len > 0 && (size_t)fd_path_len < sizeof(fd_path)) {
+		ssize_t resolved_len = readlink(fd_path, resolved_dir,
+			sizeof(resolved_dir) - 1);
+		if (resolved_len > 0) {
+			resolved_dir[resolved_len] = '\0';
+			resolved = true;
+		}
+	}
+#endif
+	if (!resolved) {
+		zend_stat_t opened_dir_st;
+		zend_stat_t resolved_dir_st;
+		if (VCWD_REALPATH(ZSTR_VAL(dir_path), resolved_dir)
+				&& fstat(file->dir_fd, &opened_dir_st) == 0
+				&& VCWD_STAT(resolved_dir, &resolved_dir_st) == 0
+				&& fastchart_atomic_same_file(
+					&opened_dir_st, &resolved_dir_st)) {
+			resolved = true;
+		}
+	}
+	zend_string_release(dir_path);
+	size_t resolved_len = resolved ? strlen(resolved_dir) : 0;
+	size_t basename_len = strlen(basename);
+	if (!resolved || resolved_len + basename_len + 2 > MAXPATHLEN) {
+		zend_throw_error(NULL, "%s could not resolve parent directory for %s",
+			where, p);
+		fastchart_atomic_file_release_location(file);
+		return -1;
+	}
+	resolved_dir[resolved_len++] = '/';
+	memcpy(resolved_dir + resolved_len, basename, basename_len + 1);
+	if (php_check_open_basedir(resolved_dir)) {
+		if (!EG(exception)) {
+			zend_throw_error(NULL,
+				"%s parent directory is outside open_basedir for %s",
+				where, p);
+		}
+		fastchart_atomic_file_release_location(file);
+		return -1;
+	}
+	destination_exists = fstatat(file->dir_fd, basename,
+		&destination_st, AT_SYMLINK_NOFOLLOW) == 0;
+	if (destination_exists && S_ISDIR(destination_st.st_mode)) {
+		zend_throw_error(NULL, "%s cannot replace directory %s", where, p);
+		fastchart_atomic_file_release_location(file);
+		return -1;
+	}
+	destination_mode_st = destination_st;
+	destination_mode_exists = destination_exists;
+	if (destination_exists && S_ISLNK(destination_st.st_mode)) {
+		destination_mode_exists = fstatat(file->dir_fd, basename,
+			&destination_mode_st, 0) == 0;
+	}
+
+	for (int attempt = 0; attempt < 8; attempt++) {
+		char suffix[64];
+		int slen = snprintf(suffix, sizeof(suffix), ".fctmp-%016llx-%d",
+			(unsigned long long)random_suffix, attempt);
+		if (slen <= 0) break;
 		file->tmp_path = zend_string_alloc(plen + (size_t)slen, 0);
 		memcpy(ZSTR_VAL(file->tmp_path), p, plen);
 		memcpy(ZSTR_VAL(file->tmp_path) + plen, suffix, (size_t)slen);
 		ZSTR_VAL(file->tmp_path)[plen + (size_t)slen] = '\0';
-		/* "x" = O_EXCL create; a name collision fails and we retry.
-		 * Suppress REPORT_ERRORS so the retry doesn't warn. */
-		file->stream = php_stream_open_wrapper(
-			ZSTR_VAL(file->tmp_path), "xb", 0, NULL);
+		size_t base_len = ZSTR_LEN(file->final_name);
+		file->tmp_name = zend_string_alloc(base_len + (size_t)slen, 0);
+		memcpy(ZSTR_VAL(file->tmp_name), basename, base_len);
+		memcpy(ZSTR_VAL(file->tmp_name) + base_len, suffix, (size_t)slen);
+		ZSTR_VAL(file->tmp_name)[base_len + (size_t)slen] = '\0';
+		int open_flags = O_RDWR | O_CREAT | O_EXCL;
+#ifdef O_CLOEXEC
+		open_flags |= O_CLOEXEC;
+#endif
+		int fd = openat(file->dir_fd, ZSTR_VAL(file->tmp_name),
+			open_flags, 0666);
+		if (fd >= 0) {
+			zend_stat_t created_st;
+			bool created_stat_ready = fstat(fd, &created_st) == 0;
+			if (created_stat_ready && fchmod(fd, 0600) == 0) {
+				new_file_mode = (int)(created_st.st_mode & 07777);
+				file->temp_stat = created_st;
+				temp_stat_ready = true;
+				file->stream = php_stream_fopen_from_fd(fd, "wb", NULL);
+			}
+			if (!file->stream) {
+				close(fd);
+				if (created_stat_ready) {
+					(void)fastchart_atomic_unlink_same(file->dir_fd,
+						file->tmp_name, &created_st);
+				}
+			}
+		}
 		if (file->stream) break;
+		zend_string_release(file->tmp_name);
+		file->tmp_name = NULL;
 		zend_string_release(file->tmp_path);
 		file->tmp_path = NULL;
-		if (EG(exception)) break;
+		if (fd < 0 && errno == EEXIST) continue;
+		break;
 	}
+#else
+	(void)destination_st;
+	destination_mode_exists = false;
+	char expanded_path[MAXPATHLEN];
+	if (!expand_filepath_with_mode(p, expanded_path, NULL, 0, CWD_EXPAND)) {
+		zend_throw_error(NULL, "%s could not resolve parent directory for %s",
+			where, p);
+		return -1;
+	}
+	const char *forward_slash = strrchr(expanded_path, '/');
+	const char *back_slash = strrchr(expanded_path, '\\');
+	const char *slash = forward_slash;
+	if (back_slash && (!slash || back_slash > slash)) slash = back_slash;
+	const char *basename = slash ? slash + 1 : expanded_path;
+	if (*basename == '\0') {
+		zend_throw_error(NULL, "%s cannot replace directory %s", where, p);
+		return -1;
+	}
+	const char *dir_value = ".";
+	size_t dir_length = 1;
+	if (slash) {
+		dir_value = expanded_path;
+		dir_length = (size_t)(slash - expanded_path);
+		if (dir_length == 2 && expanded_path[1] == ':') dir_length = 3;
+	}
+	size_t dir_w_length;
+	wchar_t *dir_w = php_win32_ioutil_conv_any_to_w(
+		dir_value, dir_length, &dir_w_length);
+	(void)dir_w_length;
+	size_t final_name_w_length;
+	file->final_name_w = php_win32_ioutil_conv_any_to_w(basename,
+		strlen(basename), &final_name_w_length);
+	if (!dir_w || !file->final_name_w) {
+		free(dir_w);
+		zend_throw_error(NULL, "%s could not resolve parent directory for %s",
+			where, p);
+		fastchart_atomic_file_release_location(file);
+		return -1;
+	}
+	file->dir_handle = CreateFileW(dir_w,
+		FILE_TRAVERSE | FILE_READ_ATTRIBUTES,
+		FILE_SHARE_READ | FILE_SHARE_WRITE,
+		NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+	free(dir_w);
+	if (file->dir_handle == INVALID_HANDLE_VALUE) {
+		zend_throw_error(NULL, "%s could not open parent directory for %s",
+			where, p);
+		fastchart_atomic_file_release_location(file);
+		return -1;
+	}
+	size_t resolved_dir_length;
+	wchar_t *resolved_dir = fastchart_windows_resolved_directory(
+		file->dir_handle, &resolved_dir_length);
+	if (!resolved_dir
+			|| resolved_dir_length > SIZE_MAX - final_name_w_length - 2) {
+		free(resolved_dir);
+		zend_throw_error(NULL, "%s could not resolve parent directory for %s",
+			where, p);
+		fastchart_atomic_file_release_location(file);
+		return -1;
+	}
+	size_t resolved_path_length = resolved_dir_length
+		+ final_name_w_length + 1;
+	wchar_t *resolved_path = malloc(
+		(resolved_path_length + 1) * sizeof(wchar_t));
+	if (!resolved_path) {
+		free(resolved_dir);
+		zend_throw_error(NULL, "%s could not resolve parent directory for %s",
+			where, p);
+		fastchart_atomic_file_release_location(file);
+		return -1;
+	}
+	memcpy(resolved_path, resolved_dir,
+		resolved_dir_length * sizeof(wchar_t));
+	resolved_path[resolved_dir_length] = L'\\';
+	memcpy(resolved_path + resolved_dir_length + 1, file->final_name_w,
+		(final_name_w_length + 1) * sizeof(wchar_t));
+	free(resolved_dir);
+	size_t resolved_mb_length;
+	char *resolved_mb = php_win32_ioutil_conv_w_to_any(resolved_path,
+		resolved_path_length, &resolved_mb_length);
+	(void)resolved_mb_length;
+	free(resolved_path);
+	if (!resolved_mb || php_check_open_basedir(resolved_mb)) {
+		free(resolved_mb);
+		if (!EG(exception)) {
+			zend_throw_error(NULL,
+				"%s parent directory is outside open_basedir for %s",
+				where, p);
+		}
+		fastchart_atomic_file_release_location(file);
+		return -1;
+	}
+	free(resolved_mb);
+	bool destination_is_directory;
+	uint64_t destination_volume_serial;
+	uint64_t destination_file_index;
+	uint64_t destination_size;
+	uint64_t destination_last_write;
+	if (fastchart_windows_destination_exists(file->dir_handle,
+			file->final_name_w, &destination_exists,
+			&destination_is_directory, &destination_volume_serial,
+			&destination_file_index, &destination_size,
+			&destination_last_write) != 0) {
+		zend_throw_error(NULL, "%s could not inspect destination %s",
+			where, p);
+		fastchart_atomic_file_release_location(file);
+		return -1;
+	}
+	if (destination_is_directory) {
+		zend_throw_error(NULL, "%s cannot replace directory %s", where, p);
+		fastchart_atomic_file_release_location(file);
+		return -1;
+	}
+	file->destination_volume_serial = destination_volume_serial;
+	file->destination_file_index = destination_file_index;
+	file->destination_size = destination_size;
+	file->destination_last_write = destination_last_write;
+	for (int attempt = 0; attempt < 8; attempt++) {
+		char suffix[64];
+		int slen = snprintf(suffix, sizeof(suffix), ".fctmp-%016llx-%d",
+			(unsigned long long)random_suffix, attempt);
+		if (slen <= 0) break;
+		file->tmp_path = zend_string_alloc(plen + (size_t)slen, 0);
+		memcpy(ZSTR_VAL(file->tmp_path), p, plen);
+		memcpy(ZSTR_VAL(file->tmp_path) + plen, suffix, (size_t)slen);
+		ZSTR_VAL(file->tmp_path)[plen + (size_t)slen] = '\0';
+		size_t tmp_name_length = final_name_w_length + (size_t)slen;
+		file->tmp_name_w = malloc(
+			(tmp_name_length + 1) * sizeof(wchar_t));
+		if (!file->tmp_name_w) break;
+		memcpy(file->tmp_name_w, file->final_name_w,
+			final_name_w_length * sizeof(wchar_t));
+		for (int i = 0; i < slen; i++) {
+			file->tmp_name_w[final_name_w_length + (size_t)i]
+				= (wchar_t)(unsigned char)suffix[i];
+		}
+		file->tmp_name_w[tmp_name_length] = L'\0';
+		NTSTATUS status = fastchart_windows_open_relative(file->dir_handle,
+			file->tmp_name_w,
+			FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES
+				| DELETE | SYNCHRONIZE,
+			FILE_CREATE,
+			FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+			&file->temp_handle);
+		if (NT_SUCCESS(status)) {
+			HANDLE stream_handle = INVALID_HANDLE_VALUE;
+			int fd = -1;
+			if (DuplicateHandle(GetCurrentProcess(), file->temp_handle,
+					GetCurrentProcess(), &stream_handle, 0, FALSE,
+					DUPLICATE_SAME_ACCESS)) {
+				fd = _open_osfhandle((intptr_t)stream_handle,
+					_O_BINARY | _O_WRONLY | _O_NOINHERIT);
+			}
+			if (fd >= 0) {
+				file->stream = php_stream_fopen_from_fd(fd, "wb", NULL);
+				if (!file->stream) _close(fd);
+			} else if (stream_handle != INVALID_HANDLE_VALUE) {
+				CloseHandle(stream_handle);
+			}
+			if (!file->stream) {
+				fastchart_windows_delete_handle(file->temp_handle);
+				CloseHandle(file->temp_handle);
+				file->temp_handle = INVALID_HANDLE_VALUE;
+			}
+		}
+		if (file->stream) break;
+		free(file->tmp_name_w);
+		file->tmp_name_w = NULL;
+		zend_string_release(file->tmp_path);
+		file->tmp_path = NULL;
+		if (status == FASTCHART_STATUS_OBJECT_NAME_COLLISION) continue;
+		break;
+	}
+#endif
 	if (!file->stream) {
 		if (file->tmp_path) zend_string_release(file->tmp_path);
 		file->tmp_path = NULL;
 		if (!EG(exception)) {
 			zend_throw_error(NULL,
 				"%s could not create a temporary file for %s", where, p);
-        }
-        return -1;
-    }
-
-	zend_stat_t temporary_st;
-	if (VCWD_STAT(ZSTR_VAL(file->tmp_path), &temporary_st) != 0 ||
-		VCWD_CHMOD(ZSTR_VAL(file->tmp_path), 0600) != 0) {
-		php_stream_close(file->stream);
-		file->stream = NULL;
-		VCWD_UNLINK(ZSTR_VAL(file->tmp_path));
-		zend_throw_error(NULL, "%s could not secure temporary file for %s",
-						 where, p);
-		zend_string_release(file->tmp_path);
-		file->tmp_path = NULL;
+		}
+		fastchart_atomic_file_release_location(file);
 		return -1;
 	}
-	file->final_mode = (int)((destination_exists ? destination_st.st_mode
-		: temporary_st.st_mode) & 07777);
+
+	php_stream_statbuf temporary_ssb;
+	if (!temp_stat_ready
+			&& php_stream_stat(file->stream, &temporary_ssb) != 0) {
+		zend_throw_error(NULL, "%s could not secure temporary file for %s",
+			where, p);
+		fastchart_atomic_file_abort(file);
+		return -1;
+	}
+	file->final_mode = destination_mode_exists
+		? (int)(destination_mode_st.st_mode & 07777)
+		: new_file_mode >= 0 ? new_file_mode
+		: (int)(temporary_ssb.sb.st_mode & 07777);
+	file->destination_exists = destination_exists;
+	if (!temp_stat_ready) file->temp_stat = temporary_ssb.sb;
+	file->temp_stat_ready = true;
+#ifndef PHP_WIN32
+	if (destination_exists) file->destination_stat = destination_st;
+#endif
 	file->path = zend_string_copy(path);
 	file->where = where;
 	return 0;
@@ -7271,27 +7985,388 @@ int fastchart_atomic_file_open(fastchart_atomic_file_t *file,
 int fastchart_atomic_file_commit(fastchart_atomic_file_t *file,
 		size_t written, zend_long *written_out)
 {
-	php_stream *closing = file->stream;
-	file->stream = NULL;
-	int close_rc = php_stream_close(closing);
 	const char *p = ZSTR_VAL(file->path);
-	if (close_rc != 0) {
-		VCWD_UNLINK(ZSTR_VAL(file->tmp_path));
-		zend_throw_error(NULL, "%s could not close temporary file for %s",
-			file->where, p);
-		goto failed;
-	}
-	if (VCWD_CHMOD(ZSTR_VAL(file->tmp_path), file->final_mode) != 0) {
-		VCWD_UNLINK(ZSTR_VAL(file->tmp_path));
+#ifndef PHP_WIN32
+	zend_stat_t path_st;
+	int pinned_temp_fd = -1;
+#endif
+
+	if (fastchart_atomic_file_chmod(file, file->final_mode) != 0) {
 		zend_throw_error(NULL, "%s could not preserve permissions for %s",
 			file->where, p);
+		fastchart_atomic_file_abort(file);
+		return -1;
+	}
+	php_stream *closing = file->stream;
+#ifndef PHP_WIN32
+	int stream_fd;
+	if (php_stream_cast(closing, PHP_STREAM_AS_FD,
+			(void *)&stream_fd, 0) != SUCCESS
+			|| (pinned_temp_fd = dup(stream_fd)) < 0) {
+		zend_throw_error(NULL, "%s could not secure temporary file for %s",
+			file->where, p);
+		fastchart_atomic_file_abort(file);
+		return -1;
+	}
+#endif
+	file->stream = NULL;
+	if (php_stream_close(closing) != 0) {
+#ifndef PHP_WIN32
+		if (pinned_temp_fd >= 0) close(pinned_temp_fd);
+#endif
+		zend_throw_error(NULL, "%s could not close temporary file for %s",
+			file->where, p);
+		fastchart_atomic_file_abort(file);
+		return -1;
+	}
+
+#ifndef PHP_WIN32
+	bool exchanged = false;
+	bool renamed = false;
+	bool fallback_linked = false;
+	zend_stat_t expected_final_st = file->temp_stat;
+	bool cleanup_tmp = true;
+	bool backup_holds_destination = false;
+	bool cleanup_backup = true;
+	zend_string *backup_name = NULL;
+	zend_string *install_name = file->tmp_name;
+	bool install_staged = false;
+	bool cleanup_install = false;
+	bool cleanup_install_stat_ready = false;
+	bool cleanup_backup_stat_ready = false;
+	zend_stat_t cleanup_install_st = {0};
+	zend_stat_t cleanup_backup_st = {0};
+	zend_stat_t pre_replace_st = {0};
+	bool pre_replace_stat_ready = false;
+	if (fstatat(file->dir_fd, ZSTR_VAL(file->tmp_name), &path_st,
+			AT_SYMLINK_NOFOLLOW) != 0
+			|| !S_ISREG(path_st.st_mode)
+			|| !fastchart_atomic_same_file(&file->temp_stat, &path_st)) {
+		zend_throw_error(NULL, "%s could not finalize %s",
+			file->where, p);
 		goto failed;
 	}
-	if (VCWD_RENAME(ZSTR_VAL(file->tmp_path), p) != 0) {
-		VCWD_UNLINK(ZSTR_VAL(file->tmp_path));
+#ifdef __linux__
+	bool stage_install = file->destination_exists;
+	if (stage_install) {
+		install_name = strpprintf(0, "%s.commit",
+			ZSTR_VAL(file->tmp_name));
+		if (fastchart_atomic_install_fd(pinned_temp_fd, file->dir_fd,
+				ZSTR_VAL(install_name)) != 0) {
+			zend_throw_error(NULL, "%s could not secure finalization for %s",
+				file->where, p);
+			goto failed;
+		}
+		install_staged = true;
+		cleanup_install = true;
+		if (fstatat(file->dir_fd, ZSTR_VAL(install_name),
+				&expected_final_st, AT_SYMLINK_NOFOLLOW) != 0
+				|| !S_ISREG(expected_final_st.st_mode)
+				|| !fastchart_atomic_same_file(
+					&file->temp_stat, &expected_final_st)) {
+			zend_throw_error(NULL, "%s could not secure finalization for %s",
+				file->where, p);
+			goto failed;
+		}
+		cleanup_install_st = expected_final_st;
+		cleanup_install_stat_ready = true;
+	}
+#endif
+	if (fastchart_atomic_check_pinned_parent(file) != 0) {
+		if (!EG(exception)) {
+			zend_throw_error(NULL,
+				"%s parent directory is outside open_basedir for %s",
+				file->where, p);
+		}
+		goto failed;
+	}
+	if (file->destination_exists) {
+		if (fstatat(file->dir_fd, ZSTR_VAL(file->final_name),
+				&pre_replace_st, AT_SYMLINK_NOFOLLOW) != 0
+				|| S_ISDIR(pre_replace_st.st_mode)
+				|| !fastchart_atomic_same_snapshot(
+					&file->destination_stat, &pre_replace_st)) {
+			zend_throw_error(NULL,
+				"%s destination changed while rendering %s",
+				file->where, p);
+			goto failed;
+		}
+		pre_replace_stat_ready = true;
+	}
+#ifdef FASTCHART_HAVE_RENAMEAT2
+	if (file->destination_exists
+			&& !fastchart_renameat2_unsupported(&file->temp_stat)) {
+		if (syscall(SYS_renameat2, file->dir_fd,
+				ZSTR_VAL(install_name), file->dir_fd,
+				ZSTR_VAL(file->final_name), RENAME_EXCHANGE) == 0) {
+			renamed = true;
+			exchanged = true;
+			cleanup_install_st = pre_replace_st;
+			cleanup_install_stat_ready = pre_replace_stat_ready;
+		} else if (errno == ENOSYS || errno == EINVAL
+				|| errno == EOPNOTSUPP) {
+			fastchart_mark_renameat2_unsupported(&file->temp_stat);
+		} else {
+			zend_throw_error(NULL, "%s could not finalize %s",
+				file->where, p);
+			goto failed;
+		}
+	}
+#endif
+#ifdef __APPLE__
+	if (!renamed) {
+		unsigned int flags = file->destination_exists
+			? RENAME_SWAP : RENAME_EXCL;
+		if (renameatx_np(file->dir_fd, ZSTR_VAL(install_name),
+				file->dir_fd, ZSTR_VAL(file->final_name), flags) == 0) {
+			renamed = true;
+			exchanged = file->destination_exists;
+			if (exchanged) {
+				cleanup_install = true;
+				cleanup_install_st = pre_replace_st;
+				cleanup_install_stat_ready = pre_replace_stat_ready;
+			} else {
+				cleanup_tmp = false;
+			}
+		} else if (errno != ENOTSUP && errno != EOPNOTSUPP
+				&& errno != EINVAL) {
+			zend_throw_error(NULL, "%s could not finalize %s",
+				file->where, p);
+			goto failed;
+		}
+	}
+#endif
+	if (!renamed) {
+		if (file->destination_exists) {
+			if (fstatat(file->dir_fd, ZSTR_VAL(file->final_name),
+					&path_st, AT_SYMLINK_NOFOLLOW) != 0
+					|| S_ISDIR(path_st.st_mode)) {
+				zend_throw_error(NULL, "%s could not preserve %s",
+					file->where, p);
+				goto failed;
+			}
+			backup_name = strpprintf(0, "%s.old",
+				ZSTR_VAL(file->tmp_name));
+			if (linkat(file->dir_fd, ZSTR_VAL(file->final_name),
+					file->dir_fd, ZSTR_VAL(backup_name), 0) != 0) {
+				zend_throw_error(NULL, "%s could not preserve %s",
+					file->where, p);
+				goto failed;
+			}
+			if (fstatat(file->dir_fd, ZSTR_VAL(backup_name),
+					&cleanup_backup_st, AT_SYMLINK_NOFOLLOW) != 0
+					|| !fastchart_atomic_same_file(
+						&path_st, &cleanup_backup_st)) {
+				zend_throw_error(NULL, "%s could not preserve %s",
+					file->where, p);
+				goto failed;
+			}
+			cleanup_backup_stat_ready = true;
+			backup_holds_destination = true;
+		} else {
+			if (fstatat(file->dir_fd, ZSTR_VAL(file->final_name),
+					&path_st, AT_SYMLINK_NOFOLLOW) == 0 || errno != ENOENT) {
+				zend_throw_error(NULL,
+					"%s destination changed before finalizing %s",
+					file->where, p);
+				goto failed;
+			}
+			int install_rc;
+			if (install_staged) {
+				install_rc = linkat(file->dir_fd, ZSTR_VAL(install_name),
+					file->dir_fd, ZSTR_VAL(file->final_name), 0);
+			} else {
+#ifdef __linux__
+				install_rc = fastchart_atomic_install_fd(pinned_temp_fd,
+					file->dir_fd, ZSTR_VAL(file->final_name));
+#else
+				/* POSIX has no portable fd-to-name link operation. The
+				 * no-clobber link plus the identity check below preserves
+				 * atomic visibility and never reports a substituted file as
+				 * successfully installed. */
+				install_rc = linkat(file->dir_fd,
+					ZSTR_VAL(file->tmp_name), file->dir_fd,
+					ZSTR_VAL(file->final_name), 0);
+#endif
+			}
+			if (install_rc != 0) {
+				zend_throw_error(NULL, "%s could not finalize %s",
+					file->where, p);
+				goto failed;
+			}
+			fallback_linked = true;
+			renamed = true;
+		}
+		if (!fallback_linked
+				&& renameat(file->dir_fd, ZSTR_VAL(install_name),
+				file->dir_fd, ZSTR_VAL(file->final_name)) != 0) {
+			backup_holds_destination = false;
+			zend_throw_error(NULL, "%s could not finalize %s",
+				file->where, p);
+			goto failed;
+		}
+		if (!fallback_linked) {
+			if (install_staged) {
+				cleanup_install = false;
+			} else {
+				cleanup_tmp = false;
+			}
+		}
+		renamed = true;
+	}
+	bool final_matches = fstatat(file->dir_fd,
+		ZSTR_VAL(file->final_name), &path_st, AT_SYMLINK_NOFOLLOW) == 0
+		&& S_ISREG(path_st.st_mode)
+		&& fastchart_atomic_same_file(&expected_final_st, &path_st);
+	if (!final_matches) {
+		if (exchanged) {
+			cleanup_install = false;
+		}
+		if (!exchanged && backup_holds_destination) {
+			backup_holds_destination = false;
+			cleanup_backup = false;
+		}
+		zend_throw_error(NULL,
+			"%s finalized file changed while finalizing %s",
+			file->where, p);
+		goto failed;
+	}
+	if (fastchart_atomic_check_pinned_parent(file) != 0) {
+		bool withdrawn = false;
+		if (exchanged) {
+#ifdef FASTCHART_HAVE_RENAMEAT2
+			withdrawn = syscall(SYS_renameat2, file->dir_fd,
+				ZSTR_VAL(install_name), file->dir_fd,
+				ZSTR_VAL(file->final_name), RENAME_EXCHANGE) == 0;
+#elif defined(__APPLE__)
+			withdrawn = renameatx_np(file->dir_fd,
+				ZSTR_VAL(install_name), file->dir_fd,
+				ZSTR_VAL(file->final_name), RENAME_SWAP) == 0;
+#endif
+			if (withdrawn) {
+				exchanged = false;
+				cleanup_install_st = expected_final_st;
+				cleanup_install_stat_ready = true;
+			}
+		} else if (fallback_linked) {
+			withdrawn = fastchart_atomic_unlink_same(file->dir_fd,
+				file->final_name, &expected_final_st) == 1;
+		} else if (backup_holds_destination) {
+			withdrawn = renameat(file->dir_fd, ZSTR_VAL(backup_name),
+				file->dir_fd, ZSTR_VAL(file->final_name)) == 0;
+			if (withdrawn) {
+				backup_holds_destination = false;
+				cleanup_backup = false;
+			}
+#ifdef __APPLE__
+		} else if (!file->destination_exists && !cleanup_tmp) {
+			withdrawn = renameat(file->dir_fd,
+				ZSTR_VAL(file->final_name), file->dir_fd,
+				ZSTR_VAL(file->tmp_name)) == 0;
+			if (withdrawn) cleanup_tmp = true;
+#endif
+		}
+		if (!EG(exception)) {
+			zend_throw_error(NULL,
+				withdrawn
+					? "%s parent directory moved outside open_basedir for %s"
+					: "%s could not withdraw output moved outside open_basedir for %s",
+				file->where, p);
+		}
+		goto failed;
+	}
+	if (exchanged) {
+		int cleanup_rc = cleanup_install_stat_ready
+			? fastchart_atomic_unlink_same(file->dir_fd, install_name,
+				&cleanup_install_st) : -1;
+		cleanup_install = false;
+		if (cleanup_rc != 1) {
+			zend_throw_error(NULL,
+				"%s prior destination changed while cleaning %s",
+				file->where, p);
+			goto failed;
+		}
+	} else if (!fallback_linked && backup_holds_destination) {
+		int cleanup_rc = cleanup_backup_stat_ready
+			? fastchart_atomic_unlink_same(file->dir_fd, backup_name,
+				&cleanup_backup_st) : -1;
+		backup_holds_destination = false;
+		cleanup_backup = false;
+		if (cleanup_rc != 1) {
+			zend_throw_error(NULL,
+				"%s prior destination changed while cleaning %s",
+				file->where, p);
+			goto failed;
+		}
+	}
+	if (fallback_linked && install_staged && cleanup_install) {
+		int cleanup_rc = cleanup_install_stat_ready
+			? fastchart_atomic_unlink_same(file->dir_fd, install_name,
+				&cleanup_install_st) : -1;
+		cleanup_install = false;
+		if (cleanup_rc != 1) {
+			zend_throw_error(NULL,
+				"%s finalization staging changed while cleaning %s",
+				file->where, p);
+			goto failed;
+		}
+	}
+	if (cleanup_tmp) {
+		(void)fastchart_atomic_unlink_same(file->dir_fd,
+			file->tmp_name, &file->temp_stat);
+		cleanup_tmp = false;
+	}
+	if (backup_name) zend_string_release(backup_name);
+	if (install_staged) zend_string_release(install_name);
+	if (pinned_temp_fd >= 0) close(pinned_temp_fd);
+	fastchart_atomic_file_release_location(file);
+#else
+	if (fastchart_windows_check_pinned_parent(file) != 0) {
+		if (!EG(exception)) {
+			zend_throw_error(NULL,
+				"%s parent directory is outside open_basedir for %s",
+				file->where, p);
+		}
+		fastchart_atomic_file_abort(file);
+		return -1;
+	}
+	bool current_destination_exists;
+	bool current_destination_is_directory;
+	uint64_t current_volume_serial;
+	uint64_t current_file_index;
+	uint64_t current_size;
+	uint64_t current_last_write;
+	if (fastchart_windows_destination_exists(file->dir_handle,
+			file->final_name_w, &current_destination_exists,
+			&current_destination_is_directory, &current_volume_serial,
+			&current_file_index, &current_size,
+			&current_last_write) != 0
+			|| current_destination_exists != file->destination_exists
+			|| current_destination_is_directory
+			|| (current_destination_exists
+				&& (current_volume_serial
+						!= file->destination_volume_serial
+					|| current_file_index
+						!= file->destination_file_index
+					|| current_size != file->destination_size
+					|| current_last_write
+						!= file->destination_last_write))) {
+		zend_throw_error(NULL,
+			"%s destination changed while rendering %s", file->where, p);
+		fastchart_atomic_file_abort(file);
+		return -1;
+	}
+	if (!fastchart_windows_rename_handle(file->temp_handle,
+			file->dir_handle, file->final_name_w,
+			file->destination_exists)) {
 		zend_throw_error(NULL, "%s could not finalize %s", file->where, p);
-		goto failed;
+		fastchart_atomic_file_abort(file);
+		return -1;
 	}
+	CloseHandle(file->temp_handle);
+	file->temp_handle = INVALID_HANDLE_VALUE;
+	fastchart_atomic_file_release_location(file);
+#endif
 	zend_string_release(file->tmp_path);
 	file->tmp_path = NULL;
 	zend_string_release(file->path);
@@ -7300,13 +8375,33 @@ int fastchart_atomic_file_commit(fastchart_atomic_file_t *file,
 		*written_out = (zend_long)written;
 	}
 	return 0;
-
+#ifndef PHP_WIN32
 failed:
+	if (pinned_temp_fd >= 0) close(pinned_temp_fd);
+	if (cleanup_tmp) {
+		(void)fastchart_atomic_unlink_same(file->dir_fd,
+			file->tmp_name, &file->temp_stat);
+	}
+	if (cleanup_install && cleanup_install_stat_ready) {
+		(void)fastchart_atomic_unlink_same(file->dir_fd, install_name,
+			&cleanup_install_st);
+	}
+	if (backup_name) {
+		if (cleanup_backup && !backup_holds_destination
+				&& cleanup_backup_stat_ready) {
+			(void)fastchart_atomic_unlink_same(file->dir_fd, backup_name,
+				&cleanup_backup_st);
+		}
+		zend_string_release(backup_name);
+	}
+	if (install_staged) zend_string_release(install_name);
+	fastchart_atomic_file_release_location(file);
 	zend_string_release(file->tmp_path);
 	file->tmp_path = NULL;
 	zend_string_release(file->path);
 	file->path = NULL;
 	return -1;
+#endif
 }
 
 int fastchart_write_zstr_to_file(zend_string *path, zend_string *payload,
@@ -7354,7 +8449,7 @@ static void fastchart_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS, zend_stri
     }
 
     smart_str buf = {0};
-    if (fastchart_build_svg(&buf,
+	if (fastchart_build_svg(&buf,
 			(int)self->width, (int)self->height, (int)self->dpi,
 			(int)self->svg_text_mode, 0, "fastchart", NULL,
 			dispatch_svg_render, self, Z_OBJCE_P(ZEND_THIS)) != 0) {
@@ -8541,59 +9636,318 @@ static double stock_close_stats_rescale(double value, double scale)
 	return value * scale;
 }
 
+typedef struct {
+	double scale;
+	double mean;
+	double m2;
+	int count;
+} stock_close_stats;
+
+static stock_close_stats stock_close_stats_merge(
+		stock_close_stats left, stock_close_stats right)
+{
+	if (left.count == 0) return right;
+	if (right.count == 0) return left;
+
+	stock_close_stats result;
+	result.scale = fmax(left.scale, right.scale);
+	double left_ratio = result.scale > 0.0
+		? left.scale / result.scale : 0.0;
+	double right_ratio = result.scale > 0.0
+		? right.scale / result.scale : 0.0;
+	double left_mean = left.mean * left_ratio;
+	double right_mean = right.mean * right_ratio;
+	double delta = right_mean - left_mean;
+	result.count = left.count + right.count;
+	result.mean = left_mean
+		+ delta * ((double)right.count / (double)result.count);
+	result.m2 = left.m2 * left_ratio * left_ratio
+		+ right.m2 * right_ratio * right_ratio
+		+ delta * delta
+			* ((double)left.count * (double)right.count
+				/ (double)result.count);
+	return result;
+}
+
+static void stock_scaled_rolling_close_stats(
+		const fastchart_candle *candles, int n, int period,
+		double *means, double *stddevs)
+{
+	typedef struct {
+		stock_close_stats value;
+		stock_close_stats aggregate;
+	} stock_close_stats_entry;
+	stock_close_stats_entry *incoming = emalloc(
+		(size_t)(period + 1) * sizeof(*incoming));
+	stock_close_stats_entry *outgoing = emalloc(
+		(size_t)(period + 1) * sizeof(*outgoing));
+	int incoming_count = 0;
+	int outgoing_count = 0;
+
+	for (int i = 0; i < n; i++) {
+		double value = candles[i].close;
+		double scale = fabs(value);
+		stock_close_stats item = {
+			.scale = scale,
+			.mean = scale > 0.0 ? value / scale : 0.0,
+			.m2 = 0.0,
+			.count = 1
+		};
+		incoming[incoming_count].value = item;
+		incoming[incoming_count].aggregate = incoming_count > 0
+			? stock_close_stats_merge(
+				incoming[incoming_count - 1].aggregate, item)
+			: item;
+		incoming_count++;
+
+		if (incoming_count + outgoing_count > period) {
+			if (outgoing_count == 0) {
+				while (incoming_count > 0) {
+					item = incoming[--incoming_count].value;
+					outgoing[outgoing_count].value = item;
+					outgoing[outgoing_count].aggregate
+						= outgoing_count > 0
+						? stock_close_stats_merge(item,
+							outgoing[outgoing_count - 1].aggregate)
+						: item;
+					outgoing_count++;
+				}
+			}
+			outgoing_count--;
+		}
+		if (incoming_count + outgoing_count < period) continue;
+
+		stock_close_stats stats = {0};
+		if (outgoing_count > 0) {
+			stats = outgoing[outgoing_count - 1].aggregate;
+		}
+		if (incoming_count > 0) {
+			stats = stock_close_stats_merge(stats,
+				incoming[incoming_count - 1].aggregate);
+		}
+		if (means) {
+			means[i] = stock_close_stats_rescale(stats.mean, stats.scale);
+		}
+		stddevs[i] = stock_close_stats_rescale(
+			sqrt(fmax(stats.m2 / (double)stats.count, 0.0)),
+			stats.scale);
+	}
+	efree(outgoing);
+	efree(incoming);
+}
+
+static void stock_mixed_rolling_close_stats(
+		const fastchart_candle *candles, int n, int period,
+		double *means, double *stddevs)
+{
+	int *minimum = emalloc((size_t)n * sizeof(int));
+	int *maximum = emalloc((size_t)n * sizeof(int));
+	double range_limit = sqrt(DBL_MAX / ((double)period * 4.0));
+	double tiny_limit = sqrt(DBL_MIN);
+	bool running = false;
+	double center = 0.0;
+	double sum = 0.0;
+	double sum_sq = 0.0;
+	double inv_period = 1.0 / (double)period;
+	int i = period - 1;
+	while (i < n) {
+		bool unsafe_window = false;
+		if (!running) {
+			double minimum_close = candles[i - period + 1].close;
+			double maximum_close = minimum_close;
+			for (int j = i - period + 2; j <= i; j++) {
+				minimum_close = fmin(minimum_close, candles[j].close);
+				maximum_close = fmax(maximum_close, candles[j].close);
+			}
+			double span = maximum_close - minimum_close;
+			unsafe_window = !isfinite(span) || span > range_limit
+				|| (span > 0.0 && span < tiny_limit);
+		}
+		if (!running && !unsafe_window) {
+			center = candles[i - period + 1].close;
+			sum = 0.0;
+			sum_sq = 0.0;
+			for (int j = i - period + 1; j <= i; j++) {
+				double delta = candles[j].close - center;
+				sum += delta;
+				sum_sq += delta * delta;
+			}
+		} else if (running) {
+			double removed = candles[i - period].close - center;
+			double added = candles[i].close - center;
+			sum += added - removed;
+			sum_sq += added * added - removed * removed;
+		}
+		if (!unsafe_window) {
+			if (!isfinite(sum) || !isfinite(sum_sq)) {
+				unsafe_window = true;
+			} else {
+				double mean_delta = sum * inv_period;
+				double second_moment = sum_sq * inv_period;
+				double variance = second_moment
+					- mean_delta * mean_delta;
+				if (sum_sq > 0.0
+						&& variance <= 64.0 * DBL_EPSILON
+							* second_moment) {
+					center = candles[i - period + 1].close;
+					sum = 0.0;
+					sum_sq = 0.0;
+					for (int j = i - period + 1; j <= i; j++) {
+						double delta = candles[j].close - center;
+						sum += delta;
+						sum_sq += delta * delta;
+					}
+					mean_delta = sum * inv_period;
+					variance = sum_sq * inv_period
+						- mean_delta * mean_delta;
+				}
+				if (isfinite(variance)) {
+					if (means) means[i] = center + mean_delta;
+					stddevs[i] = sqrt(fmax(variance, 0.0));
+					running = true;
+					i++;
+					continue;
+				}
+				unsafe_window = true;
+			}
+		}
+
+		int segment_start = i;
+		int first_input = segment_start - period + 1;
+		int min_head = 0, min_tail = 0;
+		int max_head = 0, max_tail = 0;
+		for (int j = first_input; j <= i; j++) {
+			while (min_head < min_tail
+					&& candles[minimum[min_tail - 1]].close
+						>= candles[j].close) {
+				min_tail--;
+			}
+			while (max_head < max_tail
+					&& candles[maximum[max_tail - 1]].close
+						<= candles[j].close) {
+				max_tail--;
+			}
+			minimum[min_tail++] = j;
+			maximum[max_tail++] = j;
+		}
+		int segment_end = i;
+		int safe_seed = -1;
+		for (int j = i + 1; j < n; j++) {
+			int first = j - period + 1;
+			while (min_head < min_tail && minimum[min_head] < first) {
+				min_head++;
+			}
+			while (max_head < max_tail && maximum[max_head] < first) {
+				max_head++;
+			}
+			while (min_head < min_tail
+					&& candles[minimum[min_tail - 1]].close
+						>= candles[j].close) {
+				min_tail--;
+			}
+			while (max_head < max_tail
+					&& candles[maximum[max_tail - 1]].close
+						<= candles[j].close) {
+				max_tail--;
+			}
+			minimum[min_tail++] = j;
+			maximum[max_tail++] = j;
+			double span = candles[maximum[max_head]].close
+				- candles[minimum[min_head]].close;
+			bool next_unsafe = !isfinite(span) || span > range_limit
+				|| (span > 0.0 && span < tiny_limit);
+			if (!next_unsafe) {
+				safe_seed = j;
+				break;
+			}
+			segment_end = j;
+		}
+		int computed_end = safe_seed >= 0 ? safe_seed : segment_end;
+		int segment_n = computed_end - first_input + 1;
+		double *segment_means = emalloc(
+			(size_t)segment_n * sizeof(double));
+		double *segment_stddevs = emalloc(
+			(size_t)segment_n * sizeof(double));
+		stock_scaled_rolling_close_stats(candles + first_input,
+			segment_n, period, segment_means, segment_stddevs);
+		for (int j = segment_start; j <= computed_end; j++) {
+			int local = j - first_input;
+			if (means) means[j] = segment_means[local];
+			stddevs[j] = segment_stddevs[local];
+		}
+		if (safe_seed >= 0) {
+			int local = safe_seed - first_input;
+			center = candles[safe_seed - period + 1].close;
+			double mean_delta = segment_means[local] - center;
+			double variance = segment_stddevs[local]
+				* segment_stddevs[local];
+			sum = (double)period * mean_delta;
+			sum_sq = (double)period
+				* (variance + mean_delta * mean_delta);
+			running = isfinite(sum) && isfinite(sum_sq);
+		}
+		efree(segment_means);
+		efree(segment_stddevs);
+		i = safe_seed >= 0 && running ? safe_seed + 1 : segment_end + 1;
+	}
+
+	efree(maximum);
+	efree(minimum);
+}
+
 static void stock_rolling_close_stats(const fastchart_stock_obj *self,
 		int period, double *means, double *stddevs)
 {
-	const double *values = self->close_stats_values;
+	const fastchart_candle *candles = self->candles;
 	int n = self->candle_count;
-	double local_center = values[0];
-	double sum = 0.0;
-	double sum_sq = 0.0;
 
 	if (means) {
 		for (int i = 0; i < n; i++) means[i] = NAN;
 	}
 	for (int i = 0; i < n; i++) stddevs[i] = NAN;
+	if (self->close_stats_scaled_windows) {
+		stock_mixed_rolling_close_stats(candles, n, period,
+			means, stddevs);
+		return;
+	}
+
+	double local_center = candles[0].close;
+	double sum = 0.0;
+	double sum_sq = 0.0;
+	double inv_period = 1.0 / (double)period;
 	for (int i = 0; i < period; i++) {
-		double delta = values[i] - local_center;
+		double delta = candles[i].close - local_center;
 		sum += delta;
 		sum_sq += delta * delta;
 	}
 	for (int i = period - 1; i < n; i++) {
 		if (i >= period) {
-			double removed = values[i - period] - local_center;
-			double added = values[i] - local_center;
+			double removed = candles[i - period].close - local_center;
+			double added = candles[i].close - local_center;
 			sum += added - removed;
 			sum_sq += added * added - removed * removed;
 		}
-		double mean_delta = sum / (double)period;
-		double second_moment = sum_sq / (double)period;
+		double mean_delta = sum * inv_period;
+		double second_moment = sum_sq * inv_period;
 		double variance = second_moment - mean_delta * mean_delta;
 		if (UNEXPECTED(sum_sq > 0.0
 				&& variance <= 64.0 * DBL_EPSILON * second_moment)) {
-			local_center = values[i - period + 1];
+			local_center = candles[i - period + 1].close;
 			sum = 0.0;
 			sum_sq = 0.0;
 			for (int j = i - period + 1; j <= i; j++) {
-				double delta = values[j] - local_center;
+				double delta = candles[j].close - local_center;
 				sum += delta;
 				sum_sq += delta * delta;
 			}
-			mean_delta = sum / (double)period;
-			variance = sum_sq / (double)period
+			mean_delta = sum * inv_period;
+			variance = sum_sq * inv_period
 				- mean_delta * mean_delta;
 		}
 		if (means) {
-			double mean = self->close_stats_origin
-				+ local_center + mean_delta;
-			means[i] = self->close_stats_scaled
-				? stock_close_stats_rescale(mean,
-					self->close_stats_scale) : mean;
+			means[i] = local_center + mean_delta;
 		}
-		double deviation = sqrt(fmax(variance, 0.0));
-		stddevs[i] = self->close_stats_scaled
-			? stock_close_stats_rescale(deviation,
-				self->close_stats_scale) : deviation;
+		stddevs[i] = sqrt(fmax(variance, 0.0));
 	}
 }
 
@@ -8958,7 +10312,7 @@ ZEND_METHOD(FastChart_StockChart, addStochastic)
     double *k = emalloc((size_t)n * sizeof(double));
     for (int i = 0; i < n; i++) k[i] = NAN;
     int p = (int)period;
-    if (p <= STOCK_EXTREMA_SCAN_CROSSOVER) {
+	if (p <= STOCK_EXTREMA_SCAN_CROSSOVER) {
         for (int i = p - 1; i < n; i++) {
             double hh = c[i].high, ll = c[i].low;
             for (int j = i - p + 1; j <= i; j++) {
@@ -8968,7 +10322,7 @@ ZEND_METHOD(FastChart_StockChart, addStochastic)
             k[i] = (hh > ll)
                 ? (c[i].close - ll) / (hh - ll) * 100.0 : 50.0;
         }
-    } else {
+	} else {
         stock_extrema_deque deque;
 
         stock_extrema_deque_init(&deque, n);
@@ -9075,7 +10429,7 @@ ZEND_METHOD(FastChart_StockChart, addBollingerBands)
     double *mid = emalloc((size_t)n * sizeof(double));
     double *up  = emalloc((size_t)n * sizeof(double));
     double *lo  = emalloc((size_t)n * sizeof(double));
-    double *sigma = emalloc((size_t)n * sizeof(double));
+	double *sigma = emalloc((size_t)n * sizeof(double));
     int p = (int)period;
 
 	stock_rolling_close_stats(self, p, mid, sigma);
@@ -9436,7 +10790,7 @@ ZEND_METHOD(FastChart_StockChart, addWilliamsR)
     int p = (int)period;
     double *out = emalloc((size_t)n * sizeof(double));
     for (int i = 0; i < n; i++) out[i] = NAN;
-    if (p <= STOCK_EXTREMA_SCAN_CROSSOVER) {
+	if (p <= STOCK_EXTREMA_SCAN_CROSSOVER) {
         for (int i = p - 1; i < n; i++) {
             double hh = c[i - p + 1].high, ll = c[i - p + 1].low;
             for (int j = i - p + 2; j <= i; j++) {
@@ -9447,7 +10801,7 @@ ZEND_METHOD(FastChart_StockChart, addWilliamsR)
             out[i] = denom > 0.0
                 ? -100.0 * (hh - c[i].close) / denom : -50.0;
         }
-    } else {
+	} else {
         stock_extrema_deque deque;
 
         stock_extrema_deque_init(&deque, n);
@@ -9491,11 +10845,11 @@ ZEND_METHOD(FastChart_StockChart, addStdDev)
     if (stock_pane_period(period, n, "FastChart\\StockChart::addStdDev()") != 0)
         RETURN_THROWS();
 
-    /* Rolling population standard deviation of close. */
+	/* Rolling population standard deviation of close. */
     int p = (int)period;
     double *out = emalloc((size_t)n * sizeof(double));
 
-    if (self->close_stats_cache
+	if (self->close_stats_cache
 			&& self->close_stats_cache_period == p) {
 		memcpy(out, self->close_stats_cache, (size_t)n * sizeof(double));
 	} else {
@@ -9534,7 +10888,7 @@ ZEND_METHOD(FastChart_StockChart, addAroon)
     double *up = emalloc((size_t)n * sizeof(double));
     double *dn = emalloc((size_t)n * sizeof(double));
     for (int i = 0; i < n; i++) up[i] = dn[i] = NAN;
-    if (p <= STOCK_EXTREMA_SCAN_CROSSOVER) {
+	if (p <= STOCK_EXTREMA_SCAN_CROSSOVER) {
         for (int i = p; i < n; i++) {
             int hh_idx = i - p, ll_idx = i - p;
             double hh = c[i - p].high, ll = c[i - p].low;
@@ -9545,7 +10899,7 @@ ZEND_METHOD(FastChart_StockChart, addAroon)
             up[i] = 100.0 * (double)(p - (i - hh_idx)) / (double)p;
             dn[i] = 100.0 * (double)(p - (i - ll_idx)) / (double)p;
         }
-    } else {
+	} else {
         stock_extrema_deque deque;
 
         stock_extrema_deque_init(&deque, n);

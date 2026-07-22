@@ -29,6 +29,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Graph and hierarchy labels have a 64 KiB aggregate text budget;
   charts accept at most 128 text annotations with 64 KiB total text.
 
+### Performance
+
+- Raster file output streams encoder bytes directly into the atomic
+  destination, and in-memory raster output no longer retains a second
+  full-size pixel frame.
+- Stock rolling indicators use linear-time extrema and statistics paths;
+  overflow-prone windows use normalized sliding aggregates.
+- Common finite axis normalization uses direct arithmetic, avoiding the
+  overflow-safe fallback on ordinary dense plots.
+- Word-cloud spiral points, graph layouts, gradient definitions, and repeated
+  SVG images are reused within a render. A 64 MiB frequency-aware decoded-image
+  cache bounds document memory without repeatedly decoding hot images.
+
 ### Fixed
 
 - Font faces are created from bytes opened through PHP streams, closing the
@@ -50,6 +63,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   blocking, while preserving PHP stream and `open_basedir` handling.
 - `renderToFile()` preserves an existing destination's mode and applies
   the process umask to new files before the atomic rename.
+- `renderToFile()` pins its parent and temporary-file handles, revalidates
+  `open_basedir`, staging identity, and destination metadata at commit, and
+  withdraws installed output if the parent moves during installation.
+- Detected concurrent destination or staging changes are rejected without
+  deleting the replacement; the prior file remains under a recovery name
+  when a post-install race prevents cleanup.
 - The 24 specialized chart renderers now honor `setPlotRect()`.
 
 ### CI

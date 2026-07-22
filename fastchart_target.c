@@ -81,7 +81,7 @@ void fastchart_target_from_svg(fastchart_target_t *t, smart_str *buf,
     t->u.svg.dpi = 96;
     t->u.svg.next_clip_id = 1;
     t->u.svg.next_grad_id = 1;
-    t->u.svg.next_image_id = 1;
+	t->u.svg.next_image_id = 1;
     t->u.svg.text_mode = (text_mode == FASTCHART_SVG_TEXT_NATIVE)
         ? FASTCHART_SVG_TEXT_NATIVE
         : FASTCHART_SVG_TEXT_PATHS;
@@ -528,13 +528,13 @@ static unsigned char *fastchart_load_font_bytes(const char *font_path,
 
 static void fastchart_ft_face_slot_release(fc_ft_face_slot *slot)
 {
-    if (slot->face) {
+	if (slot->face) {
         fastchart_glyph_cache_drop_face(slot->face);
         FT_Done_Face(slot->face);
-    }
-    free(slot->path);
-    free(slot->data);
-    memset(slot, 0, sizeof(*slot));
+	}
+	free(slot->path);
+	free(slot->data);
+	memset(slot, 0, sizeof(*slot));
 }
 
 FT_Face fastchart_ft_face(const char *font_path)
@@ -585,24 +585,24 @@ FT_Face fastchart_ft_face(const char *font_path)
         return NULL;
     }
 
-    /* Keep the retained backing bytes within one maximum-size font.
-     * Typical fonts still occupy all four LRU slots; unusually large
-     * faces evict as many cold entries as their bytes require. */
-    size_t cached_bytes = 0;
-    int used = 0;
-    for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
-        if (!cache[i].path) break;
-        cached_bytes += cache[i].data_len;
-        used++;
-    }
+	/* Keep the retained backing bytes within one maximum-size font.
+	 * Typical fonts still occupy all four LRU slots; unusually large
+	 * faces evict as many cold entries as their bytes require. */
+	size_t cached_bytes = 0;
+	int used = 0;
+	for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
+		if (!cache[i].path) break;
+		cached_bytes += cache[i].data_len;
+		used++;
+	}
 
-    while (used > 0 && (used >= FC_FT_FACE_CACHE_N ||
-            cached_bytes > FC_FONT_CACHE_BYTES - data_len)) {
-        used--;
-        cached_bytes -= cache[used].data_len;
-        fastchart_ft_face_slot_release(&cache[used]);
-    }
-    for (int i = used; i > 0; i--) {
+	while (used > 0 && (used >= FC_FT_FACE_CACHE_N ||
+			cached_bytes > FC_FONT_CACHE_BYTES - data_len)) {
+		used--;
+		cached_bytes -= cache[used].data_len;
+		fastchart_ft_face_slot_release(&cache[used]);
+	}
+	for (int i = used; i > 0; i--) {
         cache[i] = cache[i - 1];
     }
     cache[0].path = path_copy;
@@ -781,13 +781,13 @@ void fastchart_target_resolve_font_family(fastchart_target_t *t,
 
 void fastchart_target_release(fastchart_target_t *t)
 {
-    for (int i = 0; i < t->image_cache_n; i++) {
+	for (int i = 0; i < t->image_cache_n; i++) {
 		fastchart_target_image_cache_entry *entry = &t->image_cache[i];
 		if (entry->path) efree(entry->path);
 		if (entry->bytes) zend_string_release(entry->bytes);
 		memset(entry, 0, sizeof(*entry));
-    }
-    t->image_cache_n = 0;
+	}
+	t->image_cache_n = 0;
     if (t->color_rgba) {
         efree(t->color_rgba);
         t->color_rgba = NULL;
@@ -1043,16 +1043,16 @@ static int fastchart_load_source_image(const char *path,
 }
 
 static fastchart_target_image_cache_entry *fastchart_target_image_cache_get(
-    fastchart_target_t *t, const char *path)
+	fastchart_target_t *t, const char *path)
 {
-    if (!t || !path || !*path) return NULL;
-    for (int i = 0; i < t->image_cache_n; i++) {
+	if (!t || !path || !*path) return NULL;
+	for (int i = 0; i < t->image_cache_n; i++) {
         fastchart_target_image_cache_entry *entry = &t->image_cache[i];
         if (strcmp(entry->path, path) == 0) return entry;
-    }
+	}
 
-    if (t->image_cache_n >= FASTCHART_TARGET_IMAGE_CACHE) return NULL;
-    fastchart_target_image_cache_entry *entry =
+	if (t->image_cache_n >= FASTCHART_TARGET_IMAGE_CACHE) return NULL;
+	fastchart_target_image_cache_entry *entry =
         &t->image_cache[t->image_cache_n++];
 	memset(entry, 0, sizeof(*entry));
 	entry->path = estrdup(path);
@@ -1063,12 +1063,12 @@ static fastchart_target_image_cache_entry *fastchart_target_image_cache_get(
 int fastchart_target_image_dims(fastchart_target_t *t, const char *path,
                                 int *width, int *height)
 {
-    fastchart_target_image_cache_entry *entry =
+	fastchart_target_image_cache_entry *entry =
         fastchart_target_image_cache_get(t, path);
 	if (!entry || entry->loaded != 1) return -1;
-    if (width) *width = entry->width;
-    if (height) *height = entry->height;
-    return 0;
+	if (width) *width = entry->width;
+	if (height) *height = entry->height;
+	return 0;
 }
 
 void fastchart_target_image(fastchart_target_t *t,
@@ -1077,11 +1077,11 @@ void fastchart_target_image(fastchart_target_t *t,
 {
     if (w <= 0 || h <= 0) return;
 
-    fastchart_target_image_cache_entry *entry =
+	fastchart_target_image_cache_entry *entry =
         fastchart_target_image_cache_get(t, path);
 	if (!entry || entry->loaded != 1 || !entry->mime) return;
 #ifdef HAVE_FASTCHART_PDF
-    /* v1 PDF does not embed raster images. Keep the path cache shared so
+	/* v1 PDF does not embed raster images. Keep the path cache shared so
      * icon dimension lookup retains its existing behavior. */
 	if (t->kind == FASTCHART_TARGET_PDF) {
 		if (entry->bytes) {
@@ -1124,7 +1124,7 @@ static int fastchart_target_svg_gradient_id(fastchart_target_t *t,
                                              uint32_t to_rgb, int dir,
                                              int *emit_definition)
 {
-    for (int i = 0; i < t->u.svg.gradient_cache_n; i++) {
+	for (int i = 0; i < t->u.svg.gradient_cache_n; i++) {
         fastchart_target_gradient_cache_entry *entry =
             &t->u.svg.gradient_cache[i];
         if (entry->from_rgb == from_rgb && entry->to_rgb == to_rgb
@@ -1132,21 +1132,21 @@ static int fastchart_target_svg_gradient_id(fastchart_target_t *t,
             *emit_definition = 0;
             return entry->id;
         }
-    }
+	}
 
-    int id = t->u.svg.next_grad_id;
-    if (t->u.svg.next_grad_id < INT_MAX) t->u.svg.next_grad_id++;
-    *emit_definition = 1;
+	int id = t->u.svg.next_grad_id;
+	if (t->u.svg.next_grad_id < INT_MAX) t->u.svg.next_grad_id++;
+	*emit_definition = 1;
 
-    if (t->u.svg.gradient_cache_n < FASTCHART_TARGET_GRADIENT_CACHE) {
+	if (t->u.svg.gradient_cache_n < FASTCHART_TARGET_GRADIENT_CACHE) {
         fastchart_target_gradient_cache_entry *entry =
             &t->u.svg.gradient_cache[t->u.svg.gradient_cache_n++];
         entry->from_rgb = from_rgb;
         entry->to_rgb = to_rgb;
         entry->dir = dir;
         entry->id = id;
-    }
-    return id;
+	}
+	return id;
 }
 
 void fastchart_target_gradient_rect(fastchart_target_t *t,
@@ -1162,16 +1162,16 @@ void fastchart_target_gradient_rect(fastchart_target_t *t,
         return;
     }
 #endif
-    int emit_definition;
-    int id = fastchart_target_svg_gradient_id(t, from_rgb, to_rgb, dir,
+	int emit_definition;
+	int id = fastchart_target_svg_gradient_id(t, from_rgb, to_rgb, dir,
                                                &emit_definition);
-    if (emit_definition) {
+	if (emit_definition) {
         fc_svg_emit_gradient_rect(t->u.svg.buf, t->u.svg.id_ns, id,
                                    x, y, w, h, from_rgb, to_rgb, dir);
-    } else {
+	} else {
         fc_svg_emit_gradient_rect_ref(t->u.svg.buf, t->u.svg.id_ns, id,
                                        x, y, w, h);
-    }
+	}
 }
 
 void fastchart_target_gradient_polygon(fastchart_target_t *t,
@@ -1199,15 +1199,15 @@ void fastchart_target_gradient_polygon(fastchart_target_t *t,
         return;
     }
 #endif
-    int emit_definition;
-    int id = fastchart_target_svg_gradient_id(t, from_rgb, to_rgb, dir,
+	int emit_definition;
+	int id = fastchart_target_svg_gradient_id(t, from_rgb, to_rgb, dir,
                                                &emit_definition);
-    if (emit_definition) {
+	if (emit_definition) {
         fc_svg_emit_gradient_polygon(t->u.svg.buf, t->u.svg.id_ns, id,
                                       xs, ys, n, from_rgb, to_rgb, dir);
-    } else {
+	} else {
         fc_svg_emit_gradient_polygon_ref(t->u.svg.buf, t->u.svg.id_ns, id,
                                           xs, ys, n);
-    }
+	}
     if (n > 256) { efree(xs); efree(ys); }
 }

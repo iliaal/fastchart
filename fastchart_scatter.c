@@ -118,10 +118,14 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
     double *err_lo = self->err_lo;
     double *err_hi = self->err_hi;
     int err_n = self->err_n;
+	double x_span = xrange.max - xrange.min;
+	bool x_span_fast = isfinite(x_span) && x_span > 0.0;
 
     for (int i = 0; i < n; i++) {
-		double frac_x = fastchart_normalize_finite(points[i].x,
-			xrange.min, xrange.max);
+		double frac_x = EXPECTED(x_span_fast)
+			? (points[i].x - xrange.min) / x_span
+			: fastchart_normalize_finite(points[i].x,
+				xrange.min, xrange.max);
         int px = fastchart_frac_to_px(frac_x, plot.x0, plot.x1);
         int py = fastchart_y_to_pixel(points[i].y, &yrange, &plot);
 
@@ -299,7 +303,7 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
         }
     }
 
-    /* Build a self-owning image-map artifact from the parsed points. */
+	/* Build a self-owning image-map artifact from the parsed points. */
     int href_count = 0;
     for (int i = 0; i < n; i++) {
         if (points[i].href) href_count++;

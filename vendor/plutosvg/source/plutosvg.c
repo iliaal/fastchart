@@ -244,9 +244,14 @@ typedef struct element {
     struct element* first_child;
     struct element* next_sibling;
     struct attribute* attributes;
-    /* LOCAL-PATCH (fastchart repeated images): an <image> referenced by
-     * many <use> nodes decodes its data URI once for the document. */
+    /* LOCAL-PATCH (fastchart repeated images): retain decoded surfaces in
+     * a bounded document-local LRU so hot <use> references decode once. */
     plutovg_surface_t* image;
+    size_t image_cache_bytes;
+    size_t image_access_count;
+    size_t image_accesses_seen;
+    struct element* image_cache_prev;
+    struct element* image_cache_next;
     bool image_loaded;
 } element_t;
 
@@ -1154,11 +1159,16 @@ struct plutosvg_document {
     float height;
     size_t element_count;
     size_t attribute_count;
+    size_t image_cache_bytes;
+    element_t* image_cache_head;
+    element_t* image_cache_tail;
+    bool image_frequencies_ready;
 };
 
 #define MAX_DOCUMENT_ELEMENTS 65536
 #define MAX_DOCUMENT_ATTRIBUTES 262144
 #define MAX_DOCUMENT_DEPTH 256
+#define PLUTOSVG_IMAGE_CACHE_LIMIT (64u * 1024u * 1024u)
 
 static plutosvg_document_t* plutosvg_document_create(float width, float height, plutovg_destroy_func_t destroy_func, void* closure)
 {
@@ -1173,6 +1183,10 @@ static plutosvg_document_t* plutosvg_document_create(float width, float height, 
     document->height = height;
     document->element_count = 0;
     document->attribute_count = 0;
+    document->image_cache_bytes = 0;
+    document->image_cache_head = NULL;
+    document->image_cache_tail = NULL;
+    document->image_frequencies_ready = false;
     return document;
 }
 
@@ -1440,6 +1454,11 @@ plutosvg_document_t* plutosvg_document_load_from_data(const char* data, int leng
                 element->last_child = NULL;
                 element->attributes = NULL;
                 element->image = NULL;
+                element->image_cache_bytes = 0;
+                element->image_access_count = 0;
+                element->image_accesses_seen = 0;
+                element->image_cache_prev = NULL;
+                element->image_cache_next = NULL;
                 element->image_loaded = false;
                 if(document->root_element == NULL) {
                     if(element->id != TAG_SVG)
@@ -2497,9 +2516,291 @@ static void transform_view_rect(const view_position_t* position, plutovg_rect_t*
     }
 }
 
-static plutovg_surface_t* load_image(element_t* element)
+static void image_cache_unlink(plutosvg_document_t* document, element_t* element)
 {
+    if(element->image_cache_prev)
+        element->image_cache_prev->image_cache_next = element->image_cache_next;
+    else
+        document->image_cache_head = element->image_cache_next;
+    if(element->image_cache_next)
+        element->image_cache_next->image_cache_prev = element->image_cache_prev;
+    else
+        document->image_cache_tail = element->image_cache_prev;
+    element->image_cache_prev = NULL;
+    element->image_cache_next = NULL;
+}
+
+static void image_cache_append(plutosvg_document_t* document, element_t* element)
+{
+    element->image_cache_prev = document->image_cache_tail;
+    element->image_cache_next = NULL;
+    if(document->image_cache_tail)
+        document->image_cache_tail->image_cache_next = element;
+    else
+        document->image_cache_head = element;
+    document->image_cache_tail = element;
+}
+
+static void image_cache_touch(plutosvg_document_t* document, element_t* element)
+{
+    if(document->image_cache_tail == element)
+        return;
+    image_cache_unlink(document, element);
+    image_cache_append(document, element);
+}
+
+static void image_cache_count_frequencies(element_t* element,
+    plutosvg_document_t* document, bool in_defs)
+{
+    if(element == NULL)
+        return;
+    bool child_in_defs = in_defs || element->id == TAG_DEFS;
+    if(element->id == TAG_IMAGE && !child_in_defs
+        && element->image_access_count < SIZE_MAX)
+        element->image_access_count += 1;
+    if(element->id == TAG_USE) {
+        element_t* ref = resolve_href(document, element);
+        if(ref && ref->id == TAG_IMAGE
+            && ref->image_access_count < SIZE_MAX) {
+            ref->image_access_count += 1;
+        }
+    }
+    element_t* child = element->first_child;
+    while(child) {
+        image_cache_count_frequencies(child, document, child_in_defs);
+        child = child->next_sibling;
+    }
+}
+
+static void image_cache_subtract_seen(element_t* element)
+{
+    if(element == NULL)
+        return;
+    if(element->id == TAG_IMAGE) {
+        element->image_access_count = element->image_accesses_seen
+            >= element->image_access_count ? 0
+            : element->image_access_count - element->image_accesses_seen;
+    }
+    element_t* child = element->first_child;
+    while(child) {
+        image_cache_subtract_seen(child);
+        child = child->next_sibling;
+    }
+}
+
+static void image_cache_prepare_frequencies(plutosvg_document_t* document)
+{
+    if(document->image_frequencies_ready)
+        return;
+    image_cache_count_frequencies(document->root_element, document, false);
+    image_cache_subtract_seen(document->root_element);
+    document->image_frequencies_ready = true;
+}
+
+typedef struct {
+    element_t* element;
+    size_t value;
+    size_t order;
+} image_cache_victim_t;
+
+typedef struct {
+    size_t bytes;
+    size_t value;
+    size_t order;
+    uint32_t mask;
+} image_cache_subset_t;
+
+static size_t image_cache_value(size_t remaining_uses, size_t bytes)
+{
+    if(remaining_uses != 0 && bytes > SIZE_MAX / remaining_uses)
+        return SIZE_MAX;
+    return remaining_uses * bytes;
+}
+
+static size_t image_cache_add_value(size_t a, size_t b)
+{
+    return a > SIZE_MAX - b ? SIZE_MAX : a + b;
+}
+
+static int image_cache_compare_subsets(const void* a, const void* b)
+{
+    const image_cache_subset_t* lhs = a;
+    const image_cache_subset_t* rhs = b;
+    if(lhs->bytes < rhs->bytes)
+        return -1;
+    if(lhs->bytes > rhs->bytes)
+        return 1;
+    if(lhs->value < rhs->value)
+        return -1;
+    if(lhs->value > rhs->value)
+        return 1;
+    return 0;
+}
+
+static image_cache_subset_t image_cache_build_subset(
+    const image_cache_victim_t* victims, size_t offset, size_t count,
+    uint32_t mask, size_t required)
+{
+    image_cache_subset_t subset = {0, 0, 0, mask};
+    for(size_t bit = 0; bit < count; bit++) {
+        if((mask & (UINT32_C(1) << bit)) == 0)
+            continue;
+        const image_cache_victim_t* victim = &victims[offset + bit];
+        if(victim->element->image_cache_bytes >= required - subset.bytes)
+            subset.bytes = required;
+        else
+            subset.bytes += victim->element->image_cache_bytes;
+        subset.value = image_cache_add_value(subset.value, victim->value);
+        subset.order += victim->order;
+    }
+    return subset;
+}
+
+static bool image_cache_subset_better(const image_cache_subset_t* candidate,
+    const image_cache_subset_t* current)
+{
+    return candidate->value < current->value
+        || (candidate->value == current->value
+            && candidate->order < current->order);
+}
+
+static bool image_cache_reserve(plutosvg_document_t* document,
+    const element_t* candidate, size_t bytes)
+{
+    if(document->image_cache_bytes <= PLUTOSVG_IMAGE_CACHE_LIMIT - bytes)
+        return true;
+    image_cache_prepare_frequencies(document);
+    if(candidate->image_access_count == 0)
+        return false;
+
+    size_t victim_count = 0;
+    element_t* element = document->image_cache_head;
+    while(element) {
+        victim_count += 1;
+        element = element->image_cache_next;
+    }
+    if(victim_count > 33
+        || victim_count > SIZE_MAX / sizeof(image_cache_victim_t))
+        return false;
+
+    image_cache_victim_t* victims = malloc(
+        victim_count * sizeof(image_cache_victim_t));
+    if(victims == NULL)
+        return false;
+
+    size_t index = 0;
+    element = document->image_cache_head;
+    while(element) {
+        victims[index].element = element;
+        victims[index].value = image_cache_value(
+            element->image_access_count, element->image_cache_bytes);
+        victims[index].order = index;
+        index += 1;
+        element = element->image_cache_next;
+    }
+    size_t required = document->image_cache_bytes
+        - (PLUTOSVG_IMAGE_CACHE_LIMIT - bytes);
+    size_t first_count = victim_count / 2;
+    size_t second_count = victim_count - first_count;
+    uint32_t first_subsets = UINT32_C(1) << first_count;
+    uint32_t second_subsets = UINT32_C(1) << second_count;
+    image_cache_subset_t* second = malloc(
+        (size_t)second_subsets * sizeof(image_cache_subset_t));
+    uint32_t* suffix_best = malloc(
+        (size_t)second_subsets * sizeof(uint32_t));
+    if(second == NULL || suffix_best == NULL) {
+        free(suffix_best);
+        free(second);
+        free(victims);
+        return false;
+    }
+    for(uint32_t mask = 0; mask < second_subsets; mask++) {
+        second[mask] = image_cache_build_subset(victims, first_count,
+            second_count, mask, required);
+    }
+    qsort(second, second_subsets, sizeof(image_cache_subset_t),
+        image_cache_compare_subsets);
+    suffix_best[second_subsets - 1] = second_subsets - 1;
+    for(uint32_t pos = second_subsets - 1; pos > 0; pos--) {
+        uint32_t current = pos - 1;
+        uint32_t following = suffix_best[pos];
+        suffix_best[current] = image_cache_subset_better(
+            &second[following], &second[current]) ? following : current;
+    }
+
+    bool found = false;
+    image_cache_subset_t best = {0, SIZE_MAX, SIZE_MAX, 0};
+    uint32_t best_second_mask = 0;
+    for(uint32_t first_mask = 0; first_mask < first_subsets; first_mask++) {
+        image_cache_subset_t first = image_cache_build_subset(victims, 0,
+            first_count, first_mask, required);
+        size_t needed = first.bytes >= required ? 0 : required - first.bytes;
+        uint32_t low = 0;
+        uint32_t high = second_subsets;
+        while(low < high) {
+            uint32_t middle = low + (high - low) / 2;
+            if(second[middle].bytes < needed)
+                low = middle + 1;
+            else
+                high = middle;
+        }
+        if(low == second_subsets)
+            continue;
+        const image_cache_subset_t* selected = &second[suffix_best[low]];
+        image_cache_subset_t combined = {
+            required,
+            image_cache_add_value(first.value, selected->value),
+            first.order + selected->order,
+            first_mask
+        };
+        if(!found || image_cache_subset_better(&combined, &best)) {
+            found = true;
+            best = combined;
+            best_second_mask = selected->mask;
+        }
+    }
+    size_t candidate_value = image_cache_value(
+        candidate->image_access_count, bytes);
+    if(!found || candidate_value <= best.value) {
+        free(suffix_best);
+        free(second);
+        free(victims);
+        return false;
+    }
+
+    for(index = 0; index < victim_count; index++) {
+        bool selected = index < first_count
+            ? (best.mask & (UINT32_C(1) << index)) != 0
+            : (best_second_mask
+                & (UINT32_C(1) << (index - first_count))) != 0;
+        if(!selected)
+            continue;
+        element_t* victim = victims[index].element;
+        image_cache_unlink(document, victim);
+        document->image_cache_bytes -= victim->image_cache_bytes;
+        victim->image_cache_bytes = 0;
+        plutovg_surface_destroy(victim->image);
+        victim->image = NULL;
+        victim->image_loaded = false;
+    }
+    free(suffix_best);
+    free(second);
+    free(victims);
+    return true;
+}
+
+static plutovg_surface_t* load_image(element_t* element,
+    plutosvg_document_t* document)
+{
+    if(document->image_frequencies_ready) {
+        if(element->image_access_count > 0)
+            element->image_access_count -= 1;
+    } else if(element->image_accesses_seen < SIZE_MAX) {
+        element->image_accesses_seen += 1;
+    }
     if(element->image_loaded) {
+        if(element->image)
+            image_cache_touch(document, element);
         return element->image
             ? plutovg_surface_reference(element->image) : NULL;
     }
@@ -2515,19 +2816,37 @@ static plutovg_surface_t* load_image(element_t* element)
         return NULL;
     }
 
-    if(skip_string(&it, end, ";base64,")) {
-        element->image =
-            plutovg_surface_load_from_image_base64(it, end - it);
+    plutovg_surface_t* image = NULL;
+    if(skip_string(&it, end, ";base64,"))
+        image = plutovg_surface_load_from_image_base64(it, end - it);
+    if(image == NULL)
+        return NULL;
+
+    int stride = plutovg_surface_get_stride(image);
+    int height = plutovg_surface_get_height(image);
+    if(stride > 0 && height > 0
+        && (size_t)height <= SIZE_MAX / (size_t)stride) {
+        size_t image_bytes = (size_t)stride * (size_t)height;
+        if(image_bytes <= PLUTOSVG_IMAGE_CACHE_LIMIT
+            && image_cache_reserve(document, element, image_bytes)) {
+            document->image_cache_bytes += image_bytes;
+            element->image = image;
+            element->image_cache_bytes = image_bytes;
+            image_cache_append(document, element);
+            return plutovg_surface_reference(element->image);
+        }
     }
-    return element->image
-        ? plutovg_surface_reference(element->image) : NULL;
+
+    element->image_loaded = false;
+    return image;
 }
 
 static void draw_image(const element_t* element, render_context_t* context, render_state_t* state, float x, float y, float width, float height)
 {
     if(state->mode == render_mode_bounding)
         return;
-    plutovg_surface_t* image = load_image((element_t*)element);
+    plutovg_surface_t* image = load_image((element_t*)element,
+        (plutosvg_document_t*)context->document);
     if(image == NULL)
         return;
     float image_width = plutovg_surface_get_width(image);

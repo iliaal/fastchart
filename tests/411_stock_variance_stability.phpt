@@ -101,6 +101,37 @@ echo 'opposite_extremes_nonflat: ',
 	count(pane_ys($extreme)) > 1 && count(pane_ys($scaled)) > 1
 		? "yes\n" : "NO\n";
 
+$mixedRows = [];
+foreach ([1.0e308, 1.0, 2.0, 4.0] as $i => $close) {
+	$mixedRows[] = [1700002000 + $i, $close, $close,
+		$close, $close, 1000];
+}
+$mixedSvg = (new FastChart\StockChart(600, 400))
+	->setSeriesColors([0x111111, 0x123456, 0x222222])
+	->setYAxisRange(0.0, 5.0)
+	->setOhlcv($mixedRows)
+	->addBollingerBands(2, 1.0)
+	->renderSvg();
+$mixedMiddle = bollinger_lines($mixedSvg);
+$controlRows = [];
+foreach ([0.0, 1.0, 2.0, 4.0] as $i => $close) {
+	$controlRows[] = [1700002000 + $i, $close, $close,
+		$close, $close, 1000];
+}
+$controlSvg = (new FastChart\StockChart(600, 400))
+	->setSeriesColors([0x111111, 0x123456, 0x222222])
+	->setYAxisRange(0.0, 5.0)
+	->setOhlcv($controlRows)
+	->addBollingerBands(2, 1.0)
+	->renderSvg();
+$controlMiddle = bollinger_lines($controlSvg);
+echo 'post_outlier_window_preserved: ',
+	count($mixedMiddle) === 6
+	&& count($controlMiddle) === 6
+	&& [$mixedMiddle[1], $mixedMiddle[3], $mixedMiddle[5]]
+		=== [$controlMiddle[1], $controlMiddle[3], $controlMiddle[5]]
+		? "yes\n" : "NO\n";
+
 $cached = (new FastChart\StockChart(600, 400))
 	->setOhlcv(rows(1.0e12))
 	->addBollingerBands(5, 2.0);
@@ -139,6 +170,7 @@ bollinger_translation_invariant: yes
 constant_period_2: yes
 constant_period_29: yes
 opposite_extremes_nonflat: yes
+post_outlier_window_preserved: yes
 cached_matches_uncached: yes
 cached_clone_independent: yes
 cache_invalidated_on_data_change: yes

@@ -75,10 +75,29 @@ typedef struct {
 	zend_string *tmp_path;
 	const char *where;
 	int final_mode;
+	bool destination_exists;
+	zend_stat_t temp_stat;
+	bool temp_stat_ready;
+#ifndef PHP_WIN32
+	int dir_fd;
+	zend_stat_t destination_stat;
+	zend_string *final_name;
+	zend_string *tmp_name;
+#else
+	void *dir_handle;
+	void *temp_handle;
+	uint64_t destination_volume_serial;
+	uint64_t destination_file_index;
+	uint64_t destination_size;
+	uint64_t destination_last_write;
+	wchar_t *final_name_w;
+	wchar_t *tmp_name_w;
+#endif
 } fastchart_atomic_file_t;
 
-/* Create a mode-0600 sibling temporary file for an eventual atomic rename.
- * The caller must commit or abort every successful open. */
+/* Create a sibling temporary file for an eventual atomic rename. POSIX builds
+ * restrict its opened descriptor to mode 0600 until commit. The caller must
+ * commit or abort every successful open. */
 int fastchart_atomic_file_open(fastchart_atomic_file_t *file,
 	zend_string *path, const char *where);
 void fastchart_atomic_file_abort(fastchart_atomic_file_t *file);
