@@ -123,9 +123,9 @@ jobs:
             throw "run-tests summary did not report a skip count"
           }
           $skipped = [int]$skipLine.Matches[0].Groups[1].Value
-          Write-Host "Tests skipped: $skipped (expected ~10 with gd+fonts loaded: 7 PDF + env-gated)"
-          if ($skipped -gt 18) {
-            throw "Windows skip count $skipped exceeds ceiling 18"
+          Write-Host "Tests skipped: $skipped (expected 30 with gd+fonts loaded: 7 PDF + 15 POSIX/Linux atomic + env-gated)"
+          if ($skipped -gt 30) {
+            throw "Windows skip count $skipped exceeds ceiling 30"
           }
 
   # Single representative lane that compiles and tests the MSVC PDF path

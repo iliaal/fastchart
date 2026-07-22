@@ -722,10 +722,9 @@ jobs:
           fi
           # Skip ceiling. macOS loads gd and is built without pdfio.
           # Legitimate skips mirror Linux (7 PDF + up to 12 font +
-          # locale), plus macOS-only environment skips: /proc-gated
-          # source-image and atomic-output race tests skip without procfs,
-          # and the comma-decimal-locale test typically skips. Budget 35
-          # covers those five platform-gated atomic-output tests.
+          # locale), plus macOS-only environment skips: 14 atomic-output
+          # tests are gated to Linux or Windows, and the comma-decimal-
+          # locale test typically skips. Budget 35 matches that set.
           SKIPPED=$(grep -oE '^Tests skipped[[:space:]]*:[[:space:]]*[0-9]+' /tmp/test-output.txt | grep -oE '[0-9]+' | head -1)
           SKIPPED=${SKIPPED:-0}
           echo "Tests skipped: $SKIPPED (ceiling 35)"
