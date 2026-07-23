@@ -6,13 +6,22 @@ on:
   pull_request:
     branches: [master]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     name: Validate composer.json
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # master
         with:
           php-version: '8.4'
           tools: composer
@@ -24,8 +33,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: validate
     steps:
-      - uses: actions/checkout@v6
-      - uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # master
         with:
           php-version: '8.4'
           # gen_stub.php parses the stub via the tokenizer extension and
@@ -63,8 +74,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: validate
     steps:
-      - uses: actions/checkout@v6
-      - uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # master
         with:
           php-version: '8.4'
           extensions: gd
@@ -90,8 +103,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: validate
     steps:
-      - uses: actions/checkout@v6
-      - uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # master
         with:
           php-version: '8.4'
           tools: phpize, php-config
@@ -141,7 +156,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: validate
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
       # Build the shared extension under musl + clang (the static-php-cli
       # consumer's toolchain family) and confirm php can dlopen it. The
       # glibc matrix can't see load failures rooted in libgcc/compiler-rt
@@ -186,9 +203,14 @@ jobs:
         include:
           - php: '8.4'
             cc: 'clang'
+    env:
+      MATRIX_CC: ${{ matrix.cc }}
+      PHP_VERSION: ${{ matrix.php }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Install build dependencies
         run: |
@@ -197,7 +219,7 @@ jobs:
             clang libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev pkg-config
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # master
         with:
           php-version: ${{ matrix.php }}
           extensions: gd
@@ -205,7 +227,7 @@ jobs:
 
       - name: Build extension
         run: |
-          export CC=${{ matrix.cc }}
+          export CC="${MATRIX_CC}"
           phpize
           ./configure --enable-fastchart --enable-fastchart-dev
           # make must fail the step itself — piping straight into grep
@@ -216,7 +238,7 @@ jobs:
           set +o pipefail
           WARNINGS=$(grep -c 'warning:' /tmp/build.log || true)
           if [ "$WARNINGS" -gt 0 ]; then
-            echo "::error::Build produced $WARNINGS warning(s) with ${{ matrix.cc }}"
+            echo "::error::Build produced $WARNINGS warning(s) with ${MATRIX_CC}"
             exit 1
           fi
 
@@ -283,12 +305,12 @@ jobs:
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -ne 0 ]; then
-            echo "::error::run-tests.php exited $rc on PHP ${{ matrix.php }} - Linux (crash / BORK / aborted before summary)"
+            echo "::error::run-tests.php exited $rc on PHP ${PHP_VERSION} - Linux (crash / BORK / aborted before summary)"
             grep -E '^FAIL\b|^FAILED TEST|^BORK' /tmp/test-output.txt || true
             exit 1
           fi
           if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
-            echo "::error::Tests failed on PHP ${{ matrix.php }} - Linux"
+            echo "::error::Tests failed on PHP ${PHP_VERSION} - Linux"
             grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
             exit 1
           fi
@@ -305,7 +327,7 @@ jobs:
           SKIPPED=${SKIPPED:-0}
           echo "Tests skipped: $SKIPPED (ceiling 25)"
           if [ "$SKIPPED" -gt 25 ]; then
-            echo "::error::Skip count $SKIPPED exceeds ceiling 25 on PHP ${{ matrix.php }} - Linux — a capability likely vanished (gd/webp/fonts); tests are hiding in the skip counter"
+            echo "::error::Skip count $SKIPPED exceeds ceiling 25 on PHP ${PHP_VERSION} - Linux — a capability likely vanished (gd/webp/fonts); tests are hiding in the skip counter"
             grep -E '^SKIP\b' /tmp/test-output.txt || true
             exit 1
           fi
@@ -323,7 +345,9 @@ jobs:
       PDFIO_VERSION: '1.6.4'
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Install build dependencies
         run: |
@@ -349,7 +373,7 @@ jobs:
           sudo make install
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # master
         with:
           php-version: ${{ matrix.php }}
           extensions: gd
@@ -499,9 +523,12 @@ jobs:
       UBSAN_OPTIONS: print_stacktrace=1
       USE_ZEND_ALLOC: 0
       USE_TRACKED_ALLOC: 1
+      PHP_VERSION: ${{ matrix.php }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Install build dependencies
         run: |
@@ -527,7 +554,7 @@ jobs:
         # symbols so LSan stack frames resolve against the
         # suppressions file.
         run: |
-          git clone --depth=1 --branch=PHP-${{ matrix.php }} https://github.com/php/php-src.git /tmp/php-src
+          git clone --depth=1 --branch="PHP-${PHP_VERSION}" https://github.com/php/php-src.git /tmp/php-src
           cd /tmp/php-src
           ./buildconf --force
           CC=clang CXX=clang++ \
@@ -650,15 +677,19 @@ jobs:
       fail-fast: false
       matrix:
         php: ['8.1', '8.2', '8.3', '8.4']
+    env:
+      PHP_VERSION: ${{ matrix.php }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Install build dependencies
         run: brew install freetype libpng jpeg-turbo webp pkg-config
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # master
         with:
           php-version: ${{ matrix.php }}
           extensions: gd
@@ -711,12 +742,12 @@ jobs:
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -ne 0 ]; then
-            echo "::error::run-tests.php exited $rc on PHP ${{ matrix.php }} - macOS (crash / BORK / aborted before summary)"
+            echo "::error::run-tests.php exited $rc on PHP ${PHP_VERSION} - macOS (crash / BORK / aborted before summary)"
             grep -E '^FAIL\b|^FAILED TEST|^BORK' /tmp/test-output.txt || true
             exit 1
           fi
           if grep -Eq '^Tests failed[[:space:]]*:[[:space:]]*[1-9]' /tmp/test-output.txt; then
-            echo "::error::Tests failed on PHP ${{ matrix.php }} - macOS"
+            echo "::error::Tests failed on PHP ${PHP_VERSION} - macOS"
             grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
             exit 1
           fi
@@ -729,7 +760,7 @@ jobs:
           SKIPPED=${SKIPPED:-0}
           echo "Tests skipped: $SKIPPED (ceiling 35)"
           if [ "$SKIPPED" -gt 35 ]; then
-            echo "::error::Skip count $SKIPPED exceeds ceiling 35 on PHP ${{ matrix.php }} - macOS — a capability likely vanished; tests are hiding in the skip counter"
+            echo "::error::Skip count $SKIPPED exceeds ceiling 35 on PHP ${PHP_VERSION} - macOS — a capability likely vanished; tests are hiding in the skip counter"
             grep -E '^SKIP\b' /tmp/test-output.txt || true
             exit 1
           fi

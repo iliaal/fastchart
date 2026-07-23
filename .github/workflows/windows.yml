@@ -8,6 +8,12 @@ on:
   release:
     types: [published]
 
+permissions: {}
+
+concurrency:
+  group: windows-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
+
 jobs:
   windows-matrix:
     name: Generate Windows build matrix
@@ -29,11 +35,15 @@ jobs:
     name: Build ${{ matrix.php-version }} ${{ matrix.arch }} ${{ matrix.ts }}
     needs: windows-matrix
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.windows-matrix.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Build extension
         uses: php/php-windows-builder/extension@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # v1
@@ -145,14 +155,18 @@ jobs:
   windows-pdf:
     name: PHP 8.4 x64 nts - Windows PDF backend
     runs-on: windows-2022
+    permissions:
+      contents: read
     env:
       # Keep in sync with the Linux PDF lane's PDFIO_VERSION in tests.yml.
       PDFIO_VERSION: '1.6.4'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Enable MSVC toolchain
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
           arch: x64
 
@@ -262,7 +276,7 @@ jobs:
     # for the contents permission on newly-created repos and the
     # php-windows-builder/release@v1 action calls POST /releases.
     permissions:
-      contents: write
+      contents: write # Uploads Windows binaries to the published release.
     steps:
       # Pinned to the commit SHA that v6 resolves to; this job runs
       # under contents:write, so a moved tag on a third-party action
@@ -270,7 +284,7 @@ jobs:
       # false drops the GITHUB_TOKEN from the local git config so any
       # shell step in the workflow cannot reuse it for an unrelated
       # push.
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 

@@ -64,6 +64,12 @@ on:
   # does not upload to a release.
   workflow_dispatch:
 
+permissions: {}
+
+concurrency:
+  group: release-linux-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
+
 # Pin the codec lib versions in one place. Bumping a version here
 # invalidates the static-deps cache key automatically.
 env:
@@ -94,12 +100,12 @@ jobs:
         os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-14"]') }}
         php: ${{ fromJSON(github.event_name == 'pull_request' && '["8.4"]' || '["8.4","8.5"]') }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2 (2.37.2)
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # master
         with:
           php-version: ${{ matrix.php }}
           coverage: none
@@ -115,19 +121,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake nasm pkg-config zip zlib1g-dev
 
-      - name: Cache static codec libs (Linux)
+      - name: Build static codec libs (Linux)
         if: startsWith(matrix.os, 'ubuntu-')
-        id: static-deps-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ~/static-deps
-          # Key on runner OS + verified archive digests. A version or
-          # checksum change forces a rebuild; identical inputs reuse the
-          # static archives across runs (~4min savings per slot).
-          key: static-deps-${{ matrix.os }}-${{ env.FT_SHA256 }}-${{ env.PNG_SHA256 }}-${{ env.JPEG_SHA256 }}-${{ env.WEBP_SHA256 }}
-
-      - name: Build static codec libs (Linux, cache miss)
-        if: startsWith(matrix.os, 'ubuntu-') && steps.static-deps-cache.outputs.cache-hit != 'true'
         run: |
           set -e
           PREFIX="$HOME/static-deps"
@@ -331,7 +326,7 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
+      contents: write # Uploads the verified binary set to the release.
     steps:
       - name: Download verified binaries
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
