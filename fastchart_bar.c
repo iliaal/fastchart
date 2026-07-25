@@ -159,8 +159,7 @@ static int bar_compute_range(const fastchart_bar_obj *self,
             for (int i = 0; i < series[s].len; i++) {
                 double d = series[s].values[i];
                 if (isnan(d)) continue;
-                if (!seen) { dmin = dmax = d; seen = 1; }
-                else { if (d < dmin) dmin = d; if (d > dmax) dmax = d; }
+                fastchart_range_update(d, &dmin, &dmax, &seen);
             }
         }
     }
@@ -171,8 +170,7 @@ static int bar_compute_range(const fastchart_bar_obj *self,
         for (int i = 0; i < lim; i++) {
             double d = ov->values[i];
             if (!isfinite(d)) continue;
-            if (!seen) { dmin = dmax = d; seen = 1; }
-            else { if (d < dmin) dmin = d; if (d > dmax) dmax = d; }
+            fastchart_range_update(d, &dmin, &dmax, &seen);
         }
     }
     if (!seen) return -1;

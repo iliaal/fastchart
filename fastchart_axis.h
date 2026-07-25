@@ -44,6 +44,19 @@ typedef struct {
     double ticks[FASTCHART_MAX_TICKS];
 } fastchart_value_range;
 
+static inline void fastchart_range_update(double value,
+                                          double *min, double *max,
+                                          int *seen)
+{
+    if (!*seen) {
+        *min = *max = value;
+        *seen = 1;
+        return;
+    }
+    if (value < *min) *min = value;
+    if (value > *max) *max = value;
+}
+
 /* Per-render entry hook called once by Chart dispatch before entering
  * a concrete renderer. Invalidates the font-path cache and per-target
  * shadow-color cache so the next resolution uses current state. */

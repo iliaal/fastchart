@@ -756,8 +756,7 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                 for (int i = 0; i < upto; i++) {
 					double d = all_series[s][i];
 					if (!isfinite(d)) continue;
-                    if (!valid) { pmin = pmax = d; valid = 1; }
-                    else { if (d < pmin) pmin = d; if (d > pmax) pmax = d; }
+                    fastchart_range_update(d, &pmin, &pmax, &valid);
                 }
             }
             if (!valid) continue;

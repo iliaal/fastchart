@@ -25,6 +25,7 @@
 #include "fastchart_palette.h"
 #include "fastchart_target.h"
 #include "fastchart_axis.h"
+#include "fastchart_effects.h"
 #include "fastchart_text.h"
 
 /* Default heatmap ramp: cool blue → warm red. Same as the contour
@@ -32,22 +33,6 @@
  * cell-color bins instead of interpolated isolines. */
 #define HM_DEFAULT_LOW   0x2E5CB8
 #define HM_DEFAULT_HIGH  0xE34A6F
-
-static int interp_color(int rgb_lo, int rgb_hi, double t)
-{
-    /* A grid spanning finite extremes (e.g. [-DBL_MAX, DBL_MAX]) makes
-     * the caller's (v-v_min)/(v_max-v_min) evaluate inf/inf = NaN; the
-     * < / > clamps below leave NaN untouched and (int)NaN is UB. */
-    if (!isfinite(t)) t = 0;
-    if (t < 0) t = 0;
-    if (t > 1) t = 1;
-    int r0 = (rgb_lo >> 16) & 0xFF, g0 = (rgb_lo >> 8) & 0xFF, b0 = rgb_lo & 0xFF;
-    int r1 = (rgb_hi >> 16) & 0xFF, g1 = (rgb_hi >> 8) & 0xFF, b1 = rgb_hi & 0xFF;
-    int r = (int)(r0 + (r1 - r0) * t + 0.5);
-    int g = (int)(g0 + (g1 - g0) * t + 0.5);
-    int b = (int)(b0 + (b1 - b0) * t + 0.5);
-    return (r << 16) | (g << 8) | b;
-}
 
 int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self, fastchart_target_t *t)
 {
@@ -139,7 +124,7 @@ int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self, fastchart_ta
                 cell_rgb = (int)(fastchart_target_color_to_rgba(t, pal.bg) & 0xFFFFFF);
             } else {
                 double tv = fastchart_normalize_finite(v, v_min, v_max);
-                cell_rgb = interp_color(rgb_lo, rgb_hi, tv);
+                cell_rgb = fastchart_lerp_rgb(rgb_lo, rgb_hi, tv);
                 color = fastchart_target_color_rgb(t, cell_rgb);
             }
             fastchart_target_rect(t, cell_x0, cell_y0,

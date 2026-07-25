@@ -77,8 +77,7 @@ int fastchart_contour_render_to_target(fastchart_contour_obj *self, fastchart_ta
         for (int j = 0; j < cols; j++) {
             double v = G(i, j);
             if (isnan(v)) continue;
-            if (!seen) { vmin = vmax = v; seen = 1; }
-            else { if (v < vmin) vmin = v; if (v > vmax) vmax = v; }
+            fastchart_range_update(v, &vmin, &vmax, &seen);
         }
     }
     if (!seen) {

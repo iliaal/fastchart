@@ -387,7 +387,8 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
     array_init(&b->config);
 }
 
-/* Forward declaration for typed-storage lifecycle helpers below. */
+/* Forward declarations for typed-storage lifecycle helpers below. */
+static void *fc_memdup(const void *src, size_t bytes);
 static char *fc_strdup_opt(const char *src);
 
 static void fastchart_icons_free(fastchart_obj *b)
@@ -666,53 +667,35 @@ static void fastchart_base_addref_owned(fastchart_obj *b)
     if (b->category_labels && b->n_category_labels > 0) {
         char **copy = ecalloc((size_t)b->n_category_labels, sizeof(char *));
         for (int i = 0; i < b->n_category_labels; i++) {
-            const char *src = b->category_labels[i];
-            if (!src) { copy[i] = NULL; continue; }
-            size_t len = strlen(src);
-            copy[i] = emalloc(len + 1);
-            memcpy(copy[i], src, len + 1);
+            copy[i] = fc_strdup_opt(b->category_labels[i]);
         }
         b->category_labels = copy;
     }
     if (b->plot_bands && b->n_plot_bands > 0) {
         size_t bytes = (size_t)b->n_plot_bands * sizeof(fastchart_plot_band);
-        fastchart_plot_band *copy = emalloc(bytes);
-        memcpy(copy, b->plot_bands, bytes);
+        fastchart_plot_band *copy = fc_memdup(b->plot_bands, bytes);
         for (int i = 0; i < b->n_plot_bands; i++) {
-            if (copy[i].label) {
-                size_t len = strlen(copy[i].label);
-                char *l = emalloc(len + 1);
-                memcpy(l, copy[i].label, len + 1);
-                copy[i].label = l;
-            }
+            copy[i].label = fc_strdup_opt(copy[i].label);
         }
         b->plot_bands = copy;
     }
     if (b->icons && b->n_icons > 0) {
         size_t bytes = (size_t)b->n_icons * sizeof(fastchart_icon);
-        fastchart_icon *copy = emalloc(bytes);
-        memcpy(copy, b->icons, bytes);
+        fastchart_icon *copy = fc_memdup(b->icons, bytes);
         for (int i = 0; i < b->n_icons; i++) {
-            if (copy[i].path) {
-                size_t len = strlen(copy[i].path);
-                char *p = emalloc(len + 1);
-                memcpy(p, copy[i].path, len + 1);
-                copy[i].path = p;
-            }
+            copy[i].path = fc_strdup_opt(copy[i].path);
         }
         b->icons = copy;
     }
     if (b->combo_overlays && b->n_combo_overlays > 0) {
         size_t bytes = (size_t)b->n_combo_overlays
                        * sizeof(fastchart_combo_overlay);
-        fastchart_combo_overlay *copy = emalloc(bytes);
-        memcpy(copy, b->combo_overlays, bytes);
+        fastchart_combo_overlay *copy =
+            fc_memdup(b->combo_overlays, bytes);
         for (int i = 0; i < b->n_combo_overlays; i++) {
             if (copy[i].values && copy[i].n > 0) {
                 size_t vbytes = (size_t)copy[i].n * sizeof(double);
-                double *v = emalloc(vbytes);
-                memcpy(v, copy[i].values, vbytes);
-                copy[i].values = v;
+                copy[i].values = fc_memdup(copy[i].values, vbytes);
             } else {
                 copy[i].values = NULL;
             }
@@ -852,30 +835,19 @@ char *fastchart_format_double_label(const char *fmt, double value)
 static void fastchart_series_array_addref(fastchart_series_t *arr, int n)
 {
     for (int i = 0; i < n; i++) {
-        if (arr[i].label) {
-            size_t len = strlen(arr[i].label);
-            char *copy = emalloc(len + 1);
-            memcpy(copy, arr[i].label, len + 1);
-            arr[i].label = copy;
-        }
+        arr[i].label = fc_strdup_opt(arr[i].label);
         int slot_len = arr[i].len;
         if (arr[i].values && slot_len > 0) {
             size_t bytes = (size_t)slot_len * sizeof(double);
-            double *copy = emalloc(bytes);
-            memcpy(copy, arr[i].values, bytes);
-            arr[i].values = copy;
+            arr[i].values = fc_memdup(arr[i].values, bytes);
         }
         if (arr[i].values_max && slot_len > 0) {
             size_t bytes = (size_t)slot_len * sizeof(double);
-            double *copy = emalloc(bytes);
-            memcpy(copy, arr[i].values_max, bytes);
-            arr[i].values_max = copy;
+            arr[i].values_max = fc_memdup(arr[i].values_max, bytes);
         }
         if (arr[i].point_colors && slot_len > 0) {
             size_t bytes = (size_t)slot_len * sizeof(zend_long);
-            zend_long *copy = emalloc(bytes);
-            memcpy(copy, arr[i].point_colors, bytes);
-            arr[i].point_colors = copy;
+            arr[i].point_colors = fc_memdup(arr[i].point_colors, bytes);
         }
     }
 }
@@ -888,14 +860,6 @@ static void fastchart_series_array_addref(fastchart_series_t *arr, int n)
 #define FC_SERIES_F_RIGHTAXIS 0x2
 #define FC_SERIES_F_FLOATING  0x4
 #define FC_SERIES_F_STRICT    0x8   /* error on non-numeric / non-null cells */
-
-static void fastchart_series_dup_label(fastchart_series_t *out, const char *src)
-{
-    if (!src) { out->label = NULL; return; }
-    size_t len = strlen(src);
-    out->label = emalloc(len + 1);
-    memcpy(out->label, src, len + 1);
-}
 
 static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int flags)
 {
@@ -942,7 +906,7 @@ static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int 
     int n = (int)un;
     out->len = n;
     out->right_axis = right_axis;
-    fastchart_series_dup_label(out, label);
+    out->label = fc_strdup_opt(label);
     out->values = NULL;
     out->values_max = NULL;
     out->point_colors = NULL;
@@ -1131,8 +1095,8 @@ static void fastchart_line_addref_extras(fastchart_line_obj *o)
     fastchart_series_array_addref(o->series, o->n_series);
     if (o->err_lo && o->err_n > 0) {
         size_t bytes = (size_t)o->err_n * sizeof(double);
-        double *l = emalloc(bytes); memcpy(l, o->err_lo, bytes); o->err_lo = l;
-        double *h = emalloc(bytes); memcpy(h, o->err_hi, bytes); o->err_hi = h;
+        o->err_lo = fc_memdup(o->err_lo, bytes);
+        o->err_hi = fc_memdup(o->err_hi, bytes);
     }
 }
 
@@ -1180,13 +1144,16 @@ static void fastchart_bar_addref_extras(fastchart_bar_obj *o)
 }
 
 /* dup/release helpers shared across the typed-storage classes. */
+static void *fc_memdup(const void *src, size_t bytes)
+{
+    void *copy = emalloc(bytes);
+    memcpy(copy, src, bytes);
+    return copy;
+}
+
 static char *fc_strdup_opt(const char *src)
 {
-    if (!src) return NULL;
-    size_t len = strlen(src);
-    char *copy = emalloc(len + 1);
-    memcpy(copy, src, len + 1);
-    return copy;
+    return src ? estrdup(src) : NULL;
 }
 static void fc_efree_opt(void *p) { if (p) efree(p); }
 
@@ -1239,8 +1206,7 @@ static void fastchart_pie_addref_extras(fastchart_pie_obj *o)
     if (o->pie_other_label)    zend_string_addref(o->pie_other_label);
     if (o->slices && o->slice_count > 0) {
         size_t bytes = (size_t)o->slice_count * sizeof(fastchart_pie_slice);
-        fastchart_pie_slice *copy = emalloc(bytes);
-        memcpy(copy, o->slices, bytes);
+        fastchart_pie_slice *copy = fc_memdup(o->slices, bytes);
         for (int i = 0; i < o->slice_count; i++) {
             copy[i].label = fc_strdup_opt(o->slices[i].label);
         }
@@ -1250,9 +1216,7 @@ static void fastchart_pie_addref_extras(fastchart_pie_obj *o)
     }
     if (o->explode && o->explode_count > 0) {
         size_t bytes = (size_t)o->explode_count * sizeof(zend_long);
-        zend_long *copy = emalloc(bytes);
-        memcpy(copy, o->explode, bytes);
-        o->explode = copy;
+        o->explode = fc_memdup(o->explode, bytes);
     } else {
         o->explode = NULL;
     }
@@ -1260,8 +1224,7 @@ static void fastchart_pie_addref_extras(fastchart_pie_obj *o)
         fastchart_pie_ring *ring = &o->rings[r];
         if (ring->slices && ring->count > 0) {
             size_t bytes = (size_t)ring->count * sizeof(fastchart_pie_slice);
-            fastchart_pie_slice *copy = emalloc(bytes);
-            memcpy(copy, ring->slices, bytes);
+            fastchart_pie_slice *copy = fc_memdup(ring->slices, bytes);
             for (int i = 0; i < ring->count; i++) {
                 copy[i].label = fc_strdup_opt(ring->slices[i].label);
             }
@@ -1316,8 +1279,7 @@ static void fastchart_scatter_addref_extras(fastchart_scatter_obj *o)
 {
     if (o->points && o->point_count > 0) {
         size_t bytes = (size_t)o->point_count * sizeof(fastchart_scatter_point);
-        fastchart_scatter_point *copy = emalloc(bytes);
-        memcpy(copy, o->points, bytes);
+        fastchart_scatter_point *copy = fc_memdup(o->points, bytes);
         for (int i = 0; i < o->point_count; i++) {
             if (copy[i].href) zend_string_addref(copy[i].href);
             if (copy[i].tooltip) zend_string_addref(copy[i].tooltip);
@@ -1331,8 +1293,8 @@ static void fastchart_scatter_addref_extras(fastchart_scatter_obj *o)
     }
     if (o->err_lo && o->err_n > 0) {
         size_t bytes = (size_t)o->err_n * sizeof(double);
-        double *l = emalloc(bytes); memcpy(l, o->err_lo, bytes); o->err_lo = l;
-        double *h = emalloc(bytes); memcpy(h, o->err_hi, bytes); o->err_hi = h;
+        o->err_lo = fc_memdup(o->err_lo, bytes);
+        o->err_hi = fc_memdup(o->err_hi, bytes);
     }
 }
 
@@ -1409,70 +1371,47 @@ static void fastchart_stock_addref_extras(fastchart_stock_obj *o)
 {
     if (o->candles && o->candle_count > 0) {
         size_t bytes = (size_t)o->candle_count * sizeof(fastchart_candle);
-        fastchart_candle *copy = emalloc(bytes);
-        memcpy(copy, o->candles, bytes);
-        o->candles = copy;
+        o->candles = fc_memdup(o->candles, bytes);
     } else {
         o->candles = NULL;
     }
 	if (o->close_stats_cache && o->candle_count > 0) {
         size_t bytes = (size_t)o->candle_count * sizeof(double);
-        double *copy = emalloc(bytes);
-        memcpy(copy, o->close_stats_cache, bytes);
-        o->close_stats_cache = copy;
+        o->close_stats_cache = fc_memdup(o->close_stats_cache, bytes);
 	} else {
         o->close_stats_cache = NULL;
 	}
     if (o->volume_colors && o->volume_colors_count > 0) {
         size_t bytes = (size_t)o->volume_colors_count * sizeof(int);
-        int *copy = emalloc(bytes);
-        memcpy(copy, o->volume_colors, bytes);
-        o->volume_colors = copy;
+        o->volume_colors = fc_memdup(o->volume_colors, bytes);
     } else {
         o->volume_colors = NULL;
     }
     for (int i = 0; i < o->indicator_pane_count; i++) {
         fastchart_indicator_pane *p = &o->indicator_panes[i];
-        if (p->name) {
-            size_t name_len = strlen(p->name);
-            char *copy = emalloc(name_len + 1);
-            memcpy(copy, p->name, name_len + 1);
-            p->name = copy;
-        }
+        p->name = fc_strdup_opt(p->name);
         size_t vbytes = (size_t)p->value_count * sizeof(double);
         if (p->values && p->value_count > 0) {
-            double *copy = emalloc(vbytes);
-            memcpy(copy, p->values, vbytes);
-            p->values = copy;
+            p->values = fc_memdup(p->values, vbytes);
         } else { p->values = NULL; }
         if (p->values2 && p->value_count > 0) {
-            double *copy = emalloc(vbytes);
-            memcpy(copy, p->values2, vbytes);
-            p->values2 = copy;
+            p->values2 = fc_memdup(p->values2, vbytes);
         } else { p->values2 = NULL; }
         if (p->values3 && p->value_count > 0) {
-            double *copy = emalloc(vbytes);
-            memcpy(copy, p->values3, vbytes);
-            p->values3 = copy;
+            p->values3 = fc_memdup(p->values3, vbytes);
         } else { p->values3 = NULL; }
     }
     for (int i = 0; i < o->overlay_count; i++) {
         fastchart_price_overlay *ov = &o->overlays[i];
         size_t bytes = (size_t)ov->n * sizeof(double);
         if (ov->a && ov->n > 0) {
-            double *copy = emalloc(bytes);
-            memcpy(copy, ov->a, bytes);
-            ov->a = copy;
+            ov->a = fc_memdup(ov->a, bytes);
         } else { ov->a = NULL; }
         if (ov->b && ov->n > 0) {
-            double *copy = emalloc(bytes);
-            memcpy(copy, ov->b, bytes);
-            ov->b = copy;
+            ov->b = fc_memdup(ov->b, bytes);
         } else { ov->b = NULL; }
         if (ov->c && ov->n > 0) {
-            double *copy = emalloc(bytes);
-            memcpy(copy, ov->c, bytes);
-            ov->c = copy;
+            ov->c = fc_memdup(ov->c, bytes);
         } else { ov->c = NULL; }
     }
 }
@@ -1513,9 +1452,7 @@ static void fastchart_radar_addref_extras(fastchart_radar_obj *o)
     for (int i = 0; i < o->n_series; i++) {
         if (o->series[i].values && o->series[i].len > 0) {
             size_t bytes = (size_t)o->series[i].len * sizeof(double);
-            double *copy = emalloc(bytes);
-            memcpy(copy, o->series[i].values, bytes);
-            o->series[i].values = copy;
+            o->series[i].values = fc_memdup(o->series[i].values, bytes);
         }
         o->series[i].label = fc_strdup_opt(o->series[i].label);
     }
@@ -1542,9 +1479,7 @@ static void fastchart_bubble_addref_extras(fastchart_bubble_obj *o)
 {
     if (o->points && o->point_count > 0) {
         size_t bytes = (size_t)o->point_count * sizeof(fastchart_bubble_point);
-        fastchart_bubble_point *copy = emalloc(bytes);
-        memcpy(copy, o->points, bytes);
-        o->points = copy;
+        o->points = fc_memdup(o->points, bytes);
     } else {
         o->points = NULL;
     }
@@ -1570,9 +1505,7 @@ static void fastchart_surface_addref_extras(fastchart_surface_obj *o)
     if (o->surface_value_format) zend_string_addref(o->surface_value_format);
     if (o->grid.cells && o->grid.rows > 0 && o->grid.cols > 0) {
         size_t bytes = (size_t)o->grid.rows * (size_t)o->grid.cols * sizeof(double);
-        double *copy = emalloc(bytes);
-        memcpy(copy, o->grid.cells, bytes);
-        o->grid.cells = copy;
+        o->grid.cells = fc_memdup(o->grid.cells, bytes);
     } else {
         o->grid.cells = NULL;
     }
@@ -1600,9 +1533,7 @@ static void fastchart_gauge_addref_extras(fastchart_gauge_obj *o)
     if (o->gauge_value_format) zend_string_addref(o->gauge_value_format);
     if (o->zones && o->n_zones > 0) {
         size_t bytes = (size_t)o->n_zones * sizeof(fastchart_gauge_zone);
-        fastchart_gauge_zone *copy = emalloc(bytes);
-        memcpy(copy, o->zones, bytes);
-        o->zones = copy;
+        o->zones = fc_memdup(o->zones, bytes);
     }
 }
 
@@ -1632,15 +1563,12 @@ static void fastchart_gantt_addref_extras(fastchart_gantt_obj *o)
 {
     if (o->tasks && o->task_count > 0) {
         size_t bytes = (size_t)o->task_count * sizeof(fastchart_gantt_task);
-        fastchart_gantt_task *copy = emalloc(bytes);
-        memcpy(copy, o->tasks, bytes);
+        fastchart_gantt_task *copy = fc_memdup(o->tasks, bytes);
         for (int i = 0; i < o->task_count; i++) {
             copy[i].name = fc_strdup_opt(o->tasks[i].name);
             if (o->tasks[i].deps && o->tasks[i].n_deps > 0) {
                 size_t db = (size_t)o->tasks[i].n_deps * sizeof(int);
-                int *dcopy = emalloc(db);
-                memcpy(dcopy, o->tasks[i].deps, db);
-                copy[i].deps = dcopy;
+                copy[i].deps = fc_memdup(o->tasks[i].deps, db);
             } else {
                 copy[i].deps = NULL;
             }
@@ -1673,15 +1601,13 @@ static void fastchart_boxplot_addref_extras(fastchart_boxplot_obj *o)
 {
     if (o->entries && o->entry_count > 0) {
         size_t bytes = (size_t)o->entry_count * sizeof(fastchart_boxplot_entry);
-        fastchart_boxplot_entry *copy = emalloc(bytes);
-        memcpy(copy, o->entries, bytes);
+        fastchart_boxplot_entry *copy = fc_memdup(o->entries, bytes);
         for (int i = 0; i < o->entry_count; i++) {
             copy[i].label = fc_strdup_opt(o->entries[i].label);
             if (o->entries[i].outliers && o->entries[i].outlier_count > 0) {
                 size_t obytes = (size_t)o->entries[i].outlier_count * sizeof(double);
-                double *ocopy = emalloc(obytes);
-                memcpy(ocopy, o->entries[i].outliers, obytes);
-                copy[i].outliers = ocopy;
+                copy[i].outliers =
+                    fc_memdup(o->entries[i].outliers, obytes);
             } else {
                 copy[i].outliers = NULL;
             }
@@ -1732,23 +1658,18 @@ static void fastchart_polar_addref_extras(fastchart_polar_obj *o)
         int len = o->series[i].len;
         if (o->series[i].angles && len > 0) {
             size_t bytes = (size_t)len * sizeof(double);
-            double *copy = emalloc(bytes);
-            memcpy(copy, o->series[i].angles, bytes);
-            o->series[i].angles = copy;
+            o->series[i].angles =
+                fc_memdup(o->series[i].angles, bytes);
         }
         if (o->series[i].radii && len > 0) {
             size_t bytes = (size_t)len * sizeof(double);
-            double *copy = emalloc(bytes);
-            memcpy(copy, o->series[i].radii, bytes);
-            o->series[i].radii = copy;
+            o->series[i].radii = fc_memdup(o->series[i].radii, bytes);
         }
         o->series[i].label = fc_strdup_opt(o->series[i].label);
     }
     if (o->vectors && o->n_vectors > 0) {
         size_t bytes = (size_t)o->n_vectors * sizeof(fastchart_polar_vector);
-        fastchart_polar_vector *copy = emalloc(bytes);
-        memcpy(copy, o->vectors, bytes);
-        o->vectors = copy;
+        o->vectors = fc_memdup(o->vectors, bytes);
         o->cap_vectors = o->n_vectors;
     }
 }
@@ -1774,17 +1695,13 @@ static void fastchart_contour_addref_extras(fastchart_contour_obj *o)
 {
     if (o->grid.cells && o->grid.rows > 0 && o->grid.cols > 0) {
         size_t bytes = (size_t)o->grid.rows * (size_t)o->grid.cols * sizeof(double);
-        double *copy = emalloc(bytes);
-        memcpy(copy, o->grid.cells, bytes);
-        o->grid.cells = copy;
+        o->grid.cells = fc_memdup(o->grid.cells, bytes);
     } else {
         o->grid.cells = NULL;
     }
     if (o->levels && o->level_count > 0) {
         size_t bytes = (size_t)o->level_count * sizeof(double);
-        double *copy = emalloc(bytes);
-        memcpy(copy, o->levels, bytes);
-        o->levels = copy;
+        o->levels = fc_memdup(o->levels, bytes);
     } else {
         o->levels = NULL;
     }
@@ -1811,8 +1728,7 @@ static void fastchart_treemap_addref_extras(fastchart_treemap_obj *o)
 {
     if (o->items && o->item_count > 0) {
         size_t bytes = (size_t)o->item_count * sizeof(fastchart_treemap_item);
-        fastchart_treemap_item *copy = emalloc(bytes);
-        memcpy(copy, o->items, bytes);
+        fastchart_treemap_item *copy = fc_memdup(o->items, bytes);
         for (int i = 0; i < o->item_count; i++) {
             copy[i].label = fc_strdup_opt(o->items[i].label);
         }
@@ -1846,8 +1762,7 @@ static void fastchart_funnel_addref_extras(fastchart_funnel_obj *o)
 {
     if (o->stages && o->stage_count > 0) {
         size_t bytes = (size_t)o->stage_count * sizeof(fastchart_funnel_stage);
-        fastchart_funnel_stage *copy = emalloc(bytes);
-        memcpy(copy, o->stages, bytes);
+        fastchart_funnel_stage *copy = fc_memdup(o->stages, bytes);
         for (int i = 0; i < o->stage_count; i++) {
             copy[i].label = fc_strdup_opt(o->stages[i].label);
         }
@@ -1880,8 +1795,7 @@ static void fastchart_waterfall_addref_extras(fastchart_waterfall_obj *o)
 {
     if (o->bars && o->bar_count > 0) {
         size_t bytes = (size_t)o->bar_count * sizeof(fastchart_waterfall_bar);
-        fastchart_waterfall_bar *copy = emalloc(bytes);
-        memcpy(copy, o->bars, bytes);
+        fastchart_waterfall_bar *copy = fc_memdup(o->bars, bytes);
         for (int i = 0; i < o->bar_count; i++) {
             copy[i].label = fc_strdup_opt(o->bars[i].label);
         }
@@ -1912,9 +1826,7 @@ static void fastchart_heatmap_addref_extras(fastchart_heatmap_obj *o)
 {
     if (o->grid.cells && o->grid.rows > 0 && o->grid.cols > 0) {
         size_t bytes = (size_t)o->grid.rows * (size_t)o->grid.cols * sizeof(double);
-        double *copy = emalloc(bytes);
-        memcpy(copy, o->grid.cells, bytes);
-        o->grid.cells = copy;
+        o->grid.cells = fc_memdup(o->grid.cells, bytes);
     } else {
         o->grid.cells = NULL;
     }
@@ -1991,7 +1903,7 @@ static void fastchart_pareto_addref_extras(fastchart_pareto_obj *o)
         fastchart_pareto_bar *copy = emalloc(sizeof(*copy) * o->bar_count);
         for (int i = 0; i < o->bar_count; i++) {
             copy[i] = o->bars[i];
-            copy[i].label = o->bars[i].label ? estrdup(o->bars[i].label) : NULL;
+            copy[i].label = fc_strdup_opt(o->bars[i].label);
         }
         o->bars = copy;
     } else {
@@ -2017,9 +1929,7 @@ static void fastchart_calendar_addref_extras(fastchart_calendar_obj *o)
 {
     if (o->days && o->day_count > 0) {
         size_t bytes = (size_t)o->day_count * sizeof(*o->days);
-        fastchart_calendar_day *copy = emalloc(bytes);
-        memcpy(copy, o->days, bytes);
-        o->days = copy;
+        o->days = fc_memdup(o->days, bytes);
     } else {
         o->days = NULL;
     }
@@ -2049,7 +1959,7 @@ static void fastchart_sunburst_addref_extras(fastchart_sunburst_obj *o)
         fastchart_sunburst_node *copy = emalloc(sizeof(*copy) * o->node_count);
         for (int i = 0; i < o->node_count; i++) {
             copy[i] = o->nodes[i];
-            copy[i].label = o->nodes[i].label ? estrdup(o->nodes[i].label) : NULL;
+            copy[i].label = fc_strdup_opt(o->nodes[i].label);
         }
         o->nodes = copy;
     } else {
@@ -2084,7 +1994,7 @@ static void fastchart_sankey_addref_extras(fastchart_sankey_obj *o)
         fastchart_sankey_node *copy = emalloc(sizeof(*copy) * o->node_count);
         for (int i = 0; i < o->node_count; i++) {
             copy[i] = o->nodes[i];
-            copy[i].label = o->nodes[i].label ? estrdup(o->nodes[i].label) : NULL;
+            copy[i].label = fc_strdup_opt(o->nodes[i].label);
         }
         o->nodes = copy;
     } else {
@@ -2092,9 +2002,7 @@ static void fastchart_sankey_addref_extras(fastchart_sankey_obj *o)
     }
     if (o->links && o->link_count > 0) {
         size_t bytes = (size_t)o->link_count * sizeof(*o->links);
-        fastchart_sankey_link *copy = emalloc(bytes);
-        memcpy(copy, o->links, bytes);
-        o->links = copy;
+        o->links = fc_memdup(o->links, bytes);
     } else {
         o->links = NULL;
     }
@@ -2132,16 +2040,15 @@ static void fastchart_marimekko_addref_extras(fastchart_marimekko_obj *o)
             emalloc(sizeof(*copy) * o->column_count);
         for (int i = 0; i < o->column_count; i++) {
             copy[i] = o->columns[i];
-            copy[i].label = o->columns[i].label
-                ? estrdup(o->columns[i].label) : NULL;
+            copy[i].label = fc_strdup_opt(o->columns[i].label);
             if (o->columns[i].segments && o->columns[i].n_segments > 0) {
                 size_t bytes = (size_t)o->columns[i].n_segments
                     * sizeof(*o->columns[i].segments);
                 fastchart_marimekko_segment *sc = emalloc(bytes);
                 for (int j = 0; j < o->columns[i].n_segments; j++) {
                     sc[j] = o->columns[i].segments[j];
-                    sc[j].label = o->columns[i].segments[j].label
-                        ? estrdup(o->columns[i].segments[j].label) : NULL;
+                    sc[j].label =
+                        fc_strdup_opt(o->columns[i].segments[j].label);
                 }
                 copy[i].segments = sc;
             } else {
@@ -2173,9 +2080,7 @@ static void fastchart_vector_addref_extras(fastchart_vector_obj *o)
 {
     if (o->vectors && o->vector_count > 0) {
         size_t bytes = (size_t)o->vector_count * sizeof(*o->vectors);
-        fastchart_vector_datum *copy = emalloc(bytes);
-        memcpy(copy, o->vectors, bytes);
-        o->vectors = copy;
+        o->vectors = fc_memdup(o->vectors, bytes);
     } else {
         o->vectors = NULL;
     }
@@ -2272,11 +2177,10 @@ static void fastchart_pyramid_side_release(fastchart_pyramid_side *s)
 }
 static void fastchart_pyramid_side_addref(fastchart_pyramid_side *s)
 {
-    if (s->label) s->label = estrdup(s->label);
+    s->label = fc_strdup_opt(s->label);
     if (s->data && s->n > 0) {
-        double *copy = emalloc(sizeof(double) * s->n);
-        memcpy(copy, s->data, sizeof(double) * s->n);
-        s->data = copy;
+        size_t bytes = (size_t)s->n * sizeof(double);
+        s->data = fc_memdup(s->data, bytes);
     } else {
         s->data = NULL;
     }
@@ -2306,7 +2210,7 @@ static void fastchart_pyramid_addref_extras(fastchart_pyramid_obj *o)
     if (o->categories && o->cat_count > 0) {
         char **copy = emalloc(sizeof(char *) * o->cat_count);
         for (int i = 0; i < o->cat_count; i++) {
-            copy[i] = o->categories[i] ? estrdup(o->categories[i]) : NULL;
+            copy[i] = fc_strdup_opt(o->categories[i]);
         }
         o->categories = copy;
     } else {
@@ -2339,12 +2243,11 @@ static void fastchart_violin_addref_extras(fastchart_violin_obj *o)
         fastchart_violin_group *copy = emalloc(sizeof(*copy) * o->group_count);
         for (int i = 0; i < o->group_count; i++) {
             copy[i] = o->groups[i];
-            copy[i].label = o->groups[i].label ? estrdup(o->groups[i].label) : NULL;
+            copy[i].label = fc_strdup_opt(o->groups[i].label);
             if (o->groups[i].values && o->groups[i].n > 0) {
                 size_t bytes = (size_t)o->groups[i].n * sizeof(double);
-                double *vc = emalloc(bytes);
-                memcpy(vc, o->groups[i].values, bytes);
-                copy[i].values = vc;
+                copy[i].values =
+                    fc_memdup(o->groups[i].values, bytes);
             } else {
                 copy[i].values = NULL;
             }
@@ -2455,7 +2358,7 @@ static fastchart_pack_node *fastchart_pack_clone(const fastchart_pack_node *src)
     if (!src) return NULL;
     fastchart_pack_node *n = emalloc(sizeof(*n));
     *n = *src;
-    n->label = src->label ? estrdup(src->label) : NULL;
+    n->label = fc_strdup_opt(src->label);
     if (src->child_count > 0 && src->children) {
         n->children = emalloc(sizeof(*n->children) * src->child_count);
         for (int i = 0; i < src->child_count; i++) {
@@ -2518,7 +2421,7 @@ static void fastchart_venn_release_extras(fastchart_venn_obj *o)
 static void fastchart_venn_addref_extras(fastchart_venn_obj *o)
 {
     for (int i = 0; i < o->set_count; i++) {
-        if (o->sets[i].label) o->sets[i].label = estrdup(o->sets[i].label);
+        o->sets[i].label = fc_strdup_opt(o->sets[i].label);
     }
 }
 
@@ -2545,7 +2448,7 @@ static void fastchart_wordcloud_addref_extras(fastchart_wordcloud_obj *o)
         fastchart_word *copy = emalloc(sizeof(*copy) * o->word_count);
         for (int i = 0; i < o->word_count; i++) {
             copy[i] = o->words[i];
-            copy[i].text = o->words[i].text ? estrdup(o->words[i].text) : NULL;
+            copy[i].text = fc_strdup_opt(o->words[i].text);
         }
         o->words = copy;
     } else {
@@ -2577,8 +2480,8 @@ static void fastchart_serpentine_addref_extras(fastchart_serpentine_obj *o)
         fastchart_timeline_event *copy = emalloc(sizeof(*copy) * o->event_count);
         for (int i = 0; i < o->event_count; i++) {
             copy[i] = o->events[i];
-            copy[i].label = o->events[i].label ? estrdup(o->events[i].label) : NULL;
-            copy[i].date = o->events[i].date ? estrdup(o->events[i].date) : NULL;
+            copy[i].label = fc_strdup_opt(o->events[i].label);
+            copy[i].date = fc_strdup_opt(o->events[i].date);
         }
         o->events = copy;
     } else {

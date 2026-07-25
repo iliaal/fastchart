@@ -175,11 +175,9 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 double d = series[s].values[i];
                 if (isnan(d)) continue;
                 if (right) {
-                    if (!seen_r) { dmin_r = dmax_r = d; seen_r = 1; }
-                    else { if (d < dmin_r) dmin_r = d; if (d > dmax_r) dmax_r = d; }
+                    fastchart_range_update(d, &dmin_r, &dmax_r, &seen_r);
                 } else {
-                    if (!seen_l) { dmin_l = dmax_l = d; seen_l = 1; }
-                    else { if (d < dmin_l) dmin_l = d; if (d > dmax_l) dmax_l = d; }
+                    fastchart_range_update(d, &dmin_l, &dmax_l, &seen_l);
                 }
             }
         }
@@ -231,11 +229,9 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
             double d = ov->values[i];
             if (!isfinite(d)) continue;
             if (right) {
-                if (!seen_r) { dmin_r = dmax_r = d; seen_r = 1; }
-                else { if (d < dmin_r) dmin_r = d; if (d > dmax_r) dmax_r = d; }
+                fastchart_range_update(d, &dmin_r, &dmax_r, &seen_r);
             } else {
-                if (!seen_l) { dmin_l = dmax_l = d; seen_l = 1; }
-                else { if (d < dmin_l) dmin_l = d; if (d > dmax_l) dmax_l = d; }
+                fastchart_range_update(d, &dmin_l, &dmax_l, &seen_l);
             }
         }
     }
