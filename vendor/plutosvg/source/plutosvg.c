@@ -2613,13 +2613,21 @@ static size_t image_cache_value(size_t remaining_uses, size_t bytes)
     return remaining_uses * bytes;
 }
 
-/* Make room for `bytes` by dropping cached surfaces that are worth less
- * than the incoming one, oldest first. Value is remaining_uses * bytes,
- * so a large image nobody references again goes before a small one the
- * document still uses many times.
+/* A cached surface may be dropped for an incoming one only if it is
+ * worth strictly less. Value is remaining_uses * bytes, so a large image
+ * nobody references again yields to a small one the document still uses
+ * many times. */
+static bool image_cache_evictable(const element_t* element,
+    size_t candidate_value)
+{
+    return image_cache_value(element->image_access_count,
+        element->image_cache_bytes) < candidate_value;
+}
+
+/* Make room for `bytes` by dropping evictable surfaces, oldest first.
  *
  * Two passes over the LRU list and no allocation: the first asks whether
- * the eligible entries even cover the shortfall, the second evicts. A
+ * the evictable entries even cover the shortfall, the second evicts. A
  * caller whose own value does not beat every entry it would displace
  * goes uncached rather than churning the cache. */
 static bool image_cache_reserve(plutosvg_document_t* document,
@@ -2638,10 +2646,8 @@ static bool image_cache_reserve(plutosvg_document_t* document,
     size_t freed = 0;
     for(const element_t* element = document->image_cache_head;
         element && freed < required; element = element->image_cache_next) {
-        if(image_cache_value(element->image_access_count,
-                element->image_cache_bytes) < candidate_value) {
+        if(image_cache_evictable(element, candidate_value))
             freed += element->image_cache_bytes;
-        }
     }
     if(freed < required)
         return false;
@@ -2650,8 +2656,7 @@ static bool image_cache_reserve(plutosvg_document_t* document,
     element_t* element = document->image_cache_head;
     while(element && freed < required) {
         element_t* next = element->image_cache_next;
-        if(image_cache_value(element->image_access_count,
-                element->image_cache_bytes) < candidate_value) {
+        if(image_cache_evictable(element, candidate_value)) {
             freed += element->image_cache_bytes;
             image_cache_unlink(document, element);
             document->image_cache_bytes -= element->image_cache_bytes;
