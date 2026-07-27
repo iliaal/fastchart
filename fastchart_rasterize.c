@@ -39,6 +39,23 @@ static size_t fastchart_image_cache_limit(void)
 	return FC_IMAGE_CACHE_MAX_BYTES;
 }
 
+/* Sole entry point for parsing caller SVG. The image-cache ceiling is
+ * applied here so a new parse site cannot leave the document on the
+ * vendor default. Returns NULL when the document does not parse or
+ * exceeds the parser's complexity limits. */
+static plutosvg_document_t *fastchart_load_svg(const char *svg,
+                                                size_t svg_len)
+{
+	plutosvg_document_t *doc =
+	    plutosvg_document_load_from_data(svg, (int)svg_len, -1, -1,
+	                                     NULL, NULL);
+	if (doc) {
+		plutosvg_document_set_image_cache_limit(doc,
+			fastchart_image_cache_limit());
+	}
+	return doc;
+}
+
 /* x86 SSSE3 worker fns carry __attribute__((target("ssse3"))); runtime
  * dispatch detects the feature via raw CPUID (__get_cpuid from
  * <cpuid.h>), NOT __builtin_cpu_supports. The builtin pulls in libgcc's
@@ -326,16 +343,12 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
 	 * contract for the vendor-state window. */
 	pix->rgba = safe_emalloc((size_t)target_w * (size_t)target_h, 4, 0);
 
-	plutosvg_document_t *doc =
-	    plutosvg_document_load_from_data(svg, (int)svg_len, -1, -1,
-	                                     NULL, NULL);
+	plutosvg_document_t *doc = fastchart_load_svg(svg, svg_len);
 	if (!doc) {
 		efree(pix->rgba);
 		pix->rgba = NULL;
 		return -1;
 	}
-	plutosvg_document_set_image_cache_limit(doc,
-		fastchart_image_cache_limit());
 
 	int rc;
 	zend_try {
@@ -373,12 +386,8 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 	if (out_h) *out_h = 0;
 	if (svg_len > (size_t)INT_MAX) return -2;
 
-	plutosvg_document_t *doc =
-	    plutosvg_document_load_from_data(svg, (int)svg_len, -1, -1,
-	                                     NULL, NULL);
+	plutosvg_document_t *doc = fastchart_load_svg(svg, svg_len);
 	if (!doc) return -1;
-	plutosvg_document_set_image_cache_limit(doc,
-		fastchart_image_cache_limit());
 
 	float w = plutosvg_document_get_width(doc);
 	float h = plutosvg_document_get_height(doc);
