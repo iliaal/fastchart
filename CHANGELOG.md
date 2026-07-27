@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-26
+
 ### Changed
 
 - `renderToFile()` now accepts only local filesystem paths; stream-wrapper
@@ -28,17 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attributes, or 256 nesting levels, bounding parser memory and recursion.
 - Graph and hierarchy labels have a 64 KiB aggregate text budget;
   charts accept at most 128 text annotations with 64 KiB total text.
-- Repeated source images and shared gradients change the emitted SVG.
-  A path placed N times is now one `<defs>` entry plus N `<use href>`
-  elements instead of N inline `<image>` elements carrying N copies of
-  the base64 payload, and identical gradients collapse to one
-  `<linearGradient>`. Consumers that match on the markup shape need
-  updating; rendered pixels are unchanged.
+- Repeated images emit one `<defs>` entry plus N `<use>` placements and
+  identical gradients collapse; same pixels, different markup.
 - Added `fastchart.max_image_cache_bytes` INI (PHP_INI_SYSTEM, default
-  64M); bounds the decoded source images one render retains. The
-  surfaces are rasterizer-allocated and outside `memory_limit`, and the
-  budget is per thread under ZTS. Lowering it costs repeat decodes and
-  never fails a render.
+  64M); bounds the decoded source images one render retains, per thread.
 
 ### Performance
 
@@ -52,12 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Word-cloud spiral points, graph layouts, gradient definitions, and repeated
   SVG images are reused within a render. A 64 MiB frequency-aware decoded-image
   cache bounds document memory without repeatedly decoding hot images.
-- Stock series carrying an extreme outlier (a close near DBL_MAX) with a
-  window in the thousands take the segmented scaled-statistics path and
-  cost roughly 4x the 1.6.0 setter time — tens of microseconds on a
-  4096-candle series. Ordinary series are 2-33% faster. This is the price
-  of the variance fix below, which is what makes those series produce a
-  usable indicator at all.
+- Stock series with a near-DBL_MAX outlier and a multi-thousand window
+  cost ~4x the 1.6.0 setter time; ordinary series are 2-33% faster.
 
 ### Fixed
 
@@ -70,10 +61,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Arc/Chord/Network `setNodes()` / `setLinks()` throw `ValueError` on
   over-cap input instead of silently truncating.
 - First-party code now builds under the full warning set (`-Werror` in
-  dev); vendor `-Wno-*` flags no longer blanket fastchart TUs. The
-  rasterizer keeps its bailout-safe `zend_try` in a function of its own
-  so gcc's `-Wclobbered` cannot reject the temporaries inlined NEON
-  intrinsics declare — that combination broke aarch64 developer builds.
+  dev); vendor `-Wno-*` flags no longer blanket fastchart TUs.
+- aarch64 developer builds compile again: the rasterizer's bailout-safe
+  `zend_try` moved into its own function, out of `-Wclobbered`'s reach.
 - Extreme finite ranges render without integer-cast undefined behavior in
   Scatter, Surface, Heatmap, Contour, Gantt, Sankey, and Venn charts.
 - Line and Scatter auto-ranging includes error bars; negative Area stream
@@ -113,10 +103,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   round-trip and decode suites execute on every Windows lane.
 - The PDF nan/inf test inflates FlateDecode streams before scanning; a
   new test decodes JPEG/WebP output for every chart family.
-- New aarch64 gcc lane builds with the developer warning gate and runs
-  the suite on every push. The gcc matrix was x86_64-only, so it never
-  compiled the NEON paths, and the one arm64 runner used clang — an
-  aarch64 build break could only surface at release time.
+- New aarch64 gcc lane builds under the developer gate and runs the
+  suite per push; the gcc matrix never compiled the NEON paths before.
+- Workflows pin actions by SHA, drop credential persistence, and gain a
+  zizmor Actions-security scan plus dependabot updates.
 
 ## [1.6.0] - 2026-07-09
 
@@ -1392,7 +1382,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.6.0...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.7.0...HEAD
+[1.7.0]: https://github.com/iliaal/fastchart/releases/tag/1.7.0
 [1.6.0]: https://github.com/iliaal/fastchart/releases/tag/1.6.0
 [1.5.0]: https://github.com/iliaal/fastchart/releases/tag/1.5.0
 [1.4.0]: https://github.com/iliaal/fastchart/releases/tag/1.4.0

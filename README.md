@@ -27,10 +27,12 @@ extension; `renderPng()` / `renderJpeg()` / `renderWebp()` /
 
 ## Status
 
-v1.6.0 (current): 38 chart classes plus a 2-class Symbol family,
-vector PDF output (`renderPdf`, opt-in `--with-pdfio`), PNG
-compression control, SVG fragment id prefixes, and HTML image-map
-hot-spots on Bar / Pie / Scatter (`setImageMap` + `getImageMap`).
+v1.7.0 (current): 38 chart classes plus a 2-class Symbol family,
+vector PDF output (`renderPdf`, opt-in `--with-pdfio`), operator
+memory ceilings (`fastchart.max_render_pixels`,
+`fastchart.max_image_cache_bytes`), atomic `renderToFile()`
+replacement, and HTML image-map hot-spots on Bar / Pie / Scatter
+(`setImageMap` + `getImageMap`).
 v1.0 dropped libgd as a runtime dependency, rebuilt rasterization
 around vendored plutovg, and replaced `draw($canvas)` with
 `renderSvg/Png/Jpeg/Webp` + `renderToFile`. See
@@ -106,6 +108,10 @@ encoder from the file extension:
     ->setCategoryLabels(['Mon','Tue','Wed','Thu','Fri','Sat','Sun'])
     ->renderToFile('/tmp/dau.png');
 ```
+
+The path must be a local filesystem path. Stream-wrapper destinations
+(`php://`, `s3://` and friends) are rejected: they cannot provide the
+atomic replacement `renderToFile()` guarantees.
 
 `renderPng()`, `renderJpeg()`, and `renderWebp()` return the encoded
 bytes if you need them in memory. Raster compression knobs:
