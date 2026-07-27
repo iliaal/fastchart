@@ -29,7 +29,7 @@ for ($i = 0; $i < 4; $i++) {
 	imagefill($image, 0, 0, imagecolorallocate($image,
 		($i * 61) & 0xff, ($i * 89) & 0xff, ($i * 113) & 0xff));
 	imagepng($image, $path, 1);
-	imagedestroy($image);
+	/* No imagedestroy(): no-op since PHP 8.0, deprecated in 8.5. */
 	$paths[] = $path;
 }
 
