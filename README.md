@@ -153,6 +153,14 @@ Use the
 renders above it throw `ValueError` before any frame buffer is
 allocated.
 
+A second ceiling, `fastchart.max_image_cache_bytes` (`PHP_INI_SYSTEM`,
+default 67108864), bounds the decoded source images
+(`setBackgroundImage()` / `addIconAt()`) one render keeps in memory so
+repeated placements decode once. Those surfaces are allocated by the
+rasterizer, not by PHP, so `memory_limit` does not see them, and under
+ZTS the budget applies per thread. Lowering it costs repeat decodes; it
+never fails a render.
+
 Call `renderSvg()` on the same chart object for vector output:
 dashboards, print, anywhere infinite-zoom matters.
 

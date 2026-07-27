@@ -86,7 +86,7 @@ static void fastchart_code128_init_extras(fastchart_code128_obj *o)
 static void fastchart_qrcode_init_extras(fastchart_qrcode_obj *o)
 {
     o->ecc = FASTCHART_QR_ECC_M;
-    o->quiet_zone_max = 256;  /* modules; matches the render-time cap */
+    o->quiet_zone_max = FASTCHART_QR_MAX_QUIET_MODULES;  /* modules */
     o->min_version = qrcodegen_VERSION_MIN;
     o->max_version = qrcodegen_VERSION_MAX;
     /* Override the base WebP default (DRAWING, lossy). QR modules are

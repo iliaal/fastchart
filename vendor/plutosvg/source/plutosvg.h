@@ -24,6 +24,7 @@
 #define PLUTOSVG_H
 
 #include <plutovg.h>
+#include <stddef.h>
 
 #if defined(PLUTOSVG_BUILD_STATIC)
 #define PLUTOSVG_EXPORT
@@ -156,6 +157,20 @@ PLUTOSVG_API float plutosvg_document_get_width(const plutosvg_document_t* docume
  * @return The intrinsic height of the SVG document.
  */
 PLUTOSVG_API float plutosvg_document_get_height(const plutosvg_document_t* document);
+
+/**
+ * @brief LOCAL-PATCH (fastchart): caps the decoded-image cache.
+ *
+ * Decoded `<image>` surfaces are retained so repeated `<use>` references
+ * decode once. The surfaces are malloc-backed, so an embedder that budgets
+ * memory itself needs to set the ceiling rather than inherit the 64 MiB
+ * default. Set before the first render; a limit below an image's decoded
+ * size leaves that image uncached rather than failing the render.
+ *
+ * @param document Pointer to the SVG document.
+ * @param limit Maximum retained decoded bytes for this document.
+ */
+PLUTOSVG_API void plutosvg_document_set_image_cache_limit(plutosvg_document_t* document, size_t limit);
 
 /**
  * @brief Retrieves the bounding box of a specific element or the entire SVG document.

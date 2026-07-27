@@ -199,13 +199,23 @@ static PHP_GSHUTDOWN_FUNCTION(fastchart)
     fastchart_ft_library_shutdown();
 }
 
-/* PHP_INI_SYSTEM: the pixel ceiling is an operator control against
+/* PHP_INI_SYSTEM: both ceilings are operator controls against
  * render-driven memory exhaustion; a script must not be able to
- * ini_set() it back up. Values above the built-in 64M cap (or <= 0)
- * clamp to the cap at check time rather than erroring here. */
+ * ini_set() them back up. Values above the built-in 64M cap (or <= 0)
+ * clamp to the cap at check time rather than erroring here.
+ *
+ * max_image_cache_bytes bounds the decoded source-image surfaces a
+ * single render retains so repeated icons decode once. Those surfaces
+ * are malloc-backed inside plutosvg and invisible to memory_limit, and
+ * under ZTS the allowance is per-thread — same reasoning that put the
+ * raster frame behind max_render_pixels. Lowering it only costs repeat
+ * decodes; it never fails a render. */
 PHP_INI_BEGIN()
     STD_PHP_INI_ENTRY("fastchart.max_render_pixels", "67108864",
         PHP_INI_SYSTEM, OnUpdateLong, max_render_pixels,
+        zend_fastchart_globals, fastchart_globals)
+    STD_PHP_INI_ENTRY("fastchart.max_image_cache_bytes", "67108864",
+        PHP_INI_SYSTEM, OnUpdateLong, max_image_cache_bytes,
         zend_fastchart_globals, fastchart_globals)
 PHP_INI_END()
 

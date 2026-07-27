@@ -8,20 +8,24 @@ asan.detect_leaks=0
 --FILE--
 <?php
 
+/* The eviction policy lives in a local patch to a vendored file, so a
+ * plutosvg refresh that drops it would otherwise only show up as a
+ * silent return to decode-per-placement. Assert the pieces the policy
+ * is built from, not the shape of any one pass. */
 $vendor = file_get_contents(
 	__DIR__ . '/../vendor/plutosvg/source/plutosvg.c'
 );
-echo '64 MiB cache contract: ',
+echo 'bounded cache contract: ',
 	str_contains($vendor,
-		'#define PLUTOSVG_IMAGE_CACHE_LIMIT (64u * 1024u * 1024u)')
+		'#define PLUTOSVG_IMAGE_CACHE_LIMIT ((size_t)64u * 1024u * 1024u)')
+	&& str_contains($vendor, 'document->image_cache_limit')
 	&& str_contains($vendor, 'document->image_cache_bytes')
 	&& str_contains($vendor,
 		'image_cache_reserve(document, element, image_bytes)')
 	&& str_contains($vendor, 'image_cache_touch(document, element)')
 	&& str_contains($vendor, 'image_cache_value(')
-	&& str_contains($vendor, 'qsort(second, second_subsets,')
-	&& str_contains($vendor, 'image_cache_build_subset(')
-	&& str_contains($vendor, 'candidate_value <= best.value')
+	&& str_contains($vendor,
+		'plutosvg_document_set_image_cache_limit(plutosvg_document_t* document')
 		? "yes\n" : "NO\n";
 
 $dir = sys_get_temp_dir() . '/fastchart-icons-' . bin2hex(random_bytes(6));
@@ -81,6 +85,6 @@ rmdir($dir);
 
 ?>
 --EXPECT--
-64 MiB cache contract: yes
+bounded cache contract: yes
 over-budget render: yes
 hot icon drawn after eviction: yes

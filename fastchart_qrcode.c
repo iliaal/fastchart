@@ -110,11 +110,11 @@ int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,
     int quiet_modules;
     if (base->quiet_zone < 0) {
         quiet_modules = 4;
-    } else if (base->quiet_zone > 256) {
+    } else if (base->quiet_zone > FASTCHART_QR_MAX_QUIET_MODULES) {
         zend_value_error(
             "FastChart\\QrCode: quiet zone %lld modules exceeds the QR "
-            "maximum of 256 modules",
-            (long long)base->quiet_zone);
+            "maximum of %d modules",
+            (long long)base->quiet_zone, FASTCHART_QR_MAX_QUIET_MODULES);
         return -1;
     } else {
         quiet_modules = (int)base->quiet_zone;

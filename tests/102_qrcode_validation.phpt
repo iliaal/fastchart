@@ -81,10 +81,11 @@ try {
 }
 
 // QR-specific quiet zone cap: setQuietZone rejects >256 modules at set
-// time (256 modules already dwarfs any symbol). The render path keeps
-// the same ceiling as defense-in-depth. Pre-fix the setter accepted up
-// to 4096 and only the render threw, so a value the setter took failed
-// at every subsequent render.
+// time (256 modules already dwarfs any symbol). Pre-fix the setter
+// accepted up to 4096 and only the render threw, so a value the setter
+// took failed at every subsequent render. The renderer still re-checks
+// the ceiling, but the setter now makes that branch unreachable from
+// userland, so nothing here can exercise it.
 try {
     (new FastChart\QrCode())
         ->setData('hello')
@@ -93,6 +94,19 @@ try {
     echo "ERR: excessive quiet zone did not throw\n";
 } catch (\ValueError $e) {
     echo "qz-cap: ", str_contains($e->getMessage(), '[-1, 256] modules') ? "ok" : $e->getMessage(), "\n";
+}
+
+// The boundary itself stays accepted, so the cap can't drift downward
+// without a test noticing.
+try {
+    $bytes = (new FastChart\QrCode())
+        ->setData('hello')
+        ->setSize(2000, 2000)
+        ->setQuietZone(256)
+        ->renderSvg();
+    echo "qz-boundary: ", str_starts_with($bytes, '<?xml') || str_contains($bytes, '<svg') ? "ok" : "BAD", "\n";
+} catch (\Throwable $e) {
+    echo "qz-boundary: ", get_class($e), ' ', $e->getMessage(), "\n";
 }
 
 // Embedded NUL rejected at setData (Symbol-level). Both QR and
@@ -122,4 +136,5 @@ too-large: ok
 tiny-canvas: ok
 empty-data: ok
 qz-cap: ok
+qz-boundary: ok
 nul-data: ok

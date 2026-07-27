@@ -14,6 +14,7 @@
 
 #include "fastchart_rasterize.h"
 #include "fastchart_target.h"
+#include "php_fastchart.h"
 #include <plutosvg.h>
 #include <plutovg.h>
 
@@ -21,6 +22,22 @@
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
+
+/* Decoded source-image surfaces plutosvg retains for one document.
+ * fastchart.max_image_cache_bytes can lower it but never raise it past
+ * the built-in ceiling; a non-positive or oversized setting means "use
+ * the built-in". Lowering only costs repeat decodes. */
+#define FC_IMAGE_CACHE_MAX_BYTES ((size_t)64 * 1024 * 1024)
+
+static size_t fastchart_image_cache_limit(void)
+{
+	zend_long configured = FASTCHART_G(max_image_cache_bytes);
+	if (configured > 0
+	    && (size_t)configured < FC_IMAGE_CACHE_MAX_BYTES) {
+		return (size_t)configured;
+	}
+	return FC_IMAGE_CACHE_MAX_BYTES;
+}
 
 /* x86 SSSE3 worker fns carry __attribute__((target("ssse3"))); runtime
  * dispatch detects the feature via raw CPUID (__get_cpuid from
@@ -192,22 +209,27 @@ static void fc_unpremul_row_scalar(const unsigned char *src,
 	}
 }
 
-/* Render an already-loaded plutosvg document into pix. Owns the
- * canvas and wrapper surface; does NOT own the document or pixel
- * buffer. Returns 0 on success, -1 on rasterize failure.
+/* Draw an already-loaded plutosvg document into `frame`, a caller-owned
+ * buffer with capacity target_w * target_h * 4. Owns the canvas and the
+ * wrapper surface; owns neither the document nor the buffer.
  *
- * pix->rgba MUST be pre-allocated by the caller with capacity
- * target_w * target_h * 4 BEFORE any vendor (malloc'd) state is
+ * `frame` MUST be allocated BEFORE any vendor (malloc'd) state is
  * created. The wrapper and canvas are malloc-backed and explicitly
  * released from the bailout path. This function performs no Zend
- * allocation. */
-static int fastchart_rasterize_doc(plutosvg_document_t *doc,
-                                    int target_w, int target_h,
-                                    fastchart_pixels_t *pix)
+ * allocation.
+ *
+ * The un-premultiply pass deliberately lives in the caller rather than
+ * here: gcc's -Wclobbered covers every non-volatile local in a function
+ * that calls setjmp, and the temporaries inlined NEON intrinsics declare
+ * trip it on aarch64. Keeping the setjmp in its own function leaves the
+ * SIMD loop in a scope the diagnostic never inspects. */
+static int fastchart_render_doc_to_frame(plutosvg_document_t *doc,
+                                          int target_w, int target_h,
+                                          unsigned char *frame)
 {
 	plutovg_surface_t * volatile surf = NULL;
 	plutovg_canvas_t * volatile canvas = NULL;
-	volatile int rc = -1;
+	volatile int rendered = 0;
 	float doc_w = plutosvg_document_get_width(doc);
 	float doc_h = plutosvg_document_get_height(doc);
 
@@ -215,9 +237,9 @@ static int fastchart_rasterize_doc(plutosvg_document_t *doc,
 		return -1;
 	}
 
-	memset(pix->rgba, 0, (size_t)target_w * (size_t)target_h * 4);
+	memset(frame, 0, (size_t)target_w * (size_t)target_h * 4);
 	zend_try {
-		surf = plutovg_surface_create_for_data(pix->rgba, target_w,
+		surf = plutovg_surface_create_for_data(frame, target_w,
 		                                       target_h, target_w * 4);
 		if (surf) {
 			canvas = plutovg_canvas_create((plutovg_surface_t *)surf);
@@ -227,39 +249,7 @@ static int fastchart_rasterize_doc(plutosvg_document_t *doc,
 			                     target_w / doc_w, target_h / doc_h);
 			if (plutosvg_document_render(doc, NULL,
 			        (plutovg_canvas_t *)canvas, NULL, NULL, NULL)) {
-				pix->w = target_w;
-				pix->h = target_h;
-				pix->has_alpha = 1;
-
-				if (!fc_inv_alpha_ready) fc_init_inv_alpha();
-
-				/* Two-stage un-premultiply:
-				 *   - opaque-row SIMD shuffle for runs of all-FF alpha
-				 *   - scalar+LUT for translucent pixels and row tails */
-				int any_translucent = 0;
-#ifdef FC_HAVE_X86_SIMD
-				int use_ssse3 = fc_cpu_has_ssse3();
-#endif
-				for (int y = 0; y < pix->h; y++) {
-					const unsigned char *row =
-					    pix->rgba + (size_t)y * pix->w * 4;
-					unsigned char *dst =
-					    pix->rgba + (size_t)y * pix->w * 4;
-					int x = 0;
-#ifdef FC_HAVE_ARM_NEON
-					x = fc_unpremul_row_neon(row, dst, pix->w,
-					                           &any_translucent);
-#elif defined(FC_HAVE_X86_SIMD)
-					if (use_ssse3) {
-						x = fc_unpremul_row_ssse3(row, dst, pix->w,
-						                           &any_translucent);
-					}
-#endif
-					fc_unpremul_row_scalar(row, dst, x, pix->w,
-					                         &any_translucent);
-				}
-				pix->has_alpha = any_translucent ? 1 : 0;
-				rc = 0;
+				rendered = 1;
 			}
 		}
 		if (canvas) {
@@ -275,7 +265,50 @@ static int fastchart_rasterize_doc(plutosvg_document_t *doc,
 		if (surf) plutovg_surface_destroy((plutovg_surface_t *)surf);
 		zend_bailout();
 	} zend_end_try();
-	return (int)rc;
+	return rendered ? 0 : -1;
+}
+
+/* Render an already-loaded plutosvg document into pix and convert the
+ * frame from plutovg's pre-multiplied BGRA to straight RGBA in place.
+ * Returns 0 on success, -1 on rasterize failure. See
+ * fastchart_render_doc_to_frame for the pix->rgba pre-allocation
+ * contract. */
+static int fastchart_rasterize_doc(plutosvg_document_t *doc,
+                                    int target_w, int target_h,
+                                    fastchart_pixels_t *pix)
+{
+	if (fastchart_render_doc_to_frame(doc, target_w, target_h,
+			pix->rgba) != 0) {
+		return -1;
+	}
+
+	pix->w = target_w;
+	pix->h = target_h;
+
+	if (!fc_inv_alpha_ready) fc_init_inv_alpha();
+
+	/* Two-stage un-premultiply:
+	 *   - opaque-row SIMD shuffle for runs of all-FF alpha
+	 *   - scalar+LUT for translucent pixels and row tails */
+	int any_translucent = 0;
+#ifdef FC_HAVE_X86_SIMD
+	int use_ssse3 = fc_cpu_has_ssse3();
+#endif
+	for (int y = 0; y < pix->h; y++) {
+		const unsigned char *row = pix->rgba + (size_t)y * pix->w * 4;
+		unsigned char *dst = pix->rgba + (size_t)y * pix->w * 4;
+		int x = 0;
+#ifdef FC_HAVE_ARM_NEON
+		x = fc_unpremul_row_neon(row, dst, pix->w, &any_translucent);
+#elif defined(FC_HAVE_X86_SIMD)
+		if (use_ssse3) {
+			x = fc_unpremul_row_ssse3(row, dst, pix->w, &any_translucent);
+		}
+#endif
+		fc_unpremul_row_scalar(row, dst, x, pix->w, &any_translucent);
+	}
+	pix->has_alpha = any_translucent ? 1 : 0;
+	return 0;
 }
 
 int fastchart_rasterize_svg(const char *svg, size_t svg_len,
@@ -301,6 +334,8 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
 		pix->rgba = NULL;
 		return -1;
 	}
+	plutosvg_document_set_image_cache_limit(doc,
+		fastchart_image_cache_limit());
 
 	int rc;
 	zend_try {
@@ -342,6 +377,8 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 	    plutosvg_document_load_from_data(svg, (int)svg_len, -1, -1,
 	                                     NULL, NULL);
 	if (!doc) return -1;
+	plutosvg_document_set_image_cache_limit(doc,
+		fastchart_image_cache_limit());
 
 	float w = plutosvg_document_get_width(doc);
 	float h = plutosvg_document_get_height(doc);

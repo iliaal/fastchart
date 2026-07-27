@@ -96,6 +96,10 @@ ZEND_BEGIN_MODULE_GLOBALS(fastchart)
      * per pixel, plus native encoder workspace. Clamped to the built-in
      * 64M cap. */
     zend_long              max_render_pixels;
+    /* fastchart.max_image_cache_bytes: operator ceiling on the decoded
+     * source-image surfaces one render retains. plutosvg mallocs them,
+     * so memory_limit never sees them. Clamped to the built-in 64M cap. */
+    zend_long              max_image_cache_bytes;
 ZEND_END_MODULE_GLOBALS(fastchart)
 
 ZEND_EXTERN_MODULE_GLOBALS(fastchart)
@@ -1632,6 +1636,14 @@ typedef struct {
 #define FASTCHART_QR_ECC_M 1
 #define FASTCHART_QR_ECC_Q 2
 #define FASTCHART_QR_ECC_H 3
+
+/* QR quiet zone is counted in modules, not pixels, and 256 modules
+ * already dwarfs any conceivable symbol. setQuietZone() rejects anything
+ * above this via the per-class quiet_zone_max; the renderer re-checks it
+ * so a future subclass that widens the setter cap cannot reach the
+ * module-size arithmetic with a value it never sized for. Both sites
+ * read this constant so they cannot drift apart. */
+#define FASTCHART_QR_MAX_QUIET_MODULES 256
 
 /* Class-default canvas dimensions when setSize() was not called.
  * Code 128: 300x80 mirrors JpGraph's typical 1D output aspect.

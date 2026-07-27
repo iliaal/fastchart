@@ -36,6 +36,13 @@
 
 typedef struct { double x0, y0, x1, y1; } wc_box;
 
+/* Spiral steps one word may try, and therefore the highest index the
+ * shared spiral cache can be asked for. The placement loop bound and the
+ * cache's growth clamp must be the same number: raising only the loop
+ * bound would let spiral[s] run one element past the allocation on the
+ * step after the clamp pins capacity. */
+#define WC_SPIRAL_MAX_STEPS 60000
+
 typedef struct {
 	double dx;
 	double dy;
@@ -158,11 +165,14 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
         /* Spiral outward until the box clears every placed box. */
         double bx = cx, by = cy;
         int ok = 0;
-        for (long s = 0; s < 60000 && !ok && spiral_budget > 0; s++, spiral_budget--) {
+        for (long s = 0; s < WC_SPIRAL_MAX_STEPS && !ok && spiral_budget > 0;
+             s++, spiral_budget--) {
 			if (s == spiral_n) {
 				if (spiral_n >= spiral_cap) {
 					int new_cap = spiral_cap > 0 ? spiral_cap * 2 : 1024;
-					if (new_cap > 60000) new_cap = 60000;
+					if (new_cap > WC_SPIRAL_MAX_STEPS) {
+						new_cap = WC_SPIRAL_MAX_STEPS;
+					}
 					spiral = spiral
 						? erealloc(spiral, (size_t)new_cap * sizeof(*spiral))
 						: emalloc((size_t)new_cap * sizeof(*spiral));

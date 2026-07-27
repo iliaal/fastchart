@@ -332,6 +332,102 @@ jobs:
             exit 1
           fi
 
+  linux-arm64:
+    # The gcc matrix above is x86_64 only, so it compiles the SSSE3
+    # un-premultiply path and never the NEON one. macos-latest is arm64
+    # but builds with clang, which has no -Wclobbered and none of gcc's
+    # other aarch64-specific diagnostics. release-linux.yml does build
+    # ubuntu-24.04-arm with --enable-fastchart-dev, but its matrix
+    # collapses to x86_64 on pull_request, so an aarch64-only build
+    # break stays invisible until a release is cut — which is how a
+    # -Werror=clobbered failure in fastchart_rasterize.c reached master.
+    # One lane at the current stable PHP is enough to close that gap.
+    name: PHP 8.4 (gcc) - Linux arm64
+    runs-on: ubuntu-24.04-arm
+    env:
+      PHP_VERSION: '8.4'
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev pkg-config
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # master
+        with:
+          php-version: '8.4'
+          extensions: gd
+          tools: phpize, php-config
+
+      - name: Build extension
+        run: |
+          phpize
+          ./configure --enable-fastchart --enable-fastchart-dev
+          set -o pipefail
+          make -j$(nproc) 2>&1 | tee /tmp/build.log
+          set +o pipefail
+          WARNINGS=$(grep -c 'warning:' /tmp/build.log || true)
+          if [ "$WARNINGS" -gt 0 ]; then
+            echo "::error::Build produced $WARNINGS warning(s) on arm64"
+            exit 1
+          fi
+
+      - name: Verify gd capabilities (guard against silent mass-skips)
+        run: |
+          php -r '
+            if (!extension_loaded("gd")) {
+              fwrite(STDERR, "gd not loaded — ~91 raster round-trip tests would skip silently\n");
+              exit(1);
+            }
+            $i = gd_info();
+            $need = ["WebP Support", "JPEG Support", "FreeType Support", "PNG Support"];
+            $missing = [];
+            foreach ($need as $k) { if (empty($i[$k])) { $missing[] = $k; } }
+            if ($missing) {
+              fwrite(STDERR, "gd is missing: " . implode(", ", $missing) .
+                " — raster round-trip tests would skip silently\n");
+              exit(1);
+            }
+            echo "gd capabilities OK: " . implode(", ", $need) . "\n";
+          '
+
+      - name: Run tests
+        run: |
+          export TEST_PHP_EXECUTABLE=$(which php)
+          export TEST_PHP_ARGS="-d extension=$(pwd)/modules/fastchart.so"
+          export NO_INTERACTION=1
+          set +e
+          php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::run-tests.php exited $rc on PHP 8.4 - Linux arm64 (crash / BORK / aborted before summary)"
+            grep -E '^FAIL\b|^FAILED TEST|^BORK' /tmp/test-output.txt || true
+            exit 1
+          fi
+          if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
+            echo "::error::Tests failed on PHP 8.4 - Linux arm64"
+            grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
+            exit 1
+          fi
+          # Same budget as the x86_64 gcc lanes: gd is loaded and the
+          # build is PDF-less, so 7 PDF + up to 12 font-gated + locale +
+          # environment-gated skips, 25 with slack.
+          SKIPPED=$(grep -oP '^Tests skipped\s*:\s*\K[0-9]+' /tmp/test-output.txt | head -1)
+          SKIPPED=${SKIPPED:-0}
+          echo "Tests skipped: $SKIPPED (ceiling 25)"
+          if [ "$SKIPPED" -gt 25 ]; then
+            echo "::error::Skip count $SKIPPED exceeds ceiling 25 on PHP 8.4 - Linux arm64 — a capability likely vanished (gd/webp/fonts); tests are hiding in the skip counter"
+            grep -E '^SKIP\b' /tmp/test-output.txt || true
+            exit 1
+          fi
+
   pdf:
     name: PHP ${{ matrix.php }} - PDF backend (--with-pdfio)
     runs-on: ubuntu-latest
