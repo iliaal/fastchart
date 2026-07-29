@@ -22,11 +22,13 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - id: matrix
-        # Pinned to the commit SHA that v1 currently resolves to:
-        # mutable @v1 is a supply-chain risk for a workflow that has
-        # contents:write on the release job. Re-resolve on upstream
-        # bumps via: gh api repos/php/php-windows-builder/git/refs/tags/v1
-        uses: php/php-windows-builder/extension-matrix@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # v1
+        # Pinned to an immutable release tag's commit SHA: mutable @v1
+        # is a supply-chain risk for a workflow that has contents:write
+        # on the release job. The comment names the release tag rather
+        # than v1, because upstream moves v1 forward and that desyncs
+        # the pin from its comment, tripping zizmor ref-version-mismatch.
+        # Bump via: gh api repos/php/php-windows-builder/tags
+        uses: php/php-windows-builder/extension-matrix@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # 1.8.1
         with:
           extension-url: ${{ github.event.repository.html_url }}
           php-version-list: '8.1, 8.2, 8.3, 8.4, 8.5'
@@ -46,7 +48,7 @@ jobs:
           persist-credentials: false
 
       - name: Build extension
-        uses: php/php-windows-builder/extension@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # v1
+        uses: php/php-windows-builder/extension@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # 1.8.1
         with:
           php-version: ${{ matrix.php-version }}
           ts: ${{ matrix.ts }}
@@ -208,7 +210,7 @@ jobs:
           Add-Content $env:GITHUB_ENV "PDFIO_PREFIX=$prefix"
 
       - name: Build extension with PDF enabled
-        uses: php/php-windows-builder/extension@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # v1
+        uses: php/php-windows-builder/extension@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # 1.8.1
         with:
           php-version: '8.4'
           ts: nts
@@ -289,7 +291,7 @@ jobs:
           persist-credentials: false
 
       - name: Upload release artifacts
-        uses: php/php-windows-builder/release@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # v1
+        uses: php/php-windows-builder/release@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # 1.8.1
         with:
           release: ${{ github.event.release.tag_name }}
         env:
