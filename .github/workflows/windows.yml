@@ -28,7 +28,7 @@ jobs:
         # than v1, because upstream moves v1 forward and that desyncs
         # the pin from its comment, tripping zizmor ref-version-mismatch.
         # Bump via: gh api repos/php/php-windows-builder/tags
-        uses: php/php-windows-builder/extension-matrix@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # 1.8.1
+        uses: php/php-windows-builder/extension-matrix@29352c0ef9e8ce65264ea9e287881a6f7758a953 # 1.9.0
         with:
           extension-url: ${{ github.event.repository.html_url }}
           php-version-list: '8.1, 8.2, 8.3, 8.4, 8.5'
@@ -48,11 +48,19 @@ jobs:
           persist-credentials: false
 
       - name: Build extension
-        uses: php/php-windows-builder/extension@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # 1.8.1
+        uses: php/php-windows-builder/extension@29352c0ef9e8ce65264ea9e287881a6f7758a953 # 1.9.0
         with:
           php-version: ${{ matrix.php-version }}
           ts: ${{ matrix.ts }}
           arch: ${{ matrix.arch }}
+          # extension-matrix flags one lane per (os, VS toolset) pair as
+          # the VS-cache saver, and the action's input defaults to true,
+          # so forwarding it is what stops all 20 lanes writing the same
+          # cache. Our lanes span two toolsets on windows-2022 (vs16 for
+          # 8.1-8.3, vs17 for 8.4-8.5), giving 2 savers. Inert as long as
+          # the runner ships a toolset in range (14.44 as of run
+          # 30447739686): nothing installs, so nothing caches.
+          save-vs-cache: ${{ matrix.save-vs-cache }}
           # Tests run in our own step below: the action's test step
           # hardcodes TEST_PHP_ARGS to `-n` + fastchart.dll only, so the
           # ~90 gd round-trip phpts skip, and its test-runner-args input
@@ -210,11 +218,14 @@ jobs:
           Add-Content $env:GITHUB_ENV "PDFIO_PREFIX=$prefix"
 
       - name: Build extension with PDF enabled
-        uses: php/php-windows-builder/extension@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # 1.8.1
+        uses: php/php-windows-builder/extension@29352c0ef9e8ce65264ea9e287881a6f7758a953 # 1.9.0
         with:
           php-version: '8.4'
           ts: nts
           arch: x64
+          # This lane shares (windows-2022, vs17) with an 8.4 matrix lane
+          # that is already the designated saver, so restore only.
+          save-vs-cache: 'false'
           run-tests: 'false'
           args: --enable-fastchart --enable-fastchart-dev --with-pdfio
           libs: freetype,libpng,libjpeg-turbo,libwebp
@@ -291,7 +302,7 @@ jobs:
           persist-credentials: false
 
       - name: Upload release artifacts
-        uses: php/php-windows-builder/release@e03e5d39879adaeb61ed2225f0f4eae7db8c1df8 # 1.8.1
+        uses: php/php-windows-builder/release@29352c0ef9e8ce65264ea9e287881a6f7758a953 # 1.9.0
         with:
           release: ${{ github.event.release.tag_name }}
         env:
