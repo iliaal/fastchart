@@ -696,8 +696,8 @@ static void copy_family_name(char *out, size_t out_n, const char *src)
         snprintf(out, out_n, "sans-serif");
         return;
     }
-    /* Allow ASCII letters/digits/space/hyphen/underscore through; any
-     * other byte gets dropped. Keeps the result safe to inline in an
+    /* Allow ASCII letters/digits/space/hyphen/underscore/dot through;
+     * any other byte gets dropped. Keeps the result safe to inline in an
      * XML attribute even if the resolver is bypassed downstream. */
     size_t j = 0;
     for (size_t i = 0; src[i] && j + 1 < out_n; i++) {
@@ -1031,7 +1031,10 @@ static fastchart_target_image_cache_entry *fastchart_target_image_cache_get(
 	if (!t || !path || !*path) return NULL;
 	for (int i = 0; i < t->image_cache_n; i++) {
         fastchart_target_image_cache_entry *entry = &t->image_cache[i];
-        if (strcmp(entry->path, path) == 0) return entry;
+        /* entry->path is never NULL below image_cache_n today (estdup'd
+         * at insert; release resets entries and the counter together).
+         * The guard keeps that invariant local, not load-bearing. */
+        if (entry->path && strcmp(entry->path, path) == 0) return entry;
 	}
 
 	if (t->image_cache_n >= FASTCHART_TARGET_IMAGE_CACHE) return NULL;

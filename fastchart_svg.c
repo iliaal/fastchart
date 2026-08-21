@@ -737,6 +737,9 @@ const fc_glyph_cache_entry *fastchart_resolve_glyph(FT_Face face,
 		return fastchart_glyph_cache_get(face, pix_size, codepoint);
 	}
 
+	/* uint16_t casts: FT bounds outline.n_points to FT_Short (<= 32767),
+	 * so n_pts <= ~65534 and n_ops <= n_points + 1 fit. Revisit if a
+	 * FreeType major ever lifts that bound. */
 	fastchart_glyph_cache_insert(face, pix_size, codepoint,
 	                              advance_x_64,
 	                              cap.ops, (uint16_t)cap.n_ops,
