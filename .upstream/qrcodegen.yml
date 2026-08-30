@@ -9,5 +9,12 @@
 resolver: github-head
 repo: nayuki/QR-Code-generator
 branch: master
-pinned: 2c9044de6b049ca25cb3cd1649ed7e27aa055138
+pinned: 993ccbb6765327f5c49939ba77736098c04ab81d
 vendored_at: vendor/qrcodegen
+note: >-
+  Re-synced to master 993ccbb (2026-08). The 6 commits since 2c9044d touch
+  only the fast-Java implementation and the Readme; c/qrcodegen.{c,h} are
+  byte-identical to the prior pin, so the vendor copy already matches head.
+  The vendored qrcodegen.c additionally carries a fastchart-local perf patch
+  (GF(2^8) log/antilog tables in initReedSolomonTables replacing the
+  upstream Russian-peasant multiply); qrcodegen.h is upstream-verbatim.
