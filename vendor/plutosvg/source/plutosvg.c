@@ -2434,6 +2434,12 @@ static void render_path(const element_t* element, render_context_t* context, ren
     render_state_begin(element, &new_state, state);
 
     plutovg_path_reset(context->document->path);
+    /* LOCAL-PATCH (fastchart): plutovg_path_parse now stops appending once
+     * a `d` attribute exceeds the per-path element cap (CWE-400). The
+     * partially parsed prefix is still rendered — matching both upstream
+     * behavior and the SVG 2 rule to draw through the last valid segment
+     * on a path-data error — and the cap already bounds native geometry
+     * memory, so the return value is intentionally ignored here. */
     parse_path(element, ATTR_D, context->document->path);
     plutovg_path_extents(context->document->path, &new_state.extents, false);
     draw_shape(element, context, &new_state);
@@ -2903,6 +2909,11 @@ float plutosvg_document_get_width(const plutosvg_document_t* document)
 float plutosvg_document_get_height(const plutosvg_document_t* document)
 {
     return document->height;
+}
+
+size_t plutosvg_document_element_count(const plutosvg_document_t* document)
+{
+    return document->element_count;
 }
 
 bool plutosvg_document_extents(const plutosvg_document_t* document, const char* id, plutovg_rect_t* extents)

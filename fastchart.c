@@ -4779,6 +4779,13 @@ static int fastchart_svg_to_pixels(
                 ? ", lowered by fastchart.max_render_pixels" : "");
         return -1;
     }
+    if (rc == -5) {
+        zend_value_error(
+            "%s() SVG render work exceeds cap "
+            "(element count x output pixels too large)",
+            method_name);
+        return -1;
+    }
     if (rc != 0) {
         fastchart_pixels_release(pix);
         zend_throw_error(NULL,

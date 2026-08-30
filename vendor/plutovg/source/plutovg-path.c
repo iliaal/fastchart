@@ -469,6 +469,25 @@ void plutovg_path_traverse_flatten(const plutovg_path_t* path, plutovg_path_trav
     }
 
     const float threshold = 0.25f;
+    /* LOCAL-PATCH (fastchart): work bound. A cubic with huge coordinates
+     * never meets the absolute flatness tolerance (float32 cancellation
+     * pins the deviation above 0.25 for control-point scale >= ~1e15), so
+     * the subdivision would split every node to the depth-31 cap and emit
+     * a full ~2^31-leaf binary tree per command (CWE-400). Cap the leaves
+     * per cubic: once exhausted, every remaining node emits as-is, the
+     * pending stack drains, and the loop terminates. Legitimate curves
+     * flatten in well under this bound. */
+    const int max_segments = 4096;
+    /* Aggregate work bound across the whole path. The per-cubic cap alone
+     * still allows linear amplification: a 16 MB `d' attribute can carry
+     * hundreds of thousands of non-converging cubics, each spending its
+     * full per-cubic cap, for ~1e9 subdivision steps and tens of seconds
+     * of CPU (CWE-400) even though native memory stays bounded elsewhere.
+     * Once this many segments have been emitted for the path, every
+     * further node emits its endpoint as-is so each remaining cubic drains
+     * in O(1). Legitimate paths flatten far below this ceiling. */
+    const long max_total_segments = 1L << 21;
+    long total_segments = 0;
 
     plutovg_path_iterator_t it;
     plutovg_path_iterator_init(&it, path);
@@ -495,6 +514,7 @@ void plutovg_path_traverse_flatten(const plutovg_path_t* path, plutovg_path_trav
             beziers[0].x4 = points[2].x;
             beziers[0].y4 = points[2].y;
             bezier_t* b = beziers;
+            int segments = 0;
             while(b >= beziers) {
                 float y4y1 = b->y4 - b->y1;
                 float x4x1 = b->x4 - b->x1;
@@ -507,9 +527,11 @@ void plutovg_path_traverse_flatten(const plutovg_path_t* path, plutovg_path_trav
                     l = 1.f;
                 }
 
-                if(d < threshold*l || b == beziers + 31) {
+                if(d < threshold*l || b == beziers + 31 || ++segments > max_segments
+                        || total_segments >= max_total_segments) {
                     plutovg_point_t p = { b->x4, b->y4 };
                     traverse_func(closure, PLUTOVG_PATH_COMMAND_LINE_TO, &p, 1);
+                    ++total_segments;
                     --b;
                 } else {
                     split_bezier(b, b + 1, b);
@@ -531,14 +553,20 @@ typedef struct {
     plutovg_point_t current_point;
     plutovg_path_traverse_func_t traverse_func;
     void* closure;
+    int budget; /* LOCAL-PATCH (fastchart): cap on emitted dash commands */
 } dasher_t;
 
 static void dash_traverse_func(void* closure, plutovg_path_command_t command, const plutovg_point_t* points, int npoints)
 {
     dasher_t* dasher = (dasher_t*)(closure);
     if(command == PLUTOVG_PATH_COMMAND_MOVE_TO) {
-        if(dasher->start_toggle)
+        /* Budget the subpath-start MOVE_TO too, so the total emitted
+         * command count stays <= the initial budget across any number of
+         * subpaths. */
+        if(dasher->start_toggle && dasher->budget > 0) {
+            dasher->budget--;
             dasher->traverse_func(dasher->closure, PLUTOVG_PATH_COMMAND_MOVE_TO, points, npoints);
+        }
         dasher->current_point = points[0];
         dasher->phase = dasher->start_phase;
         dasher->index = dasher->start_index;
@@ -553,7 +581,41 @@ static void dash_traverse_func(void* closure, plutovg_path_command_t command, co
     float dy = p1.y - p0.y;
     float dist0 = sqrtf(dx*dx + dy*dy);
     float dist1 = 0.f;
+    /* LOCAL-PATCH (fastchart): the loop below advances a float32 cursor
+     * dist1 by the (finite, positive) dash increment and emits one path
+     * command per step into an unbounded native clone. Two legal-input
+     * conditions make it non-terminating (CWE-400): dist0 overflows to
+     * +inf when dx*dx or dy*dy exceeds FLT_MAX, and dist1 freezes once
+     * ULP(dist1) reaches the smallest increment, which happens exactly
+     * when dist1 (bounded above by dist0) approaches 2^23 x min_inc.
+     * Below that ratio the loop always terminates, so a legitimate
+     * long-but-finely-dashed segment still renders every dash. At or
+     * above it — or on a non-finite length — emit the segment as a
+     * single dash span instead of expanding it. */
+    float min_inc = FLT_MAX;
+    for(int i = 0; i < dasher->ndashes; ++i) {
+        if(dasher->dashes[i] > 0.f && dasher->dashes[i] < min_inc)
+            min_inc = dasher->dashes[i];
+    }
+    if(!isfinite(dist0) || min_inc == FLT_MAX
+            || dist0 >= 8388608.f * min_inc || dasher->budget <= 0) {
+        if(dasher->toggle && dasher->budget > 0) {
+            dasher->budget--;
+            dasher->traverse_func(dasher->closure,
+                                  PLUTOVG_PATH_COMMAND_LINE_TO, &p1, 1);
+        }
+        dasher->current_point = p1;
+        return;
+    }
+    /* The per-path budget decrements on EVERY emitted command — the
+     * boundary emits here and the trailing emit below — so the dashed
+     * clone can never exceed `budget' commands regardless of how many
+     * segments feed this function. It is only ever decremented while
+     * strictly positive, so it never wraps below zero. */
     while(dist0 - dist1 > dasher->dashes[dasher->index % dasher->ndashes] - dasher->phase) {
+        if(dasher->budget <= 0)
+            break;
+        dasher->budget--;
         dist1 += dasher->dashes[dasher->index % dasher->ndashes] - dasher->phase;
         float a = dist1 / dist0;
         plutovg_point_t p = { p0.x + a * dx, p0.y + a * dy };
@@ -568,7 +630,8 @@ static void dash_traverse_func(void* closure, plutovg_path_command_t command, co
         dasher->index++;
     }
 
-    if(dasher->toggle) {
+    if(dasher->toggle && dasher->budget > 0) {
+        dasher->budget--;
         dasher->traverse_func(dasher->closure, PLUTOVG_PATH_COMMAND_LINE_TO, &p1, 1);
     }
 
@@ -608,6 +671,7 @@ void plutovg_path_traverse_dashed(const plutovg_path_t* path, float offset, cons
     dasher.current_point = PLUTOVG_EMPTY_POINT;
     dasher.traverse_func = traverse_func;
     dasher.closure = closure;
+    dasher.budget = 1 << 20; /* LOCAL-PATCH (fastchart): aggregate cap */
     plutovg_path_traverse_flatten(path, dash_traverse_func, &dasher);
 }
 
@@ -759,8 +823,21 @@ bool plutovg_path_parse(plutovg_path_t* path, const char* data, int length)
 
     char command = 0;
     char last_command = 0;
+
+    /* LOCAL-PATCH (fastchart): resource bound. Every coordinate pair below
+     * appends elements into a realloc-doubled native array that no PHP
+     * gate sees (document->path, its canvas memcpy copy, and the ~17 B/pt
+     * FT outline all scale with it), so a single <path> with a giant `d`
+     * attribute amplifies a 16 MB input into hundreds of MB of native
+     * memory invisible to memory_limit (CWE-400/CWE-770). Cap one `d` at
+     * ~1M elements (~8 MB native per stage); the documented 200k-point
+     * series stays far below this. Fail fast on overflow. */
+    const int max_elements = 1 << 20;
+
     plutovg_skip_ws(&it, end);
     while(it < end) {
+        if(path->elements.size > max_elements)
+            return false;
         if(PLUTOVG_IS_ALPHA(*it)) {
             command = *it++;
             plutovg_skip_ws(&it, end);

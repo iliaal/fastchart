@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Caller-supplied SVG passed to `Chart::svgToPng()` / `svgToJpeg()` /
+  `svgToWebp()` is now bounded on render work, not just document
+  complexity: a document whose element count times output pixels exceeds
+  the work budget is rejected with a `ValueError` before rasterizing,
+  closing a CPU-exhaustion vector (many full-canvas shapes within the
+  element/dimension caps).
+- The vendored plutovg dashed-stroke walker no longer loops without
+  bound on legal input: segment lengths that overflow to a non-finite
+  distance or that freeze the float32 dash cursor now degrade to a
+  single dash span, and a per-path command budget caps the dashed
+  clone, preventing native-memory growth invisible to `memory_limit`.
+- The vendored plutovg curve flattener now bounds both per-cubic and
+  whole-path subdivision work, so a path built from many non-converging
+  cubics can no longer drive ~1e9 subdivision steps of CPU.
+- `plutovg_path_parse()` caps the element count of a single `d`
+  attribute, bounding the native geometry arrays a giant path would
+  otherwise amplify a bounded input into; the partial prefix still
+  renders, matching SVG path-data error handling.
+- The vendored plutovg scanline rasterizer no longer truncates a 64-bit
+  scanline index to 32 bits, closing an out-of-bounds access reachable
+  from an SVG path coordinate at a multiple of 2^32.
+- The vendored stb_image PNG decoder decodes into a fixed buffer sized
+  from the IHDR dimensions instead of an unbounded expandable buffer, so
+  a decompression-bomb PNG loaded via `setBackgroundImage()` /
+  `addIconAt()` fails cleanly instead of inflating toward ~2 GiB.
+- The vendored stb_image JPEG decoder zero-initializes component planes,
+  so a scan-less or truncated JPEG can no longer disclose recycled
+  worker heap bytes through rendered output.
+
 ## [1.7.0] - 2026-07-26
 
 ### Changed

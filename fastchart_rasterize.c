@@ -415,6 +415,21 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 		return -3;
 	}
 
+	/* Render-work budget: the dim/pixel caps bound the output canvas,
+	 * but immediate-mode rasterization re-pays the whole canvas per
+	 * painted element (no culling/dedup), so worst-case work is
+	 * element_count x canvas pixels. A cap-compliant document (65,536
+	 * full-canvas shapes) drives ~1.1e12 pixel ops — minutes of CPU no
+	 * PHP timer can interrupt. Reject above the op budget before
+	 * rasterizing. The 64-bit product cannot overflow: element_count
+	 * <= 65,536 and iw*ih <= max_pixels <= FC_IMAGE_MAX_PIXELS. */
+	if ((unsigned long long)plutosvg_document_element_count(doc)
+	    * (unsigned long long)iw * (unsigned long long)ih
+	    > (unsigned long long)FC_MAX_RENDER_OPS) {
+		plutosvg_document_destroy(doc);
+		return -5;
+	}
+
 	/* Dims are only known post-parse, so the destination cannot be
 	 * pre-allocated ahead of the document like fastchart_rasterize_svg
 	 * does. Guard the allocation instead: a memory_limit bailout here

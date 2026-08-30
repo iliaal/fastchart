@@ -159,6 +159,21 @@ PLUTOSVG_API float plutosvg_document_get_width(const plutosvg_document_t* docume
 PLUTOSVG_API float plutosvg_document_get_height(const plutosvg_document_t* document);
 
 /**
+ * @brief LOCAL-PATCH (fastchart): parsed element count for render-work
+ * budgeting.
+ *
+ * The element/attribute/depth caps bound document complexity, not
+ * rasterization work (element_count x per-element pixel coverage, which
+ * immediate-mode rendering re-pays per painted element). An embedder that
+ * budgets render work needs the parsed element count to bound worst-case
+ * work before rendering.
+ *
+ * @param document Pointer to the SVG document.
+ * @return Number of parsed elements (root included), 0..65536.
+ */
+PLUTOSVG_API size_t plutosvg_document_element_count(const plutosvg_document_t* document);
+
+/**
  * @brief LOCAL-PATCH (fastchart): caps the decoded-image cache.
  *
  * Decoded `<image>` surfaces are retained so repeated `<use>` references

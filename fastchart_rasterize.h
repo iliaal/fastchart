@@ -39,6 +39,16 @@
  * plutosvg's parser from chewing on adversarially huge input. */
 #define FC_SVG_MAX_BYTES     (16 * 1024 * 1024)
 
+/* Worst-case render-work budget for caller-supplied SVG. The pixel caps
+ * bound the canvas, not how often each pixel is repainted: rasterization
+ * is immediate-mode, so worst-case work is element_count x canvas pixels
+ * (65,536 full-canvas shapes ~ 1.1e12 pixel ops, minutes of CPU that no
+ * PHP timer can interrupt). 2^32 ops ~ 256 full-canvas passes at 16 Mpx
+ * (single-digit seconds) while ordinary icons/logos stay far below. The
+ * count includes non-painting elements (g/defs/gradients), so the bound
+ * fails closed — over-counting only over-blocks. */
+#define FC_MAX_RENDER_OPS    (1LL << 32)
+
 /* Rasterize the given SVG bytes at the requested target dimensions.
  * On success: pix->rgba is emalloc'd, pix->w/h match the requested
  * dims, return 0.
@@ -60,6 +70,7 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
  *   -3: dims exceed the supplied caps (dims still filled into out_w/h
  *       so the caller can build a meaningful error message).
  *   -4: rasterize failed after a successful parse + dim check.
+ *   -5: element_count x output pixels exceeds the render-work budget.
  */
 int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
                                        int max_dim, long long max_pixels,

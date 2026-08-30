@@ -379,7 +379,14 @@ PVG_FT_END_STMNT
       ras.ey    = ey;
     }
 
-    ras.invalid = ( (unsigned int)ey >= (unsigned int)ras.count_ey ||
+    /* LOCAL-PATCH (fastchart): the upstream `(unsigned int)' cast only
+     * rejects negative rows that fit in 32 bits. SVG coordinates are
+     * unbounded floats, so a 64-bit ey that is a multiple of 2^32 wraps
+     * to a small non-negative value, passes this test, and later indexes
+     * ycells[] tens of GB out of bounds (CWE-681 -> CWE-787). Compare at
+     * full width: count_ey is a non-negative TPos and ey < 0 is never a
+     * legitimate scanline bucket. */
+    ras.invalid = ( ey < 0 || ey >= ras.count_ey ||
                                   ex >= ras.count_ex           );
   }
 

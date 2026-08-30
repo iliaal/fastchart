@@ -3337,6 +3337,14 @@ static int stbi__process_frame_header(stbi__jpeg *z, int scan)
       z->img_comp[i].raw_data = stbi__malloc_mad2(z->img_comp[i].w2, z->img_comp[i].h2, 15);
       if (z->img_comp[i].raw_data == NULL)
          return stbi__free_jpeg_components(z, i+1, stbi__err("outofmem", "Out of memory"));
+      /* LOCAL-PATCH (fastchart): scan-less/truncated JPEGs still "succeed"
+       * in stbi__decode_jpeg_image (EOI-without-SOS, marker-error return 1,
+       * missing-restart bail) and reach load_jpeg_image's resampler with
+       * these planes never written, bleeding recycled worker heap bytes
+       * into renderPng/Jpeg/Webp output (CWE-908 info-leak). Zero the plane
+       * so the resampler can only read defined data. */
+      memset(z->img_comp[i].raw_data, 0,
+             (size_t) z->img_comp[i].w2 * (size_t) z->img_comp[i].h2 + 15);
       // align blocks for idct using mmx/sse
       z->img_comp[i].data = (stbi_uc*) (((size_t) z->img_comp[i].raw_data + 15) & ~15);
       if (z->progressive) {
@@ -3346,6 +3354,11 @@ static int stbi__process_frame_header(stbi__jpeg *z, int scan)
          z->img_comp[i].raw_coeff = stbi__malloc_mad3(z->img_comp[i].w2, z->img_comp[i].h2, sizeof(short), 15);
          if (z->img_comp[i].raw_coeff == NULL)
             return stbi__free_jpeg_components(z, i+1, stbi__err("outofmem", "Out of memory"));
+         /* LOCAL-PATCH (fastchart): same info-leak class — a progressive
+          * SOF-only file reaches stbi__jpeg_finish, which IDCTs coeff
+          * planes that no scan ever wrote. */
+         memset(z->img_comp[i].raw_coeff, 0,
+                (size_t) z->img_comp[i].w2 * (size_t) z->img_comp[i].h2 * sizeof(short) + 15);
          z->img_comp[i].coeff = (short*) (((size_t) z->img_comp[i].raw_coeff + 15) & ~15);
       }
    }
@@ -5214,7 +5227,34 @@ static int stbi__parse_png_file(stbi__png *z, int scan, int req_comp)
             // initial guess for decoded data size to avoid unnecessary reallocs
             bpl = (s->img_x * z->depth + 7) / 8; // bytes per line, per component
             raw_len = bpl * s->img_y * s->img_n /* pixels */ + s->img_y /* filter mode per row */;
-            z->expanded = (stbi_uc *) stbi_zlib_decode_malloc_guesssize_headerflag((char *) z->idata, ioff, raw_len, (int *) &raw_len, !is_iphone);
+            /* LOCAL-PATCH (fastchart): decode into a FIXED buffer sized
+             * from the IHDR dims instead of stb's expandable guess. The
+             * upstream path hardcodes exp=1, so stbi__zexpand doubles the
+             * output up to its UINT_MAX/2 guard (~2 GiB) with no tie to the
+             * declared dims — a PNG whose IDAT decompresses far past its
+             * declared size (zip bomb, CWE-409) drives that growth invisibly
+             * to PHP memory_limit and OOM-kills the worker. Every source
+             * pixel decodes exactly once regardless of interlacing, so the
+             * true decoded size never exceeds raw_len plus per-pass filter/
+             * rounding slack; 2*raw_len + 64 is a safe upper bound that also
+             * covers Adam7. Over-long streams now fail with an "output
+             * buffer limit" error instead of ballooning memory. Declared
+             * dims are already capped upstream (<= 4096^2 / 16 Mpx in
+             * fastchart_target.c), so raw_cap cannot overflow uint32. */
+            {
+               stbi__uint32 raw_cap = raw_len * 2 + 64;
+               stbi__zbuf zb;
+               z->expanded = (stbi_uc *) stbi__malloc(raw_cap);
+               if (z->expanded == NULL) { stbi__err("outofmem", "Out of memory"); return 0; }
+               zb.zbuffer = (stbi_uc *) z->idata;
+               zb.zbuffer_end = (stbi_uc *) z->idata + ioff;
+               if (!stbi__do_zlib(&zb, (char *) z->expanded, (int) raw_cap, 0, !is_iphone)) {
+                  STBI_FREE(z->expanded);
+                  z->expanded = NULL;
+                  return 0;
+               }
+               raw_len = (stbi__uint32) (zb.zout - zb.zout_start);
+            }
             if (z->expanded == NULL) return 0; // zlib should set error
             STBI_FREE(z->idata); z->idata = NULL;
             if ((req_comp == s->img_n+1 && req_comp != 3 && !pal_img_n) || has_trans)
