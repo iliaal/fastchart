@@ -9,39 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Setter validation is now consistent across families: reversed gauge
-  zones normalize instead of vanishing in `LinearMeter`/`Bullet`
-  (`GaugeChart` already swapped); `addZigZag()` rejects out-of-range
-  thresholds, `BulletChart::setTarget()` rejects non-finite values, and
-  `BubbleChart::setPoints()` rejects negative sizes instead of silently
-  clamping. `Code128::setData()` enforces the 80-character / ASCII
-  ceiling at setter time instead of failing late at draw.
-- `setFontPath()` / `setTitleFont()` / `setAxisFont()` / `setLabelFont()`
-  reject nonexistent paths with a `ValueError`, and `addIconAt()`
-  enforces `open_basedir` at setter time like `setBackgroundImage()`.
-  Render-time font loss (FIFO / evicted faces) keeps the tested
-  degrade-gracefully fallback.
-- Non-stacked area fills split at NaN gaps instead of diving to zero
-  under a correctly broken stroke; waterfall connectors no longer skip
-  after TOTAL bars; fully-transparent gradients stay transparent
-  (including curved paths) on SVG, PDF, and raster alike.
-- JPEG alpha flattening rounds instead of truncating (1-LSB); multiline
-  measure/draw share one line-step; `getImageMap()` /
-  `getImageMapAreas()` agree on unknown shapes; `svgTo*()` scanners skip
-  comments/CDATA; raster-backend failure reports `ValueError`.
-- Failure paths no longer swallow diagnostics: the libpng message
-  reaches the PHP exception on both lanes, PDF dispatch failure aborts
-  instead of finalizing, `renderToFile()` (Chart + Symbol) rejects
-  embedded-NUL paths, and long raster/encode loops honor
-  `max_execution_time`.
-- `drawSvgFragment()` documents the distinct-`$idPrefix` requirement
-  for stitching; the PDF lane documents its raster-image/icon omission;
-  SECURITY.md gains per-worker native-RSS sizing guidance and a current
-  support table; CI gets per-job `timeout-minutes` and a wider PDF lane.
-- Nine new PHPTs (444-452) cover strict-mode scalar gaps, StockChart
-  image-map staleness, PDF failure atomicity, glyph-cache replay parity,
-  single-over-budget image caching, symbol JPEG quality effect, portable
-  atomic replace, `open_basedir` icons, and font fail-fast/fallback.
+- Setter validation is now consistent: reversed gauge zones normalize,
+  and out-of-range ZigZag thresholds, non-finite bullet targets,
+  negative bubble sizes, and over-long Code128 payloads throw instead
+  of being silently clamped or dropped.
+- Missing font paths and out-of-`open_basedir` icon paths throw at
+  setter time; render-time font loss (FIFO, evicted faces) still
+  degrades gracefully.
+- Area fills split at NaN gaps, waterfall connectors survive TOTAL
+  bars, and fully-transparent gradients stay transparent on SVG, PDF,
+  and raster output.
+- JPEG alpha flattening rounds instead of truncating;
+  `getImageMap()`/`getImageMapAreas()` agree on unknown shapes;
+  `svgTo*()` scanners skip comments/CDATA and report raster-backend
+  failure as `ValueError`.
+- Encoder failures surface the codec message, PDF dispatch failure
+  aborts instead of finalizing, `renderToFile()` rejects embedded-NUL
+  paths, and long renders honor `max_execution_time`.
+- Docs: fragment `$idPrefix` requirement, PDF raster-image omission,
+  native-RSS sizing guidance, current support table; CI gains per-job
+  timeouts and a wider PDF lane.
 
 
 ## [1.7.1] - 2026-08-30
