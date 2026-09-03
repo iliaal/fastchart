@@ -27,7 +27,7 @@ extension; `renderPng()` / `renderJpeg()` / `renderWebp()` /
 
 ## Status
 
-v1.7.0 (current): 38 chart classes plus a 2-class Symbol family,
+v1.7.1 (current): 38 chart classes plus a 2-class Symbol family,
 vector PDF output (`renderPdf`, opt-in `--with-pdfio`), operator
 memory ceilings (`fastchart.max_render_pixels`,
 `fastchart.max_image_cache_bytes`), atomic `renderToFile()`
@@ -166,6 +166,10 @@ repeated placements decode once. Those surfaces are allocated by the
 rasterizer, not by PHP, so `memory_limit` does not see them, and under
 ZTS the budget applies per thread. Lowering it costs repeat decodes; it
 never fails a render.
+
+Per-worker RSS sizing rule of thumb (`max_render_pixels` x 4 +
+`max_image_cache_bytes`, times the worker count under ZTS) lives in
+[`SECURITY.md`](SECURITY.md) ("Resource sizing for operators").
 
 Call `renderSvg()` on the same chart object for vector output:
 dashboards, print, anywhere infinite-zoom matters.
@@ -378,8 +382,10 @@ Cross-cutting features available on most chart types:
   `_BOTTOM_LEFT`, `_NONE`).
 - Annotations: plot bands, vertical bands, horizontal / vertical lines,
   text labels, icon plots, error bars, zones.
-- Strict-mode input validation (`setStrict(true)` rejects malformed
-  series with a `TypeError` instead of silently coercing to NaN).
+- Strict-mode input validation (`setStrict(true)` on Line / Area / Bar
+  `setSeries()` and Funnel `setStages()` rejects malformed cells with
+  a `TypeError` instead of silently coercing to NaN; other families
+  parse best-effort).
 - Background images, drop shadows, anti-aliased lines and markers.
 - Image map output: `getImageMap()` returns HTML hot-spots over bars,
   slices, and points; `getImageMapAreas()` returns the same geometry
@@ -388,7 +394,7 @@ Cross-cutting features available on most chart types:
 ## Examples
 
 A gallery of code + rendered chart pairs lives in
-[`docs/README.md`](docs/README.md). Sixty-six runnable scripts in
+[`docs/README.md`](docs/README.md). Seventy-two runnable scripts in
 [`docs/examples/`](docs/examples/) regenerate the images and exercise
 every public method on the API surface.
 

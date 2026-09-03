@@ -416,6 +416,11 @@ void fc_pdf_emit_text_as_path(fc_pdf_state *s, double x, double y,
 	if (!text || text_len == 0 || !font_path) return;
 	if (fc_pdf_transparent(rgba)) return;
 
+	/* Both callers go through fastchart_text_draw, whose flatten
+	 * pre-check degrades an unusable font to a silent skip, so these
+	 * early-returns are the fallback path, not dead code. Kept
+	 * because this emitter takes a raw font path with no error
+	 * channel. */
 	FT_Face face = fastchart_ft_face(font_path);
 	if (!face) return;
 	FT_UInt pix = (FT_UInt)(size_px + 0.5);

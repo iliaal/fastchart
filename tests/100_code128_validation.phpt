@@ -14,8 +14,8 @@ try {
     echo "no-data: ", str_contains($e->getMessage(), 'setData') ? "ok" : $e->getMessage(), "\n";
 }
 
-// Oversized payload: setData itself accepts (only NUL is rejected at
-// setData time); the size cap fires inside the encoder at render time.
+// Oversized payload: CR-009 rejects 81+ chars at setData time
+// (ValueError), before mutating — the encoder cap never sees it.
 try {
     (new FastChart\Code128())
         ->setData(str_repeat('A', 81))
@@ -23,11 +23,11 @@ try {
         ->renderPng();
     echo "ERR: oversized payload did not throw\n";
 } catch (\ValueError $e) {
-    echo "oversized: ", str_contains($e->getMessage(), 'max supported is 80') ? "ok" : $e->getMessage(), "\n";
+    echo "oversized: ", str_contains($e->getMessage(), 'at most 80 characters') ? "ok" : $e->getMessage(), "\n";
 }
 
 // Non-ASCII byte (> 127) — Code 128 v0 does not support FNC4 extended
-// ASCII. Setter accepts the bytes; encoder rejects at render time.
+// ASCII. CR-009 rejects at setData time, naming the offending byte.
 try {
     (new FastChart\Code128())
         ->setData("\xC3\xA9")  // UTF-8 'é', high byte 0xC3
@@ -35,7 +35,7 @@ try {
         ->renderPng();
     echo "ERR: non-ASCII payload did not throw\n";
 } catch (\ValueError $e) {
-    echo "non-ascii: ", str_contains($e->getMessage(), 'outside ASCII') ? "ok" : $e->getMessage(), "\n";
+    echo "non-ascii: ", str_contains($e->getMessage(), 'outside ASCII (0..127)') ? "ok" : $e->getMessage(), "\n";
 }
 
 // Canvas too narrow for the encoded bars + default quiet zone.
@@ -65,7 +65,8 @@ try {
     echo "qz-overrun: ", str_contains($e->getMessage(), 'quiet zone') ? "ok" : $e->getMessage(), "\n";
 }
 
-// renderToFile reuses the same encoder failure path.
+// renderToFile with an oversized payload: setData throws first, so the
+// encoder failure path is never reached and no file is staged.
 $tmp = tempnam(sys_get_temp_dir(), 'fc-c128-bad-') . '.png';
 try {
     (new FastChart\Code128())
@@ -74,7 +75,7 @@ try {
         ->renderToFile($tmp);
     echo "ERR: oversized renderToFile did not throw\n";
 } catch (\ValueError $e) {
-    echo "to-file-oversized: ", str_contains($e->getMessage(), 'max supported is 80') ? "ok" : $e->getMessage(), "\n";
+    echo "to-file-oversized: ", str_contains($e->getMessage(), 'at most 80 characters') ? "ok" : $e->getMessage(), "\n";
 }
 @unlink($tmp);
 

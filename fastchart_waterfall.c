@@ -160,9 +160,10 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
 
         /* Connector line from this bar's right edge to the next
          * bar's left at the running cumulative; gives the chart its
-         * characteristic "stair-step" look. Skip after a TOTAL bar
-         * since the next bar restarts the cumulative. */
-        if (i + 1 < n && self->bars[i].kind != FASTCHART_WF_TOTAL) {
+         * characteristic "stair-step" look. A TOTAL bar carries cum
+         * forward (cum = val), so the post-TOTAL connector is
+         * continuous with the next bar and must not be skipped. */
+        if (i + 1 < n) {
             int y_conn = fastchart_y_to_pixel(
                 self->bars[i].value >= 0 ? bar_hi[i] : bar_lo[i],
                 &range, &plot);

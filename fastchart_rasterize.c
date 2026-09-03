@@ -290,6 +290,10 @@ static int fastchart_render_doc_to_frame(plutosvg_document_t *doc,
  * Returns 0 on success, -1 on rasterize failure. See
  * fastchart_render_doc_to_frame for the pix->rgba pre-allocation
  * contract. */
+/* NOTE: fastchart_render_doc_to_frame is the vendored single-shot
+ * plutosvg render and cannot poll EG(timed_out); the row polls below
+ * cover only the trailing un-premultiply. Preemption for this call
+ * rests on the dim/pixel caps (resolve_canvas_dims / with_dims). */
 static int fastchart_rasterize_doc(plutosvg_document_t *doc,
                                     int target_w, int target_h,
                                     fastchart_pixels_t *pix)
@@ -312,6 +316,12 @@ static int fastchart_rasterize_doc(plutosvg_document_t *doc,
 	int use_ssse3 = fc_cpu_has_ssse3();
 #endif
 	for (int y = 0; y < pix->h; y++) {
+		/* Honor max_execution_time: EG() is per-thread, so this is
+		 * ZTS-safe. The caller holds a zend_try whose catch frees the
+		 * frame, so bail out and let the VM raise the timeout Error. */
+		if ((y & 63) == 0 && zend_atomic_bool_load_ex(&EG(timed_out))) {
+			zend_bailout();
+		}
 		const unsigned char *row = pix->rgba + (size_t)y * pix->w * 4;
 		unsigned char *dst = pix->rgba + (size_t)y * pix->w * 4;
 		int x = 0;
@@ -338,7 +348,13 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
 	pix->has_alpha = 1;  /* plutovg returns premultiplied BGRA */
 	if (svg_len > (size_t)INT_MAX) return -1;
 	if (target_w <= 0 || target_h <= 0) return -1;
-
+	/* Operator ceiling: fastchart.max_render_pixels bounds the RGBA
+	 * frame here too, not just the chart render entry points. */
+	zend_long budget = FASTCHART_G(max_render_pixels);
+	if (budget > 0 && (long long)target_w * (long long)target_h >
+	    (long long)budget) {
+		return -1;
+	}
 	/* Destination first — see fastchart_rasterize_doc's no-Zend-alloc
 	 * contract for the vendor-state window. */
 	pix->rgba = safe_emalloc((size_t)target_w * (size_t)target_h, 4, 0);

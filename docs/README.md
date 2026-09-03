@@ -8,7 +8,7 @@ loaded; ext/gd is no longer required at runtime:
 php -d extension=fastchart docs/examples/01_line_basic.php
 ```
 
-The 71 runnable examples cover every chart and symbol family and
+The 72 runnable examples cover every chart and symbol family and
 demonstrate the main configurations. The PHPT suite under `tests/`
 covers the complete public API and edge cases.
 

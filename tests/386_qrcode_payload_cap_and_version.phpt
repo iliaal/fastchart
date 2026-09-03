@@ -27,9 +27,10 @@ try {
 
 try {
     (new FastChart\Code128())->setData(str_repeat('A', 81));
-    echo "code128 setData unchanged: accepted\n";
-} catch (Throwable $e) {
-    echo "code128 setData unchanged: rejected\n";
+    echo "code128 setData capped: accepted\n";
+} catch (ValueError $e) {
+    echo "code128 setData capped: ",
+        str_contains($e->getMessage(), 'at most 80 characters') ? "valueerror\n" : "wrong\n";
 }
 
 ?>
@@ -37,4 +38,4 @@ try {
 version matches: yes
 qr max accepted: yes
 qr cap: valueerror
-code128 setData unchanged: accepted
+code128 setData capped: valueerror

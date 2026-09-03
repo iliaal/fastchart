@@ -380,13 +380,18 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
         if (n_pts >= 3) {
             fastchart_obj *base = (fastchart_obj *)self;
             if (base->gradient_from >= 0 && base->gradient_to >= 0) {
-                uint32_t a = (uint32_t)alpha_byte & 0xFFu;
-                uint32_t grad_from =
-                    (a << 24) | ((uint32_t)base->gradient_from & 0xFFFFFFu);
-                uint32_t grad_to =
-                    (a << 24) | ((uint32_t)base->gradient_to   & 0xFFFFFFu);
-                fastchart_target_gradient_polygon(t, poly, n_pts,
-                    grad_from, grad_to, (int)base->gradient_dir);
+                /* A composed alpha of 0 is fully transparent: paint
+                 * nothing so SVG and PDF agree (a zero high byte from
+                 * a bare 24-bit RGB stays opaque in both backends). */
+                if (alpha_byte != 0) {
+                    uint32_t a = (uint32_t)alpha_byte & 0xFFu;
+                    uint32_t grad_from = (a << 24) |
+                        ((uint32_t)base->gradient_from & 0xFFFFFFu);
+                    uint32_t grad_to = (a << 24) |
+                        ((uint32_t)base->gradient_to & 0xFFFFFFu);
+                    fastchart_target_gradient_polygon(t, poly, n_pts,
+                        grad_from, grad_to, (int)base->gradient_dir);
+                }
             } else {
                 fastchart_target_polygon(t, poly, n_pts, alpha_handle, 1, 0);
             }
@@ -570,13 +575,21 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                     fp[fn].x = dens[0].x;      fp[fn].y = zero_y; fn++;
                     fastchart_obj *base = (fastchart_obj *)self;
                     if (base->gradient_from >= 0 && base->gradient_to >= 0) {
-                        uint32_t a = (uint32_t)alpha_byte & 0xFFu;
-                        uint32_t grad_from =
-                            (a << 24) | ((uint32_t)base->gradient_from & 0xFFFFFFu);
-                        uint32_t grad_to =
-                            (a << 24) | ((uint32_t)base->gradient_to   & 0xFFFFFFu);
-                        fastchart_target_gradient_polygon(t, fp, fn,
-                            grad_from, grad_to, (int)base->gradient_dir);
+                        /* Same fully-transparent skip as the band and
+                         * straight paths: a composed alpha of 0 paints
+                         * nothing so SVG and PDF agree (a zero high byte
+                         * from a bare 24-bit RGB stays opaque). */
+                        if (alpha_byte != 0) {
+                            uint32_t a = (uint32_t)alpha_byte & 0xFFu;
+                            uint32_t grad_from = (a << 24) |
+                                ((uint32_t)base->gradient_from &
+                                 0xFFFFFFu);
+                            uint32_t grad_to = (a << 24) |
+                                ((uint32_t)base->gradient_to &
+                                 0xFFFFFFu);
+                            fastchart_target_gradient_polygon(t, fp, fn,
+                                grad_from, grad_to, (int)base->gradient_dir);
+                        }
                     } else {
                         fastchart_target_polygon(t, fp, fn, alpha_handle, 1, 0);
                     }
@@ -594,39 +607,66 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 continue;
             }
 
-            int n_pts = 0;
-            for (int i = 0; i < max_len && n_pts < 2048; i++) {
-                double v = area_read_value(&series[s], i);
-                if (isnan(v)) v = rng->log_scale ? rng->min : 0.0;
-                int x = fastchart_x_categorical_center(&plot, i, max_len);
-                int y = fastchart_y_to_pixel(v, rng, &plot);
-                poly[n_pts].x = x; poly[n_pts].y = y;
-                n_pts++;
-            }
-            for (int i = max_len - 1; i >= 0 && n_pts < 2 * 2048; i--) {
-                int x = fastchart_x_categorical_center(&plot, i, max_len);
-                poly[n_pts].x = x; poly[n_pts].y = zero_y;
-                n_pts++;
-            }
-            if (n_pts >= 3) {
-                fastchart_obj *base = (fastchart_obj *)self;
-                if (base->gradient_from >= 0 && base->gradient_to >= 0) {
-                    /* Compose setAreaAlpha (0..127 gd convention,
-                     * 127 = transparent) into the gradient stops so
-                     * non-stacked overlay layers stay translucent
-                     * the way solid-fill overlays do. */
-                    uint32_t a = (uint32_t)alpha_byte & 0xFFu;
-                    uint32_t grad_from =
-                        (a << 24) | ((uint32_t)base->gradient_from & 0xFFFFFFu);
-                    uint32_t grad_to =
-                        (a << 24) | ((uint32_t)base->gradient_to   & 0xFFFFFFu);
-                    fastchart_target_gradient_polygon(t, poly, n_pts,
-                        grad_from, grad_to, (int)base->gradient_dir);
-                } else {
-                    fastchart_target_polygon(t, poly, n_pts, alpha_handle, 1, 0);
-                }
-                if (edge_handle >= 0) {
-                    fastchart_target_polygon(t, poly, n_pts, edge_handle, 0, 1);
+            /* One fill polygon per NaN-delimited run of valid values, so
+             * gaps read as gaps: the top stroke below already breaks at
+             * NaN, and folding every gap to the anchor would bridge the
+             * fill across categories the stroke leaves open. */
+            int run_start = -1;
+            for (int i = 0; i <= max_len; i++) {
+                double rv = i < max_len
+                    ? area_read_value(&series[s], i) : NAN;
+                if (!isnan(rv) && run_start < 0) run_start = i;
+                if ((isnan(rv) || i == max_len) && run_start >= 0) {
+                    int n_pts = 0;
+                    for (int k = run_start; k < i && n_pts < 2048; k++) {
+                        double v = area_read_value(&series[s], k);
+                        int x = fastchart_x_categorical_center(&plot, k,
+                                                               max_len);
+                        int y = fastchart_y_to_pixel(v, rng, &plot);
+                        poly[n_pts].x = x; poly[n_pts].y = y;
+                        n_pts++;
+                    }
+                    for (int k = i - 1; k >= run_start &&
+                             n_pts < 2 * 2048; k--) {
+                        int x = fastchart_x_categorical_center(&plot, k,
+                                                               max_len);
+                        poly[n_pts].x = x; poly[n_pts].y = zero_y;
+                        n_pts++;
+                    }
+                    if (n_pts >= 3) {
+                        fastchart_obj *base = (fastchart_obj *)self;
+                        if (base->gradient_from >= 0 &&
+                            base->gradient_to >= 0) {
+                            /* Compose setAreaAlpha (0..127 gd convention,
+                             * 127 = transparent) into the gradient stops
+                             * so non-stacked overlay layers stay
+                             * translucent the way solid-fill overlays do.
+                             * A composed alpha of 0 is fully transparent:
+                             * paint nothing so SVG and PDF agree (a zero
+                             * high byte from a bare 24-bit RGB stays
+                             * opaque in both backends). */
+                            if (alpha_byte != 0) {
+                                uint32_t a = (uint32_t)alpha_byte & 0xFFu;
+                                uint32_t grad_from = (a << 24) |
+                                    ((uint32_t)base->gradient_from &
+                                     0xFFFFFFu);
+                                uint32_t grad_to = (a << 24) |
+                                    ((uint32_t)base->gradient_to &
+                                     0xFFFFFFu);
+                                fastchart_target_gradient_polygon(t, poly,
+                                    n_pts, grad_from, grad_to,
+                                    (int)base->gradient_dir);
+                            }
+                        } else {
+                            fastchart_target_polygon(t, poly, n_pts,
+                                alpha_handle, 1, 0);
+                        }
+                        if (edge_handle >= 0) {
+                            fastchart_target_polygon(t, poly, n_pts,
+                                edge_handle, 0, 1);
+                        }
+                    }
+                    run_start = -1;
                 }
             }
 

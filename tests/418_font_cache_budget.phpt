@@ -40,12 +40,17 @@ try {
         $expected[] = cache_chart($path)->renderSvg();
     }
 
+    // Setter fail-fast rejects paths that do not exist, so bind each
+    // font while its fixture is still present; the unlinks below then
+    // exercise the render-time fallback path (evicted vs retained).
+    $oldest_chart = cache_chart($paths[0]);
+    $retained_chart = cache_chart($paths[1]);
     unlink($paths[0]);
-    $oldest = cache_chart($paths[0])->renderSvg();
+    $oldest = $oldest_chart->renderSvg();
     echo $oldest !== $expected[0] ? "evicted oldest\n" : "OLDEST RETAINED\n";
 
     unlink($paths[1]);
-    $retained = cache_chart($paths[1])->renderSvg();
+    $retained = $retained_chart->renderSvg();
     echo $retained === $expected[1]
         ? "retained within budget\n" : "RETAINED FACE LOST\n";
 } finally {

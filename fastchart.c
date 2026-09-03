@@ -2765,6 +2765,33 @@ ZEND_METHOD(FastChart_Chart, setTheme)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+/* Setter-time font existence gate (CR-013 revised): a path that does
+ * not exist is always a user error (typo, wrong directory), so
+ * reject it here with a ValueError instead of failing at render.
+ * Only regular files and FIFOs pass: directories and other special
+ * files can never be fonts. Stat-only, never open/read, so a
+ * writerless FIFO (tests/404) stays safe. A file that exists now
+ * but vanishes before the draw (eviction races, tests/418) still
+ * degrades silently at draw time. `where` names the calling method.
+ * Returns 0 on success, -1 with a ValueError thrown on failure. */
+static int fastchart_validate_font_path(zend_string *path,
+                                        const char *where)
+{
+    zend_stat_t st;
+    if (VCWD_STAT(ZSTR_VAL(path), &st) != 0) {
+        zend_value_error("FastChart\\Chart::%s() font file \"%s\""
+                         " does not exist", where, ZSTR_VAL(path));
+        return -1;
+    }
+    if (!S_ISREG(st.st_mode) && !S_ISFIFO(st.st_mode)) {
+        zend_value_error("FastChart\\Chart::%s() font file \"%s\""
+                         " is not a regular file", where,
+                         ZSTR_VAL(path));
+        return -1;
+    }
+    return 0;
+}
+
 ZEND_METHOD(FastChart_Chart, setFontPath)
 {
     zend_string *path;
@@ -2790,6 +2817,9 @@ ZEND_METHOD(FastChart_Chart, setFontPath)
                 "FastChart\\Chart::setFontPath() open_basedir restriction "
                 "prevents access to %s", ZSTR_VAL(path));
         }
+        RETURN_THROWS();
+    }
+    if (fastchart_validate_font_path(path, "setFontPath") != 0) {
         RETURN_THROWS();
     }
 
@@ -3228,7 +3258,11 @@ static int fastchart_parse_gauge_zones(
         if (!zfrom || !zto) continue;
         if (fastchart_zval_to_double(zfrom, &from) != 0 || !isfinite(from)) continue;
         if (fastchart_zval_to_double(zto, &to) != 0 || !isfinite(to)) continue;
-        if (to <= from) continue;
+        /* Single-site bound call: reversed bounds normalize (swap) so
+         * every renderer sees from <= to, and from == to stays a
+         * zero-width zone rather than being dropped -- one decision
+         * for all three callers instead of per-setter drift. */
+        if (to < from) { double tmp = from; from = to; to = tmp; }
         out[idx].from = from;
         out[idx].to = to;
         out[idx].color_rgb = fastchart_extract_optional_rgb(eht, "color", sizeof("color") - 1);
@@ -3352,6 +3386,14 @@ ZEND_METHOD(FastChart_Chart, addIconAt)
     if (ZSTR_LEN(path) == 0 ||
         memchr(ZSTR_VAL(path), 0, ZSTR_LEN(path)) != NULL) {
         zend_value_error("FastChart\\Chart::addIconAt() path must be non-empty and NUL-free");
+        RETURN_THROWS();
+    }
+    if (php_check_open_basedir(ZSTR_VAL(path))) {
+        if (!EG(exception)) {
+            zend_throw_error(NULL,
+                "FastChart\\Chart::addIconAt() open_basedir "
+                "restriction prevents access to %s", ZSTR_VAL(path));
+        }
         RETURN_THROWS();
     }
     if ((max_w != -1 && (max_w < 1 || max_w > 4096)) ||
@@ -3496,6 +3538,12 @@ FASTCHART_COLOR_OVERRIDE_SETTER(setTextColor,   text_color_override)
                     "FastChart\\Chart::" #name_ "() open_basedir restriction " \
                     "prevents access to %s", ZSTR_VAL(path)); \
             } \
+            RETURN_THROWS(); \
+        } \
+        /* NULL clears (or no change) and empty clears: both skip the \
+         * existence gate, which only vets real paths. */ \
+        if (path && ZSTR_LEN(path) > 0 \
+            && fastchart_validate_font_path(path, #name_) != 0) { \
             RETURN_THROWS(); \
         } \
         if (!size_is_null && !(size >= 1.0 && size <= 200.0)) { \
@@ -4460,49 +4508,29 @@ ZEND_METHOD(FastChart_GaugeChart, setZones)
         Z_PARAM_ARRAY(zones)
     ZEND_PARSE_PARAMETERS_END();
 
-    fastchart_gauge_obj *self = Z_FASTCHART_GAUGE_OBJ_P(ZEND_THIS);
-
-    /* Replace any existing zones. Each user-facing entry is an assoc
-     * array { from: float, to: float, color?: int }. Bad-shape entries
-     * are silently dropped (matches the prior config-zval behavior).
-     * Up to 16 zones; further entries are ignored. */
-    HashTable *ht = Z_ARRVAL_P(zones);
-    int total = fastchart_array_count_or_throw(
-        ht, FASTCHART_MAX_GAUGE_ZONES,
-        "FastChart\\GaugeChart::setZones()", "zones");
-    if (total < 0) RETURN_THROWS();
-
-    if (self->zones) efree(self->zones);
-    self->zones = NULL;
-    self->n_zones = 0;
-    if (total == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
-
-    fastchart_gauge_zone *out = ecalloc((size_t)total, sizeof(fastchart_gauge_zone));
+    /* Parse into a temp first: the cap throw lands before any state
+     * mutates, so a caught over-cap leaves prior zones renderable.
+     * Bound calls live in fastchart_parse_gauge_zones (shared with
+     * LinearMeter/Bullet). */
+    fastchart_gauge_zone *parsed = ecalloc(FASTCHART_MAX_GAUGE_ZONES,
+        sizeof(fastchart_gauge_zone));
     int n = 0;
-    zval *z;
-    ZEND_HASH_FOREACH_VAL(ht, z) {
-        if (z) ZVAL_DEREF(z);
-        if (Z_TYPE_P(z) != IS_ARRAY) continue;
-        zval *zf = zend_hash_str_find(Z_ARRVAL_P(z), "from", sizeof("from") - 1);
-        zval *zt = zend_hash_str_find(Z_ARRVAL_P(z), "to",   sizeof("to")   - 1);
-        double f, t;
-        if (!zf || !zt) continue;
-        if (fastchart_zval_to_double(zf, &f) != 0 || !isfinite(f)) continue;
-        if (fastchart_zval_to_double(zt, &t) != 0 || !isfinite(t)) continue;
-        /* Normalize reversed bounds so every renderer branch (notably the
-         * solid-style raw containment test) sees from <= to. */
-        out[n].from = f < t ? f : t;
-        out[n].to   = f < t ? t : f;
-        out[n].color_rgb = fastchart_extract_optional_rgb(Z_ARRVAL_P(z), "color", sizeof("color") - 1);
-        n++;
-    } ZEND_HASH_FOREACH_END();
-
-    if (n == 0) {
-        efree(out);
-    } else {
-        self->zones = out;
-        self->n_zones = n;
+    if (fastchart_parse_gauge_zones(zones,
+            "FastChart\\GaugeChart::setZones()",
+            parsed, FASTCHART_MAX_GAUGE_ZONES, &n) != 0) {
+        efree(parsed);
+        RETURN_THROWS();
     }
+
+    fastchart_gauge_obj *self = Z_FASTCHART_GAUGE_OBJ_P(ZEND_THIS);
+    if (self->zones) efree(self->zones);
+    if (n == 0) {
+        efree(parsed);
+        self->zones = NULL;
+    } else {
+        self->zones = parsed;
+    }
+    self->n_zones = n;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -4631,6 +4659,36 @@ ZEND_METHOD(FastChart_Chart, setWebpMode)
 
 /* --- Chart::svgToPng/Jpeg/Webp() ---------------------------------- */
 
+/* Advance *pos past an XML comment, CDATA section, or processing
+ * instruction opening at s[*pos] == '<'. Shared by both svgTo
+ * scanners: markup-looking bytes inside these regions (a commented
+ * <use>, a "data:image/" example in a comment) never reach the XML
+ * parser as markup, so scanning them only over-blocks legitimate
+ * input. Only skips when the terminator is present; an unterminated
+ * opener falls through and keeps scanning (fail closed). */
+static bool fastchart_svg_skip_ignored(const char *s, size_t n, size_t *pos)
+{
+    size_t p = *pos + 1;
+    const char *end = NULL;
+    size_t end_len = 0;
+    if (p + 3 <= n && s[p] == '!' && s[p + 1] == '-' && s[p + 2] == '-') {
+        end = "-->"; end_len = 3; p += 3;
+    } else if (p + 8 <= n && memcmp(s + p, "![CDATA[", 8) == 0) {
+        end = "]]>"; end_len = 3; p += 8;
+    } else if (p < n && s[p] == '?') {
+        end = "?>"; end_len = 2; p += 1;
+    } else {
+        return false;
+    }
+    for (size_t k = p; k + end_len <= n; k++) {
+        if (memcmp(s + k, end, end_len) == 0) {
+            *pos = k + end_len;
+            return true;
+        }
+    }
+    return false;
+}
+
 /* Scan SVG bytes for "data:image/" (case-insensitive) substring.
  * plutosvg's <image href="data:image/(png|jpg|jpeg);base64,..."> loader
  * decodes the embedded raster directly via libpng/libjpeg, outside
@@ -4646,6 +4704,11 @@ static int fastchart_svg_has_data_image(const char *s, size_t n)
     static const size_t nlen = sizeof(needle) - 1;
     if (n < nlen) return 0;
     for (size_t i = 0; i + nlen <= n; i++) {
+        /* i-- after a skip: the for-step would otherwise jump over a
+         * tag abutting the terminator ("--><use"), evading the block. */
+        if (s[i] == '<' && fastchart_svg_skip_ignored(s, n, &i)) {
+            i--; continue;
+        }
         size_t j = 0;
         while (j < nlen) {
             char a = s[i + j];
@@ -4683,6 +4746,11 @@ static int fastchart_svg_has_use_element(const char *s, size_t n)
     if (n < nlen) return 0;
     for (size_t i = 0; i + nlen <= n; i++) {
         if (s[i] != '<') continue;
+        /* i-- after a skip: the for-step would otherwise jump over a
+         * tag abutting the terminator ("--><use"), evading the block. */
+        if (fastchart_svg_skip_ignored(s, n, &i)) {
+            i--; continue;
+        }
         char u = s[i + 1], s2 = s[i + 2], e = s[i + 3];
         if ((u != 'u' && u != 'U') || (s2 != 's' && s2 != 'S')
             || (e != 'e' && e != 'E')) continue;
@@ -4783,6 +4851,13 @@ static int fastchart_svg_to_pixels(
         zend_value_error(
             "%s() SVG render work exceeds cap "
             "(element count x output pixels too large)",
+            method_name);
+        return -1;
+    }
+    if (rc == -4) {
+        zend_value_error(
+            "%s() SVG rasterization failed after parsing "
+            "(raster backend failure)",
             method_name);
         return -1;
     }
@@ -4959,6 +5034,20 @@ static bool fastchart_href_scheme_allowed(const char *s, size_t len)
     return false;
 }
 
+/* Single shape-name table for getImageMap() and getImageMapAreas().
+ * Unknown shapes fail closed (NULL -> caller skips the entry) in
+ * both paths: Areas used to default unknown to "rect" while the HTML
+ * path skipped, emitting coords one side disagreed with. */
+static const char *fastchart_image_map_shape_name(int shape)
+{
+    switch (shape) {
+        case FASTCHART_IMAGE_MAP_CIRCLE: return "circle";
+        case FASTCHART_IMAGE_MAP_RECT:   return "rect";
+        case FASTCHART_IMAGE_MAP_POLY:   return "poly";
+        default:                         return NULL;
+    }
+}
+
 /* Emit a HTML <map> for any chart's clickable hot-spots. Reads the
  * typed image_map_areas array populated by the renderer; the chart
  * must have been rendered at least once (via renderPng/Jpeg/Webp/Svg
@@ -5024,6 +5113,10 @@ ZEND_METHOD(FastChart_Chart, getImageMap)
          * one -- callers can audit their input. Embedded NUL was
          * already dropped by the setter; href_str is NUL-clean. */
         if (!fastchart_href_scheme_allowed(href_str, href_len)) continue;
+
+        /* Shared shape table decides unknown-shape policy once (skip);
+         * the switch below only formats known shapes. */
+        if (!fastchart_image_map_shape_name(a->shape)) continue;
 
         char buf[512];
         int n_chars = 0;
@@ -5150,13 +5243,8 @@ ZEND_METHOD(FastChart_Chart, getImageMapAreas)
         array_init(&entry);
 
         /* shape as lowercase string (per user choice in Ask) */
-        const char *shape_str;
-        switch (a->shape) {
-            case FASTCHART_IMAGE_MAP_CIRCLE: shape_str = "circle"; break;
-            case FASTCHART_IMAGE_MAP_RECT:   shape_str = "rect";   break;
-            case FASTCHART_IMAGE_MAP_POLY:   shape_str = "poly";   break;
-            default:                         shape_str = "rect";   break;
-        }
+        const char *shape_str = fastchart_image_map_shape_name(a->shape);
+        if (!shape_str) { zval_ptr_dtor(&entry); continue; }
         add_assoc_string(&entry, "shape", (char*)shape_str);
 
         /* coords: always in the form consumers would put into <area> */
@@ -6725,6 +6813,13 @@ static int fastchart_chart_render_to_sink(fastchart_obj *self,
         return -1;
     }
 
+    /* No element_count x pixels budget here by design: the svgTo*()
+     * FC_MAX_RENDER_OPS budget is calibrated for untrusted SVG under
+     * the tighter 4096/16M svgTo caps, and no single budget admits
+     * every legal chart render (bounded data caps x 64M px) while
+     * still bounding worst-case CPU. Near-cap render cost is out of
+     * scope (SECURITY.md); dim/pixel caps are the enforced bound. */
+
     /* Rasterize at physical dims. */
     fastchart_pixels_t pix;
     fastchart_pixels_init(&pix, alloc_w, alloc_h);
@@ -6763,9 +6858,12 @@ static int fastchart_chart_render_to_sink(fastchart_obj *self,
 	fastchart_pixels_release(&pix);
 
 	if (rc != 0 || sink->failed || sink->bytes_written == 0) {
-		zend_throw_error(NULL, "FastChart: encoder produced no output");
+		if (!EG(exception)) {
+			zend_throw_error(NULL, "FastChart: encoder produced no output");
+		}
 		return -1;
 	}
+
 	return 0;
 }
 
@@ -6961,7 +7059,9 @@ static int fastchart_chart_render_to_pdf(fastchart_obj *self,
     } zend_end_try();
 
     if (dispatch_rc != 0 || EG(exception)) {
-        fastchart_target_pdf_finish(&t);
+        /* Abort, not finish: a failed dispatch leaves a partial page
+         * that must not flush into request memory. */
+        fastchart_target_pdf_abort(&t);
         fastchart_target_release(&t);
         smart_str_free(out_buf);
         return -1;
@@ -7195,6 +7295,10 @@ static int fastchart_atomic_check_pinned_parent(
 		basename_length + 1);
 	if (php_check_open_basedir(resolved)) return -1;
 #else
+	/* No pinned-fd introspection here: without a resolved parent path
+	 * there is nothing to check against open_basedir, so fail closed
+	 * while a restriction is active. Without one, nothing to enforce. */
+	if (PG(open_basedir) && *PG(open_basedir)) return -1;
 	(void)file;
 #endif
 	return 0;
@@ -8479,6 +8583,12 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         Z_PARAM_LONG(quality)
     ZEND_PARSE_PARAMETERS_END();
 
+    if (memchr(ZSTR_VAL(path), 0, ZSTR_LEN(path)) != NULL) {
+        zend_value_error("FastChart\\Chart::renderToFile() path "
+            "contains an embedded NUL");
+        RETURN_THROWS();
+    }
+
     /* Vector branch. .svg ignores $quality (no lossy encoder) and
      * goes through a separate write path that emits text bytes. */
     if (fastchart_path_ends_with_svg(ZSTR_VAL(path), ZSTR_LEN(path))) {
@@ -9193,16 +9303,23 @@ ZEND_METHOD(FastChart_BubbleChart, setPoints)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(arr)
     ZEND_PARSE_PARAMETERS_END();
-    fastchart_bubble_obj *self = Z_FASTCHART_BUBBLE_OBJ_P(ZEND_THIS);
     HashTable *ht = Z_ARRVAL_P(arr);
     int n = fastchart_array_count_or_throw(
         ht, FASTCHART_MAX_BUBBLE_POINTS,
         "FastChart\\BubbleChart::setPoints()", "points");
     if (n < 0) RETURN_THROWS();
-    if (self->points) { efree(self->points); self->points = NULL; }
-    self->point_count = 0;
-    if (n == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
-    self->points = ecalloc((size_t)n, sizeof(fastchart_bubble_point));
+    if (n == 0) {
+        fastchart_bubble_obj *empty_self = Z_FASTCHART_BUBBLE_OBJ_P(ZEND_THIS);
+        if (empty_self->points) {
+            efree(empty_self->points);
+            empty_self->points = NULL;
+        }
+        empty_self->point_count = 0;
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
+    }
+    /* Parse into a temp: the negative-size throw below must land
+     * before committed state mutates. */
+    fastchart_bubble_point *parsed = ecalloc((size_t)n, sizeof(*parsed));
     int slot = 0;
     zval *p;
     ZEND_HASH_FOREACH_VAL(ht, p) {
@@ -9218,24 +9335,33 @@ ZEND_METHOD(FastChart_BubbleChart, setPoints)
         if (fastchart_zval_to_double(zx, &dx) != 0) continue;
         if (fastchart_zval_to_double(zy, &dy) != 0) continue;
         if (fastchart_zval_to_double(zs, &ds) != 0) continue;
-        if (ds < 0) ds = 0;
-        self->points[slot].x = dx;
-        self->points[slot].y = dy;
-        self->points[slot].size = ds;
-        self->points[slot].color_rgb = -1;
+        if (ds < 0) {
+            efree(parsed);
+            zend_value_error(
+                "FastChart\\BubbleChart::setPoints() size must be >= 0");
+            RETURN_THROWS();
+        }
+        parsed[slot].x = dx;
+        parsed[slot].y = dy;
+        parsed[slot].size = ds;
+        parsed[slot].color_rgb = -1;
         zval *zc = zend_hash_index_find(t, 3);
         if (zc) ZVAL_DEREF(zc);
         if (zc && Z_TYPE_P(zc) == IS_LONG) {
             zend_long c = Z_LVAL_P(zc);
-            if (c >= 0 && c <= 0xFFFFFF) self->points[slot].color_rgb = (int)c;
+            if (c >= 0 && c <= 0xFFFFFF) parsed[slot].color_rgb = (int)c;
         }
         slot++;
     } ZEND_HASH_FOREACH_END();
-    self->point_count = slot;
+    fastchart_bubble_obj *self = Z_FASTCHART_BUBBLE_OBJ_P(ZEND_THIS);
+    if (self->points) { efree(self->points); self->points = NULL; }
     if (slot == 0) {
-        efree(self->points);
-        self->points = NULL;
+        efree(parsed);
+        self->point_count = 0;
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
     }
+    self->points = parsed;
+    self->point_count = slot;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -10555,8 +10681,11 @@ ZEND_METHOD(FastChart_StockChart, addZigZag)
         Z_PARAM_OPTIONAL
         Z_PARAM_DOUBLE(threshold)
     ZEND_PARSE_PARAMETERS_END();
-    if (!isfinite(threshold) || threshold <= 0.0) threshold = 5.0;
-    if (threshold > 100.0) threshold = 100.0;
+    if (!isfinite(threshold) || threshold <= 0.0 || threshold > 100.0) {
+        zend_value_error(
+            "FastChart\\StockChart::addZigZag() threshold must be in (0, 100]");
+        RETURN_THROWS();
+    }
     fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
     int n = 0;
     fastchart_candle *c = stock_require_candles(self,
@@ -11286,7 +11415,14 @@ ZEND_METHOD(FastChart_BulletChart, setTarget)
 {
     double v;
     ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_DOUBLE(v) ZEND_PARSE_PARAMETERS_END();
-    /* NAN is the documented "clear target" sentinel. */
+    /* NaN is the documented "clear target" sentinel; infinities are
+     * rejected before the assignment below. */
+    if (!isnan(v) && !isfinite(v)) {
+        zend_value_error(
+            "FastChart\\BulletChart::setTarget() requires a finite number "
+            "or NaN to clear");
+        RETURN_THROWS();
+    }
     fastchart_bullet_obj *self = Z_FASTCHART_BULLET_OBJ_P(ZEND_THIS);
     self->bullet_target = v;
     RETURN_ZVAL(ZEND_THIS, 1, 0);

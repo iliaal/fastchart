@@ -17,6 +17,7 @@ jobs:
   validate:
     name: Validate composer.json
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,6 +32,7 @@ jobs:
   stub-drift:
     name: Stub / arginfo drift
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: validate
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -72,6 +74,7 @@ jobs:
   pie-smoke:
     name: PIE install smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: validate
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -101,6 +104,7 @@ jobs:
   missing-codecs:
     name: PHP 8.4 - optional codecs unavailable
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: validate
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -154,6 +158,7 @@ jobs:
   musl-smoke:
     name: musl load smoke (Alpine + clang)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: validate
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -190,6 +195,7 @@ jobs:
   linux:
     name: PHP ${{ matrix.php }} (${{ matrix.cc }}) - Linux ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -355,14 +361,31 @@ jobs:
             exit 1
           fi
 
+      - name: 8.5 E_ALL deprecation gate
+        # The matrix covers 8.1 through 8.5 but nothing fails on a new
+        # E_DEPRECATED: 8.5 promotes several long-deprecated behaviors
+        # (notably imagedestroy() on GdImage — the suite never calls it,
+        # see tests/443). Run the representative sweep in
+        # scripts/deprecation-gate.php under E_ALL on the newest lane
+        # and fail on the first deprecation (CR-T1).
+        if: matrix.php == '8.5'
+        run: |
+          php -d error_reporting=E_ALL -d display_errors=1 \
+            -d extension=$(pwd)/modules/fastchart.so \
+            scripts/deprecation-gate.php
+
   pdf:
     name: PHP ${{ matrix.php }} - PDF backend (--with-pdfio)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     needs: validate
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.4']
+        # Oldest + current + newest: the pdfio C API surface the backend
+        # links against must hold across the supported PHP range, not
+        # just the 8.4 the lane started on (CR-T1).
+        php: ['8.1', '8.4', '8.5']
     env:
       # Keep in sync with the `pinned:` in .upstream/pdfio.yml.
       PDFIO_VERSION: '1.6.4'
@@ -530,6 +553,7 @@ jobs:
   asan:
     name: PHP ${{ matrix.php }} - ASAN
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -696,6 +720,7 @@ jobs:
   macos:
     name: PHP ${{ matrix.php }} - macOS
     runs-on: macos-latest
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

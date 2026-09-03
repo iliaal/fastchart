@@ -238,17 +238,26 @@ static void png_sink_flush(png_structp png)
 	(void)png;
 }
 
+/* Stash for the libpng error text, wired as the error_ptr so the
+ * setjmp recovery below can throw it as the PHP exception instead of
+ * a generic "no output" error. */
+#define FC_PNG_ERR_SZ 256
+
 static void png_sink_error(png_structp png, png_const_charp msg)
 {
-	(void)msg;
+	char *buf = (char *)png_get_error_ptr(png);
+	if (buf && msg) {
+		snprintf(buf, FC_PNG_ERR_SZ, "%s", msg);
+	}
 	longjmp(png_jmpbuf(png), 1);
 }
 
 int fastchart_encode_png_sink(fastchart_sink_t *sink,
 	const fastchart_pixels_t *pix)
 {
+	char png_err[FC_PNG_ERR_SZ] = {0};
 	png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING,
-	                                          NULL, png_sink_error, NULL);
+	                                          png_err, png_sink_error, NULL);
 	if (!png) return -1;
 	png_infop info = png_create_info_struct(png);
 	if (!info) {
@@ -263,6 +272,10 @@ int fastchart_encode_png_sink(fastchart_sink_t *sink,
 
 	if (setjmp(png_jmpbuf(png))) {
 		png_destroy_write_struct(&png, &info);
+		if (!EG(exception)) {
+			zend_throw_error(NULL, "FastChart: libpng error: %s",
+				png_err[0] ? png_err : "write failed");
+		}
 		rc = -1;
 		goto done;
 	}
@@ -498,6 +511,13 @@ int fastchart_encode_jpeg_sink(fastchart_sink_t *sink,
 	}
 	rgb_row = emalloc((size_t)pix->w * 3 + 16);  /* +16 trailing slack for x86 SSE store overrun */
 	for (int y = 0; y < pix->h; y++) {
+		/* Honor max_execution_time: EG() is per-thread, so this is
+		 * ZTS-safe. Bail out to the nearest zend_try (which releases
+		 * the compress struct and rgb_row) so the VM can raise the
+		 * timeout Error instead of running the whole canvas first. */
+		if ((y & 63) == 0 && zend_atomic_bool_load_ex(&EG(timed_out))) {
+			zend_bailout();
+		}
 		const uint8_t *src = pix->rgba + (size_t)y * pix->w * 4;
 		uint8_t       *dst = rgb_row;
 		int x = 0;
@@ -524,11 +544,13 @@ int fastchart_encode_jpeg_sink(fastchart_sink_t *sink,
 				} else if (a == 0) {
 					q[0] = bg_r; q[1] = bg_g; q[2] = bg_b;
 				} else {
-					/* over bg: out = src*a + bg*(255-a)/255 */
+					/* Flatten over bg with round-half-up (+127); the
+					 * truncating /255 darkens mid-alpha edges by up
+					 * to one level per channel. */
 					int ia = 255 - a;
-					q[0] = (uint8_t)((r * a + bg_r * ia) / 255);
-					q[1] = (uint8_t)((g * a + bg_g * ia) / 255);
-					q[2] = (uint8_t)((b * a + bg_b * ia) / 255);
+					q[0] = (uint8_t)((r * a + bg_r * ia + 127) / 255);
+					q[1] = (uint8_t)((g * a + bg_g * ia + 127) / 255);
+					q[2] = (uint8_t)((b * a + bg_b * ia + 127) / 255);
 				}
 			}
 		}

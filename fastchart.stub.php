@@ -724,7 +724,9 @@ abstract class Chart
      * atomically. Honors `open_basedir`. `.pdf` requires the
      * `--with-pdfio` build;
      * without it, writing a `.pdf` path throws "PDF support not
-     * compiled in". `.gif` / `.avif` extensions raise a clear
+     * compiled in". Like `renderPdf()`, the `.pdf` lane omits raster
+     * background images and icons (vector paths and glyph outlines
+     * only). `.gif` / `.avif` extensions raise a clear
      * "dropped in v1.0" Error.
      */
     public function renderToFile(string $path, int $quality = 0): int {}
@@ -774,7 +776,7 @@ abstract class Chart
      * system pdfio install (msweet.org); without it this method throws
      * an `Error` ("PDF support not compiled in"). DPI-invariant like
      * `renderSvg()`. Gradients fall back to a solid fill and raster
-     * background images are omitted in this release.
+     * background images and icons are omitted in this release.
      */
     public function renderPdf(): string {}
 
@@ -787,9 +789,11 @@ abstract class Chart
      * Gradient and clip-path ids inside a fragment are `fcg1`, `fcc1`,
      * … per chart; stitching two fragments that both use gradients or
      * clips into ONE host document therefore collides — chart 2's
-     * `url(#fcg1)` resolves to chart 1's gradient. Pass a distinct
-     * `$idPrefix` per chart (1-16 chars of `[A-Za-z0-9_-]`, starting
-     * with a letter or underscore) to namespace the ids (`a_fcg1`).
+     * `url(#fcg1)` resolves to chart 1's gradient. When stitching N
+     * fragments into one document each MUST use a distinct `$idPrefix`
+     * (1-16 chars of `[A-Za-z0-9_-]`, starting with a letter or
+     * underscore) to namespace the ids (`a_fcg1`); reusing the default
+     * (null) prefix across stitched fragments is unsupported.
      *
      * Available on every concrete `Chart` subclass — same coverage as
      * `renderSvg()`.
@@ -2387,7 +2391,8 @@ abstract class Symbol
      * or XML prolog. Intended for stitching multiple charts /
      * symbols into one caller-managed SVG document. `$idPrefix`
      * matches Chart::drawSvgFragment() for API symmetry and future
-     * symbol-local ids.
+     * symbol-local ids; when stitching N fragments into one document
+     * each MUST use a distinct `$idPrefix`, as with Chart fragments.
      */
     public function drawSvgFragment(?string $idPrefix = null): string {}
 

@@ -17,12 +17,13 @@ for ($x = 0; $x < 4; $x++)
 
 /* Axis font role: setAxisFont(40) must reach the tick labels. In native
  * text mode the emitted font-size is 40 * 4/3 = 53.3 (size is computed
- * from the pt value, so no real font file is needed). Before the fix the
+ * from the pt value; the file is never opened, so any existing regular
+ * file satisfies the setter's existence gate). Before the fix the
  * axis size was ignored and labels stayed at the ~13.3 default. */
 $c = (new FastChart\VectorChart(400, 400))
     ->setVectors($vecs)
     ->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE)
-    ->setAxisFont('/no/such/font.ttf', 40.0);
+    ->setAxisFont(__FILE__, 40.0);
 $svg = $c->renderSvg();
 echo "axis font reaches labels: ", strpos($svg, 'font-size="53.3"') !== false ? "yes" : "no", "\n";
 

@@ -329,7 +329,12 @@ static int fastchart_symbol_render_to_sink(fastchart_symbol_obj *self,
 	} zend_end_try();
 	fastchart_pixels_release(&pix);
 	if (rc != 0 || sink->failed || sink->bytes_written == 0) {
-		zend_throw_error(NULL, "FastChart\\Symbol: encoder produced no output");
+		/* A codec may have thrown its own specific error (e.g. libpng
+		 * via png_get_error_ptr); keep it instead of overwriting. */
+		if (!EG(exception)) {
+			zend_throw_error(NULL,
+				"FastChart\\Symbol: encoder produced no output");
+		}
 		return -1;
 	}
 	return 0;
@@ -487,6 +492,27 @@ ZEND_METHOD(FastChart_Symbol, setData)
             "FastChart\\QrCode::setData() accepts at most %d bytes",
             FASTCHART_MAX_QRCODE_TEXT_BYTES);
         RETURN_THROWS();
+    }
+    /* Setter-time mirror of the encode limits (C128_MAX_INPUT and the
+     * ASCII-only check in fastchart_code128.c) so over-cap input fails
+     * before mutating state instead of at render time. */
+    if (Z_OBJCE_P(ZEND_THIS) == fastchart_code128_ce) {
+        if (ZSTR_LEN(data) > 80) {
+            zend_value_error(
+                "FastChart\\Code128::setData() accepts at most 80 "
+                "characters");
+            RETURN_THROWS();
+        }
+        const char *s = ZSTR_VAL(data);
+        for (size_t i = 0; i < ZSTR_LEN(data); i++) {
+            if ((unsigned char)s[i] > 127) {
+                zend_value_error(
+                    "FastChart\\Code128::setData() byte 0x%02X at position "
+                    "%zu is outside ASCII (0..127)",
+                    (unsigned char)s[i], i);
+                RETURN_THROWS();
+            }
+        }
     }
     fastchart_symbol_obj *self = Z_FASTCHART_SYMBOL_OBJ_P(ZEND_THIS);
     if (self->data) zend_string_release(self->data);
@@ -723,6 +749,12 @@ ZEND_METHOD(FastChart_Symbol, renderToFile)
         Z_PARAM_LONG(quality)
     ZEND_PARSE_PARAMETERS_END();
 
+    if (memchr(ZSTR_VAL(path), 0, ZSTR_LEN(path)) != NULL) {
+        zend_value_error(
+            "FastChart\\Symbol::renderToFile() path must not contain NUL "
+            "bytes");
+        RETURN_THROWS();
+    }
     /* Vector branch. .svg ignores $quality (no lossy encoder) and
      * goes through a separate write path that emits text bytes.
      * Mirrors the Chart-side .svg routing in fastchart.c. */

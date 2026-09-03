@@ -9,14 +9,15 @@ fastchart
  * labels at the raw base font_size, ignoring the size passed to
  * setAxisFont(). The shared numeric-axis drawer resolves both. In native
  * text mode the emitted size is 40 * 4/3 = 53.3 (derived from the pt
- * value, so no real font file is needed). The Y axis is hidden so only
+ * value; the file is never opened, so any existing regular file
+ * satisfies the setter's existence gate). The Y axis is hidden so only
  * the X tick labels remain — otherwise the Y labels (which already honor
  * the axis size) would mask the X-axis bug. */
 
 $svg = (new FastChart\ScatterChart(400, 300))
     ->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE)
     ->setPoints([[0, 0], [5, 10], [9, 3]])
-    ->setAxisFont('/no/such/font.ttf', 40.0)
+    ->setAxisFont(__FILE__, 40.0)
     ->setYAxisVisible(false)
     ->renderSvg();
 

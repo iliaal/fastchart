@@ -10,8 +10,8 @@ inputs into native buffers.
 
 | Version | Supported          |
 |---------|--------------------|
+| 1.7.x   | :white_check_mark: |
 | 1.6.x   | :white_check_mark: |
-| 1.5.x   | :white_check_mark: |
 
 The two most recent minor versions receive security fixes.
 
@@ -72,5 +72,33 @@ Out of scope:
   size/count caps. Bypasses of those caps or overflow paths before the
   cap checks are in scope.
 - Behavior of the `setStrict(false)` default mode for chart types
-  outside Line / Area / Bar. Silent drop of malformed entries is
+  outside Line / Area / Bar / Funnel. Silent drop of malformed entries is
   documented (see AGENTS.md "Public API").
+
+## Resource sizing for operators
+
+Two render inputs allocate native memory that PHP's `memory_limit`
+does not see, so cap-based sizing must happen at the worker level,
+not per request:
+
+- The raster frame: `width x height` pixels x 4 bytes RGBA, allocated
+  by plutovg (malloc-backed). It counts against
+  `fastchart.max_render_pixels` (`PHP_INI_SYSTEM`, default 64M
+  pixels); at the default cap the frame alone is ~256 MiB RSS.
+- Decoded source images (`setBackgroundImage()` / `addIconAt()`):
+  one retained surface per distinct path, bounded by
+  `fastchart.max_image_cache_bytes` (`PHP_INI_SYSTEM`, default 64M
+  bytes). Lowering it costs repeat decodes; it never fails a render.
+
+Per-worker RSS budget rule of thumb:
+
+```
+max_render_pixels x 4 + max_image_cache_bytes + encoder workspace (~1 frame)
+```
+
+Under ZTS (php-fpm `pm.max_children`, FrankenPHP workers) both
+ceilings apply per thread, so multiply the rule of thumb by the
+worker count when sizing the box. Both INI settings are
+`PHP_INI_SYSTEM`: only the operator can lower them, a script cannot
+raise them back up. See README "Raster memory" for the matching
+runtimes notes.
