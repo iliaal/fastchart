@@ -5,7 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.7.2] - 2026-09-03
+## [1.7.3] - 2026-09-04
+
+### Fixed
+
+- Windows builds link again (`S_ISFIFO` has no MSVC spelling; Windows
+  paths can never be FIFOs, so the check reports false there).
+- PHP 8.1 builds again (the timeout poll reads `EG(timed_out)`
+  directly where the 8.2 atomic API does not exist).
+- macOS skip ceiling accounts for the new font-gated glyph replay
+  test; no test changes.
+
 
 ### Fixed
 
@@ -1425,12 +1435,10 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.7.2...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.7.3...HEAD
+[1.7.3]: https://github.com/iliaal/fastchart/releases/tag/1.7.3
 [1.7.2]: https://github.com/iliaal/fastchart/releases/tag/1.7.2
 [1.7.1]: https://github.com/iliaal/fastchart/releases/tag/1.7.1
-[1.7.0]: https://github.com/iliaal/fastchart/releases/tag/1.7.0
-[1.6.0]: https://github.com/iliaal/fastchart/releases/tag/1.6.0
-[1.5.0]: https://github.com/iliaal/fastchart/releases/tag/1.5.0
 [1.4.0]: https://github.com/iliaal/fastchart/releases/tag/1.4.0
 [1.3.0]: https://github.com/iliaal/fastchart/releases/tag/1.3.0
 [1.2.0]: https://github.com/iliaal/fastchart/releases/tag/1.2.0

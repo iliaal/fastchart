@@ -21,7 +21,7 @@
 
 #include "fastchart_graph.h"
 
-#define PHP_FASTCHART_VERSION "1.7.2"
+#define PHP_FASTCHART_VERSION "1.7.3"
 
 extern zend_module_entry fastchart_module_entry;
 #define phpext_fastchart_ptr &fastchart_module_entry
