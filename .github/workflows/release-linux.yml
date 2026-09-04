@@ -129,12 +129,16 @@ jobs:
           PREFIX="$HOME/static-deps"
           mkdir -p "$PREFIX" "$HOME/src" && cd "$HOME/src"
           export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
+          # CDN mirrors (savannah/sourceforge) intermittently 502; retry
+          # instead of failing the release lane. Integrity still enforced
+          # by the per-tarball sha256 check below each fetch.
+          CURL_RETRY="--retry 5 --retry-all-errors --retry-delay 10"
 
           # --- FreeType ---
           # Disable every optional integration (zlib/bz2/png/brotli/
           # harfbuzz) so the static archive links only against libc.
           # PIC mandatory for the .a → .so inclusion downstream.
-          curl -fsSL -o ft.tar.xz "https://download.savannah.gnu.org/releases/freetype/freetype-${FT_VERSION}.tar.xz"
+          curl -fsSL $CURL_RETRY -o ft.tar.xz "https://download.savannah.gnu.org/releases/freetype/freetype-${FT_VERSION}.tar.xz"
           echo "${FT_SHA256}  ft.tar.xz" | sha256sum -c -
           tar xf ft.tar.xz && cd "freetype-${FT_VERSION}"
           ./configure --prefix="$PREFIX" --enable-static --disable-shared \
@@ -144,7 +148,7 @@ jobs:
           cd ..
 
           # --- libpng (linked against system zlib) ---
-          curl -fsSL -o png.tar.gz "https://download.sourceforge.net/libpng/libpng-${PNG_VERSION}.tar.gz"
+          curl -fsSL $CURL_RETRY -o png.tar.gz "https://download.sourceforge.net/libpng/libpng-${PNG_VERSION}.tar.gz"
           echo "${PNG_SHA256}  png.tar.gz" | sha256sum -c -
           tar xf png.tar.gz && cd "libpng-${PNG_VERSION}"
           ./configure --prefix="$PREFIX" --enable-static --disable-shared CFLAGS=-fPIC
@@ -152,7 +156,7 @@ jobs:
           cd ..
 
           # --- libjpeg-turbo (cmake; ENABLE_SHARED=0 produces libjpeg.a) ---
-          curl -fsSL -o jpeg.tar.gz "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/${JPEG_VERSION}/libjpeg-turbo-${JPEG_VERSION}.tar.gz"
+          curl -fsSL $CURL_RETRY -o jpeg.tar.gz "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/${JPEG_VERSION}/libjpeg-turbo-${JPEG_VERSION}.tar.gz"
           echo "${JPEG_SHA256}  jpeg.tar.gz" | sha256sum -c -
           tar xf jpeg.tar.gz && cd "libjpeg-turbo-${JPEG_VERSION}"
           mkdir build && cd build
@@ -164,7 +168,7 @@ jobs:
           cd ../..
 
           # --- libwebp (static, no demux/mux extras) ---
-          curl -fsSL -o webp.tar.gz "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${WEBP_VERSION}.tar.gz"
+          curl -fsSL $CURL_RETRY -o webp.tar.gz "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${WEBP_VERSION}.tar.gz"
           echo "${WEBP_SHA256}  webp.tar.gz" | sha256sum -c -
           tar xf webp.tar.gz && cd "libwebp-${WEBP_VERSION}"
           ./configure --prefix="$PREFIX" --enable-static --disable-shared \
