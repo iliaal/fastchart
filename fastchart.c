@@ -2765,6 +2765,12 @@ ZEND_METHOD(FastChart_Chart, setTheme)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+/* S_ISFIFO has no MSVC spelling and PHP ships no compat for it (cf.
+ * S_ISREG in zend_virtual_cwd.h). Windows paths can never be FIFOs,
+ * so report false there. */
+#ifndef S_ISFIFO
+#define S_ISFIFO(mode) (0)
+#endif
 /* Setter-time font existence gate (CR-013 revised): a path that does
  * not exist is always a user error (typo, wrong directory), so
  * reject it here with a ValueError instead of failing at render.

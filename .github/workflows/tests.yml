@@ -803,12 +803,13 @@ jobs:
           # Legitimate skips mirror Linux (7 PDF + up to 12 font +
           # locale), plus macOS-only environment skips: 14 atomic-output
           # tests are gated to Linux or Windows, and the comma-decimal-
-          # locale test typically skips. Budget 35 matches that set.
+          # locale test typically skips. Budget 36 matches that set plus
+          # tests/447, which needs a system font macOS runners lack.
           SKIPPED=$(grep -oE '^Tests skipped[[:space:]]*:[[:space:]]*[0-9]+' /tmp/test-output.txt | grep -oE '[0-9]+' | head -1)
           SKIPPED=${SKIPPED:-0}
-          echo "Tests skipped: $SKIPPED (ceiling 35)"
-          if [ "$SKIPPED" -gt 35 ]; then
-            echo "::error::Skip count $SKIPPED exceeds ceiling 35 on PHP ${PHP_VERSION} - macOS — a capability likely vanished; tests are hiding in the skip counter"
+          echo "Tests skipped: $SKIPPED (ceiling 36)"
+          if [ "$SKIPPED" -gt 36 ]; then
+            echo "::error::Skip count $SKIPPED exceeds ceiling 36 on PHP ${PHP_VERSION} - macOS — a capability likely vanished; tests are hiding in the skip counter"
             grep -E '^SKIP\b' /tmp/test-output.txt || true
             exit 1
           fi

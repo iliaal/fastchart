@@ -44,6 +44,13 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* EG(timed_out) became zend_atomic_bool in 8.2 (php/php-src#8327);
+ * on 8.1 it is sig_atomic_t, so read it directly. */
+#if PHP_VERSION_ID >= 80200
+#define FC_TIMED_OUT() zend_atomic_bool_load_ex(&EG(timed_out))
+#else
+#define FC_TIMED_OUT() EG(timed_out)
+#endif
 /* Same SIMD gates as fastchart_rasterize.c: x86 uses SSSE3 runtime
  * dispatch via raw CPUID (see the rationale there — __builtin_cpu_supports
  * drags in libgcc's __cpu_model and breaks static/musl/zig dlopen);
@@ -515,7 +522,7 @@ int fastchart_encode_jpeg_sink(fastchart_sink_t *sink,
 		 * ZTS-safe. Bail out to the nearest zend_try (which releases
 		 * the compress struct and rgb_row) so the VM can raise the
 		 * timeout Error instead of running the whole canvas first. */
-		if ((y & 63) == 0 && zend_atomic_bool_load_ex(&EG(timed_out))) {
+		if ((y & 63) == 0 && FC_TIMED_OUT()) {
 			zend_bailout();
 		}
 		const uint8_t *src = pix->rgba + (size_t)y * pix->w * 4;
