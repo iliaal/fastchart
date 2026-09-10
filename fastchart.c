@@ -75,11 +75,7 @@
 #include "plutovg.h"
 #include "plutosvg.h"
 
-/* gen_stub.php on PHP 8.4+ emits the 6-arg ZEND_RAW_FENTRY form (the
- * abstract draw() method on Chart). PHP 8.3's macro takes 4 args, and
- * ZEND_ME there expands into the 4-arg form. Redefine variadically so
- * either call shape works -- the extra trailing args (frameless infos,
- * doc comment) just get dropped on 8.3. */
+/* PHP < 8.4 uses four-argument ZEND_RAW_FENTRY; discard gen_stub's extra arguments. */
 #if PHP_VERSION_ID < 80400
 # undef ZEND_RAW_FENTRY
 # define ZEND_RAW_FENTRY(zend_name, name, arg_info, flags, ...) \
@@ -132,64 +128,21 @@ zend_class_entry *fastchart_barcode_ce;
 zend_class_entry *fastchart_code128_ce;
 zend_class_entry *fastchart_qrcode_ce;
 
-/* Auto-detected default font path. Probed at MINIT, used as the
- * initial font_path on every newly-allocated chart instance. NULL
- * if no probe candidate exists on the system; users must then call
- * setFontPath() before any text-rendering chart method. Non-static
- * so the Symbol family (fastchart_code128.c) can share the same
- * fallback for show_text rendering without duplicating the probe
- * chain.
- *
- * Storage is a plain C-string pointer into FASTCHART_DEFAULT_FONT_
- * CANDIDATES (a static array of string literals, lifetime = program
- * lifetime). Per-chart construction calls zend_string_init() to
- * allocate its own copy. The earlier interned-zend_string design
- * (round 2, master 3a74634) raced on Windows x64 ZTS — symptoms
- * varied but the common factor was refcount manipulation on the
- * shared zend_string across worker processes' TSRM cache state.
- * Each chart owning its own zend_string sidesteps the issue
- * entirely; the per-chart alloc cost is ~32 bytes. */
+/* Shared font fallback points into static string literals. Each chart owns a
+ * zend_string copy to avoid sharing mutable refcounts across ZTS threads. */
 const char *fastchart_default_font_path = NULL;
 
-/* TSRM module globals — the FT_Library + face cache per-thread state
- * declared in php_fastchart.h. Under NTS this is a single globals
- * struct in BSS; under ZTS each thread gets its own copy via TSRM.
- *
- * No PHP_GINIT_FUNCTION: Zend's globals allocator zero-initializes
- * every thread's struct (BSS for NTS, pcalloc for ZTS), and our
- * fields all start at the zero-equivalent of "no state yet" —
- * ft_lib NULL, ft_lib_init_failed 0, face cache slots all zero —
- * which the lazy-init path in fastchart_ft_library / _ft_face
- * treats as "needs init on first use".
- *
- * GSHUTDOWN IS required. MSHUTDOWN runs once per process; under
- * ZTS, every non-last thread's accumulated FT state (FT_Library +
- * cached FT_Face handles) would leak at thread teardown without
- * a per-thread cleanup hook. fastchart_ft_library_shutdown() reads
- * via FASTCHART_G() which during GSHUTDOWN resolves to the globals
- * of the thread being torn down — exactly what we want. Under NTS
- * GSHUTDOWN runs once at effective-MSHUTDOWN time, so the same
- * code covers both build flavours. */
+/* FreeType state is per-thread under ZTS; GSHUTDOWN releases each thread's
+ * cache because MSHUTDOWN runs only once per process. */
 ZEND_DECLARE_MODULE_GLOBALS(fastchart)
 
 static PHP_GINIT_FUNCTION(fastchart)
 {
-    /* Populate the per-thread TSRMLS cache for ZTS-built dynamic
-     * loads. Without this every FASTCHART_G(...) dereference from
-     * this thread reads garbage; Windows TLS treats the resulting
-     * access as a segfault. NTS and statically-linked ZTS both
-     * skip this — STD doesn't apply. */
+    /* Dynamic ZTS loads need this thread's TSRMLS cache before any FASTCHART_G access. */
 #if defined(COMPILE_DL_FASTCHART) && defined(ZTS)
     ZEND_TSRMLS_CACHE_UPDATE();
 #endif
-    /* Explicit zero-init. Under NTS the globals struct lives in BSS
-     * (linker zero-fills); under ZTS it is heap-allocated per thread
-     * and Zend does NOT zero it for us. Valgrind on Linux ZTS
-     * caught reads of uninitialised ft_lib / ft_lib_init_failed /
-     * ft_face_cache[i].path through fastchart_ft_library /
-     * fastchart_ft_face; on Windows ZTS x64 the random heap content
-     * happened to look like a live FT_Library, so FT_Done_Face /
-     * FT_New_Face dereferenced garbage and segfaulted at first use. */
+    /* Zend does not zero ZTS globals; lazy FreeType initialization requires zero state. */
     memset(fastchart_globals, 0, sizeof(*fastchart_globals));
 }
 
@@ -199,17 +152,10 @@ static PHP_GSHUTDOWN_FUNCTION(fastchart)
     fastchart_ft_library_shutdown();
 }
 
-/* PHP_INI_SYSTEM: both ceilings are operator controls against
- * render-driven memory exhaustion; a script must not be able to
- * ini_set() them back up. Values above the built-in 64M cap (or <= 0)
- * clamp to the cap at check time rather than erroring here.
- *
- * max_image_cache_bytes bounds the decoded source-image surfaces a
- * single render retains so repeated icons decode once. Those surfaces
- * are malloc-backed inside plutosvg and invisible to memory_limit, and
- * under ZTS the allowance is per-thread — same reasoning that put the
- * raster frame behind max_render_pixels. Lowering it only costs repeat
- * decodes; it never fails a render. */
+/* Operator-only ceilings: scripts must not raise native-memory budgets.
+ * Values <= 0 or above the built-in caps use those caps. Decoded images
+ * retained by plutosvg are outside memory_limit; a lower cache budget
+ * causes repeat decodes rather than render failures. */
 PHP_INI_BEGIN()
     STD_PHP_INI_ENTRY("fastchart.max_render_pixels", "67108864",
         PHP_INI_SYSTEM, OnUpdateLong, max_render_pixels,
@@ -219,13 +165,8 @@ PHP_INI_BEGIN()
         zend_fastchart_globals, fastchart_globals)
 PHP_INI_END()
 
-/* Per-class object_handlers. Each chart class's std offset varies
- * because per-type fields shift std's position within its struct.
- * Holding a separate handlers struct per class lets the shared
- * Z_FASTCHART_OBJ_P walk back from any zend_object* via
- * obj->handlers->offset to land on the start of the user struct
- * (= the common-initial-sequence base layout) regardless of which
- * subclass we're in. */
+/* std offsets differ by class; each handlers table lets Z_FASTCHART_OBJ_P
+ * recover the common base layout from its zend_object. */
 static zend_object_handlers fastchart_line_handlers;
 static zend_object_handlers fastchart_area_handlers;
 static zend_object_handlers fastchart_bar_handlers;
@@ -353,12 +294,8 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
     b->color_ramp_high = 0xd62728;
     b->date_axis_unit = FASTCHART_DATE_DAY;
     b->date_axis_every = 0;
-    /* Default DPI matches the web-screen convention. Affects raster
-     * metadata and FreeType glyph sizing. setDpi() overrides. */
     b->dpi = 96;
 
-    /* SVG defaults: glyph-to-path on (self-contained, the safer
-     * default), JPEG quality 88 (the eval-validated sweet spot). */
     b->svg_text_mode = FASTCHART_SVG_TEXT_PATHS;
     b->jpeg_quality = 88;
     b->png_compression_level = -1;
@@ -397,7 +334,6 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
     array_init(&b->config);
 }
 
-/* Forward declarations for typed-storage lifecycle helpers below. */
 static void *fc_memdup(const void *src, size_t bytes);
 static char *fc_strdup_opt(const char *src);
 
@@ -445,30 +381,9 @@ static void fastchart_category_labels_free(fastchart_obj *b)
     b->n_category_labels = 0;
 }
 
-/* Custom handlers table for objects that escaped from the abstract
- * sentinel create_object handlers. Two overrides on top of
- * std_object_handlers:
- *
- *   - get_constructor returns NULL so ZEND_NEW takes the
- *     no-constructor branch, which checks EG(exception) and
- *     unwinds the pending throw cleanly. Without this, a userland
- *     subclass with its own __construct trips a debug assertion
- *     and on non-debug builds the inherited fastchart methods cast
- *     via Z_FASTCHART_OBJ_P and scribble heap.
- *
- *   - dtor_obj is a no-op that bypasses zend_objects_destroy_object's
- *     default behaviour of running userland __destruct. A
- *     `class MyChart extends FastChart\Chart {
- *       function __destruct() { $this->setSize(10, 10); }
- *     }` would otherwise see __destruct run on the vanilla
- *     zend_object that escaped from create_object — inherited
- *     native methods inside __destruct then cast via
- *     Z_FASTCHART_OBJ_P and corrupt heap.
- *
- * free_obj (zend_object_std_dtor from std_object_handlers) still
- * runs to clean up the zend_object's slot, so the engine destroys
- * the sentinel object cleanly. Initialized at MINIT, shared by
- * Chart and Symbol abstract sentinels. */
+/* Abstract sentinels lack the native struct prefix. Suppress userland
+ * constructors and destructors so inherited methods cannot access it;
+ * standard free_obj still reclaims the sentinel. Shared by Chart and Symbol. */
 zend_object_handlers fastchart_abstract_object_handlers;
 
 static zend_function *fastchart_abstract_get_constructor(zend_object *obj)
@@ -480,10 +395,7 @@ static zend_function *fastchart_abstract_get_constructor(zend_object *obj)
 static void fastchart_abstract_dtor_obj(zend_object *obj)
 {
     (void)obj;
-    /* Intentionally empty — skipping userland __destruct prevents
-     * inherited native methods from casting a prefix-less vanilla
-     * zend_object via Z_FASTCHART_OBJ_P. The engine still calls
-     * free_obj (std) afterwards to reclaim the slot. */
+    /* Userland destructors must not call native methods on a prefix-less sentinel. */
 }
 
 zend_object *fastchart_chart_abstract_create_object(zend_class_entry *ce)
@@ -492,9 +404,7 @@ zend_object *fastchart_chart_abstract_create_object(zend_class_entry *ce)
         "FastChart\\%s is internal and cannot be instantiated or subclassed; "
         "use a concrete class such as FastChart\\LineChart.",
         ZSTR_VAL(ce->name));
-    /* Return a vanilla zend_object whose get_constructor returns
-     * NULL — the engine will see the pending exception and unwind
-     * without trying to call any inherited userland constructor. */
+    /* A NULL constructor lets ZEND_NEW unwind the pending exception. */
     zend_object *obj = zend_objects_new(ce);
     obj->handlers = &fastchart_abstract_object_handlers;
     return obj;
@@ -623,12 +533,8 @@ void fastchart_push_image_map_poly(fastchart_obj *b, int idx,
     F(value_format) F(bg_image_path) F(y_axis_label_format) \
     F(x_axis_label_format) F(y_axis_title2)
 
-/* Recursive deep copy of a zend_array. zend_array_dup() copies the
- * outer hash but only addrefs its entries — nested arrays remain
- * shared, so a clone whose config already contains a list (e.g.
- * "annotations") aborts the second mutation with refcount > 1.
- * Walk the dup, replace each IS_ARRAY entry with its own deep copy.
- * Strings and other immutable refcounted scalars are fine to share. */
+/* zend_array_dup shares nested arrays; mutating one would fail Zend's
+ * refcount assertion. Deep-copy arrays while sharing immutable strings. */
 static zend_array *fc_zend_array_deep_dup(zend_array *src)
 {
     zend_array *dst = zend_array_dup(src);
@@ -672,8 +578,6 @@ static void fastchart_base_addref_owned(fastchart_obj *b)
 #define FC_ADDREF(field) if (b->field) zend_string_addref(b->field);
     FASTCHART_BASE_OWNED_STR(FC_ADDREF)
 #undef FC_ADDREF
-    /* Deep-copy the category-label string array so the clone owns
-     * its own slots. */
     if (b->category_labels && b->n_category_labels > 0) {
         char **copy = ecalloc((size_t)b->n_category_labels, sizeof(char *));
         for (int i = 0; i < b->n_category_labels; i++) {
@@ -724,37 +628,21 @@ static void fastchart_base_addref_owned(fastchart_obj *b)
         }
         b->image_map_entries = copy;
     }
-    /* image_map_areas is a render artifact; clones start empty. The
-     * next draw on the clone repopulates with fresh hot-spots. */
+    /* Clones discard render artifacts; the next draw rebuilds them. */
 	b->image_map_areas = NULL;
 	b->n_image_map_areas = 0;
 	b->image_map_areas_cap = 0;
-	/* The font/shadow resolution caches are per-render artifacts too, and
-	 * font_cache_path[] borrows pointers into the source's font_path
-	 * zend_string buffer. A clone that later drops its own ref (setFontPath)
-	 * and outlives the source would otherwise read a freed buffer. Reset
-	 * like image_map_areas so the clone re-resolves on its next draw. */
+	/* Cached font paths borrow source string buffers; reset them so a clone
+	 * cannot outlive the source and read freed storage. */
 	b->font_cache_valid = false;
 	b->shadow_color_valid = false;
 	for (int i = 0; i < 4; i++) b->font_cache_path[i] = NULL;
-    /* config is a real PHP HashTable wrapped in a zval; the lifecycle
-     * macro's memcpy aliased the HashTable pointer between src and
-     * dst. Setters that mutate config (addTextAnnotation,
-     * addOverlaySeries, addHorizontalLine, addVerticalLine, ...) call
-     * zend_hash_str_update / add_next_index_zval, both of which Zend
-     * rejects with E_CORE_ERROR (SIGABRT, exit 134) when the target
-     * array's refcount > 1. zend_array_dup() only separates the top
-     * level — inner arrays like config['annotations'] are still
-     * shared between src and dst, so a clone of a chart that already
-     * had an annotation re-aborts on the second add. Recursive deep
-     * copy gives dst full ownership of every nested array. Strings
-     * stay shared via refcount; they're immutable and never the
-     * target of a mutating hash op. */
+    /* The lifecycle memcpy aliases config; recursively separate mutable arrays. */
     if (Z_TYPE(b->config) == IS_ARRAY) {
         zend_array *dup = fc_zend_array_deep_dup(Z_ARRVAL(b->config));
         ZVAL_ARR(&b->config, dup);
     } else {
-        Z_TRY_ADDREF(b->config);  /* unreachable today; defensive */
+        Z_TRY_ADDREF(b->config);
     }
 }
 
@@ -922,11 +810,7 @@ static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int 
     out->point_colors = NULL;
     if (n == 0) return 0;
 
-    /* Data arrays iterate in hash order with a position counter, NOT by
-     * probing packed indexes 0..n-1: an array with holes (array_filter,
-     * unset) has no index i for some i < n, and the probe read that as
-     * an intentional null gap — silently corrupting the series (and
-     * dropping the tail values) even under strict mode. */
+    /* Iterate in hash order: sparse keys are not intentional gaps in the series. */
     if (flags & FC_SERIES_F_FLOATING) {
         out->values = emalloc((size_t)n * sizeof(double));
         out->values_max = emalloc((size_t)n * sizeof(double));
@@ -981,9 +865,7 @@ static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int 
                 out->values[i] = d;
             } else if (flags & FC_SERIES_F_STRICT) {
                 zend_type_error("FastChart strict mode: series data must be numeric or null");
-                /* Release the partial state we already allocated so
-                 * the caller doesn't have to worry about half-built
-                 * slots. label was emalloc'd in dup_label above. */
+                /* Release partial allocations before returning a parse failure. */
                 if (out->label) { efree(out->label); out->label = NULL; }
                 efree(out->values);
                 out->values = NULL;
@@ -1050,8 +932,7 @@ static int fastchart_collect_series_into(zval *arr, fastchart_series_t *out,
         zval *series_zv;
         ZEND_HASH_FOREACH_VAL(ht, series_zv) {
             if (*out_n >= FASTCHART_MAX_SERIES) {
-                /* Mirrors the per-series points cap: silently dropping
-                 * series 9+ hid data with no signal to the caller. */
+                /* Reject excess series rather than silently dropping data. */
                 zend_value_error("FastChart accepts at most %d series; got %d",
                                  FASTCHART_MAX_SERIES, n);
                 return -1;
@@ -1079,7 +960,6 @@ static int fastchart_collect_series_into(zval *arr, fastchart_series_t *out,
     return 0;
 }
 
-/* Per-class init / release / clone-addref helpers. */
 static void fastchart_line_init_extras(fastchart_line_obj *o)
 {
     fastchart_series_array_init(o->series, FASTCHART_MAX_SERIES);
@@ -1153,7 +1033,6 @@ static void fastchart_bar_addref_extras(fastchart_bar_obj *o)
     fastchart_series_array_addref(o->series, o->n_series);
 }
 
-/* dup/release helpers shared across the typed-storage classes. */
 static void *fc_memdup(const void *src, size_t bytes)
 {
     void *copy = emalloc(bytes);
@@ -1373,10 +1252,7 @@ static void fastchart_stock_release_extras(fastchart_stock_obj *o)
     o->overlay_count = 0;
     o->sma_count = 0;
 }
-/* Clone deep-copies the malloc'd candle / volume_color / indicator-
- * pane storage. After fastchart_DEFINE_LIFECYCLE's memcpy of the POD
- * region, dst points at src's allocations; this function replaces
- * those with fresh copies so source and clone don't alias. */
+/* The lifecycle memcpy aliases candle storage; replace it with owned copies. */
 static void fastchart_stock_addref_extras(fastchart_stock_obj *o)
 {
     if (o->candles && o->candle_count > 0) {
@@ -1822,13 +1698,10 @@ static void fastchart_heatmap_init_extras(fastchart_heatmap_obj *o)
     o->grid.cols = 0;
     o->color_low_rgb = -1;
     o->color_high_rgb = -1;
-    /* show_values + value_format are base fields; the base init
-     * already sets them to false / NULL. */
 }
 static void fastchart_heatmap_release_extras(fastchart_heatmap_obj *o)
 {
     if (o->grid.cells) { efree(o->grid.cells); o->grid.cells = NULL; }
-    /* base release frees value_format. */
     o->grid.rows = 0;
     o->grid.cols = 0;
 }
@@ -1840,7 +1713,6 @@ static void fastchart_heatmap_addref_extras(fastchart_heatmap_obj *o)
     } else {
         o->grid.cells = NULL;
     }
-    /* base addref bumps value_format refcount. */
 }
 
 static void fastchart_linear_meter_init_extras(fastchart_linear_meter_obj *o)
@@ -2405,7 +2277,6 @@ static void fastchart_pictogram_init_extras(fastchart_pictogram_obj *o)
     o->fill_color_rgb = -1;
     o->empty_color_rgb = -1;
 }
-/* Pictogram owns no heap allocations; clone is a plain struct copy. */
 static void fastchart_pictogram_release_extras(fastchart_pictogram_obj *o) { (void)o; }
 static void fastchart_pictogram_addref_extras(fastchart_pictogram_obj *o) { (void)o; }
 
@@ -2607,23 +2478,8 @@ FASTCHART_DEFINE_LIFECYCLE(serpentine, fastchart_serpentine_obj)
 FASTCHART_DEFINE_LIFECYCLE(dendrogram, fastchart_dendrogram_obj)
 FASTCHART_DEFINE_LIFECYCLE(partition, fastchart_partition_obj)
 
-/* Common locations for a sans-serif TTF that ships by default on the
- * platforms PIE supports. Probed in order; the first existing path
- * becomes the auto-detected default. setFontPath() overrides per
- * instance. The list is intentionally short -- adding a path here is
- * an ABI-stable choice the extension makes about which install layout
- * to assume.
- *
- *   Debian / Ubuntu:    /usr/share/fonts/truetype/dejavu/...
- *   Fedora / RHEL:      /usr/share/fonts/dejavu-sans-fonts/...
- *   Arch:               /usr/share/fonts/TTF/...
- *   Alpine:             /usr/share/fonts/TTF/...
- *   macOS:              /Library/Fonts/... (system) or /System/Library/Fonts/...
- *   Windows:            C:\Windows\Fonts\arial.ttf (always present
- *                       since Windows 95) — every text-rendering
- *                       method silently no-ops when font_path is
- *                       NULL, so without a Windows entry every
- *                       chart renders blank text. */
+/* Probe common sans-serif font locations in order; setFontPath overrides
+ * the first available candidate per instance. */
 static const char *FASTCHART_DEFAULT_FONT_CANDIDATES[] = {
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
@@ -2641,8 +2497,6 @@ static const char *fastchart_probe_default_font(void)
     struct stat st;
     for (int i = 0; FASTCHART_DEFAULT_FONT_CANDIDATES[i]; i++) {
         if (stat(FASTCHART_DEFAULT_FONT_CANDIDATES[i], &st) == 0 && S_ISREG(st.st_mode)) {
-            /* The candidate is a string literal; the pointer is
-             * valid for the program lifetime. No allocation needed. */
             return FASTCHART_DEFAULT_FONT_CANDIDATES[i];
         }
     }
@@ -2660,10 +2514,6 @@ ZEND_METHOD(FastChart_Chart, __construct)
         Z_PARAM_LONG_OR_NULL(height, height_is_null)
     ZEND_PARSE_PARAMETERS_END();
 
-    /* If only one of width/height is given, treat as user error
-     * rather than auto-defaulting one and not the other -- better
-     * to surface the asymmetry than silently produce a chart of
-     * unexpected dimensions. */
     if (width_is_null != height_is_null) {
         zend_value_error("FastChart\\Chart::__construct() requires both width and height, or neither");
         RETURN_THROWS();
@@ -2771,15 +2621,8 @@ ZEND_METHOD(FastChart_Chart, setTheme)
 #ifndef S_ISFIFO
 #define S_ISFIFO(mode) (0)
 #endif
-/* Setter-time font existence gate (CR-013 revised): a path that does
- * not exist is always a user error (typo, wrong directory), so
- * reject it here with a ValueError instead of failing at render.
- * Only regular files and FIFOs pass: directories and other special
- * files can never be fonts. Stat-only, never open/read, so a
- * writerless FIFO (tests/404) stays safe. A file that exists now
- * but vanishes before the draw (eviction races, tests/418) still
- * degrades silently at draw time. `where` names the calling method.
- * Returns 0 on success, -1 with a ValueError thrown on failure. */
+/* Stat without opening so a writerless FIFO cannot block the setter.
+ * Accept regular files and FIFOs; return -1 with ValueError otherwise. */
 static int fastchart_validate_font_path(zend_string *path,
                                         const char *where)
 {
@@ -2920,12 +2763,7 @@ ZEND_METHOD(FastChart_Chart, setCategoryLabels)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* Validate that `var_` is a 24-bit RGB int (0..0xFFFFFF), throwing a
- * ValueError that names `method_str_` if not. The _OR_DEFAULT variant
- * additionally accepts -1 as the "use the theme default" sentinel.
- * `method_str_` is the qualified method name as a string literal so
- * message wording stays consistent across ~13 setters that previously
- * each spelled the same range and boundary slightly differently. */
+/* Validate 24-bit RGB; _OR_DEFAULT also accepts the theme sentinel -1. */
 #define FASTCHART_VALIDATE_RGB(var_, method_str_) do { \
     if ((var_) < 0 || (var_) > 0xFFFFFF) { \
         zend_value_error(method_str_ "() expects a 24-bit RGB int (0..0xFFFFFF)"); \
@@ -2960,8 +2798,6 @@ ZEND_METHOD(class_, setColorRamp) \
     RETURN_ZVAL(ZEND_THIS, 1, 0); \
 }
 
-/* Generate a setGrid() method for chart types that store a
- * fastchart_grid on their per-type struct. */
 #define FASTCHART_GRID_SETTER(class_, obj_type_, obj_cast_) \
 ZEND_METHOD(class_, setGrid) \
 { \
@@ -2979,8 +2815,6 @@ ZEND_METHOD(class_, setGrid) \
     RETURN_ZVAL(ZEND_THIS, 1, 0); \
 }
 
-/* Generate a setRange() method for gauge-type charts that store
- * min/max on their per-type struct. */
 #define FASTCHART_RANGE_SETTER(class_, obj_type_, obj_cast_, min_field_, max_field_) \
 ZEND_METHOD(class_, setRange) \
 { \
@@ -3104,9 +2938,6 @@ ZEND_METHOD(FastChart_Chart, setYAxisScale)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* Field-assignment bool setter: stash a bool param into a struct
- * field. Defined here so every bool setter in this file (including
- * the early setStrict) can use it. */
 #define FASTCHART_BOOL_SETTER(class_, name_, field_) \
     ZEND_METHOD(class_, name_) \
     { \
@@ -3135,13 +2966,8 @@ ZEND_METHOD(FastChart_Chart, setYAxisScale)
 
 FASTCHART_BOOL_SETTER(FastChart_Chart, setStrict, strict)
 
-/* Reject non-finite (NaN, Inf, -Inf) doubles at the setter boundary.
- * Several public setters bound their value with comparison operators
- * (`x >= lo && x <= hi`, `x < 0`, `min >= max`) which all return false
- * for NaN, leaving the value to ride through to (int)cast — undefined
- * behavior under C / Annex F. fastchart_zval_to_double already gates
- * doubles arriving via array iteration; this helper covers the
- * Z_PARAM_DOUBLE entry path. */
+/* NaN bypasses ordinary range comparisons and makes later int casts undefined.
+ * Array inputs use fastchart_zval_to_double; this covers Z_PARAM_DOUBLE. */
 static int fastchart_reject_non_finite(double v, const char *where)
 {
     if (!isfinite(v)) {
@@ -3264,10 +3090,7 @@ static int fastchart_parse_gauge_zones(
         if (!zfrom || !zto) continue;
         if (fastchart_zval_to_double(zfrom, &from) != 0 || !isfinite(from)) continue;
         if (fastchart_zval_to_double(zto, &to) != 0 || !isfinite(to)) continue;
-        /* Single-site bound call: reversed bounds normalize (swap) so
-         * every renderer sees from <= to, and from == to stays a
-         * zero-width zone rather than being dropped -- one decision
-         * for all three callers instead of per-setter drift. */
+        /* Normalize reversed bounds; equal endpoints remain a zero-width zone. */
         if (to < from) { double tmp = from; from = to; to = tmp; }
         out[idx].from = from;
         out[idx].to = to;
@@ -3605,16 +3428,11 @@ static int fastchart_validate_double_format(const zend_string *fmt, const char *
             i++;
             continue;
         }
-        i++;  /* skip the % */
-        /* Skip flags */
+        i++;
         while (i < len && (p[i] == '-' || p[i] == '+' || p[i] == ' ' ||
                             p[i] == '#' || p[i] == '0' || p[i] == '\'')) i++;
-        /* Cap width and precision at three digits (max 999). libc's
-         * printf(3) honors the width by padding the output buffer; a
-         * format like "%500000000f" forces snprintf into a multi-second
-         * loop that translates straight into request CPU when chart
-         * labels render. Three digits is more than enough for any real
-         * label (max chart canvas is ~16K px wide). */
+        /* Limit width and precision to 999: snprintf still spends CPU padding
+         * truncated output, so huge widths can stall label rendering. */
         int wdigits = 0;
         while (i < len && p[i] >= '0' && p[i] <= '9') {
             if (++wdigits > 3) {
@@ -3641,7 +3459,6 @@ static int fastchart_validate_double_format(const zend_string *fmt, const char *
             zend_value_error("FastChart\\Chart::%s() length modifiers are not allowed in format strings", where);
             return -1;
         }
-        /* Conversion specifier must be one of the double family. */
         if (i >= len) {
             zend_value_error("FastChart\\Chart::%s() format ends with an incomplete conversion", where);
             return -1;
@@ -4005,11 +3822,8 @@ ZEND_METHOD(FastChart_BarChart, setFloating)
         Z_PARAM_BOOL(enable)
     ZEND_PARSE_PARAMETERS_END();
     fastchart_bar_obj *self = Z_FASTCHART_BAR_OBJ_P(ZEND_THIS);
-    /* Floating mode changes how setSeries() parses each row ([min,max]
-     * pairs vs scalars), so it must be chosen before the data is parsed.
-     * Enabling it after setSeries() leaves the already-parsed series
-     * without its max column and fails at draw() with a misleading "no
-     * numeric values" error; reject early with an actionable message. */
+    /* Floating mode determines how setSeries parses rows; parsed scalar data
+     * cannot supply the required [min,max] pairs. */
     if (enable && !self->bar_floating && self->n_series > 0) {
         zend_value_error("FastChart\\BarChart::setFloating(true) must be called before setSeries()");
         RETURN_THROWS();
@@ -4379,7 +4193,6 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints)
 	/* Drop references owned by the previous render artifact before
      * replacing the parsed point references below. */
     fastchart_reset_image_map_areas((fastchart_obj *)self);
-    /* Drop any existing parsed state. */
     if (self->points) {
         for (int i = 0; i < self->point_count; i++) {
             if (self->points[i].href) zend_string_release(self->points[i].href);
@@ -4468,7 +4281,6 @@ ZEND_METHOD(FastChart_RadarChart, setMaxValue)
 }
 
 FASTCHART_BOOL_SETTER_AS(FastChart_RadarChart, setFilled, Z_FASTCHART_RADAR_OBJ_P, radar_filled)
-
 
 ZEND_METHOD(FastChart_SurfaceChart, setShowCellValues)
 {
@@ -4585,9 +4397,6 @@ ZEND_METHOD(FastChart_Chart, setDpi)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(dpi)
     ZEND_PARSE_PARAMETERS_END();
-    /* Cap range at sane bounds. Anything outside [24, 1200] is either
-     * a bug or a typo (24 dpi = e-paper teletypes; 1200 dpi = pro
-     * print). */
     if (dpi < 24 || dpi > 1200) {
         zend_value_error("FastChart\\Chart::setDpi() must be in [24, 1200]");
         RETURN_THROWS();
@@ -4695,15 +4504,8 @@ static bool fastchart_svg_skip_ignored(const char *s, size_t n, size_t *pos)
     return false;
 }
 
-/* Scan SVG bytes for "data:image/" (case-insensitive) substring.
- * plutosvg's <image href="data:image/(png|jpg|jpeg);base64,..."> loader
- * decodes the embedded raster directly via libpng/libjpeg, outside
- * fastchart's source-image dim caps. A 10x10 root SVG with a 4097x4097
- * embedded PNG would otherwise allocate ~67 MB inside plutosvg before
- * our cap check sees the actual rasterized dims. Reject any SVG that
- * contains the substring — callers who legitimately need embedded
- * raster can decode their images separately.
- * Returns 1 if found, 0 otherwise. Linear scan; no allocation. */
+/* Public SVG data images decode inside plutosvg, bypassing source-image
+ * dimension caps. Reject data:image/ references before parsing. */
 static int fastchart_svg_has_data_image(const char *s, size_t n)
 {
     static const char needle[] = "data:image/";
@@ -4728,24 +4530,9 @@ static int fastchart_svg_has_data_image(const char *s, size_t n)
     return 0;
 }
 
-/* Scan SVG bytes for a "<use" tag (case-insensitive). plutosvg's
- * <use href="#id"> at vendor/plutosvg/source/plutosvg.c:2121
- * renders the referenced subtree inline; its cycle detector
- * compares element pointers along the ancestor chain but does NOT
- * count fan-out. A 1.4 KB SVG defining 8 nested <g> levels where
- * each contains 10x <use> of the next triggers ~10^8 shape renders
- * and ~14 s of render time on commodity hardware — a billion-laughs
- * equivalent that's well-shaped to evade any naive source-count
- * cap (only 71 source <use> tags).
- *
- * Reject ANY <use> occurrence at the public SVG-conversion entry
- * point. Internally generated chart SVG bypasses this validator and
- * emits only flat, bounded <use> nodes for repeated icons; accepting
- * caller-controlled reference graphs here would reintroduce fan-out.
- *
- * Returns 1 if found, 0 otherwise. Tag-name boundary check
- * (whitespace, '>', '/') keeps the pattern narrow so <userdata>
- * and similar are not flagged. */
+/* Nested <use> fan-out can expand exponentially despite a source-element cap.
+ * Reject it in public SVG; internally generated icon references are flat
+ * and bounded. Check tag boundaries so names such as <userdata> pass. */
 static int fastchart_svg_has_use_element(const char *s, size_t n)
 {
     static const size_t nlen = 4;  /* "<use" */
@@ -4798,12 +4585,7 @@ static int fastchart_svg_to_pixels(
         return -1;
     }
 
-    /* <use> fan-out is a billion-laughs vector via plutosvg
-     * (see fastchart_svg_has_use_element comment). A source count
-     * cap is not enough because exponential expansion lives in
-     * level-nesting, not source-tag count — 71 source <use> tags
-     * can trigger 10^8 renders. Internally generated icon references
-     * bypass this public-input validator and have bounded flat fan-out. */
+    /* Public <use> graphs bypass source-count bounds through exponential fan-out. */
     if (fastchart_svg_has_use_element(ZSTR_VAL(svg), ZSTR_LEN(svg))) {
         zend_value_error(
             "%s() SVG must not contain <use> elements "
@@ -4957,7 +4739,6 @@ ZEND_METHOD(FastChart_Chart, svgToJpeg)
     for (size_t i = 0; i < pixels; i++) {
         uint8_t a = p[3];
         if (a == 255) {
-            /* already opaque, leave RGB alone */
         } else if (a == 0) {
             p[0] = br; p[1] = bg; p[2] = bb;
         } else {
@@ -5040,10 +4821,7 @@ static bool fastchart_href_scheme_allowed(const char *s, size_t len)
     return false;
 }
 
-/* Single shape-name table for getImageMap() and getImageMapAreas().
- * Unknown shapes fail closed (NULL -> caller skips the entry) in
- * both paths: Areas used to default unknown to "rect" while the HTML
- * path skipped, emitting coords one side disagreed with. */
+/* Share unknown-shape rejection between HTML and structured image maps. */
 static const char *fastchart_image_map_shape_name(int shape)
 {
     switch (shape) {
@@ -5062,8 +4840,6 @@ static const char *fastchart_image_map_shape_name(int shape)
  * field each renderer set. */
 ZEND_METHOD(FastChart_Chart, getImageMap)
 {
-    /* Initialize so the ZEND_NUM_ARGS() == 0 path doesn't read uninit
-     * memory under the `name &&` guard below. */
     zend_string *name = NULL;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
@@ -5077,12 +4853,8 @@ ZEND_METHOD(FastChart_Chart, getImageMap)
 
     smart_str out = {0};
 
-    /* Map name: HTML5 imagemap names allow letters, digits, '-' and '_'.
-     * Anything else gets stripped to prevent attribute-injection
-     * through a crafted name. If sanitization leaves zero characters
-     * (e.g. caller passed "!@#"), fall back to the default so we
-     * never emit name="" — which would silently break any
-     * <img usemap="#..."> referencing the chart. */
+    /* Restrict map names to an attribute-safe alphabet; empty results need
+     * a default name for usemap references. */
     smart_str_appends(&out, "<map name=\"");
     const char *map_name = "fastchart";
     size_t map_name_len = sizeof("fastchart") - 1;
@@ -5090,8 +4862,6 @@ ZEND_METHOD(FastChart_Chart, getImageMap)
         map_name = ZSTR_VAL(name);
         map_name_len = ZSTR_LEN(name);
     }
-    /* out.s is non-NULL here because the smart_str_appends above
-     * already allocated the buffer for the opening "<map name=\"". */
     size_t before = ZSTR_LEN(out.s);
     for (size_t i = 0; i < map_name_len; i++) {
         char c = map_name[i];
@@ -5143,13 +4913,8 @@ ZEND_METHOD(FastChart_Chart, getImageMap)
                 a->coords[1] + a->coords[3]);
             break;
         case FASTCHART_IMAGE_MAP_POLY: {
-            /* snprintf returns the would-have-been-written length, not
-             * actually-written. Without bounding the return value, a
-             * truncated call pushes `written` past sizeof(buf) and the
-             * next iteration computes buf + written (OOB) and
-             * sizeof(buf) - written (size_t underflow). The truncation
-             * is unreachable today (MAX_COORDS=32, 7-digit ints) but
-             * the pattern is wrong shape — clamp every step. */
+            /* snprintf returns the required length, which may exceed the buffer;
+             * bound it before advancing the pointer or subtracting capacity. */
             int written = snprintf(buf, sizeof(buf), "<area shape=\"poly\" coords=\"");
             if (written < 0 || (size_t)written >= sizeof(buf)) {
                 continue;
@@ -5248,12 +5013,10 @@ ZEND_METHOD(FastChart_Chart, getImageMapAreas)
         zval entry;
         array_init(&entry);
 
-        /* shape as lowercase string (per user choice in Ask) */
         const char *shape_str = fastchart_image_map_shape_name(a->shape);
         if (!shape_str) { zval_ptr_dtor(&entry); continue; }
         add_assoc_string(&entry, "shape", (char*)shape_str);
 
-        /* coords: always in the form consumers would put into <area> */
         zval coords_arr;
         array_init(&coords_arr);
         if (a->shape == FASTCHART_IMAGE_MAP_RECT) {
@@ -5404,13 +5167,8 @@ ZEND_METHOD(FastChart_PolarChart, addVectors)
         RETURN_THROWS();
     }
 
-    /* Two-pass parse: validate shape + types on the first pass into a
-     * temporary buffer; only commit to self->vectors after every
-     * entry passes. Without this split, a malformed entry mid-loop
-     * leaves self->n_vectors advanced for the partial prefix —
-     * subsequent renders draw bogus arrows and a retry duplicates
-     * the prefix on top of the partial state. Matches the atomic
-     * shape of addMovingAverage / addIndicatorPane. */
+    /* Parse before committing so malformed input cannot leave a partial prefix
+     * or duplicate vectors on retry. */
     fastchart_polar_vector *staging = emalloc(
         (size_t)incoming * sizeof(fastchart_polar_vector));
     int staged = 0;
@@ -5775,8 +5533,6 @@ ZEND_METHOD(FastChart_StockChart, setOhlcv)
 
 	fastchart_sort_candles_by_timestamp(parsed, n);
 
-    /* Right-size to n (avoids over-allocation when input had non-numeric
-     * rows that got skipped). */
     if (n < n_input) {
         fastchart_candle *trimmed = emalloc((size_t)n * sizeof(fastchart_candle));
         memcpy(trimmed, parsed, (size_t)n * sizeof(fastchart_candle));
@@ -5797,18 +5553,8 @@ ZEND_METHOD(FastChart_StockChart, setOhlcv)
 	self->close_stats_cache_period = 0;
     self->any_volume = any_volume;
 
-    /* Price overlays (Bollinger Bands, Parabolic SAR) carry a/b/c
-     * arrays sized parallel to the candle array at the time of the
-     * addBollingerBands() / addParabolicSAR() call. Replacing the
-     * candle buffer here invalidates those arrays — `ov->n` still
-     * reflects the OLD candle count, so the overlay render loop
-     * (fastchart_stock.c, Bollinger and PSAR branches) would index
-     * candles[i] for i up to the OLD count, reading past the end of
-     * the new (possibly shorter) candle buffer. Mirrors the
-     * destructor at fastchart_stock_release_extras: free the parallel
-     * arrays, zero the per-overlay state, reset overlay_count. The
-     * caller must re-call addBollingerBands / addParabolicSAR to
-     * recompute against the new candles. */
+    /* Price overlays are sized to the old candle array. Drop them to avoid
+     * stale values and out-of-bounds reads; callers must recompute them. */
     for (int k = 0; k < self->overlay_count; k++) {
         if (self->overlays[k].a) efree(self->overlays[k].a);
         if (self->overlays[k].b) efree(self->overlays[k].b);
@@ -5820,13 +5566,7 @@ ZEND_METHOD(FastChart_StockChart, setOhlcv)
     }
     self->overlay_count = 0;
 
-    /* Native indicator panes (RSI, MACD, ATR, ...) are computed
-     * eagerly from the candle buffer at add() time and sized to the
-     * old candle count, so replacing the candles leaves them stale
-     * (values from the prior data drawn against the new timestamps).
-     * Drop them exactly as the overlays above; the caller re-adds
-     * against the new candles. Panes fed by addIndicatorPane() carry
-     * caller-supplied values (candle_derived == false) and are kept. */
+    /* Drop candle-derived panes with the old candles; retain caller-supplied panes. */
     {
         int kept = 0;
         for (int k = 0; k < self->indicator_pane_count; k++) {
@@ -6166,7 +5906,6 @@ ZEND_METHOD(FastChart_PieChart, setRings)
         } ZEND_HASH_FOREACH_END();
     }
 
-    /* Drop any previously-parsed rings. */
     for (int r = 0; r < self->ring_count; r++) {
         fastchart_pie_slice *rs = self->rings[r].slices;
         if (rs) {
@@ -6385,11 +6124,7 @@ ZEND_METHOD(FastChart_LineChart, setSeries)
         Z_PARAM_ARRAY(arr)
     ZEND_PARSE_PARAMETERS_END();
     fastchart_line_obj *self = Z_FASTCHART_LINE_OBJ_P(ZEND_THIS);
-    /* Parse into a stack-local temp so partial-failure (e.g. strict
-     * mode rejecting series N+1) doesn't leave self with a mangled
-     * prefix of the new data. On failure we release temp; on success
-     * we release the old self->series then memcpy temp in and zero
-     * temp so its destructor is a no-op. */
+    /* Parse into temporary storage so strict-mode rejection preserves prior data. */
     fastchart_series_t temp[FASTCHART_MAX_SERIES];
     fastchart_series_array_init(temp, FASTCHART_MAX_SERIES);
     int temp_n = 0, temp_max_len = 0;
@@ -6518,19 +6253,8 @@ ZEND_METHOD(FastChart_AreaChart, setFillOpacity)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* Dispatch by class entry. Six concrete subclasses; a single
- * if/else chain is fine -- this is per-render-call, not per-pixel.
- * Returns 0 on success with a PHP exception possibly pending; -1
- * if we hit an unknown class entry (defensive; should not happen
- * because the abstract base is uninstantiable). */
-/* Dispatch by class entry. self points at the start of the per-type
- * struct; we cast to the specific type for each renderer. The cast
- * is safe because Z_FASTCHART_OBJ_P landed on the start of whatever
- * subclass the user actually instantiated. */
-/* SVG-side dispatch. All 26 chart families are wired to a
- * fastchart_<family>_render_to_target() entry. The Symbol family
- * (Code128, QrCode) has its own dispatcher (dispatch_symbol_render
- * / dispatch_symbol_svg_render in fastchart_symbol.c). */
+/* Z_FASTCHART_OBJ_P resolves the per-class offset, so self points at the
+ * native struct prefix required by each renderer. */
 static int dispatch_svg_render(void *object, zend_class_entry *ce,
 		struct fastchart_target *target)
 {
@@ -6661,34 +6385,15 @@ int fastchart_build_svg(smart_str *out, int width, int height, int dpi,
 	return 0;
 }
 
-/* dispatch_render + fastchart_encode_image retired in v1.0. Raster
- * output now builds SVG, rasterizes it via plutovg, then encodes via
- * fastchart_encoder.c. */
-
-/* HiDPI canvas scale derived from setDpi(). 96 DPI = 1.0×; 200 DPI =
- * 200/96 ≈ 2.08×. The logical width/height is the user-supplied size;
- * the physical canvas allocated for the render*() helpers grows with
- * DPI so the chart keeps its apparent layout while every glyph and
- * shape gains pixel density. The PNG metadata then reports the same
- * DPI so retina viewers / print pipelines display the image at its
- * intended physical size. Static — only resolve_canvas_dims uses it. */
+/* Raster dimensions scale by dpi/96; logical chart dimensions stay unchanged. */
 static double fastchart_dpi_scale_for(zend_long dpi)
 {
     if (dpi <= 0 || dpi == 96) return 1.0;
     return (double)dpi / 96.0;
 }
 
-/* Resolve the physical (allocated) canvas dimensions from the logical
- * setSize() values and the chart's DPI scale, with a hard cap. setSize
- * accepts width/height up to 65535 ("fits in 16 bits"); setDpi(1200)
- * on those would otherwise allocate ~819188x819188 pixels. Cap here
- * before plutovg or the encoders allocate native buffers. Also clamps
- * below: setDpi(24) on a 1x1 canvas would otherwise round to 0x0.
- * Returns 0 on success, -1 with a thrown ValueError otherwise.
- *
- * Takes scalars instead of a base-struct pointer so the Chart and
- * Symbol families (with separate base layouts) share one
- * implementation. Non-static; declared in fastchart_render_helpers.h. */
+/* Bound physical dimensions before native allocations; clamp tiny low-DPI
+ * canvases to at least 1x1. Returns -1 with ValueError on excess dimensions. */
 int fastchart_resolve_canvas_dims(zend_long width, zend_long height,
                                   zend_long dpi,
                                   int *out_w, int *out_h)
@@ -6702,11 +6407,7 @@ int fastchart_resolve_canvas_dims(zend_long width, zend_long height,
      * combined with sub-96 DPI (e.g. 1x1 at 24 DPI rounds to 0). */
     if (pw < 1) pw = 1;
     if (ph < 1) ph = 1;
-    /* 16384 is the per-axis guardrail; the product cap is the
-     * load-bearing one. RGBA storage is 4 bytes per pixel, so
-     * 16384 * 16384 alone is 1 GiB before encoder buffers, and any
-     * caller with both axes unconstrained can drive a single render
-     * into a native allocation that pins the worker. */
+    /* Per-axis bounds alone allow a 1 GiB RGBA frame; enforce the pixel product too. */
     const int MAX_PHYS_DIM = 16384;
     if (pw > MAX_PHYS_DIM || ph > MAX_PHYS_DIM) {
         zend_value_error(
@@ -6717,16 +6418,8 @@ int fastchart_resolve_canvas_dims(zend_long width, zend_long height,
             width, height, dpi, pw, ph);
         return -1;
     }
-    /* Product cap: 64M pixels = 256 MiB at 4 bytes/pixel for the
-     * truecolor canvas, plus comparable encoder buffers. Square
-     * worst case (16384 * 16384 = 268M) is rejected here even
-     * though both dims pass MAX_PHYS_DIM. Multiply as int64 so the
-     * arithmetic itself can't overflow before the comparison.
-     * fastchart.max_render_pixels (PHP_INI_SYSTEM) can lower the
-     * budget. The RGBA frame is PHP-accounted, but encoder and vendor
-     * workspace can still live outside memory_limit, so operators need
-     * an enforced knob rather than a documented caller obligation.
-     * Values above the built-in cap or <= 0 clamp to the cap. */
+    /* The operator ceiling can lower the 64M-pixel cap. Native encoder/vendor
+     * workspace may escape memory_limit; multiply in int64 to avoid overflow. */
     const long long MAX_PHYS_PIXELS = 64LL * 1024LL * 1024LL;
     long long budget = MAX_PHYS_PIXELS;
     zend_long ini_budget = FASTCHART_G(max_render_pixels);
@@ -6761,10 +6454,7 @@ const char *fastchart_missing_encoder_lib(int format)
     }
 }
 
-/* v1.0 raster pipeline. Build a glyph-flattened SVG (PATHS mode is
- * forced — plutovg cannot render <text>), hand it to
- * fastchart_rasterize_svg() at physical dims (logical * dpi/96), then
- * encode the RGBA buffer via libpng / libjpeg-turbo / libwebp.
+/* Force glyph paths because plutovg cannot render text.
  * format: 0 PNG, 1 JPEG, 2 WebP. */
 static int fastchart_chart_render_to_sink(fastchart_obj *self,
 		zend_class_entry *ce, int format, int quality, const char *where,
@@ -6802,13 +6492,6 @@ static int fastchart_chart_render_to_sink(fastchart_obj *self,
         return -1;
     }
 
-    /* Stable raster path: SVG -> plutosvg parse + plutovg raster at
-     * physical size -> encode. An experimental direct plutovg canvas
-     * path (bypass SVG, immediate text, SIMD unpremul) was fully
-     * prototyped with measurement harness on
-     * spike/direct-plutovg-raster-optimization for future review & analysis
-     * (per review plan "P1.2" + "verify or discard" gate; -O2 runs and
-     * all tweak states are on that branch only). */
     /* Build the SVG in PATHS mode regardless of self->svg_text_mode —
      * plutovg has no text-rendering support. */
     smart_str svg_buf = {0};
@@ -6826,7 +6509,6 @@ static int fastchart_chart_render_to_sink(fastchart_obj *self,
      * still bounding worst-case CPU. Near-cap render cost is out of
      * scope (SECURITY.md); dim/pixel caps are the enforced bound. */
 
-    /* Rasterize at physical dims. */
     fastchart_pixels_t pix;
     fastchart_pixels_init(&pix, alloc_w, alloc_h);
     pix.dpi = (int)self->dpi;
@@ -6838,7 +6520,7 @@ static int fastchart_chart_render_to_sink(fastchart_obj *self,
 		zend_throw_error(NULL, "FastChart: plutovg rasterization failed");
 		return -1;
     }
-    zend_string_release(svg_buf.s);  /* SVG source no longer needed */
+    zend_string_release(svg_buf.s);
 
 	volatile int rc = -1;
 	zend_try {
@@ -6946,14 +6628,8 @@ ZEND_METHOD(FastChart_Chart, renderWebp)
     fastchart_render_to_string(INTERNAL_FUNCTION_PARAM_PASSTHRU, 2, quality);
 }
 
-/* SVG render shared between Chart::renderSvg (fragment_only=0, emits a
- * full document) and Chart::drawSvgFragment (fragment_only=1, emits
- * just a <g> group for callers stitching multiple charts into one
- * outer <svg>). Output dimensions are the LOGICAL setSize() values —
- * SVG is vector-scalable, so the DPI knob doesn't multiply the
- * viewport. DPI still flows into layout (margins / label padding) and
- * into FreeType measurement so an SVG and PNG of the same chart pick
- * the same label widths. */
+/* SVG uses logical dimensions and 96-DPI layout. fragment_only emits a
+ * group for composition instead of a full document. */
 static void fastchart_render_to_svg(INTERNAL_FUNCTION_PARAMETERS, int fragment_only,
                                     zend_string *id_prefix)
 {
@@ -7178,8 +6854,6 @@ ZEND_METHOD(FastChart_Chart, setImageMap)
  *
  * Path extension picks the format. Local filesystem writes honor
  * open_basedir and use descriptor-backed atomic replacement. */
-/* Non-static so Symbol::renderToFile reuses the same extension table.
- * Declared in fastchart_render_helpers.h. */
 int fastchart_format_from_path(const char *path, size_t len)
 {
     /* Walk back to find the last '.'; bounded to avoid scanning a
@@ -8519,10 +8193,6 @@ int fastchart_write_zstr_to_file(zend_string *path, zend_string *payload,
 		written_out);
 }
 
-/* SVG file-write branch invoked by renderToFile when the path
- * extension is .svg. SVG is a text format produced directly via
- * smart_str and skips rasterization/encoding. Honors open_basedir
- * same as the raster path. */
 static void fastchart_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS, zend_string *path)
 {
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
@@ -8550,9 +8220,6 @@ static void fastchart_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS, zend_stri
     RETURN_LONG(written);
 }
 
-/* PDF file-write branch invoked by renderToFile when the path extension
- * is .pdf. Vector output via pdfio; throws "PDF support not compiled in"
- * when built without --with-pdfio. Honors open_basedir same as SVG. */
 static void fastchart_render_to_pdf_file(INTERNAL_FUNCTION_PARAMETERS, zend_string *path)
 {
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
@@ -8576,12 +8243,7 @@ static void fastchart_render_to_pdf_file(INTERNAL_FUNCTION_PARAMETERS, zend_stri
 ZEND_METHOD(FastChart_Chart, renderToFile)
 {
     zend_string *path;
-    /* Sentinel 0 = "use per-format default". For JPEG that means
-     * self->jpeg_quality (defaults to 88, settable via
-     * setJpegQuality); for WebP that means 90. Explicit values must
-     * be in [1, 100]. Prior to fix the default of 90 made the
-     * sentinel-fallback path unreachable, so setJpegQuality() had
-     * no effect on file output. */
+    /* Quality 0 selects the stored JPEG quality or WebP default 90. */
     zend_long quality = 0;
     ZEND_PARSE_PARAMETERS_START(1, 2)
         Z_PARAM_PATH_STR(path)
@@ -8595,8 +8257,6 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         RETURN_THROWS();
     }
 
-    /* Vector branch. .svg ignores $quality (no lossy encoder) and
-     * goes through a separate write path that emits text bytes. */
     if (fastchart_path_ends_with_svg(ZSTR_VAL(path), ZSTR_LEN(path))) {
         (void)quality;
         if (php_check_open_basedir(ZSTR_VAL(path))) {
@@ -8611,8 +8271,6 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
         return;
     }
 
-    /* Vector PDF branch. Like .svg, ignores $quality and writes through
-     * a dedicated path. Throws if PDF support wasn't compiled in. */
     if (fastchart_path_ends_with_pdf(ZSTR_VAL(path), ZSTR_LEN(path))) {
         (void)quality;
         if (php_check_open_basedir(ZSTR_VAL(path))) {
@@ -8880,12 +8538,7 @@ ZEND_METHOD(FastChart_GanttChart, setTasks)
                     if (k >= dn) break;
                     if (dv) ZVAL_DEREF(dv);
                     if (Z_TYPE_P(dv) == IS_LONG) {
-                        /* Validate against the int range before
-                         * narrowing. 0..INT_MAX is the legal index
-                         * space; out-of-range values used to wrap
-                         * silently (e.g. 4294967296 -> 0) and look
-                         * like a valid "depends on task 0" entry.
-                         * Render-side checks final < n_tasks. */
+                        /* Check before narrowing: wrapped dependency indices can name the wrong task. */
                         zend_long dep = Z_LVAL_P(dv);
                         if (dep >= 0 && dep <= INT_MAX) {
                             out->deps[k++] = (int)dep;
@@ -9098,7 +8751,6 @@ ZEND_METHOD(FastChart_PolarChart, setSeries)
     self->n_series = 0;
     if (zend_hash_num_elements(ht) == 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
 
-    /* Helper: parse a [angle, radius] list into the slot. */
 #define POLAR_PARSE_DATA(slot_, ht_) do {                                \
         HashTable *_dh = (ht_);                                          \
         uint32_t _unp = zend_hash_num_elements(_dh);                     \
@@ -10591,7 +10243,6 @@ ZEND_METHOD(FastChart_StockChart, addParabolicSAR)
             if (i >= 2 && c[i - 2].low < s) s = c[i - 2].low;
             if (c[i - 1].low < s)           s = c[i - 1].low;
             if (c[i].low < s) {
-                /* Flip to downtrend. */
                 up = 0;
                 s = ep;
                 ep = c[i].low;
@@ -11028,8 +10679,6 @@ ZEND_METHOD(FastChart_Treemap, setItems)
         "FastChart\\Treemap::setItems()", "items");
     if (n < 0) RETURN_THROWS();
 
-    /* Free any prior items (setItems is idempotent — replace, don't
-     * accumulate). */
     if (self->items) {
         for (int i = 0; i < self->item_count; i++) {
             if (self->items[i].label) efree(self->items[i].label);
@@ -11238,8 +10887,6 @@ ZEND_METHOD(FastChart_Funnel, setStyle)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-/* setShowValues(bool, string) is on the Chart base; Funnel uses it as-is. */
-
 ZEND_METHOD(FastChart_Waterfall, setBars)
 {
     zval *bars;
@@ -11351,9 +10998,6 @@ ZEND_METHOD(FastChart_Waterfall, setTotalColor)
 FASTCHART_GRID_SETTER(FastChart_Heatmap, fastchart_heatmap_obj, Z_FASTCHART_HEATMAP_OBJ_P)
 
 FASTCHART_COLOR_RAMP_SETTER(FastChart_Heatmap, fastchart_heatmap_obj, Z_FASTCHART_HEATMAP_OBJ_P)
-
-/* setShowValues(bool, string) on the Chart base sets show_values
- * AND value_format together — Heatmap consumes both. */
 
 FASTCHART_RANGE_SETTER(FastChart_LinearMeter, fastchart_linear_meter_obj, Z_FASTCHART_LINEAR_METER_OBJ_P, meter_min, meter_max)
 
@@ -11518,14 +11162,9 @@ FASTCHART_VALUE_FORMAT_SETTER(FastChart_ParetoChart, fastchart_pareto_obj, Z_FAS
 
 /* --- CalendarHeatmap ------------------------------------------------- */
 
-/* Convert a "YYYY-MM-DD" string to a days-since-1970-01-01 index in
- * *out. Returns 0 on success, -1 on parse failure. The day index is
- * an out-param because its value domain includes every negative
- * number down to -719468 ("0000-01-01"): "1969-12-31" is day -1, so
- * a sentinel return would be indistinguishable from a valid pre-1970
- * date. Uses the proleptic Gregorian calendar via a closed-form day
- * count to avoid pulling in mktime/gmtime — those carry timezone
- * weight we don't need for date arithmetic. */
+/* Use an out-parameter because -1 is a valid epoch day (1969-12-31).
+ * Proleptic Gregorian arithmetic avoids timezone-dependent conversions.
+ * Returns 0 on success, -1 on parse failure. */
 static int fastchart_parse_iso_date(const char *s, size_t len, long *out)
 {
     if (len != 10) return -1;
@@ -11616,13 +11255,7 @@ FASTCHART_COLOR_RAMP_SETTER(FastChart_CalendarHeatmap, fastchart_calendar_obj, Z
 
 /* --- SunburstChart -------------------------------------------------- */
 
-/* Recursively flatten a tree into a depth-first node list. Each
- * call appends one node and (optionally) recurses into its children.
- * Returns 0 on success, -1 on a malformed node we want to abort on. */
-/* Bounds depth so adversarial input ({'children'=>['children'=>...]}
- * nested arbitrarily) can't blow the C stack. 32 is comfortably
- * deeper than any legible sunburst — at depth 32 each ring is ~3px
- * wide on a 400px canvas. */
+/* Bound recursive depth to protect the C stack from caller-supplied trees. */
 #define FASTCHART_SUNBURST_MAX_DEPTH 32
 
 static int fastchart_sunburst_build_rec(
@@ -11632,7 +11265,6 @@ static int fastchart_sunburst_build_rec(
     if (depth > FASTCHART_SUNBURST_MAX_DEPTH) return -1;
     if (*n >= FASTCHART_MAX_SUNBURST_NODES) return -1;
     if (depth > *max_depth) *max_depth = depth;
-    /* Grow array if needed. */
     if (*n >= *cap) {
         int new_cap = *cap ? *cap * 2 : 16;
         *nodes = erealloc(*nodes, (size_t)new_cap * sizeof(**nodes));
@@ -11659,7 +11291,6 @@ static int fastchart_sunburst_build_rec(
         have_val = true;
     }
 
-    /* Recurse into children. */
     zval *zch = zend_hash_str_find(ht, "children", sizeof("children") - 1);
     if (zch) ZVAL_DEREF(zch);
     if (zch && Z_TYPE_P(zch) == IS_ARRAY) {
@@ -11687,12 +11318,8 @@ static int fastchart_sunburst_build_rec(
     /* Aggregate value: explicit if leaf or if user set one; sum of
      * children otherwise. */
     if (self->child_count > 0 && !have_val) {
-        /* Sum the DIRECT children via the parent back-pointer, not a
-         * contiguous child_first range: this builder is depth-first, so
-         * a child's whole subtree is appended before its next sibling
-         * and the direct children are interleaved with grandchildren.
-         * The subtree occupies [child_first, *n); filter to parent ==
-         * self_idx to pick out the direct children. */
+        /* Depth-first storage interleaves children with descendants; select
+         * direct children by parent index, not a contiguous child range. */
         double sum = 0.0;
         for (int i = self->child_first; i < *n; i++) {
             if ((*nodes)[i].parent == self_idx) sum += (*nodes)[i].value;
@@ -11713,12 +11340,7 @@ ZEND_METHOD(FastChart_SunburstChart, setHierarchy)
 
     fastchart_sunburst_obj *self = Z_FASTCHART_SUNBURST_OBJ_P(ZEND_THIS);
 
-    /* Parse into locals FIRST; only release self after build succeeds.
-     * build_rec returns -1 on depth > FASTCHART_SUNBURST_MAX_DEPTH or
-     * node count > FASTCHART_MAX_SUNBURST_NODES — both reachable from
-     * user input. Pre-fix, the self-clearing block ran ahead of the
-     * build call and a depth-overflow exception left the chart with
-     * an empty hierarchy. */
+    /* Build before releasing prior state so depth/node-limit failures are atomic. */
     fastchart_sunburst_node *nodes = NULL;
     int n = 0, cap = 0, max_depth = 0;
     if (fastchart_sunburst_build_rec(
@@ -11735,7 +11357,6 @@ ZEND_METHOD(FastChart_SunburstChart, setHierarchy)
         RETURN_THROWS();
     }
 
-    /* Swap. */
     if (self->nodes) {
         for (int i = 0; i < self->node_count; i++) {
             if (self->nodes[i].label) efree(self->nodes[i].label);
@@ -11773,11 +11394,7 @@ ZEND_METHOD(FastChart_SankeyChart, setNodes)
         self->nodes = NULL;
     }
     self->node_count = 0;
-    /* Drop any pre-existing links: their from/to indices reference
-     * the OLD node array. Keeping them around would let setNodes
-     * shrink the node count below the largest link index and
-     * produce a heap OOB at render time in compute_layers. setLinks
-     * has to be called again after setNodes. */
+    /* Old links index the old node array; callers must reset links after nodes. */
     if (self->links) {
         efree(self->links);
         self->links = NULL;
@@ -12904,13 +12521,8 @@ ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
             skept++;
         } ZEND_HASH_FOREACH_END();
         if (skept == 0) { efree(segs); continue; }
-        /* Per-segment values are isfinite-guarded, but the running
-         * sum can still overflow to +Inf. Drop the column rather
-         * than let inf reach the renderer, where col_frac =
-         * col->total / total_width = inf/inf = NaN, then (int)(NaN)
-         * is undefined per C / Annex F (the (int)(cx_acc + 0.5)
-         * casts at fastchart_marimekko.c:89/91/105/107). Mirrors the
-         * isfinite(m_sq) guard in VectorChart::setVectors below. */
+        /* Finite segment values can sum to Inf; reject before normalization
+         * produces NaN and reaches an int cast. */
         if (!isfinite(col_total) || !isfinite(total_w + col_total)) {
             for (int j = 0; j < skept; j++) {
                 if (segs[j].label) efree(segs[j].label);
@@ -13020,13 +12632,7 @@ PHP_MINIT_FUNCTION(fastchart)
     fastchart_rasterize_init();
     fastchart_encoder_init();
 
-    /* Per-class handlers init. Each handlers struct gets its own
-     * std offset matching its per-type struct layout, plus the
-     * class's free / clone hooks. */
-/* Use offsetof, not XtOffsetOf — the latter was removed in PHP 8.6
- * (`Zend/zend_portability.h`). offsetof works on every supported PHP
- * version. The clone macro at fastchart_clone_object_for already uses
- * offsetof; this site lagged behind. */
+/* offsetof also supports PHP versions where XtOffsetOf is unavailable. */
 #define FASTCHART_INIT_HANDLERS(name, T) do {                                            \
         memcpy(&fastchart_##name##_handlers, &std_object_handlers,                       \
                sizeof(zend_object_handlers));                                            \
@@ -13080,12 +12686,7 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
     FASTCHART_INIT_HANDLERS(qrcode,  fastchart_qrcode_obj);
 #undef FASTCHART_INIT_HANDLERS
 
-    /* Custom handlers table used by both Chart and Symbol abstract
-     * sentinels for the vanilla-zend_object they hand back after
-     * throwing. get_constructor returns NULL so ZEND_NEW's
-     * "constructor present" branch is bypassed entirely, the
-     * pending exception unwinds, and no inherited __construct
-     * runs on the prefix-less object. */
+    /* Use the shared sentinel handlers to suppress userland lifecycle methods. */
     memcpy(&fastchart_abstract_object_handlers, &std_object_handlers,
            sizeof(zend_object_handlers));
     fastchart_abstract_object_handlers.get_constructor =
@@ -13093,13 +12694,8 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
     fastchart_abstract_object_handlers.dtor_obj =
         fastchart_abstract_dtor_obj;
 
-    /* Abstract base class. Without a create_object, a userland
-     * `class MyChart extends FastChart\Chart {}` inherits no handler
-     * and the engine allocates a vanilla zend_object that lacks the
-     * FASTCHART_BASE_FIELDS prefix Z_FASTCHART_OBJ_P expects. Set
-     * the sentinel handler that throws on any direct or inherited
-     * instantiation. The per-class create handlers below override
-     * the sentinel for every concrete subclass. */
+    /* Userland subclasses need the sentinel too: a vanilla zend_object
+     * lacks the native prefix required by inherited methods. */
     fastchart_chart_ce = register_class_FastChart_Chart();
     fastchart_chart_ce->create_object = fastchart_chart_abstract_create_object;
 
@@ -13217,18 +12813,8 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
     fastchart_partition_ce = register_class_FastChart_Partition(fastchart_chart_ce);
     fastchart_partition_ce->create_object = fastchart_partition_create_object;
 
-    /* Symbol family. Parallel hierarchy to Chart: Symbol (abstract)
-     * → Barcode (abstract, 1D) and Symbol → QrCode (final, 2D).
-     * Code128 sits below Barcode. ZEND_ACC_ABSTRACT blocks
-     * `new FastChart\Symbol()` directly, but a userland subclass
-     * (`class MySym extends FastChart\Symbol {}`) would inherit the
-     * abstract base's create_object and bypass that check; without a
-     * sentinel handler it'd allocate a vanilla zend_object that
-     * cannot back the typed C struct, and any inherited setter would
-     * read out-of-bounds. The sentinel throws on any such path; the
-     * concrete internal classes override it with their own handler
-     * immediately after registration, so the sentinel only fires on
-     * unsupported userland subclassing. */
+    /* Install sentinels on abstract Symbol classes to reject userland
+     * subclasses without native storage. Concrete handlers override them. */
     fastchart_symbol_ce  = register_class_FastChart_Symbol();
     fastchart_symbol_ce->create_object  = fastchart_symbol_abstract_create_object;
     fastchart_barcode_ce = register_class_FastChart_Barcode(fastchart_symbol_ce);
@@ -13249,14 +12835,8 @@ PHP_MSHUTDOWN_FUNCTION(fastchart)
 {
     (void)type;
     UNREGISTER_INI_ENTRIES();
-    /* fastchart_default_font_path points at one of the string
-     * literals in FASTCHART_DEFAULT_FONT_CANDIDATES. Nothing to
-     * release; clear the pointer so a misordered RSHUTDOWN can't
-     * see stale state.
-     *
-     * Per-thread FT state (FT_Library + face cache) is released by
-     * PHP_GSHUTDOWN(fastchart) — once per thread under ZTS, once at
-     * effective-MSHUTDOWN under NTS. */
+    /* The default path is a static literal; per-thread FreeType cleanup
+     * belongs to GSHUTDOWN. */
     fastchart_default_font_path = NULL;
     return SUCCESS;
 }
@@ -13298,8 +12878,6 @@ PHP_MINFO_FUNCTION(fastchart)
     php_info_print_table_row(2, "PDF output (pdfio)", "(not compiled in)");
 #endif
 
-    /* plutovg + plutosvg are vendored; their headers export
-     * VERSION_STRING macros directly. */
     php_info_print_table_row(2, "plutovg",  PLUTOVG_VERSION_STRING);
     php_info_print_table_row(2, "plutosvg", PLUTOSVG_VERSION_STRING);
 
@@ -13331,15 +12909,8 @@ zend_module_entry fastchart_module_entry = {
 
 #ifdef COMPILE_DL_FASTCHART
 #ifdef ZTS
-/* Define the per-DSO TSRMLS cache slot. Without this, every
- * FASTCHART_G(...) access from a dynamically-loaded extension under
- * ZTS dereferences an undefined __declspec(thread) variable —
- * harmless on glibc TLS, segfault on Windows TLS. PHP CLI under
- * ZTS calls module init from a worker thread, so the very first
- * lazy FT_Init_FreeType crashes with STATUS_ACCESS_VIOLATION on
- * every renderXxx() path. ZEND_TSRMLS_CACHE_UPDATE() at the head
- * of MINIT populates the slot for the current thread; further
- * threads (if a SAPI spawns them) populate via their own init. */
+/* Define the DSO-local TSRMLS cache used by dynamic ZTS loads; GINIT
+ * initializes it for each thread. */
 ZEND_TSRMLS_CACHE_DEFINE()
 #endif
 ZEND_GET_MODULE(fastchart)

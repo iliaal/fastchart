@@ -112,7 +112,6 @@ int fastchart_violin_render_to_target(fastchart_violin_obj *self, fastchart_targ
 
         if (grp->n < 1) continue;
 
-        /* mean / std for Silverman bandwidth. */
         double sum = 0.0;
         int n = 0;
         for (int i = 0; i < grp->n; i++) {
@@ -170,7 +169,6 @@ int fastchart_violin_render_to_target(fastchart_violin_obj *self, fastchart_targ
         fastchart_target_polygon(t, poly, np, color, 1, 0);
         fastchart_target_polygon(t, poly, np, pal.border, 0, 1);
 
-        /* Median tick. */
         double *sorted = emalloc(sizeof(double) * grp->n);
         int sn = 0;
         for (int i = 0; i < grp->n; i++) {

@@ -26,17 +26,8 @@
 
 #include <math.h>
 
-/* Marching-squares isoline drawing through a 2D scalar grid. For
- * each cell (square between four neighboring grid points) we compute
- * a 4-bit case index (one bit per corner above the threshold) and
- * draw 0, 1, or 2 line segments connecting the threshold crossings
- * along the cell's edges.
- *
- * The grid arrives as a HashTable<HashTable<zval>> from PHP. We
- * materialize once into a flat double[rows*cols] (NAN for missing /
- * non-numeric cells) so the marching-squares loop can index by
- * arithmetic instead of nested hash lookups, which were costing two
- * zend_hash_index_find calls per corner per cell per level. */
+/* Marching squares: corner comparisons select one of 16 crossing cases.
+ * Setter-parsed row-major data uses NaN for missing cells. */
 
 static void cell_to_pixel(int col, int row, double col_f, double row_f,
                           int x0, int y0, double cell_w, double cell_h,
@@ -86,7 +77,6 @@ int fastchart_contour_render_to_target(fastchart_contour_obj *self, fastchart_ta
         return -1;
     }
 
-    /* Levels: user-supplied via setLevels (typed) or 5 evenly spaced. */
     /* Match the public setter cap (FASTCHART_MAX_LEVELS = 32) so all
      * accepted levels render. The previous 16 silently dropped the
      * upper half of a setLevels() call at the advertised maximum. */
@@ -245,7 +235,6 @@ int fastchart_contour_render_to_target(fastchart_contour_obj *self, fastchart_ta
         }
     }
 
-    /* Frame. */
     if (self->border_sides & FASTCHART_BORDER_TOP)
         fastchart_target_line(t, x0, y0, x1, y0, pal.border, 1, FASTCHART_DASH_SOLID);
     if (self->border_sides & FASTCHART_BORDER_BOTTOM)
@@ -255,7 +244,6 @@ int fastchart_contour_render_to_target(fastchart_contour_obj *self, fastchart_ta
     if (self->border_sides & FASTCHART_BORDER_RIGHT)
         fastchart_target_line(t, x1, y0, x1, y1, pal.border, 1, FASTCHART_DASH_SOLID);
 
-    /* Title. */
     fastchart_draw_floating_title(t, (fastchart_obj *)self, &pal, W / 2, 24);
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);

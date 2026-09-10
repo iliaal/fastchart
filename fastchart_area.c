@@ -32,16 +32,8 @@ static inline double area_read_value(const fastchart_series_t *s, int i)
     return s->values[i];
 }
 
-/* Densify an area layer's top boundary to follow the chart's
- * line_interpolation, so a smooth or stepped area traces the same
- * curve as the equivalent line. raw[] holds the n per-category
- * vertices already in pixel space (area folds gaps to 0, so every
- * category is a vertex); writes at most cap points into out[] and
- * returns the count. The shapes mirror the line renderer's
- * polyline_pass: a right-angle corner per segment for the STEP_*
- * modes, Catmull-Rom sampling for SMOOTH. Callers invoke it only for
- * the non-linear modes; LINEAR keeps the original vertex-for-vertex
- * fill path untouched. */
+/* Interpolate pixel-space boundaries like LineChart so adjacent fills tile.
+ * Writes at most cap points; callers handle LINEAR without densification. */
 static int area_densify(int interp, const fastchart_point_t *raw, int n,
                         fastchart_point_t *out, int cap)
 {
@@ -399,8 +391,6 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 fastchart_target_polygon(t, poly, n_pts, edge_handle, 0, 1);
             }
         }
-        /* Stroke the two boundary curves so the band has crisp
-         * upper and lower edges regardless of fill alpha. */
         for (int s = 0; s < 2; s++) {
             int stroke_handle = pal.series[s % FASTCHART_PALETTE_SERIES_N];
             int prev_x = 0, prev_y = 0;
@@ -516,7 +506,6 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 }
             }
 
-            /* Top-edge stroke for crisp boundary between layers. */
             int prev_x = 0, prev_y = 0;
             bool prev_valid = false;
             for (int i = 0; i < max_len; i++) {
@@ -670,7 +659,6 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 }
             }
 
-            /* Opaque top stroke. */
             int prev_x = 0, prev_y = 0;
             bool prev_valid = false;
             for (int i = 0; i < max_len; i++) {
@@ -698,7 +686,6 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
     fastchart_draw_h_annotations(t, (fastchart_obj *)self, &plot, &pal, &range_l);
     fastchart_draw_v_annotations_categorical(t, (fastchart_obj *)self, &plot, &pal, max_len);
 
-    /* Legend. */
     const char *legend_labels[FASTCHART_MAX_SERIES];
     for (int s = 0; s < n_series; s++) legend_labels[s] = series[s].label;
     fastchart_draw_series_legend(t, (fastchart_obj *)self, &plot, &pal,

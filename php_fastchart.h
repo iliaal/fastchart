@@ -782,7 +782,7 @@ typedef struct {
 
 typedef struct {
     char *label;
-    double value;         /* signed for delta; rendered absolute for total */
+    double value;         /* signed delta or absolute cumulative total */
     int kind;             /* FASTCHART_WF_DELTA or _TOTAL */
 } fastchart_waterfall_bar;
 
@@ -801,9 +801,8 @@ typedef struct {
     double value;
 } fastchart_calendar_day;
 
-/* Sunburst node: flat array; children indices stored as a range
- * [child_first, child_first + child_count) into the same node array.
- * Tree built once at setHierarchy(), walked twice at render. */
+/* Depth-first sunburst nodes; direct children are selected by parent index.
+ * child_first identifies the first child, not a contiguous sibling range. */
 typedef struct {
     char *label;          /* emalloc'd, NUL-terminated; NULL = no label */
     double value;         /* leaf value, or sum-of-children for interior */

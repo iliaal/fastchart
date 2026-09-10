@@ -40,7 +40,6 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
     int n = self->point_count;
     int n_series = self->n_series > 0 ? self->n_series : 1;
 
-    /* Y range from data. */
     double y_min = points[0].y, y_max = points[0].y;
     double x_min = points[0].x, x_max = points[0].x;
     for (int i = 1; i < n; i++) {
@@ -84,7 +83,6 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
 		}
     }
 
-    /* X range. */
     fastchart_value_range xrange;
     fastchart_value_range_compute(x_min, x_max, 6, &xrange);
 
@@ -114,7 +112,6 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
         ? (int)self->marker_size
         : 7;
 
-    /* Optional per-point error bars (parallel to setPoints index order). */
     double *err_lo = self->err_lo;
     double *err_hi = self->err_hi;
     int err_n = self->err_n;
@@ -303,7 +300,6 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
         }
     }
 
-	/* Build a self-owning image-map artifact from the parsed points. */
     int href_count = 0;
     for (int i = 0; i < n; i++) {
         if (points[i].href) href_count++;

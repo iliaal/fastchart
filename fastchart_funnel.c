@@ -38,7 +38,6 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
     fastchart_target_get_dims(t, &W, &H);
     fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
-    /* Title reservation. */
     int top_pad = 12;
     int title_h = 0;
     const char *title_font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_TITLE);
@@ -58,9 +57,6 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
         return -1;
     }
 
-    /* Plot region: full width minus side padding for stage labels,
-     * vertical span from below the title to the canvas bottom minus
-     * a small footer. */
     int side_pad = 100;     /* room for label text on either side */
     int x_left = side_pad;
     int x_right = W - side_pad;
@@ -252,9 +248,6 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
         }
         last_label_y = yc;
         if (label_font && ((fastchart_obj *)self)->show_values) {
-            /* Honour the inherited setShowValues($flag, $format)
-             * format string when present; fall back to "%.0f" for
-             * the unconfigured case. */
             const char *fmt = "%.0f";
             fastchart_obj *base = (fastchart_obj *)self;
             if (base->value_format && ZSTR_LEN(base->value_format) > 0) {
@@ -268,7 +261,6 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
         }
     }
 
-    /* Title. */
     if (self->title && ZSTR_LEN(self->title) > 0 && title_font && title_h > 0) {
         fastchart_text_draw(t, title_font, title_size, pal.text,
                             W / 2, 12 + title_h, FASTCHART_ALIGN_CENTER,

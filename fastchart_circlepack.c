@@ -208,7 +208,7 @@ int fastchart_circlepack_render_to_target(fastchart_circlepack_obj *self, fastch
                               &plot_x0, &plot_y0, &plot_x1, &plot_y1);
     double avail = (plot_x1 - plot_x0) < (plot_y1 - plot_y0)
         ? (plot_x1 - plot_x0) : (plot_y1 - plot_y0);
-    if (avail < 20.0) return 0;   /* canvas too small to draw into */
+    if (avail < 20.0) return 0;
     double scale = (avail / 2.0 * 0.97) / self->root->r;
     double cx = (plot_x0 + plot_x1) / 2.0;
     double cy = (plot_y0 + plot_y1) / 2.0;

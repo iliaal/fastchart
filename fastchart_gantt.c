@@ -65,7 +65,6 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
     fastchart_rect plot;
     fastchart_compute_layout((fastchart_obj *)self, t, 1, 1, NULL, 0, &plot);
 
-    /* Reserve a left margin for task name labels. */
     int label_pad = 0;
     if (self->gantt_show_labels) {
         const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
@@ -102,7 +101,6 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
     int bar_h = row_h * 60 / 100;
     if (bar_h < 3) bar_h = 3;
 
-    /* Per-row track separator + bars. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
     double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base);
@@ -171,7 +169,6 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
             fastchart_target_line(t, ax, ay, ax + 6, ay, pal.axis, 1, FASTCHART_DASH_SOLID);
             fastchart_target_line(t, ax + 6, ay, ax + 6, by, pal.axis, 1, FASTCHART_DASH_SOLID);
             fastchart_target_line(t, ax + 6, by, bx, by, pal.axis, 1, FASTCHART_DASH_SOLID);
-            /* Tiny arrowhead. */
             fastchart_target_line(t, bx, by, bx - 4, by - 3, pal.axis, 1, FASTCHART_DASH_SOLID);
             fastchart_target_line(t, bx, by, bx - 4, by + 3, pal.axis, 1, FASTCHART_DASH_SOLID);
         }

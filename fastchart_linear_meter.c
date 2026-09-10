@@ -36,7 +36,6 @@ int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self, fa
     fastchart_target_get_dims(t, &W, &H);
     fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
-    /* Title reservation (optional). */
     int top_pad = 12;
     int title_h = 0;
     const char *title_font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_TITLE);
@@ -81,12 +80,10 @@ int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self, fa
     fastchart_apply_plot_rect((fastchart_obj *)self,
                               &bar_x0, &bar_y0, &bar_x1, &bar_y1);
 
-    /* Background fill (the inactive part of the bar). */
     fastchart_target_rect(t, bar_x0, bar_y0,
                           bar_x1 - bar_x0 + 1, bar_y1 - bar_y0 + 1,
                           pal.grid, 1, 0);
 
-    /* Zone fills along the bar long axis. */
     for (int i = 0; i < self->n_zones; i++) {
         const fastchart_gauge_zone *zn = &self->zones[i];
         double t0 = (zn->from - mn) / (mx - mn);
@@ -122,7 +119,6 @@ int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self, fa
                           bar_x1 - bar_x0 + 1, bar_y1 - bar_y0 + 1,
                           pal.border, 0, 1);
 
-    /* Pointer: a thick line + filled triangle at the value. */
     double frac = (v - mn) / (mx - mn);
     if (self->meter_orientation == FASTCHART_METER_HORIZONTAL) {
         int px = bar_x0 + (int)(frac * (bar_x1 - bar_x0));
@@ -146,7 +142,6 @@ int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self, fa
         fastchart_target_polygon(t, tri, 3, pal.text, 1, 0);
     }
 
-    /* Min / max / value labels. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base_size);
     if (font) {

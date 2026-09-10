@@ -30,26 +30,13 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
-/* Process-shared FreeType library handle. Lazy-init on first call;
- * fastchart_ft_library_shutdown() releases at MSHUTDOWN. All FT
- * consumers (font-family resolver in target.c, glyph-path emitter in
- * fastchart_svg.c, text-bbox measurer in fastchart_text.c) share one
- * library instead of paying FT_Init_FreeType per call. */
+/* Lazy FreeType library, per-thread under ZTS; GSHUTDOWN releases it. */
 FT_Library fastchart_ft_library(void);
 void fastchart_ft_library_shutdown(void);
 
-/* Process-shared FT_Face cache, keyed by font_path. 4-slot LRU.
- * The same FT consumers above now skip FT_New_Face on a hit — opening
- * a face parses the entire font file (tables, charmaps, glyph index)
- * and dominates the per-label cost on dense labels.
- *
- * Callers MUST call FT_Set_Char_Size / FT_Set_Pixel_Sizes on the
- * returned face before glyph operations — face size is mutable
- * shared state. Callers MUST NOT call FT_Done_Face on the returned
- * face; the cache owns the lifetime and frees at MSHUTDOWN.
- *
- * Returns NULL on FT_Library init failure, FT_New_Face failure, or
- * an OOM on the path-key strdup. */
+/* Four-slot face cache, per-thread under ZTS. Set the returned face's
+ * size before glyph operations; never call FT_Done_Face on it.
+ * Returns NULL on initialization, font-load, or allocation failure. */
 FT_Face fastchart_ft_face(const char *font_path);
 
 /* Advance-only glyph lookup for text measurement (fc_ft_measure),
@@ -60,16 +47,9 @@ FT_Face fastchart_ft_face(const char *font_path);
 int fastchart_measured_advance(FT_Face face, int32_t size_64, int dpi,
                                uint32_t codepoint, int32_t *out_adv);
 
-/* Glyph outline cache. Process-shared LRU keyed by (face, pix_size,
- * codepoint). Each entry holds the glyph's advance + a decomposed
- * path command stream at pen_x=0, so subsequent renders of the same
- * codepoint at the same size skip both FT_Load_Glyph and
- * FT_Outline_Decompose. The cache automatically invalidates entries
- * whose owning face is evicted from the FT_Face cache, so dangling
- * face pointers cannot leak through.
- *
- * The forward struct decl is in php_fastchart.h (fc_glyph_cache_entry)
- * because the globals array is sized by FC_GLYPH_CACHE_N there. */
+/* Glyph outline LRU, per-thread under ZTS, keyed by (face, pix_size,
+ * codepoint). Face eviction invalidates its glyphs. Entries store advance
+ * and a path at pen_x=0 for replay without reloading/decomposing outlines. */
 struct fc_glyph_cache_entry;
 const struct fc_glyph_cache_entry *fastchart_glyph_cache_get(
     FT_Face face, uint16_t pix_size, uint32_t codepoint);
@@ -89,8 +69,7 @@ void fastchart_glyph_cache_insert(FT_Face face, uint16_t pix_size,
 const struct fc_glyph_cache_entry *fastchart_resolve_glyph(
     FT_Face face, uint16_t pix_size, uint32_t codepoint);
 
-/* Retained for source-compat with chart bodies that reference the
- * enum even though only SVG is now valid. */
+/* Render target kinds. */
 #define FASTCHART_TARGET_SVG  1
 /* Vector PDF backend (configure --with-pdfio). Chart bodies emit the
  * same primitives; target.c routes them to fastchart_pdf.c. */
@@ -163,9 +142,7 @@ typedef struct {
 
 typedef struct fastchart_target {
     int kind;
-    /* SVG backend state. `u.svg.X` access kept for source-compat with
-     * the dual-backend `t->u.svg` pattern in target.c / text.c — once
-     * a third backend lands we can revisit the union. */
+    /* SVG backend state. */
     union {
         struct {
             smart_str *buf;

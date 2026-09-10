@@ -130,7 +130,6 @@ int fastchart_chord_render_to_target(fastchart_chord_obj *self, fastchart_target
     double avail = 360.0 - pad * active;
     if (avail < 1.0) avail = 1.0;
 
-    /* Walk the circle assigning each active node its arc span. */
     double ang = -90.0;   /* start at top */
     for (int i = 0; i < self->node_count; i++) {
         if (L[i].incident <= 0.0) { L[i].span_size = 0.0; continue; }
@@ -251,7 +250,6 @@ int fastchart_chord_render_to_target(fastchart_chord_obj *self, fastchart_target
         }
     }
 
-    /* Node bands (thick arc strokes) + labels. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double size = fastchart_resolve_font_size(
         (fastchart_obj *)self, FC_FONT_LABEL, base_size);

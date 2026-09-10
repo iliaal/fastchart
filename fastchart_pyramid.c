@@ -64,7 +64,6 @@ int fastchart_pyramid_render_to_target(fastchart_pyramid_obj *self, fastchart_ta
     double size = fastchart_resolve_font_size(
         (fastchart_obj *)self, FC_FONT_LABEL, base_size);
 
-    /* Centre gap sized to the widest category label. */
     int center_gap = 48;
     if (font) {
         int widest = 0;
@@ -152,7 +151,6 @@ int fastchart_pyramid_render_to_target(fastchart_pyramid_obj *self, fastchart_ta
         }
     }
 
-    /* Legend: left swatch top-left, right swatch top-right. */
     if (font && legend_h > 0) {
         int ly = top_pad + 2;
         int sw = (int)size;

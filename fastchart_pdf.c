@@ -280,7 +280,7 @@ void fc_pdf_emit_ellipse(fc_pdf_state *s, double cx, double cy,
 {
 	if (fc_pdf_transparent(rgba)) return;
 	double ox = FC_PDF_KAPPA * rx, oy = FC_PDF_KAPPA * ry;
-	double Y = FY(s, cy);          /* center in PDF space */
+	double Y = FY(s, cy);
 	/* Four cubic quadrants, starting at the +x point. Sign of oy is in
 	 * PDF space; the y-flip only moves the center, the symmetric offsets
 	 * are unaffected. */
@@ -366,7 +366,6 @@ void fc_pdf_emit_arc(fc_pdf_state *s, double cx, double cy,
 
 /* ---- text as path -------------------------------------------------- */
 
-/* UTF-8 walking goes through fc_utf8_next_cp (fastchart_text.h). */
 #define fc_pdf_utf8_next fc_utf8_next_cp
 
 /* Replay one cached glyph into the current path. Glyph pts are y-down

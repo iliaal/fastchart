@@ -31,7 +31,6 @@
  * advertised FASTCHART_MAX_RADAR_VALUES limit. */
 #define MAX_RADAR_AXES   FASTCHART_MAX_RADAR_VALUES
 
-/* Read a typed-series cell, treating out-of-range as 0. */
 static inline double radar_read_d(const fastchart_radar_series *s, int i)
 {
     if (i >= s->len) return 0.0;
@@ -61,7 +60,6 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
     fastchart_radar_series *series = self->series;
     int n_series = self->n_series;
 
-    /* n_axes = max series len. Each axis is one entry index. */
     int n_axes = 0;
     for (int s = 0; s < n_series; s++) {
         if (series[s].len > n_axes) n_axes = series[s].len;
@@ -91,7 +89,6 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
     fastchart_target_get_dims(t, &W, &H);
     fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
-    /* Reserve top space for title. */
     int title_h = (self->title && ZSTR_LEN(self->title) > 0) ? 32 : 8;
     int cx = W / 2;
     int cy = (title_h + H) / 2;
@@ -122,7 +119,6 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
         sin_a[i] = sin(angle);
     }
 
-    /* Concentric grid: 4 rings + axis spokes. */
     const int rings = 4;
     for (int r = 1; r <= rings; r++) {
         double rr = (double)radius * (double)r / (double)rings;
@@ -133,14 +129,12 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
         }
         fastchart_target_polygon(t, poly, n_axes, pal.grid, 0, 1);
     }
-    /* Spokes from center to each axis tip. */
     for (int i = 0; i < n_axes; i++) {
         int tx = cx + (int)(radius * cos_a[i]);
         int ty = cy + (int)(radius * sin_a[i]);
         fastchart_target_line(t, cx, cy, tx, ty, pal.axis, 1, FASTCHART_DASH_SOLID);
     }
 
-    /* Axis labels via setCategoryLabels. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
     double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base);
@@ -162,7 +156,6 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
         }
     }
 
-    /* One polygon per series. */
     int legend_colors[FASTCHART_MAX_RADAR_SERIES];
     const char *legend_labels[FASTCHART_MAX_RADAR_SERIES];
     int legend_count = 0;
@@ -190,7 +183,6 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
             fastchart_target_polygon(t, poly, n_axes, alpha, 1, 0);
         }
         fastchart_target_polygon(t, poly, n_axes, color, 0, 2);
-        /* Markers at vertices. */
         for (int i = 0; i < n_axes; i++) {
             fastchart_draw_marker(t, poly[i].x, poly[i].y,
                                   FASTCHART_MARKER_CIRCLE, 5, color);
@@ -202,7 +194,6 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
         }
     }
 
-    /* Title at top center. */
     fastchart_draw_floating_title(t, (fastchart_obj *)self, &pal, W / 2, 24);
 
     /* Legend: reuse the standard helper with a synthetic "plot rect"

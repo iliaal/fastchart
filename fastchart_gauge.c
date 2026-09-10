@@ -56,7 +56,7 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
     int top = 12;
     if (self->title && ZSTR_LEN(self->title) > 0) {
         const char *tfont = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_TITLE);
-        int th = (int)(title_size * 1.0);  /* fallback */
+        int th = (int)(title_size * 1.0);
         if (tfont) {
             int measured_h = 0;
             if (fastchart_text_measure(t, tfont, title_size, ZSTR_VAL(self->title),
@@ -137,7 +137,6 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
                                  (double)start, (double)end, fill_color, 1, 0);
         }
     } else if (self->zones && self->n_zones > 0) {
-        /* Background fill (a thin ring, drawn as a fat arc). */
         fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.grid, 1, 0);
         for (int i = 0; i < self->n_zones; i++) {
             const fastchart_gauge_zone *zn = &self->zones[i];
@@ -158,12 +157,11 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
             int start = (int)(180 + frac_a * 180);
             int end   = (int)(180 + frac_b * 180);
             if (start > end) { int tmp = start; start = end; end = tmp; }
-            if (end <= start) continue;  /* empty zone, skip */
+            if (end <= start) continue;
             fastchart_target_arc(t, cx, cy, radius, radius,
                                  (double)start, (double)end, color, 1, 0);
         }
     } else {
-        /* Single-color sweep from min to value, with the rest in grid color. */
         fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.grid, 1, 0);
         double aV = gauge_value_to_deg(v, mn, mx);
         int start = 180;
@@ -174,11 +172,9 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
         }
     }
 
-    /* Inner cutout to make a thick ring. */
     int hole = (int)(diameter * 0.55);
     fastchart_target_ellipse(t, cx, cy, hole / 2, hole / 2, pal.bg, 1, 0);
 
-    /* Outer arc edge in border color. */
     fastchart_target_arc(t, cx, cy, radius, radius, 180, 360, pal.border, 0, 1);
 
     /* Needle + hub (NEEDLE style only; SOLID shows the fill arc
@@ -204,7 +200,6 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
         fastchart_target_ellipse(t, cx, cy, hub / 2, hub / 2, pal.text, 1, 0);
     }
 
-    /* Center value label. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     if (font) {
         const char *fmt = self->gauge_value_format
@@ -219,7 +214,6 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
         efree(buf);
     }
 
-    /* Min/max tick labels at arc ends. */
     if (font) {
         const char *fmt = self->gauge_value_format
             ? ZSTR_VAL(self->gauge_value_format) : "%.0f";

@@ -84,8 +84,6 @@ int fastchart_waterfall_render_to_target(fastchart_waterfall_obj *self, fastchar
 	}
 
     fastchart_rect plot;
-    /* Borrow the bar labels for the categorical x-axis margin so
-     * long stage names don't clip on the bottom. */
     const char **labels = ecalloc((size_t)n, sizeof(const char *));
     for (int i = 0; i < n; i++) labels[i] = self->bars[i].label;
     /* Expose the bar labels to the layout's x-axis margin reservation so a

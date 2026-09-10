@@ -52,20 +52,8 @@ static inline time_t fc_timegm(struct tm *tm)
 #endif
 }
 
-/* All layout pixel constants are 96-DPI reference values. At higher
- * DPI the rendered glyph pixel size grows by dpi/96 (FreeType handles
- * that), so the margins / paddings / tick marks need to scale the same
- * way or labels collide with the plot area. The DPI(...) macro pulls
- * the scale from chart->dpi at use sites; chart_dpi_scale() returns it
- * as a double for size-in-points multipliers like `size * 1.2`.
- *
- * SVG output is DPI-invariant — vector strokes scale infinitely and
- * the SVG viewport stays at the logical setSize() value regardless
- * of setDpi(). So chart_dpi_scale() returns 1.0 for SVG-backed
- * targets; layout reservations match the 96-DPI baseline and the
- * SVG output for setDpi(200) is identical to setDpi(96). The DPI
- * knob still flows into PNG / JPEG / WebP output where a denser
- * canvas is actually allocated. */
+/* Layout constants use a 96-DPI baseline. Vector targets keep that scale;
+ * physical raster dimensions carry the requested DPI. */
 #define MARGIN_RIGHT_PAD       12
 #define MARGIN_TOP_PAD          8
 #define MARGIN_BOTTOM_PAD      10
@@ -311,9 +299,6 @@ void fastchart_draw_polyline(fastchart_target_t *t, fastchart_obj *chart,
                    ? FASTCHART_DASH_DASHED
                    : FASTCHART_DASH_SOLID;
 
-    /* SVG renderers AA natively — single pass with the requested
-     * dash + thickness. The historical two-pass thick-underbody +
-     * thin-AA-spine combo is no longer needed. */
     (void)antialiased;
     polyline_pass(t, chart, pts, n, color, thickness, dash, -1);
 }
@@ -365,21 +350,11 @@ void fastchart_draw_marker(fastchart_target_t *t, int x, int y,
 
 void fastchart_begin_render(fastchart_obj *chart, fastchart_target_t *t)
 {
-    /* Single chokepoint for per-draw cache invalidation. Any ini_set
-     * narrowing of open_basedir between two draws of the same chart
-     * object must NOT let the prior draw's resolved font path leak
-     * past — fastchart_resolve_font re-runs check_font_path() on the
-     * first call after this point. Any per-draw shadow color handle is
-     * recomputed against the current render target on first use.
-     *
-     * Chart dispatch calls this once before entering any concrete
-     * renderer, before font, palette, or background work. */
+    /* Invalidate before any render work: open_basedir may narrow between
+     * draws, and shadow handles belong to the current target. */
     chart->font_cache_valid = false;
     chart->shadow_color_valid = false;
 
-    /* DPI lives on the target abstraction now; PNG pHYs and JPEG
-     * density metadata flow from fastchart_pixels_t::dpi in the
-     * encoder. */
     (void)chart;
     (void)t;
 }
@@ -411,8 +386,6 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
 
-    /* Hard plot rectangle bypass: when setPlotRect() was called,
-     * skip auto-layout entirely and clamp to canvas bounds. */
     if (chart->has_plot_rect) {
 		out_plot->x0 = 0;
 		out_plot->y0 = 0;
@@ -423,11 +396,6 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
         return;
     }
 
-    /* Scale hardcoded pixel constants with DPI so layout doesn't get
-     * cramped at high-DPI canvases. At 96 DPI scale=1.0 (no change);
-     * at 200 DPI scale~2.08 — fonts already grow ×scale via FreeType,
-     * so margins / tick lengths / paddings need to grow proportionally
-     * or labels overflow the canvas. */
     double dpi_scale = chart_dpi_scale(chart, t);
     int tick_mark_len = TICK_MARK_LEN(chart, t);
     int y_label_pad   = Y_LABEL_PADDING(chart, t);
@@ -461,8 +429,6 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
      * canvas minus the small base padding constants. */
     bool labels_drawn = !chart->thumbnail_mode;
 
-    /* Title: measure ascender height + a bit of padding. The "999999"
-     * probe used for axis labels is cached once below. */
     int probe_w = 0, probe_h = 0;
     int probe_ok = (axis_font && fastchart_text_measure(t, axis_font, axis_size, "999999",
                                                         &probe_w, &probe_h, NULL, 0) == 0);
@@ -584,7 +550,6 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
         bottom += needed;
     }
 
-    /* X-axis title: an extra line below the labels. */
     if (labels_drawn && has_x_axis && chart->x_axis_title && axis_font) {
         int th;
         if (fastchart_text_measure(t, axis_font, axis_title_size, ZSTR_VAL(chart->x_axis_title),
@@ -602,9 +567,7 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
     if (out_plot->y1 < out_plot->y0 + 10) out_plot->y1 = out_plot->y0 + 10;
 }
 
-/* See declaration in fastchart_axis.h for contract. This is the
- * narrow helper for standard cartesian families only (per P0 plan).
- * Non-cartesian families keep their begin_render + bespoke paths. */
+/* Standard Cartesian setup; bespoke renderers manage their own layout. */
 void fastchart_render_cartesian_setup(fastchart_obj *chart,
                                       fastchart_target_t *t,
                                       int has_y_axis, int has_x_axis,
@@ -735,11 +698,8 @@ int fastchart_value_range_apply_override(const fastchart_obj *chart,
 
     if (chart->has_y_interval) {
         double step = chart->y_interval;
-        /* An interval finer than (mx-mn)/(MAX_TICKS-1) used to fill the
-         * 16-tick ladder and stop — packing every gridline into the
-         * bottom slice of the plot and leaving the rest blank. Stride
-         * the interval by the smallest integer multiple that fits so
-         * ticks stay on user-requested values and span the range. */
+        /* Stride by an integer multiple of the requested interval so the
+         * bounded tick array spans the whole range. */
 		double span = mx - mn;
 		if (!isfinite(span)) {
 			fastchart_value_range_compute_indexed(mn, mx,
@@ -952,17 +912,9 @@ int fastchart_y_categorical_center(const fastchart_rect *plot, int idx, int n)
     return plot->y0 + (int)(step * (idx + 0.5));
 }
 
-/* Source-image emission via one SVG image definition per path plus
- * transformed <use> placements.
- *
- * setBackgroundImage() and addIconAt() store the file path; at draw
- * time the target loads each distinct file once through the PHP stream layer
- * (which enforces open_basedir natively — no TOCTOU between a
- * pre-check and the actual open). After the definition is emitted,
- * only its status, dimensions, MIME, and id remain cached; raw and
- * base64 bytes are released. The target loader enforces byte and
- * dimension caps. PNG and JPEG only — plutosvg's data-URI loader
- * handles those two. */
+/* Load each distinct PNG/JPEG through the target once per render; emit
+ * a shared image definition and transformed <use> placements. The loader
+ * enforces open_basedir and source caps, then releases raw/base64 bytes. */
 
 static int composite_bg_image(fastchart_target_t *t, int W, int H,
                               const char *path)
@@ -983,7 +935,6 @@ void fastchart_blit_icon(fastchart_target_t *t, const fastchart_icon *icon,
     int max_w = icon->max_w > 0 ? icon->max_w : sw;
     int max_h = icon->max_h > 0 ? icon->max_h : sh;
 
-    /* Preserve aspect ratio within max_w / max_h. */
     int dw = sw, dh = sh;
     if (dw > max_w) {
         dh = (int)((double)dh * (double)max_w / (double)dw + 0.5);
@@ -996,7 +947,6 @@ void fastchart_blit_icon(fastchart_target_t *t, const fastchart_icon *icon,
     if (dw < 1) dw = 1;
     if (dh < 1) dh = 1;
 
-    /* Center on (px, py). */
     int x = px - dw / 2;
     int y = py - dh / 2;
 	fastchart_target_image(t, x, y, dw, dh, icon->path);
@@ -1282,12 +1232,8 @@ void fastchart_draw_title(fastchart_target_t *t, fastchart_obj *chart,
 
 static void format_tick_label(double value, double step, char *out, size_t out_n)
 {
-    /* Derive decimal precision from the step's actual fractional
-     * precision. A fixed "step >= 1 -> 0 decimals" rule mislabels the
-     * 2.5x10^N nice-step family (step 2.5 needs 1 decimal so 2.5/7.5
-     * don't round to 2/8; step 0.25 needs 2 so 0.75 isn't "0.8"), and a
-     * log10-based guess is off by the same amount. Grow decimals until
-     * the step scaled by 10^decimals is integral, capped at 6. */
+    /* Find the step's decimal precision: 2.5 needs one digit and 0.25 needs
+     * two. A magnitude-only rule mislabels fractional ticks. */
     int decimals = 0;
     if (isfinite(step) && step > 0.0) {
         while (decimals < 6) {
@@ -1319,7 +1265,6 @@ void fastchart_draw_y_axis(fastchart_target_t *t, fastchart_obj *chart,
 {
     if (!chart->y_axis_visible) return;
 
-    /* Y axis line. */
     fastchart_target_line(t, plot->x0, plot->y0, plot->x0, plot->y1,
                           pal->axis, 1, FASTCHART_DASH_SOLID);
 
@@ -1340,11 +1285,9 @@ void fastchart_draw_y_axis(fastchart_target_t *t, fastchart_obj *chart,
         double v = range->ticks[i];
         int y = fastchart_y_to_pixel(v, range, plot);
 
-        /* Grid line across plot. */
         fastchart_target_line(t, plot->x0 + 1, y, plot->x1, y,
                               pal->grid, 1, FASTCHART_DASH_SOLID);
 
-        /* Tick mark on the axis. */
         if (draw_points) {
             fastchart_target_line(t, plot->x0 - TICK_MARK_LEN(chart, t), y,
                                   plot->x0 - 1, y,
@@ -1353,7 +1296,6 @@ void fastchart_draw_y_axis(fastchart_target_t *t, fastchart_obj *chart,
 
         if (!draw_labels) continue;
 
-        /* Label, right-aligned just to the left of the tick. */
         if (chart->y_axis_label_format) {
             fastchart_format_tick_label_user(v, chart->y_axis_label_format, buf, sizeof(buf));
         } else {
@@ -1383,7 +1325,6 @@ void fastchart_draw_y_axis_right(fastchart_target_t *t, fastchart_obj *chart,
 {
     if (!chart->y_axis_visible) return;
 
-    /* Right axis line. */
     fastchart_target_line(t, plot->x1, plot->y0, plot->x1, plot->y1,
                           pal->axis, 1, FASTCHART_DASH_SOLID);
 
@@ -1498,7 +1439,6 @@ void fastchart_draw_x_axis_numeric(fastchart_target_t *t, fastchart_obj *chart,
 {
     if (!chart->x_axis_visible) return;
 
-    /* X axis line at the bottom of the plot. */
     fastchart_target_line(t, plot->x0, plot->y1, plot->x1, plot->y1,
                           pal->axis, 1, FASTCHART_DASH_SOLID);
 
@@ -1532,7 +1472,6 @@ void fastchart_draw_x_axis_numeric(fastchart_target_t *t, fastchart_obj *chart,
         double v = range->ticks[i];
         int x = fastchart_x_to_pixel(v, range, plot);
 
-        /* Vertical gridline across the plot. */
         fastchart_target_line(t, x, plot->y0, x, plot->y1 - 1,
                               pal->grid, 1, FASTCHART_DASH_SOLID);
 
@@ -1572,7 +1511,6 @@ void fastchart_draw_y_axis_categorical(fastchart_target_t *t, fastchart_obj *cha
 {
     if (!chart->y_axis_visible) return;
 
-    /* Y axis line on the left edge. */
     fastchart_target_line(t, plot->x0, plot->y0, plot->x0, plot->y1,
                           pal->axis, 1, FASTCHART_DASH_SOLID);
 
@@ -1630,7 +1568,6 @@ void fastchart_draw_x_axis_categorical(fastchart_target_t *t, fastchart_obj *cha
 {
     if (!chart->x_axis_visible) return;
 
-    /* X axis line. */
     fastchart_target_line(t, plot->x0, plot->y1, plot->x1, plot->y1,
                           pal->axis, 1, FASTCHART_DASH_SOLID);
 
@@ -1782,8 +1719,6 @@ void fastchart_draw_legend(fastchart_target_t *t, fastchart_obj *chart,
     }
     if (row_h < swatch_h) row_h = swatch_h;
 
-    /* Measure the longest label to size the legend box. Skip NULL
-     * labels in both width measurement and rendering. */
     int max_label_w = 0;
     int rows = 0;
     for (int i = 0; i < n_entries; i++) {
@@ -1885,7 +1820,6 @@ void fastchart_draw_value_label(fastchart_target_t *t, fastchart_obj *chart,
     char buf[32];
     snprintf(buf, sizeof(buf), fmt, value);
 
-    /* Place baseline a few pixels above the data point. */
     int label_y = y - 6;
     fastchart_text_draw(t, font, size, pal->text,
                         x, label_y, FASTCHART_ALIGN_CENTER, buf, NULL, 0);
@@ -2143,7 +2077,7 @@ void fastchart_draw_h_annotations(fastchart_target_t *t, fastchart_obj *chart,
         const char *label = fastchart_label_or_null(label_zv);
         if (label && font) {
             int tx = plot->x1 - 6;
-            int ty = y - 4;  /* sit just above the line */
+            int ty = y - 4;
             fastchart_text_draw(t, font, size, color,
                                 tx, ty, FASTCHART_ALIGN_RIGHT,
                                 label, NULL, 0);
@@ -2227,8 +2161,6 @@ static void draw_v_annotations_with_mapper(fastchart_target_t *t, fastchart_obj 
         zval *label_zv = zend_hash_str_find(Z_ARRVAL_P(entry), "label", 5);
         const char *label = fastchart_label_or_null(label_zv);
         if (label && font) {
-            /* Place the label just below the top edge of the plot
-             * area, centered on the annotation line. */
             int ty = plot->y0 + (int)(size * 1.2 * chart_dpi_scale(chart, t)) + 2;
             fastchart_text_draw(t, font, size, color,
                                 x + 4, ty, FASTCHART_ALIGN_LEFT,
@@ -2424,7 +2356,6 @@ void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
     struct tm tm_buf;
     if (chart->date_axis_every > 0 && fc_gmtime((time_t)t_min, &tm_buf)) {
         zend_long every = chart->date_axis_every;
-        /* Snap start to the unit boundary at-or-after t_min. */
         switch (chart->date_axis_unit) {
             case FASTCHART_DATE_DAY:
                 tm_buf.tm_hour = 0; tm_buf.tm_min = 0; tm_buf.tm_sec = 0;
@@ -2505,7 +2436,6 @@ void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
                                                 buf, NULL, 0);
                 }
             }
-            /* Advance by `every` units. */
             for (zend_long e = 0; e < every; e++) {
                 switch (chart->date_axis_unit) {
                     case FASTCHART_DATE_DAY:     tm_buf.tm_mday += 1; break;

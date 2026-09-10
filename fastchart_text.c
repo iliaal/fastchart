@@ -41,8 +41,7 @@ static int fc_ft_measure(const char *font_path, double size_pt, int dpi,
     if (!font_path || !text) return -1;
     if (dpi <= 0) dpi = 96;
 
-    /* Shared FT_Face from the process-wide cache; the cache owns
-     * the lifetime, do not call FT_Done_Face on the returned ptr. */
+    /* The per-thread cache owns the face; do not call FT_Done_Face. */
     FT_Face face = fastchart_ft_face(font_path);
     if (!face) return -1;
     /* Size in 1/64 of a point at the given DPI. Always set: the
@@ -69,7 +68,7 @@ static int fc_ft_measure(const char *font_path, double size_pt, int dpi,
         total_w_64 += adv;
     }
 
-    int w = (int)((total_w_64 + 32) / 64);  /* round to nearest pixel */
+    int w = (int)((total_w_64 + 32) / 64);
     /* Height: ascender + |descender| (both in font units, scale to px).
      * units_per_EM is the design-space unit count; size_px is the
      * pixel size at the current DPI. */
@@ -99,17 +98,8 @@ static int line_advance(int dpi, const char *font_path, double font_size)
     return h * 6 / 5;  /* +20% leading */
 }
 
-/* Glyph-flattening pre-check for the draw paths. PATHS and PDF modes
- * resolve every codepoint through FreeType; a missing face or failed
- * size setup degrades to a silent skip, never an error. Render-time
- * font loss is not a user error: the file vanished or became
- * unreadable between the setter and the draw (writerless FIFOs in
- * tests/404, cache-evicted faces in tests/418), so the chart must
- * render label-less rather than throw. User errors (typos, missing
- * files) throw instead at the setFontPath / set*Font setters, which
- * stat the path up front. Per-glyph misses still skip inside the
- * emitters (Code128's documented bars-only fallback relies on it).
- * size_px mirrors the emitters' pixel rounding. */
+/* Font loss between setter and draw degrades to missing text. Check face
+ * and size before flattening; size_px matches the emitters' rounding. */
 static int fc_flatten_usable(const char *font_path, double size_px,
                              char *err_buf, size_t err_buf_n)
 {
@@ -155,7 +145,7 @@ int fastchart_text_draw(fastchart_target_t *t,
         if (err_buf && err_buf_n) snprintf(err_buf, err_buf_n, "no font path set");
         return -1;
     }
-    if (!text || !*text) return 0;  /* nothing to draw */
+    if (!text || !*text) return 0;
 
     /* SVG path. text-anchor handles horizontal alignment so we don't
      * pre-measure; pass the alignment hint through and emit one
@@ -181,8 +171,7 @@ int fastchart_text_draw(fastchart_target_t *t,
     double line_step =
         (double)line_advance(fastchart_target_get_dpi(t), font_path,
                              font_size);
-    /* Glyph-flattening modes skip silently on an unusable font (see
-     * fc_flatten_usable); NATIVE mode needs no FreeType. */
+    /* Flattening skips unusable fonts; NATIVE needs no FreeType. */
     int flatten = 0;
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) flatten = 1;
@@ -274,8 +263,7 @@ int fastchart_text_draw_rotated(fastchart_target_t *t,
     double line_step =
         (double)line_advance(fastchart_target_get_dpi(t), font_path,
                              font_size);
-    /* Skip silently on an unusable font in flattening modes (NATIVE
-     * needs no FreeType); see draw above. */
+    /* Flattening skips unusable fonts. */
     int flatten = 0;
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) flatten = 1;
@@ -343,7 +331,6 @@ int fastchart_text_measure(fastchart_target_t *t,
         return 0;
     }
 
-    /* FreeType measurement at the target's DPI. */
     int dpi = t ? fastchart_target_get_dpi(t) : 96;
 
     /* Multi-line: width = max line width, height = first ascender +

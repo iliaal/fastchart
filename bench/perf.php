@@ -1,22 +1,5 @@
 <?php
-/*
- * Performance harness for the three vendored-library optimizations.
- *
- * Scenarios:
- *   label_chart    - text-heavy chart (exercises FT_Load_Glyph + Decompose).
- *                    Targets optimization #1 (glyph outline cache).
- *   qr_v10         - QR code at version ~10 (exercises Reed-Solomon ECC).
- *                    Targets optimization #2 (GF multiply table).
- *   svg_to_png     - Chart::svgToPng with a user-supplied SVG document.
- *                    Targets optimization #3 (single-parse path).
- *   stock_chart    - StockChart with 200 candles + MA + volume pane.
- *                    Sanity check that no regression hits the chart-render
- *                    path that isn't directly targeted.
- *
- * Output: JSON to stdout summarizing min / median / mean / max times in
- * milliseconds for each scenario, plus output byte sizes (regression check
- * — optimization should not change output byte count).
- */
+/* Render benchmarks: JSON timing summaries in milliseconds and output byte sizes. */
 
 if (PHP_SAPI !== 'cli') {
     fwrite(STDERR, "perf.php must run from CLI\n");
@@ -30,8 +13,6 @@ if (!extension_loaded('fastchart')) {
 $ITERS  = (int)(getenv('FC_BENCH_ITERS') ?: 60);
 $WARMUP = (int)(getenv('FC_BENCH_WARMUP') ?: 5);
 $LABEL  = getenv('FC_BENCH_LABEL') ?: 'unlabeled';
-
-/* ------------------------------------------------------------------ */
 
 function bench(string $name, int $warmup, int $iters, callable $fn): array {
     /* Warm up: face/library init, allocator priming. */
@@ -47,7 +28,6 @@ function bench(string $name, int $warmup, int $iters, callable $fn): array {
         $t1 = hrtime(true);
         $times[] = ($t1 - $t0) / 1e6;  /* ns -> ms */
         if (is_string($out) && strlen($out) !== $out_len) {
-            /* Non-deterministic output size = something is wrong. */
             fwrite(STDERR, "warn: $name output size drifted at iter $i: "
                 . "$out_len -> " . strlen($out) . "\n");
             $out_len = strlen($out);
@@ -67,12 +47,7 @@ function bench(string $name, int $warmup, int $iters, callable $fn): array {
     ];
 }
 
-/* ----- Scenario 1: label-heavy chart -------------------------------
- *
- * StockChart with 200 candles. The X-axis emits ~10 date-style labels,
- * Y-axis ~8 price labels, legend has 3 entries, and the title is a
- * full sentence. Lots of repeated digit glyphs.
- */
+/* Repeated digit glyphs exercise the outline cache. */
 function scenario_label_chart(): callable {
     mt_srand(424242);  /* deterministic candle data → stable output bytes */
     $rows = [];
@@ -98,12 +73,7 @@ function scenario_label_chart(): callable {
     };
 }
 
-/* ----- Scenario 2: QR code, large + ECC-dominated -------------------
- *
- * v25+ECC-H has roughly 1300 codewords and the largest practical RS
- * encode work — that's where reedSolomonMultiply() time dominates and
- * the GF table win actually shows up over render noise.
- */
+/* A large ECC-H payload makes Reed-Solomon costs visible over render noise. */
 function scenario_qr_v10(): callable {
     /* v25-H holds 511 alphanumeric chars. Use 500 to stay safely inside. */
     $payload = str_repeat('ABCD1234EFGH5678ZZZZ', 25);  /* 500 chars */
@@ -116,13 +86,8 @@ function scenario_qr_v10(): callable {
     };
 }
 
-/* ----- Scenario 3: Chart::svgToPng with user-supplied SVG ---------- */
 function scenario_svg_to_png(): callable {
-    /* ~40 KB SVG with ~500 primitives + glyph-like paths. The
-     * baseline path parses this twice (get_intrinsic_dims, then
-     * rasterize_svg); the single-pass optimization parses it once.
-     * Larger document = parse cost rises above the system noise
-     * floor (~0.5-1 ms p50 noise on this ASAN debug build). */
+    /* A large document keeps parsing costs above measurement noise. */
     mt_srand(424242);
     $primitives = [];
     for ($i = 0; $i < 200; $i++) {
@@ -148,7 +113,6 @@ function scenario_svg_to_png(): callable {
         $primitives[] = sprintf('<path d="%s" fill="#%02x%02x%02x"/>',
             $d, ($i * 3) & 255, ($i * 5) & 255, ($i * 11) & 255);
     }
-    /* 200 line segments. */
     for ($i = 0; $i < 200; $i++) {
         $primitives[] = sprintf(
             '<line x1="%d" y1="%d" x2="%d" y2="%d" stroke="#%02x%02x%02x" stroke-width="1"/>',
@@ -166,7 +130,6 @@ function scenario_svg_to_png(): callable {
     };
 }
 
-/* ----- Scenario 4: regression sanity (basic chart) ----------------- */
 function scenario_basic_chart(): callable {
     return function() {
         return (new FastChart\LineChart())
@@ -177,7 +140,6 @@ function scenario_basic_chart(): callable {
     };
 }
 
-/* ----- Scenario 6: JPEG encode (exercises opt#8) ------------------- */
 function scenario_label_chart_jpeg(): callable {
     mt_srand(424242);
     $rows = [];
@@ -203,7 +165,6 @@ function scenario_label_chart_jpeg(): callable {
     };
 }
 
-/* ----- Scenario 5: WebP encode (exercises opt#5) ------------------- */
 function scenario_label_chart_webp(): callable {
     mt_srand(424242);
     $rows = [];
@@ -229,9 +190,6 @@ function scenario_label_chart_webp(): callable {
     };
 }
 
-/* ----- Scenario 7: scatter + 200-segment trend fit -----------------
- * Exercises the per-segment vs batched-polyline emit (the trend curve
- * is drawn as 200 sub-segments) and the per-coordinate number format. */
 function scenario_scatter_trend(): callable {
     mt_srand(424242);
     $pts = [];
@@ -240,8 +198,7 @@ function scenario_scatter_trend(): callable {
                   5 + $i * 0.4 + sin($i * 0.2) * 6];
     }
     return function() use ($pts) {
-        /* renderSvg: the segment-batching + number-format wins live in
-         * the SVG-build phase; raster would swamp them with encode time. */
+        /* SVG isolates polyline emission and coordinate formatting from encoding. */
         return (new FastChart\ScatterChart())
             ->setSize(900, 500)
             ->setPoints($pts)
@@ -250,9 +207,6 @@ function scenario_scatter_trend(): callable {
     };
 }
 
-/* ----- Scenario 8: log-scale line, 1000 points ---------------------
- * Exercises fastchart_y_to_pixel on a log axis 1000x per render — the
- * log10(min)/log10(max) recompute is the target. */
 function scenario_log_line(): callable {
     $data = [];
     $v = 1.0;
@@ -269,10 +223,7 @@ function scenario_log_line(): callable {
     };
 }
 
-/* ----- Scenario 9: coordinate-dense multi-series SVG ---------------
- * Eight series of 500 points each → ~4000 polyline coordinates plus
- * markers, all formatted by fc_svg_fmt_num. renderSvg so the per-
- * coordinate format cost is the whole measurement. */
+/* Dense coordinates exercise number formatting without raster encoding costs. */
 function scenario_dense_svg(): callable {
     $series = [];
     for ($s = 0; $s < 8; $s++) {
@@ -289,8 +240,6 @@ function scenario_dense_svg(): callable {
             ->renderSvg();
     };
 }
-
-/* ------------------------------------------------------------------ */
 
 $scenarios = [
     'label_chart'   => scenario_label_chart(),

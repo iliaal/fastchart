@@ -50,7 +50,6 @@ int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self, fastchart_ta
     fastchart_target_get_dims(t, &W, &H);
     fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
-    /* Title reservation (optional). */
     int top_pad = 12;
     int title_h = 0;
     const char *title_font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_TITLE);
@@ -77,7 +76,6 @@ int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self, fastchart_ta
         return -1;
     }
 
-    /* Find min/max so we can normalise into [0, 1] for the ramp. */
     double v_min = INFINITY, v_max = -INFINITY;
     for (int r = 0; r < rows; r++) {
         for (int c = 0; c < cols; c++) {
@@ -152,7 +150,6 @@ int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self, fastchart_ta
                                            &tw, &th, NULL, 0) != 0) continue;
                 if (tw > cell_w - 4) continue;
 
-                /* Pick contrast against the cell colour. */
                 int rr = (cell_rgb >> 16) & 0xFF;
                 int gg = (cell_rgb >>  8) & 0xFF;
                 int bb =  cell_rgb        & 0xFF;

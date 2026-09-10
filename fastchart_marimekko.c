@@ -91,12 +91,10 @@ int fastchart_marimekko_render_to_target(fastchart_marimekko_obj *self, fastchar
         int x1 = plot_x0 + (int)(cx_acc + 0.5);
         int cw = x1 - x0;
         if (cw < 1) cw = 1;
-        /* Tiny visual gap between columns. */
         int gap = cw > 8 ? 1 : 0;
         x0 += gap; cw -= 2 * gap;
         if (cw < 1) cw = 1;
 
-        /* Stack segments. */
         double sy_acc = 0.0;
         for (int s = 0; s < col->n_segments; s++) {
             const fastchart_marimekko_segment *seg = &col->segments[s];
@@ -113,7 +111,6 @@ int fastchart_marimekko_render_to_target(fastchart_marimekko_obj *self, fastchar
             fastchart_target_rect(t, x0, y0, cw, sh, color, 1, 0);
             fastchart_target_rect(t, x0, y0, cw, sh, pal.border, 0, 1);
 
-            /* Label inside segment if it fits comfortably. */
             if (font && seg->label && sh > size * 1.6 && cw > size * 4) {
                 fastchart_text_draw(t, font, size, pal.text,
                                     x0 + cw / 2, y0 + sh / 2 + (int)(size * 0.4),
@@ -122,7 +119,6 @@ int fastchart_marimekko_render_to_target(fastchart_marimekko_obj *self, fastchar
             }
         }
 
-        /* Column label below the column. */
         if (font && col->label) {
             fastchart_text_draw(t, font, size, pal.text,
                                 x0 + cw / 2, plot_y1 + (int)(size * 1.4),

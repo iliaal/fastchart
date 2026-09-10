@@ -1,19 +1,5 @@
 <?php
-/* Phase 2 smoke check, extended with behavioral magic-byte asserts.
- *
- * What this script verifies:
- *   1. The .so loads.
- *   2. The build linked libpng / libjpeg / libwebp / plutovg (no missing-
- *      symbol errors at dlopen time).
- *   3. The vendored plutovg/plutosvg symbols are not exported (visibility
- *      check, also implicit since dlopen with hidden-only externals
- *      would fail).
- *   4. Each raster encoder emits framing-valid bytes for a real chart:
- *      PNG / JPEG / WebP magic bytes plus exact dimensions via
- *      getimagesizefromstring() (core, no ext/gd needed).
- *
- * (4) is covered below by rendering a real chart through each encoder.
- */
+/* Check raster signatures and dimensions using core image probes, without ext/gd. */
 if (!class_exists('FastChart\\Chart')) {
     fwrite(STDERR, "fastchart.so not loaded\n");
     exit(1);

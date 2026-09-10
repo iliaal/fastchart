@@ -114,9 +114,6 @@ void fastchart_palette_apply_overrides(fastchart_target_t *t,
         pal->series[i] = fastchart_target_color_rgb(t, (int)chart->series_colors[i]);
     }
 
-    /* Per-element color overrides (axis line, grid lines, border,
-     * text). The palette already carries theme defaults, so each
-     * field stays whatever theme set unless the user overrode it. */
 #define APPLY_COLOR_OVERRIDE(field_, override_) \
     do { \
         if (chart->override_ >= 0) { \

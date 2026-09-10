@@ -117,10 +117,7 @@ int fastchart_bubble_render_to_target(fastchart_bubble_obj *self, fastchart_targ
     fastchart_draw_v_plot_bands_xrange(t, (fastchart_obj *)self, &plot,
                                        &xrange, &pal);
 
-    /* Categorical x labels would mismatch the continuous data; draw a
-     * lightweight numeric scale by reusing the time axis path with
-     * synthetic timestamps... actually for a bubble chart, just draw
-     * the X axis line and let the user supplement with axis title. */
+    /* Continuous X values cannot use categorical labels; draw the axis line only. */
     if (self->x_axis_visible) {
         fastchart_target_line(t, plot.x0, plot.y1, plot.x1, plot.y1,
                               pal.axis, 1, FASTCHART_DASH_SOLID);

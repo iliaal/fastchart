@@ -19,8 +19,7 @@
 /* Linearly interpolate between two 24-bit RGB ints. t in [0,1]. */
 int fastchart_lerp_rgb(int from, int to, double t);
 
-/* Drop-shadow helpers. v1.0 no-ops; real SVG <filter feGaussianBlur>
- * emission is v1.1. */
+/* Offset-duplicate shadows; plutosvg does not support SVG blur filters. */
 void fastchart_shadow_filled_rectangle(fastchart_target_t *t,
                                        fastchart_obj *chart,
                                        int x0, int y0, int x1, int y1);

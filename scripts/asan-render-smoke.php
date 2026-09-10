@@ -1,14 +1,5 @@
 <?php
-/*
- * Render every chart family across PNG/JPEG/WebP/SVG and exit clean.
- * Used by the ASAN CI job's "Render-only leak smoke" step to confirm
- * fastchart itself reports zero LSan leaks without ext/gd in the
- * picture. Any leak the run surfaces is fastchart's.
- *
- * Mirrors tests/131_raster_formats_per_family.phpt's setter surface
- * but skips the ext/gd PHP-side decode — this script's job is leak
- * coverage, not output validation.
- */
+/* Render-only LSan coverage for every chart family; omit ext/gd decoding. */
 
 $lato = '/usr/share/fonts/truetype/lato/Lato-Regular.ttf';
 $font = is_readable($lato) ? $lato

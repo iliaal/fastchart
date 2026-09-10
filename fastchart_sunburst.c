@@ -192,7 +192,6 @@ int fastchart_sunburst_render_to_target(fastchart_sunburst_obj *self, fastchart_
         }
     }
 
-    /* Root hub: a filled circle in the bg color with optional label. */
     fastchart_target_ellipse(t, cx, cy, inner_hole, inner_hole,
                              pal.bg, 1, 0);
     fastchart_target_ellipse(t, cx, cy, inner_hole, inner_hole,

@@ -163,8 +163,6 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
         ? (int)self->marker_size
         : 6;
 
-
-    /* Optional per-point error bars (parallel to the first series). */
     double *err_lo = self->err_lo;
     double *err_hi = self->err_hi;
     int err_n = self->err_n;
@@ -175,12 +173,9 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
         bool right = self->secondary_y && series[s].right_axis;
         const fastchart_value_range *rng = right ? &range_r : &range_l;
         double *values = series[s].values;
-        /* setSeries rejects > FASTCHART_MAX_POINTS_PER_SERIES, so the
-         * clamp is defensive — the parser already capped this. */
         int n = series[s].len;
         if (n < 1) continue;
 
-        /* Build the polyline points (NaN -> invalid -> gap). */
         for (int i = 0; i < n; i++) {
             pts[i].x = fastchart_x_categorical_center(&plot, i, max_len);
             if (isnan(values[i])) {
@@ -239,7 +234,6 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
 
     }
 
-    /* Combo overlays go on top of the primary data. */
     fastchart_draw_overlays_categorical(t, (fastchart_obj *)self, &plot, &pal,
                                          &range_l,
                                          n_right > 0 ? &range_r : NULL,

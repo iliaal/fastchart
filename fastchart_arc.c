@@ -84,7 +84,6 @@ int fastchart_arc_render_to_target(fastchart_arc_obj *self, fastchart_target_t *
                               &plot_x0, &plot_y0, &plot_x1, &plot_y1);
     if (plot_x1 <= plot_x0) { efree(incident); return 0; }
 
-    /* Baseline placement + available arc height per orientation. */
     double base_y;
     int arc_h_up, arc_h_dn;
     switch (self->orientation) {
@@ -111,7 +110,6 @@ int fastchart_arc_render_to_target(fastchart_arc_obj *self, fastchart_target_t *
     if (arc_h_up < 0) arc_h_up = 0;
     if (arc_h_dn < 0) arc_h_dn = 0;
 
-    /* Even node spacing across the plot width. */
     double step = self->node_count > 1
         ? (double)(plot_x1 - plot_x0) / (self->node_count - 1)
         : 0.0;
@@ -156,7 +154,6 @@ int fastchart_arc_render_to_target(fastchart_arc_obj *self, fastchart_target_t *
                              start_deg, end_deg, color, 0, thickness);
     }
 
-    /* Node markers + labels. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double size = fastchart_resolve_font_size(
         (fastchart_obj *)self, FC_FONT_LABEL, base_size);

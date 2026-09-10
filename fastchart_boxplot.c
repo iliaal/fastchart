@@ -23,7 +23,6 @@
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 
-
 int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_target_t *t)
 {
     if (self->entry_count == 0) {
@@ -121,7 +120,6 @@ int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_ta
         /* gd_alpha 64 (~50%) → byte 255 - 64*2 = 127. */
         int alpha = fastchart_target_color(t, r, g, b, 127);
 
-        /* Whiskers (vertical lines from min->q1, q3->max) with caps. */
         fastchart_target_line(t, cx, y_min, cx, y_q1, pal.axis, 1, FASTCHART_DASH_SOLID);
         fastchart_target_line(t, cx, y_q3, cx, y_max, pal.axis, 1, FASTCHART_DASH_SOLID);
         fastchart_target_line(t, cx - box_w / 4, y_min, cx + box_w / 4, y_min,
@@ -129,17 +127,14 @@ int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_ta
         fastchart_target_line(t, cx - box_w / 4, y_max, cx + box_w / 4, y_max,
                               pal.axis, 1, FASTCHART_DASH_SOLID);
 
-        /* Q1..Q3 box. */
         fastchart_target_rect(t, x0, y_q3, x1 - x0 + 1, y_q1 - y_q3 + 1,
                               alpha, 1, 0);
         fastchart_target_rect(t, x0, y_q3, x1 - x0 + 1, y_q1 - y_q3 + 1,
                               edge_handle, 0, 1);
 
-        /* Median line (thickness 2). */
         fastchart_target_line(t, x0, y_med, x1, y_med,
                               edge_handle, 2, FASTCHART_DASH_SOLID);
 
-        /* Outliers as small open circles. */
         for (int k = 0; k < boxes[i].outlier_count; k++) {
             int oy = fastchart_y_to_pixel(boxes[i].outliers[k], &range, &plot);
             fastchart_target_ellipse(t, cx, oy, 2, 2, color, 0, 1);

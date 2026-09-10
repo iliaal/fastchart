@@ -1,18 +1,5 @@
 <?php
-/*
- * 8.5 E_ALL deprecation gate (CR-T1).
- *
- * Runs a representative render sweep with error_reporting(E_ALL) and a
- * handler that turns every deprecation (E_DEPRECATED / E_USER_DEPRECATED)
- * into a failure. The repo matrix covers PHP 8.1 through 8.5, and 8.5
- * promotes several long-deprecated behaviors (notably imagedestroy() on
- * GdImage, which is why the suite never calls it — see tests/443); this
- * script proves the extension's own sweep stays deprecation-free there.
- *
- * Invoked by the tests.yml "8.5 deprecation gate" step on the PHP 8.5
- * linux lane. Exits 0 silently on success, 1 with the offending
- * message on the first deprecation, 2 on a hard error.
- */
+/* PHP 8.5 E_ALL render gate: exit 0 on success, 1 for deprecations, 2 for errors. */
 
 error_reporting(E_ALL);
 

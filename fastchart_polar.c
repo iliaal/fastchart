@@ -94,7 +94,6 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
         if (radius < 1) return 0;
     }
 
-    /* Concentric grid + radial spokes every 30°. */
     const int rings = 4;
     for (int r = 1; r <= rings; r++) {
         int rr = (int)((double)radius * (double)r / (double)rings);
@@ -310,7 +309,6 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
         }
     }
 
-    /* Title. */
     fastchart_draw_floating_title(t, (fastchart_obj *)self, &pal, W / 2, 24);
 
     if (legend_count > 0) {

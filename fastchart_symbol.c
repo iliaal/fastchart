@@ -30,17 +30,9 @@
 #include "fastchart_rasterize.h"
 #include "qrcodegen.h"
 
-/* fastchart_arginfo.h is intentionally NOT included here. It expands
- * `ZEND_BEGIN_ARG_INFO_EX` into `static const` argspec arrays and
- * a `static class_FastChart_*_methods` table; including it from a
- * second TU would fold multiple definitions at link time. The
- * argspec arrays and method tables are consumed only by MINIT in
- * fastchart.c; method bodies (this file) only need the
- * ZEND_METHOD macro from php.h. */
+/* Arginfo and method tables are consumed by MINIT in fastchart.c;
+ * method bodies here need only php.h. */
 
-/* Initial defaults applied by every Symbol create_object handler before
- * the per-class init_extras runs. Mirrors fastchart_base_init_defaults
- * for the chart family but covers only the slim Symbol base. */
 void fastchart_symbol_base_init_defaults(fastchart_symbol_obj *b)
 {
     b->width = 0;            /* 0 = pick class default at render time */
@@ -67,16 +59,8 @@ void fastchart_symbol_base_addref_owned(fastchart_symbol_obj *b)
     if (b->data) zend_string_addref(b->data);
 }
 
-/* Per-class init/release/addref helpers below mirror the chart-family
- * pattern. Each Symbol concrete class defines its own trio so the
- * lifecycle macro can call them by `name`. */
-/* Per-class init hook. Sets class-specific defaults that aren't part
- * of FASTCHART_SYMBOL_BASE_FIELDS. Release / addref hooks were
- * removed when neither Code128 nor QrCode kept per-instance owned
- * state of their own — base data + the class-specific scalars are
- * lifecycle-safe under memcpy. Add a class-local release/addref
- * pair back into the macro below if a future symbology stores an
- * owned zend_string (font path, glyph cache, etc.). */
+/* Concrete symbols own only base data and scalar extras. Add release/clone
+ * hooks if a symbol gains separately owned storage. */
 static void fastchart_code128_init_extras(fastchart_code128_obj *o)
 {
     o->show_text = false;
@@ -141,33 +125,15 @@ zend_object_handlers fastchart_qrcode_handlers;
 FASTCHART_DEFINE_SYMBOL_LIFECYCLE(code128, fastchart_code128_obj)
 FASTCHART_DEFINE_SYMBOL_LIFECYCLE(qrcode,  fastchart_qrcode_obj)
 
-/* create_object handler attached at MINIT to the abstract Symbol and
- * Barcode class entries. ZEND_ACC_ABSTRACT blocks `new Symbol()` and
- * `new Barcode()` directly, but a userland subclass
- * (`class MySym extends FastChart\Symbol {}`) inherits the parent's
- * create_object and bypasses the abstract check. Without this guard,
- * `new MySym()` would allocate a vanilla zend_object whose memory
- * layout cannot back fastchart_symbol_obj — every inherited typed
- * method (setData / setSize / renderPng) would walk past the end of
- * the std header and crash under ASan. Throw cleanly instead.
- *
- * Concrete internal subclasses (Code128, QrCode) override create_object
- * with their own handler at MINIT, so this trampoline only fires on
- * unsupported userland subclassing paths. */
+/* Reject userland subclasses of abstract Symbol classes: vanilla Zend
+ * objects lack the native prefix required by inherited methods. */
 zend_object *fastchart_symbol_abstract_create_object(zend_class_entry *ce)
 {
     zend_throw_error(NULL,
         "FastChart\\%s is internal and cannot be instantiated or subclassed; "
         "use a concrete class such as FastChart\\Code128 or FastChart\\QrCode.",
         ZSTR_VAL(ce->name));
-    /* fastchart_abstract_object_handlers (set up at MINIT, in
-     * fastchart.c) overrides get_constructor to return NULL — that
-     * makes ZEND_NEW skip any userland __construct inherited via
-     * `class MySym extends FastChart\Symbol { function __construct()
-     * {} }`. Without this, the inherited userland constructor runs
-     * on a vanilla zend_object lacking the FASTCHART_SYMBOL_BASE_FIELDS
-     * prefix and inherited native methods scribble heap via
-     * Z_FASTCHART_SYMBOL_OBJ_P. */
+    /* Suppress userland constructors on the prefix-less sentinel object. */
     extern zend_object_handlers fastchart_abstract_object_handlers;
     zend_object *obj = zend_objects_new(ce);
     obj->handlers = &fastchart_abstract_object_handlers;
@@ -190,9 +156,6 @@ void fastchart_symbol_fill_background(fastchart_symbol_obj *self,
     int bg = fastchart_target_color(t, r, g, b, 0xFF);
     fastchart_target_rect(t, 0, 0, W, H, bg, /*fill=*/1, /*thickness=*/0);
 }
-
-/* Code128 renderer lives in fastchart_code128.c; QrCode renderer
- * lives in fastchart_qrcode.c. */
 
 /* ---------------- Symbol render dispatch + shortcuts -------------- */
 
@@ -405,10 +368,6 @@ static void fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAMETERS,
     RETURN_STR(buf.s);
 }
 
-/* SVG file-write branch invoked by Symbol::renderToFile when the path
- * extension is .svg. Mirrors fastchart_render_to_svg_file in
- * fastchart.c. Honors open_basedir and surfaces short writes as a
- * thrown error via the shared stream-write helper. */
 static void fastchart_symbol_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS,
                                                  zend_string *path)
 {
@@ -593,9 +552,6 @@ ZEND_METHOD(FastChart_Symbol, setDpi)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(dpi)
     ZEND_PARSE_PARAMETERS_END();
-    /* Same range as Chart::setDpi (validated there); duplicated here
-     * because Symbol's range is identical and the resolver in
-     * fastchart_render_helpers.c relies on values within this band. */
     if (dpi < 24 || dpi > 1200) {
         zend_value_error(
             "FastChart\\Symbol::setDpi() dpi must be in [24, 1200]");
@@ -755,9 +711,6 @@ ZEND_METHOD(FastChart_Symbol, renderToFile)
             "bytes");
         RETURN_THROWS();
     }
-    /* Vector branch. .svg ignores $quality (no lossy encoder) and
-     * goes through a separate write path that emits text bytes.
-     * Mirrors the Chart-side .svg routing in fastchart.c. */
     if (fastchart_path_ends_with_svg(ZSTR_VAL(path), ZSTR_LEN(path))) {
         (void)quality;
         if (php_check_open_basedir(ZSTR_VAL(path))) {

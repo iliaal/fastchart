@@ -39,9 +39,6 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
 
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
-    /* Canvas background via the shared helper so setTransparentBackground /
-     * setBackgroundImage / setPlotRect compositing are honored instead of an
-     * unconditional opaque fill. */
     fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
     if (self->vector_count <= 0) {
@@ -60,7 +57,6 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
                                NULL, &title_h, NULL, 0);
     }
 
-    /* Data bounds for (x,y) anchor. */
     double xmin = self->vectors[0].x, xmax = self->vectors[0].x;
     double ymin = self->vectors[0].y, ymax = self->vectors[0].y;
     for (int i = 1; i < self->vector_count; i++) {
@@ -79,7 +75,6 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
     fastchart_rect plot;
     fastchart_compute_layout((fastchart_obj *)self, t, 1, 1, NULL, 0, &plot);
 
-    /* Plot bg + frame + ticks (basic). */
     fastchart_target_rect(t, plot.x0, plot.y0,
                           plot.x1 - plot.x0 + 1, plot.y1 - plot.y0 + 1,
                           pal.plot_bg, 1, 0);
@@ -152,7 +147,6 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
     if (anchor_x1 <= anchor_x0) { anchor_x0 = plot.x0; anchor_x1 = plot.x1; }
     if (anchor_y1 <= anchor_y0) { anchor_y0 = plot.y0; anchor_y1 = plot.y1; }
 
-    /* Ramp colors if both endpoints set. */
     int have_ramp = (self->color_low_rgb >= 0 && self->color_high_rgb >= 0);
     int lr = 0, lg = 0, lb = 0, hr = 0, hg = 0, hb = 0;
     if (have_ramp) {
@@ -166,7 +160,6 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
     double mag_range = self->mag_max - self->mag_min;
     if (mag_range <= 0) mag_range = 1.0;
 
-    /* Render every arrow. */
     for (int i = 0; i < self->vector_count; i++) {
         double mag = sqrt(self->vectors[i].dx * self->vectors[i].dx
                           + self->vectors[i].dy * self->vectors[i].dy);
@@ -207,7 +200,6 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
             color = pal.series[0];
         }
         fastchart_target_line(t, ax, ay, tx, ty, color, 2, FASTCHART_DASH_SOLID);
-        /* Arrowhead: small triangle at the tip. */
         double head_len = len * 0.3;
         if (head_len < 4) head_len = 4;
         double head_ang = 0.4;     /* ~23 degrees */

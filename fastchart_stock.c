@@ -35,8 +35,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
         return -1;
     }
 
-    /* setOhlcv parsed, validated, and timestamp-sorted the candles
-     * already; the renderer just reads them. */
     fastchart_candle *candles = self->candles;
     int n = self->candle_count;
     bool any_volume = self->any_volume;
@@ -283,14 +281,8 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
 
     if (candle_style == FASTCHART_STYLE_VECTOR) {
         va = ecalloc(n, sizeof(int));
-        /* Monotone-decreasing deque for the sliding-window max of
-         * climax_value = volume * (high - low) over the previous baseT
-         * bars. Front holds the max; tail entries with cv <= incoming
-         * are dominated and dropped before push. baseT=10 keeps the
-         * deque tiny — the previous nested loop was O(n*baseT)
-         * which is fine in practice but the deque is genuinely O(n)
-         * and reads cleaner. Indices stored as a ring buffer of size
-         * baseT + 1 so head==tail unambiguously means empty. */
+        /* Monotone deque over the previous baseT climax values; the front holds
+         * the maximum. One spare ring slot distinguishes full from empty. */
         int dq[baseT + 1];
         int dq_head = 0, dq_tail = 0;
         const int DQ_CAP = baseT + 1;
@@ -302,16 +294,8 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
             if (i >= baseT + 1 && candles[i - 1 - baseT].has_volume) {
                 win_sum -= candles[i - 1 - baseT].volume; win_cnt--;
             }
-            /* Drop stale front BEFORE the push below — the ring has
-             * DQ_CAP slots and head==tail means empty, so unambiguous
-             * capacity is DQ_CAP-1 = baseT items. The window holds at
-             * most baseT entries, so the deque must be at most baseT-1
-             * BEFORE pushing i-1 (the push brings it to baseT, equal
-             * to DQ_CAP-1: full but still unambiguous). Pushing first
-             * would let baseT+1 items land in the ring, wrapping
-             * dq_tail back to dq_head and silently corrupting the
-             * deque (head==tail then misreads as empty, climax_max
-             * collapses to 0 and bars get misclassified as climaxes). */
+            /* Evict before pushing: DQ_CAP-1 is the usable capacity, and another
+             * entry would wrap tail to head and falsely signal empty. */
             while (dq_head != dq_tail && dq[dq_head] < i - baseT) {
                 dq_head = (dq_head + 1) % DQ_CAP;
             }
@@ -402,7 +386,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
         int y_close = fastchart_y_to_pixel(candles[i].close, &yrange, &price_pane);
 
         int up = candles[i].close >= candles[i].open;
-        /* Target color HANDLE — flows into fastchart_target_* below. */
         int color = up ? pal.up : pal.down;
         if (candle_style == FASTCHART_STYLE_VECTOR) {
             color = (va[i] == 1) ? (up ? v_climax_up : v_climax_dn)
@@ -410,7 +393,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                   : v_neutral;
         }
 
-        /* Per-bar half-width: VOLUME mode scales by volume / avg. */
         int hw = half_w;
         if (candle_style == FASTCHART_STYLE_VOLUME && vol_scale) {
             hw = (int)((double)half_w * vol_scale[i] + 0.5);
@@ -488,9 +470,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
             }
 
             case FASTCHART_STYLE_VECTOR: {
-                /* Filled candle body with vector-derived color. The
-                 * color was already selected above based on the
-                 * volume-strength category. */
                 fastchart_target_line(t, x, y_high, x, y_low, color, 1, FASTCHART_DASH_SOLID);
                 int y_top = up ? y_close : y_open;
                 int y_bot = up ? y_open  : y_close;
@@ -525,8 +504,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
     if (va) efree(va);
     if (vol_scale) efree(vol_scale);
 
-    /* MA overlays. Each period gets a series color and a 2px line.
-     * The target backend handles AA at the layer level. */
     if (sma_count > 0) {
         for (int s = 0; s < sma_count; s++) {
             int period = sma_periods[s];
@@ -612,9 +589,7 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
         }
     }
 
-    /* Phase-2 price overlays: Bollinger Bands (3 lines) and
-     * Parabolic SAR (dot per bar). Drawn on the price pane in the
-     * price y-range so they sit alongside the candles. */
+    /* Price overlays share the candle pane and its Y range. */
     for (int o = 0; o < self->overlay_count; o++) {
         fastchart_price_overlay *ov = &self->overlays[o];
         int color = ov->color_rgb >= 0
@@ -642,8 +617,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                 }
             }
         } else if (ov->kind == FASTCHART_OVERLAY_PSAR) {
-            /* SAR is a dot per bar. Draw a small filled circle at
-             * (bar_x, sar_y) for each non-NaN SAR value. */
             for (int i = 0; i < ov->n; i++) {
                 if (isnan(ov->a[i])) continue;
                 int x = fastchart_x_time_to_pixel(&price_pane,
@@ -652,7 +625,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                 fastchart_target_ellipse(t, x, y, 2, 2, color, 1, 0);
             }
         } else if (ov->kind == FASTCHART_OVERLAY_VWAP) {
-            /* One connected line; NaN warm-up breaks the line. */
             int prev_x = 0, prev_y = 0, has_prev = 0;
             for (int i = 0; i < ov->n; i++) {
                 if (isnan(ov->a[i])) { has_prev = 0; continue; }
@@ -693,8 +665,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
         int half_bw = bw / 2;
         if (half_bw < 1) half_bw = 1;
 
-        /* Resolve override RGBs into target color HANDLES once,
-         * parallel to candles up to the override count. */
         int *vol_colors = NULL;
         if (self->volume_colors && self->volume_colors_count > 0) {
             int vcn = self->volume_colors_count;
@@ -766,7 +736,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
             fastchart_value_range pr;
             fastchart_value_range_compute(pmin, pmax, 4, &pr);
 
-            /* Indicator-pane line color as a target HANDLE. */
             int color = pane->has_color
                 ? fastchart_target_color_rgb(t, pane->color_rgb)
                 : pal.series[(slot + 4) % FASTCHART_PALETTE_SERIES_N];
@@ -806,8 +775,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                 }
             }
 
-            /* Up to three line series. Histogram already drawn above
-             * is skipped here. */
             for (int s_idx = 0; s_idx < 3; s_idx++) {
                 const double *vals = all_series[s_idx];
                 if (!vals) continue;
@@ -864,7 +831,6 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
     fastchart_draw_h_annotations(t, (fastchart_obj *)self, &price_pane, &pal, &yrange);
     fastchart_draw_v_annotations_time(t, (fastchart_obj *)self, &plot, &pal, t_min, t_max);
 
-    /* Legend for the SMA overlays. */
     if (sma_count > 0) {
         int legend_colors[FASTCHART_MAX_SMA];
         const char *legend_labels[FASTCHART_MAX_SMA];

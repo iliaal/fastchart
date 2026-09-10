@@ -54,13 +54,8 @@ int fastchart_text_measure(fastchart_target_t *t,
                            int *out_w, int *out_h,
                            char *err_buf, size_t err_buf_n);
 
-/* Shared UTF-8 next-codepoint walker for every text consumer
- * (measurement, SVG glyph emitter, PDF glyph emitter). One definition
- * so the copies cannot drift: an earlier inline copy in the measurer
- * SKIPPED invalid bytes (0 width) while the emitters substituted
- * U+FFFD with a real advance — layout under-reserved on exactly the
- * malformed input the walkers exist to survive. Truncated / invalid
- * sequences yield U+FFFD and advance one byte; returns NULL at end. */
+/* Shared decoder keeps measured and emitted glyphs aligned. Invalid or
+ * truncated sequences yield U+FFFD and advance one byte; NULL marks end. */
 static zend_always_inline const unsigned char *fc_utf8_next_cp(
     const unsigned char *p, const unsigned char *end, uint32_t *out_cp)
 {

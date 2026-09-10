@@ -56,9 +56,6 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
 
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
-    /* Skip the opaque canvas fill when transparent output was requested,
-     * mirroring fastchart_draw_frame() (this renderer draws its own
-     * canvas instead of calling draw_frame). */
     if (!self->transparent_bg) {
         fastchart_target_rect(t, 0, 0, W, H, pal.bg, 1, 0);
     }
@@ -88,7 +85,6 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
     int n = self->word_count;
     int *order = ecalloc(n, sizeof(int));
     for (int i = 0; i < n; i++) order[i] = i;
-    /* Insertion sort by weight desc (n is small for a legible cloud). */
     for (int i = 1; i < n; i++) {
         int key = order[i], j = i - 1;
         while (j >= 0 && self->words[order[j]].weight < self->words[key].weight) {
@@ -162,7 +158,6 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
         double box_h = vertical ? tw : th;
         double hw = box_w / 2.0, hh = box_h / 2.0;
 
-        /* Spiral outward until the box clears every placed box. */
         double bx = cx, by = cy;
         int ok = 0;
         for (long s = 0; s < WC_SPIRAL_MAX_STEPS && !ok && spiral_budget > 0;
@@ -215,7 +210,7 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
         }
         if (!ok) {
             if (spiral_budget <= 0) break;
-            continue;   /* could not fit this word; drop it */
+            continue;
         }
 
         placed[placed_n].x0 = bx - hw;

@@ -126,7 +126,6 @@ int fastchart_pictogram_render_to_target(fastchart_pictogram_obj *self, fastchar
         double y = plot_y0 + r * cell_h + pad_y;
 
         if (i < full) {
-            /* Fully filled: draw directly, no clip needed. */
             picto_draw_icon(t, x, y, icon, icon, self->shape, fill_color);
         } else {
             picto_draw_icon(t, x, y, icon, icon, self->shape, empty_color);

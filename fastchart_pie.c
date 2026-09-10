@@ -56,7 +56,6 @@ static int fastchart_pie_render_rings(fastchart_pie_obj *self,
         ? fastchart_target_color_rgb(t, (int)self->edge_color)
         : pal.border;
 
-    /* Outermost (highest index) first so inner rings overpaint it. */
     for (int r = ring_count - 1; r >= 0; r--) {
         fastchart_pie_ring *ring = &self->rings[r];
         if (ring->count == 0 || ring->total <= 0.0) continue;
@@ -87,7 +86,6 @@ static int fastchart_pie_render_rings(fastchart_pie_obj *self,
                                  edge_handle, 0, 1);
     }
 
-    /* Optional center hole, sized off the innermost band. */
     double donut = self->donut_hole_ratio;
     if (donut > 0) {
         int inner = (int)((double)radius / (double)ring_count);
@@ -196,13 +194,9 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
     int diameter = (avail_w < avail_h ? avail_w : avail_h) - 60;
     if (diameter < 40) diameter = 40;
 
-    /* Per-slice radial offset from setExplode([idx => px, ...]),
-     * pre-parsed at setter time into self->explode. */
     const zend_long *explode = self->explode;
     int explode_count = self->explode_count;
 
-    /* Resolve every slice's color once into a target color HANDLE.
-     * The SVG path emits the rgba directly from the handle. */
     int *slice_colors = ecalloc((size_t)n_slices, sizeof(int));
     for (int i = 0; i < n_slices; i++) {
         if (slices[i].color_rgb >= 0) {
@@ -318,14 +312,10 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
         fastchart_push_image_map_poly((fastchart_obj *)self, orig_idx[i],
                                        poly_xy, poly_n);
 
-        /* Drop shadow underneath this slice (no-op when chart has
-         * no shadow configured). */
         fastchart_shadow_filled_arc(t, (fastchart_obj *)self,
                                     slice_cx, slice_cy, slice_radius * 2,
                                     (int)s_deg, (int)e_deg);
 
-        /* Emit a filled wedge via the target arc primitive; outline
-         * with a thin stroke along the same sweep. */
         fastchart_target_arc(t, slice_cx, slice_cy, slice_radius, slice_radius,
                              s_deg, e_deg, color, 1, 0);
         fastchart_target_arc(t, slice_cx, slice_cy, slice_radius, slice_radius,
@@ -405,7 +395,6 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
             } else if (self->slice_label_position == FASTCHART_LABEL_OUTSIDE) {
                 int lx = cx + (int)(outside_r * cos_mid);
                 int ly = cy + (int)(outside_r * sin_mid);
-                /* Tiny leader line from rim to label anchor. */
                 int rim_x = cx + (int)((diameter / 2.0) * cos_mid);
                 int rim_y = cy + (int)((diameter / 2.0) * sin_mid);
                 fastchart_target_line(t, rim_x, rim_y, lx, ly,

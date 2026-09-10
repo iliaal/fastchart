@@ -184,7 +184,6 @@ int fastchart_treemap_render_to_target(fastchart_treemap_obj *self, fastchart_ta
     fastchart_target_get_dims(t, &W, &H);
     fastchart_paint_canvas_bg(t, (fastchart_obj *)self, &pal);
 
-    /* Reserve space for the optional title above the plot rect. */
     int top = 12;
     int title_h = 0;
     const char *title_font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_TITLE);
@@ -231,9 +230,6 @@ int fastchart_treemap_render_to_target(fastchart_treemap_obj *self, fastchart_ta
         order[j + 1] = key;
     }
 
-    /* Convert values to pixel-area units so the squarify routine
-     * works in pixel space directly. The total pixel area equals
-     * the plot rect area; each cell gets value/total of it. */
     double total_value = 0;
     for (int i = 0; i < n; i++) total_value += self->items[i].value;
     if (total_value <= 0) {
@@ -254,7 +250,6 @@ int fastchart_treemap_render_to_target(fastchart_treemap_obj *self, fastchart_ta
     treemap_rect rects[FASTCHART_MAX_TREEMAP_ITEMS];
     squarify(areas, order, n, rect, rects);
 
-    /* Paint each cell + a 1px border. */
     int label_black = fastchart_target_color(t, 0, 0, 0, 0xFF);
     int label_white = fastchart_target_color(t, 255, 255, 255, 0xFF);
 
@@ -295,7 +290,7 @@ int fastchart_treemap_render_to_target(fastchart_treemap_obj *self, fastchart_ta
         int tw = 0, th = 0;
         if (fastchart_text_measure(t, label_font, label_size, it->label,
                                    &tw, &th, NULL, 0) != 0) continue;
-        if (tw > cell_w - 6) continue;  /* would clip horizontally */
+        if (tw > cell_w - 6) continue;
 
         /* Choose a foreground that contrasts with the cell color.
          * Luma threshold via the ITU-R BT.601 weights, computed off

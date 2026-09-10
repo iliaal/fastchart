@@ -118,7 +118,6 @@ int fastchart_venn_render_to_target(fastchart_venn_obj *self, fastchart_target_t
         r[i] = sqrt(s / M_PI);
     }
 
-    /* Lay out centres in abstract units. */
     double d01 = venn_solve_distance(r[0], r[1], venn_pair_size(self, 0, 1));
     cx[0] = 0.0; cy[0] = 0.0;
     cx[1] = d01; cy[1] = 0.0;
@@ -163,7 +162,6 @@ int fastchart_venn_render_to_target(fastchart_venn_obj *self, fastchart_target_t
         }
     }
 
-    /* Fit the bounding box of all circles to the plot rect. */
     double minx = INFINITY, maxx = -INFINITY, miny = INFINITY, maxy = -INFINITY;
     for (int i = 0; i < n; i++) {
         if (cx[i] - r[i] < minx) minx = cx[i] - r[i];
@@ -212,7 +210,6 @@ int fastchart_venn_render_to_target(fastchart_venn_obj *self, fastchart_target_t
         fastchart_target_ellipse(t, px, py, rr, rr, stroke, 0, 2);
 
         if (font && self->sets[i].label) {
-            /* Push the label outward from the group centroid. */
             double dxn = cx[i] - mid_x, dyn = cy[i] - mid_y;
             double len = sqrt(dxn * dxn + dyn * dyn);
             int lx = px, ly = py;

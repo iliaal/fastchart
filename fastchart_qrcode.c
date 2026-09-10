@@ -144,8 +144,6 @@ int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,
     int origin_x = (W - symbol_px) / 2 + quiet_modules * module_px;
     int origin_y = (H - symbol_px) / 2 + quiet_modules * module_px;
 
-    /* Background fill via the shared helper — single source of truth
-     * for the transparent_bg invariant. */
     fastchart_symbol_fill_background(base, t);
 
     int fg = fastchart_target_color_rgb(t, (int)base->fg_rgb);

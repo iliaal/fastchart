@@ -68,15 +68,8 @@ void fastchart_target_from_svg(fastchart_target_t *t, smart_str *buf,
     t->u.svg.buf = buf;
     t->u.svg.width = width;
     t->u.svg.height = height;
-    /* SVG output is DPI-invariant: vectors scale infinitely, so DPI
-     * has no effect on the output viewport, and we deliberately keep
-     * layout / text measurement at the 96 baseline so an SVG render
-     * with setDpi(200) is identical to one with setDpi(96). Honoring
-     * the chart's DPI here would inflate label-reserved margins and
-     * make text-measurement reserve room for 2x glyphs that the SVG
-     * still emits at 1x — producing the "huge left margin" symptom.
-     * The `dpi` parameter is accepted for signature stability but is
-     * intentionally ignored. */
+    /* Keep vector layout and text measurement at 96 DPI so setDpi cannot
+     * inflate margins without scaling the logical viewport. */
     (void)dpi;
     t->u.svg.dpi = 96;
     t->u.svg.next_clip_id = 1;
@@ -185,7 +178,6 @@ static void fc_color_hash_grow(fastchart_target_t *t)
 
 int fastchart_target_color(fastchart_target_t *t, int r, int g, int b, int a)
 {
-    /* Clamp 0..255. */
     if (r < 0) r = 0; else if (r > 255) r = 255;
     if (g < 0) g = 0; else if (g > 255) g = 255;
     if (b < 0) b = 0; else if (b > 255) b = 255;
@@ -528,7 +520,6 @@ FT_Face fastchart_ft_face(const char *font_path)
 
     fc_ft_face_slot *cache = FASTCHART_G(ft_face_cache);
 
-    /* Hit? Swap-to-front to keep the hot path at slot 0. */
     for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
         if (cache[i].path && strcmp(cache[i].path, font_path) == 0) {
             if (i != 0) {
@@ -673,10 +664,8 @@ void fastchart_glyph_cache_insert(FT_Face face, uint16_t pix_size,
 {
     fc_glyph_cache_entry *g = FASTCHART_G(glyph_cache);
     int tail = FC_GLYPH_CACHE_N - 1;
-    /* Evict tail. */
     free(g[tail].ops);
     free(g[tail].pts);
-    /* Shift right. */
     for (int i = tail; i > 0; i--) {
         g[i] = g[i - 1];
     }
@@ -1031,9 +1020,6 @@ static fastchart_target_image_cache_entry *fastchart_target_image_cache_get(
 	if (!t || !path || !*path) return NULL;
 	for (int i = 0; i < t->image_cache_n; i++) {
         fastchart_target_image_cache_entry *entry = &t->image_cache[i];
-        /* entry->path is never NULL below image_cache_n today (estdup'd
-         * at insert; release resets entries and the counter together).
-         * The guard keeps that invariant local, not load-bearing. */
         if (entry->path && strcmp(entry->path, path) == 0) return entry;
 	}
 

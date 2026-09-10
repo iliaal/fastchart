@@ -26,12 +26,8 @@
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 
-/* Force-directed network graph (Fruchterman-Reingold). The layout is
- * fully deterministic: initial node placement comes from a seeded
- * xorshift PRNG and the iteration count is fixed, so the same input +
- * seed always produces byte-identical output (Math.random is neither
- * available nor desirable here). O(n^2) repulsion per iteration, which
- * is fine for the node counts this chart targets. */
+/* Fruchterman-Reingold layout with a seeded PRNG and fixed iteration
+ * count for deterministic output. Repulsion costs O(n^2) per pass. */
 
 /* xorshift32 — seed must be non-zero. */
 static inline uint32_t fc_xs_next(uint32_t *s)
@@ -137,7 +133,6 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
 		for (int it = 0; it < iters; it++) {
 			for (int i = 0; i < n; i++) { dx[i] = 0.0; dy[i] = 0.0; }
 
-			/* Repulsion between every pair. */
 			for (int i = 0; i < n; i++) {
 				for (int j = i + 1; j < n; j++) {
 					double ddx = px[i] - px[j];
@@ -154,7 +149,6 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
 					dx[j] -= ux * force; dy[j] -= uy * force;
 				}
 			}
-			/* Attraction along edges. */
 			for (int e = 0; e < self->link_count; e++) {
 				int a = self->links[e].from, b = self->links[e].to;
 				double ddx = px[a] - px[b];
@@ -183,7 +177,6 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
 			}
 		}
 
-		/* Rescale the final bounding box to fill the plot rect. */
 		double minx = px[0], maxx = px[0], miny = py[0], maxy = py[0];
 		for (int i = 1; i < n; i++) {
 			if (px[i] < minx) minx = px[i];
@@ -235,7 +228,6 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
                               pal.border, thickness, FASTCHART_DASH_SOLID);
     }
 
-    /* Nodes + labels. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double size = fastchart_resolve_font_size(
         (fastchart_obj *)self, FC_FONT_LABEL, base_size);

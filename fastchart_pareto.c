@@ -46,7 +46,6 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
         return -1;
     }
 
-    /* Cumulative totals; total is the grand sum used for percentages. */
     double total = 0.0;
     for (int i = 0; i < self->bar_count; i++) {
         total += self->bars[i].value;
@@ -78,8 +77,6 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
 	}
     double y_axis_max = yr.max > 0 ? yr.max : y_max;
 
-    /* Plot rect: leave room on left for bar-axis ticks, right for
-     * the 0..100% axis. */
     int top_pad = 16;
     int title_h = 0;
     const char *title_font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_TITLE);
@@ -108,7 +105,6 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
     ann_range.min = 0.0;
     ann_range.max = y_axis_max;
 
-    /* Plot background + frame. */
     fastchart_target_rect(t, plot_x0, plot_y0,
                           plot_x1 - plot_x0 + 1, plot_y1 - plot_y0 + 1,
                           pal.plot_bg, 1, 0);
@@ -117,7 +113,6 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
     fastchart_draw_v_plot_bands_categorical(t, (fastchart_obj *)self,
                                             &ann_plot, self->bar_count, &pal);
 
-    /* Left-axis ticks. 5 evenly-spaced including 0 and max. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base_size);
     const char *fmt = self->value_label_format
@@ -135,7 +130,6 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
                                 FASTCHART_ALIGN_RIGHT, buf, NULL, 0);
         }
     }
-    /* Right-axis ticks at 0/25/50/75/100%. */
     for (int k = 0; k <= 4; k++) {
         double pct = k * 25.0;
         int y = plot_y1 - (int)(pct / 100.0 * (plot_y1 - plot_y0));
@@ -151,7 +145,6 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
                           plot_x1 - plot_x0 + 1, plot_y1 - plot_y0 + 1,
                           pal.border, 0, 1);
 
-    /* Bars. Equal-width slots, small gap between bars. */
     int slot_w = (plot_x1 - plot_x0) / self->bar_count;
     /* Integer slot width collapses to 0 when the plot is narrower than
      * the bar count, stacking every bar at the same x. Reject instead of
@@ -212,7 +205,6 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
             fastchart_target_line(t, prev_x, prev_y, px, py,
                                   line_color, 2, FASTCHART_DASH_SOLID);
         }
-        /* Circle marker. */
         fastchart_target_ellipse(t, px, py, 6, 6, line_color, 1, 0);
         fastchart_target_ellipse(t, px, py, 6, 6, pal.border, 0, 1);
         prev_x = px; prev_y = py;

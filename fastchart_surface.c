@@ -137,7 +137,6 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
         }
     }
 
-    /* Outer frame around the heatmap. */
     int frame_x1 = plot_x0 + plot_w - 1;
     int frame_y1 = plot_y0 + plot_h - 1;
     if (self->border_sides & FASTCHART_BORDER_TOP)
@@ -149,7 +148,6 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
     if (self->border_sides & FASTCHART_BORDER_RIGHT)
         fastchart_target_line(t, frame_x1, plot_y0, frame_x1, frame_y1, pal.border, 1, FASTCHART_DASH_SOLID);
 
-    /* Title. */
     fastchart_draw_floating_title(t, (fastchart_obj *)self, &pal, W / 2, 24);
 
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);

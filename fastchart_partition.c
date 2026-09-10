@@ -89,7 +89,6 @@ static void partition_draw(partition_ctx *c, fastchart_pack_node *node,
     fastchart_target_rect(c->t, x, y, w, h, fill, 1, 0);
     fastchart_target_rect(c->t, x, y, w, h, c->pal->border, 0, 1);
 
-    /* Label only when the cell is comfortably larger than the glyphs. */
     if (c->font && node->label && w > 14 && h > (int)(c->font_size * 1.2)) {
         fastchart_text_draw(c->t, c->font, c->font_size, c->pal->text,
                             x + w / 2, y + h / 2 + (int)(c->font_size * 0.35),

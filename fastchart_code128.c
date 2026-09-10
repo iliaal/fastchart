@@ -255,14 +255,10 @@ static int code128_encode(const char *data, size_t len,
         int digits_here = count_consecutive_digits(data, len, i);
 
         if (subset == 'C') {
-            /* C: encode digit pairs. If we have <2 digits, switch out. */
             if (digits_here >= 2) {
                 int v = (data[i] - '0') * 10 + (data[i + 1] - '0');
                 EMIT(v);
                 i += 2;
-                /* Consider switching out of C if the remaining digits
-                 * after this pair are insufficient for another pair
-                 * AND there's still input left. */
                 int remaining_digits = count_consecutive_digits(data, len, i);
                 if (remaining_digits < 2 && i < len) {
                     if ((unsigned char)data[i] < 32) {
@@ -272,7 +268,6 @@ static int code128_encode(const char *data, size_t len,
                     }
                 }
             } else {
-                /* Single trailing digit (odd-length tail) or non-digit. */
                 if (c < 32) {
                     EMIT(C128_CODE_A); subset = 'A';
                 } else {
@@ -405,7 +400,6 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
         return -1;
     }
 
-    /* Encode. */
     uint8_t codes[C128_MAX_CODES];
     char err[160] = {0};
     int n_codes = code128_encode(ZSTR_VAL(base->data), ZSTR_LEN(base->data),
@@ -415,7 +409,6 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
         return -1;
     }
 
-    /* Append checksum + stop. */
     if ((size_t)n_codes + 2 > C128_MAX_CODES) {
         zend_throw_error(NULL, "FastChart\\Code128: encoded code count overflow");
         return -1;
@@ -501,8 +494,6 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
         return -1;
     }
 
-    /* Background fill via the shared helper — single source of truth
-     * for the transparent_bg invariant. */
     fastchart_symbol_fill_background(base, t);
 
     int fg = fastchart_target_color_rgb(t, (int)base->fg_rgb);
@@ -562,7 +553,6 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
             }
         }
 
-        /* Font size targets ~55% of the strip height. Min 8pt. */
         double pt = (double)text_strip_h * 0.55;
         if (pt < 8.0) pt = 8.0;
 
@@ -573,7 +563,7 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
                                    &text_w, &text_h, NULL, 0) != 0) {
             text_h = (int)(pt * 1.2 + 0.5);
         }
-        int tx = W / 2;  /* centre anchor; CENTER align handles offset */
+        int tx = W / 2;
         /* Center the text vertically within the strip below the bars.
          * The previous +2 padding produced a visibly tight gap above
          * the text when text_h consumed most of text_strip_h; the

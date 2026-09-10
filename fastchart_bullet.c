@@ -27,19 +27,8 @@
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 
-/* Bullet chart layout (Stephen Few).
- *
- *   +========================================================+
- *   | poor      | satisfactory      | good                   |   <- bands
- *   |   +------------------------+                    |      |   <- performance bar
- *   |                                       |                |   <- target tick
- *   +========================================================+
- *
- * The full-height background is partitioned by setBands(). The
- * performance bar (taller than the bands' visual half-height
- * inset, drawn in a strong color) runs from min to value. The
- * target tick is a thick vertical line spanning the full bar
- * height at the target value. */
+/* Stephen Few bullet layout: background bands, a performance bar from
+ * min to value, and a target tick extending beyond the bar. */
 int fastchart_bullet_render_to_target(fastchart_bullet_obj *self, fastchart_target_t *t)
 {
     fastchart_palette pal;
@@ -103,7 +92,6 @@ int fastchart_bullet_render_to_target(fastchart_bullet_obj *self, fastchart_targ
         perf_y1 = band_y1 - perf_inset;
     }
 
-    /* Band backdrop. */
     fastchart_target_rect(t, bar_x0, band_y0,
                           bar_x1 - bar_x0 + 1, band_h + 1,
                           pal.grid, 1, 0);
@@ -136,9 +124,6 @@ int fastchart_bullet_render_to_target(fastchart_bullet_obj *self, fastchart_targ
                           bar_x1 - bar_x0 + 1, band_h + 1,
                           pal.border, 0, 1);
 
-    /* Performance bar: from min to value. Uses the first palette
-     * series color (a strong saturated tone) to stand out from the
-     * grey/colored bands behind. */
     double frac = (v - mn) / (mx - mn);
     int vx = bar_x0 + (int)(frac * (bar_x1 - bar_x0));
     int perf_color = pal.series[0];
@@ -149,9 +134,6 @@ int fastchart_bullet_render_to_target(fastchart_bullet_obj *self, fastchart_targ
                           vx - bar_x0 + 1, perf_y1 - perf_y0 + 1,
                           pal.border, 0, 1);
 
-    /* Target tick. Thick vertical line across the band, offset
-     * slightly past the band edges so it's visible against the
-     * performance bar fill. */
     if (isfinite(tgt) && tgt >= mn && tgt <= mx) {
         double tfrac = (tgt - mn) / (mx - mn);
         int tx = bar_x0 + (int)(tfrac * (bar_x1 - bar_x0));
@@ -159,9 +141,6 @@ int fastchart_bullet_render_to_target(fastchart_bullet_obj *self, fastchart_targ
                               pal.text, 3, FASTCHART_DASH_SOLID);
     }
 
-    /* Labels: min on the left of the bar, max on the right, value
-     * floating above the performance-bar end, target value above
-     * the tick. */
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double size = fastchart_resolve_font_size(
         (fastchart_obj *)self, FC_FONT_LABEL, base_size);

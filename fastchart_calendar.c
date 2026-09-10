@@ -99,7 +99,6 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
     int n_weeks = (int)n_weeks_l;
     if (n_weeks < 1) n_weeks = 1;
 
-    /* Value range for color ramp. */
     double vmin = self->days[0].value, vmax = self->days[0].value;
     for (int i = 1; i < self->day_count; i++) {
         double v = self->days[i].value;
@@ -158,7 +157,6 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
     if (cell_size < 1) cell_size = 1;
     int cell_pad = cell_size > 6 ? 1 : 0;
 
-    /* Colors. */
     int lo_rgb = self->color_low_rgb  >= 0 ? self->color_low_rgb  : 0xDDEEFF;
     int hi_rgb = self->color_high_rgb >= 0 ? self->color_high_rgb : 0x1144AA;
     int lr = (lo_rgb >> 16) & 0xFF, lg = (lo_rgb >> 8) & 0xFF, lb = lo_rgb & 0xFF;
@@ -190,7 +188,6 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
         for (int r = 0; r < 7; r++) {
             long day = grid_start + (long)w * 7 + r;
             if (day < first || day > last) continue;
-            /* Advance data_idx to first entry >= day. */
             while (data_idx < self->day_count && self->days[data_idx].day < day) {
                 data_idx++;
             }

@@ -271,10 +271,6 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
 
     int sub_count = (stacked && n_series > 1) ? 1 : n_series;
 
-    /* setBarWidth(pct) shrinks the bar fill within its allocated
-     * sub-slot, centered, at pct/100 of the slot width. 100 = touch
-     * neighbors, 50 = half-width with breathing room. Applied to
-     * sub_w so per-series side-by-side bars all narrow together. */
     int bar_pct = (int)self->bar_width_pct;
     if (bar_pct <= 0) bar_pct = 100;
 
@@ -319,8 +315,6 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
         }
 
         if (floating) {
-            /* Floating bar: each series carries [min, max] per slot;
-             * draw between min and max instead of from zero. */
             for (int s = 0; s < n_series; s++) {
                 if (i >= series[s].len) continue;
                 double lo = series[s].values[i];
@@ -337,8 +331,6 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
                 if (x1 > slot_left + slot_inner - 1) x1 = slot_left + slot_inner - 1;
                 if (x1 < x0) continue;
                 if (self->bar_style == FASTCHART_BAR_STYLE_DUMBBELL) {
-                    /* Connector between the [min,max] pair with a filled
-                     * circle at each end. */
                     int x_center = (x0 + x1) / 2;
                     int bullet_r = draw_w / 2;
                     if (bullet_r < 3) bullet_r = 3;
@@ -419,8 +411,6 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
                 if (x1 < x0) continue;
 
                 if (self->bar_style == FASTCHART_BAR_STYLE_LOLLIPOP) {
-                    /* Thin stem from the zero baseline to the value with
-                     * a filled circle bullet at the value. */
                     int x_center = (x0 + x1) / 2;
                     int bullet_r = draw_w / 2;
                     if (bullet_r < 3) bullet_r = 3;
@@ -463,8 +453,6 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
                 int y_v = fastchart_y_to_pixel(v, &range, &plot);
                 int x0 = slot_left + s * sub_w;
                 int x_center = x0 + sub_w / 2;
-                /* Label sits just above the bar top (or below for
-                 * negative bars). */
                 int label_y = (v >= 0) ? y_v : y_v + (int)(self->font_size * 1.4);
                 fastchart_draw_value_label(t, (fastchart_obj *)self, &pal, x_center, label_y, v);
             }
@@ -498,12 +486,7 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
     return 0;
 }
 
-/* Horizontal-bar render path. Mirrors the vertical path with X/Y
- * swapped: categories run top-to-bottom along the Y axis, values run
- * left-to-right along the X axis, bars are horizontal rectangles
- * anchored at x=0. Stacking, floating, and per-point colors all carry
- * over with the obvious axis swap. Plot bands and value labels skip
- * the horizontal path for now (they assume a vertical chart). */
+/* Horizontal bars map values to X and categories to Y. */
 static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
                                            fastchart_target_t *t)
 {
@@ -643,9 +626,6 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
                 if (y1 > slot_top + slot_inner - 1) y1 = slot_top + slot_inner - 1;
                 if (y1 < y0) continue;
                 if (self->bar_style == FASTCHART_BAR_STYLE_DUMBBELL) {
-                    /* Horizontal connector across the [min,max] pair with a
-                     * filled circle at each end (vertical dumbbell, X/Y
-                     * swapped). */
                     int y_center = (y0 + y1) / 2;
                     int bullet_r = draw_h / 2;
                     if (bullet_r < 3) bullet_r = 3;
@@ -723,9 +703,6 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
                 if (y1 < y0) continue;
 
                 if (self->bar_style == FASTCHART_BAR_STYLE_LOLLIPOP) {
-                    /* Horizontal stem from the zero baseline to the value
-                     * with a filled circle bullet at the value (vertical
-                     * lollipop, X/Y swapped). */
                     int y_center = (y0 + y1) / 2;
                     int bullet_r = draw_h / 2;
                     if (bullet_r < 3) bullet_r = 3;
@@ -826,7 +803,6 @@ static int fastchart_bar_render_radial(fastchart_bar_obj *self,
     int n_series = self->n_series;
     int n_categories = self->max_len;
 
-    /* Peak value sets the angular full-scale. */
     double vmax = 0.0;
     for (int s = 0; s < n_series; s++) {
         for (int i = 0; i < series[s].len; i++) {
@@ -849,11 +825,8 @@ static int fastchart_bar_render_radial(fastchart_bar_obj *self,
 
     fastchart_obj *base = (fastchart_obj *)self;
 
-    /* Reset image-map areas as the vertical (line 185) and horizontal
-     * paths do. Radial bars are arcs with no rect hot-spots, so a reset
-     * with no reserve/push is correct: it stops getImageMapAreas() from
-     * returning stale rects left by a prior vertical/horizontal render
-     * of the same object after setOrientation(BAR_RADIAL). */
+    /* Radial bars have no rectangle hot-spots; discard artifacts from any
+     * prior vertical or horizontal render. */
     fastchart_reset_image_map_areas(base);
 
     fastchart_draw_frame(t, base, &plot, &pal);
@@ -905,7 +878,6 @@ static int fastchart_bar_render_radial(fastchart_bar_obj *self,
         }
     }
 
-    /* Category labels just left of each ring's 12-o'clock start. */
     const char *font = fastchart_resolve_font(base, FC_FONT_LABEL);
     double fbase = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
     double fsize = fastchart_resolve_font_size(base, FC_FONT_LABEL, fbase);
