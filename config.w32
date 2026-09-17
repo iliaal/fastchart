@@ -112,8 +112,10 @@ if (PHP_FASTCHART != "no") {
         // vendored symbols compile in as static. Mirrors the
         // -DPLUTOVG_BUILD_STATIC -DPLUTOSVG_BUILD_STATIC flags on
         // the Unix side.
+        // Disable unused plutovg image writers, as on the Unix side.
         ADD_FLAG("CFLAGS_FASTCHART",
-            "/DPLUTOVG_BUILD_STATIC /DPLUTOSVG_BUILD_STATIC");
+            "/DPLUTOVG_BUILD_STATIC /DPLUTOSVG_BUILD_STATIC " +
+            "/DPLUTOVG_DISABLE_IMAGE_WRITE");
 
         // /WX (warnings as errors) only with --enable-fastchart-dev,
         // matching the Unix side's --enable-fastchart-dev gate.

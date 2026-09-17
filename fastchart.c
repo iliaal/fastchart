@@ -4544,10 +4544,23 @@ static int fastchart_svg_has_use_element(const char *s, size_t n)
         if (fastchart_svg_skip_ignored(s, n, &i)) {
             i--; continue;
         }
-        char u = s[i + 1], s2 = s[i + 2], e = s[i + 3];
+        size_t j = i + 1;
+        size_t name_start = j;
+        while (j < n && s[j] != '<' && s[j] != ' '
+                && s[j] != '\t' && s[j] != '\n' && s[j] != '\r'
+                && s[j] != '>' && s[j] != '/') {
+            if (s[j] == ':') {
+                name_start = j + 1;
+            }
+            j++;
+        }
+        i = j - 1;
+        size_t name_len = j - name_start;
+        if (name_len != 3) continue;
+        char u = s[name_start], s2 = s[name_start + 1], e = s[name_start + 2];
         if ((u != 'u' && u != 'U') || (s2 != 's' && s2 != 'S')
             || (e != 'e' && e != 'E')) continue;
-        char nxt = (i + nlen < n) ? s[i + nlen] : ' ';
+        char nxt = (j < n) ? s[j] : ' ';
         if (nxt != ' ' && nxt != '\t' && nxt != '\n' && nxt != '\r'
             && nxt != '>' && nxt != '/') continue;
         return 1;

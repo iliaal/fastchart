@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- SVG conversion now rejects qualified `use` element names (e.g.
+  `<svg:use>`) instead of accepting any tag whose local name is
+  `use`, closing a render-expansion gap in the namespace guard.
+
+### Security
+
+- Windows builds now define `PLUTOVG_DISABLE_IMAGE_WRITE`, matching
+  the Unix side; unused stb_image_write code is excluded from the
+  shared extension build.
+
 ## [1.7.3] - 2026-09-04
 
 ### Fixed

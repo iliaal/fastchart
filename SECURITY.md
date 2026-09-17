@@ -77,28 +77,39 @@ Out of scope:
 
 ## Resource sizing for operators
 
-Two render inputs allocate native memory that PHP's `memory_limit`
-does not see, so cap-based sizing must happen at the worker level,
-not per request:
+The raster frame uses the Zend allocator and counts against PHP's
+`memory_limit`, but vendor-owned native allocations do not. Size
+worker memory budgets for both:
 
-- The raster frame: `width x height` pixels x 4 bytes RGBA, allocated
-  by plutovg (malloc-backed). It counts against
-  `fastchart.max_render_pixels` (`PHP_INI_SYSTEM`, default 64M
-  pixels); at the default cap the frame alone is ~256 MiB RSS.
+- The raster frame: `width x height` pixels x 4 bytes RGBA. It counts
+  against PHP's `memory_limit` and `fastchart.max_render_pixels`
+  (`PHP_INI_SYSTEM`, default 64M pixels); at the default cap the
+  frame alone is ~256 MiB RSS.
 - Decoded source images (`setBackgroundImage()` / `addIconAt()`):
-  one retained surface per distinct path, bounded by
-  `fastchart.max_image_cache_bytes` (`PHP_INI_SYSTEM`, default 64M
-  bytes). Lowering it costs repeat decodes; it never fails a render.
+  generated chart SVG reuses one image definition per distinct path,
+  and plutosvg can retain a decoded surface on that shared image element.
+  Retained pixel bytes are bounded by `fastchart.max_image_cache_bytes`
+  (`PHP_INI_SYSTEM`, default 64M bytes). plutosvg loads these through
+  plutovg's malloc-backed surfaces, outside PHP's `memory_limit`.
+  Lowering the cache limit causes repeat decodes rather than rejecting
+  a render; temporary decode allocations are not covered by this limit.
 
-Per-worker RSS budget rule of thumb:
+Rough render-memory allowance per concurrently active worker, using
+positive configured caps (not an RSS upper bound):
 
 ```
 max_render_pixels x 4 + max_image_cache_bytes + encoder workspace (~1 frame)
 ```
 
-Under ZTS (php-fpm `pm.max_children`, FrankenPHP workers) both
-ceilings apply per thread, so multiply the rule of thumb by the
-worker count when sizing the box. Both INI settings are
-`PHP_INI_SYSTEM`: only the operator can lower them, a script cannot
-raise them back up. See README "Raster memory" for the matching
-runtimes notes.
+Add headroom for PHP/application state, SVG/parser data, transient image
+decodes, allocator overhead, and codec-dependent workspace; the encoder
+estimate above is not a fixed limit.
+
+PHP-FPM uses child processes (`pm.max_children`); ZTS servers such as
+FrankenPHP can run concurrent worker threads within one process. These
+limits apply to individual renders/documents, not aggregate server
+memory. Multiply the render allowance by peak concurrent workers when
+sizing the server, accounting separately for process and shared memory.
+Both INI settings are `PHP_INI_SYSTEM`: scripts cannot override the
+operator's settings. See README "Raster memory" for the matching
+runtime notes.

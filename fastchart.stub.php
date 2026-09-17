@@ -189,10 +189,10 @@ abstract class Chart
      *
      * Caps: SVG input ≤ 16 MB, ≤ 65,536 elements,
      * ≤ 262,144 attributes, and ≤ 256 nesting levels; output
-     * ≤ 4096 px per side and ≤ 16M total pixels. Malformed XML or
-     * out-of-range dimensions
-     * throw `\ValueError`. Rasterizer or encoder failure throws
-     * `\Error`.
+     * ≤ 4096 px per side and ≤ 16M total pixels. Malformed XML,
+     * out-of-range dimensions, and rasterizer failure throw
+     * `\ValueError`. Encoder failure or unavailable encoder support
+     * throws `\Error`.
      */
     public static function svgToPng(string $svg): string {}
 
@@ -2364,8 +2364,9 @@ abstract class Symbol
     public function setJpegQuality(int $quality): static {}
 
     /**
-     * WebP encoder mode. Pass one of Chart::WEBP_DRAWING (default),
-     * WEBP_PHOTO, WEBP_LOSSLESS, WEBP_FAST. LOSSLESS is the natural
+     * WebP encoder mode. QrCode defaults to WEBP_LOSSLESS; Code128
+     * defaults to WEBP_DRAWING. Pass WEBP_DRAWING, WEBP_PHOTO,
+     * WEBP_LOSSLESS, WEBP_FAST to override. LOSSLESS is the natural
      * pick for QR codes — bit-exact recovery matters for machine-
      * readable codes, and the encoder compresses the flat black/
      * white pattern efficiently. See Chart::setWebpMode().
