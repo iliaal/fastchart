@@ -7,17 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.4] - 2026-09-17
+
 ### Fixed
 
-- SVG conversion now rejects qualified `use` element names (e.g.
-  `<svg:use>`) instead of accepting any tag whose local name is
-  `use`, closing a render-expansion gap in the namespace guard.
+- SVG conversion rejects namespace-prefixed `use` elements consistently
+  with the existing rejection of unprefixed `use` elements.
 
-### Security
-
-- Windows builds now define `PLUTOVG_DISABLE_IMAGE_WRITE`, matching
-  the Unix side; unused stb_image_write code is excluded from the
-  shared extension build.
+- Windows builds exclude unused image writers, matching Unix builds.
+- Documentation now describes raster memory accounting, SVG conversion
+  exceptions, and symbol WebP defaults accurately.
 
 ## [1.7.3] - 2026-09-04
 
@@ -1449,7 +1448,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.7.3...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.7.4...HEAD
+[1.7.4]: https://github.com/iliaal/fastchart/releases/tag/1.7.4
 [1.7.3]: https://github.com/iliaal/fastchart/releases/tag/1.7.3
 [1.7.2]: https://github.com/iliaal/fastchart/releases/tag/1.7.2
 [1.7.1]: https://github.com/iliaal/fastchart/releases/tag/1.7.1
