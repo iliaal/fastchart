@@ -372,6 +372,135 @@ jobs:
             -d extension=$(pwd)/modules/fastchart.so \
             scripts/deprecation-gate.php
 
+  linux-php-src:
+    # setup-php's '8.6' currently resolves to a php-src master snapshot
+    # that can drift to 8.7, so the 8.6 lane builds a release-mode
+    # (non-debug) PHP from the PHP-8.6 branch instead. Extension set
+    # matches the ASAN lane: the suite declares only gd and simplexml.
+    name: PHP ${{ matrix.php }} (gcc) - Linux (PHP-${{ matrix.php }} branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.6']
+    env:
+      PHP_VERSION: ${{ matrix.php }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            re2c bison autoconf pkg-config \
+            libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev libgd-dev \
+            libxml2-dev
+
+      - name: Build PHP from the PHP-${{ matrix.php }} branch
+        run: |
+          git clone --depth=1 --branch="PHP-${PHP_VERSION}" https://github.com/php/php-src.git /tmp/php-src
+          cd /tmp/php-src
+          ./buildconf --force
+          ./configure \
+            --disable-debug \
+            --disable-zts \
+            --disable-all \
+            --enable-cli \
+            --enable-gd \
+            --with-external-gd \
+            --with-libxml \
+            --enable-simplexml \
+            --prefix=/tmp/php-src-install
+          make -j"$(nproc)"
+          make install
+          /tmp/php-src-install/bin/php -v
+
+      - name: Build extension
+        run: |
+          export PATH="/tmp/php-src-install/bin:$PATH"
+          export CC=gcc
+          phpize
+          ./configure --enable-fastchart --enable-fastchart-dev \
+            --with-php-config=/tmp/php-src-install/bin/php-config
+          set -o pipefail
+          make -j"$(nproc)" 2>&1 | tee /tmp/build.log
+          set +o pipefail
+          WARNINGS=$(grep -c 'warning:' /tmp/build.log || true)
+          if [ "$WARNINGS" -gt 0 ]; then
+            echo "::error::Build produced $WARNINGS warning(s) with gcc on PHP ${PHP_VERSION} (PHP-${PHP_VERSION} branch)"
+            exit 1
+          fi
+
+      - name: Guard against non-static-linkable runtime symbols
+        run: |
+          if nm modules/fastchart.so | grep -E '__cpu_model|__cpu_indicator_init'; then
+            echo "::error::fastchart.so references libgcc cpu-feature symbols (__builtin_cpu_supports?); breaks static/musl/zig-cc dlopen; use __get_cpuid"
+            exit 1
+          fi
+          echo "symbol audit: no libgcc cpu-feature symbols"
+
+      - name: Verify gd capabilities (guard against silent mass-skips)
+        run: |
+          /tmp/php-src-install/bin/php -r '
+            if (!extension_loaded("gd")) {
+              fwrite(STDERR, "gd not built into PHP; ~91 raster round-trip tests would skip silently\n");
+              exit(1);
+            }
+            $i = gd_info();
+            $need = ["WebP Support", "JPEG Support", "FreeType Support", "PNG Support"];
+            $missing = [];
+            foreach ($need as $k) { if (empty($i[$k])) { $missing[] = $k; } }
+            if ($missing) {
+              fwrite(STDERR, "gd is missing: " . implode(", ", $missing) .
+                "; raster round-trip tests would skip silently\n");
+              exit(1);
+            }
+            echo "gd capabilities OK: " . implode(", ", $need) . "\n";
+          '
+
+      - name: Run tests
+        run: |
+          export TEST_PHP_EXECUTABLE=/tmp/php-src-install/bin/php
+          # gd is compiled in, so -d extension=gd would only add
+          # "Module already loaded" warnings.
+          TEST_PHP_ARGS="-d extension=$PWD/modules/fastchart.so"
+          export TEST_PHP_ARGS
+          export NO_INTERACTION=1
+          set +e
+          "$TEST_PHP_EXECUTABLE" run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::run-tests.php exited $rc on PHP ${PHP_VERSION} - Linux (PHP-${PHP_VERSION} branch) (crash / BORK / aborted before summary)"
+            grep -E '^FAIL\b|^FAILED TEST|^BORK' /tmp/test-output.txt || true
+            exit 1
+          fi
+          if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
+            echo "::error::Tests failed on PHP ${PHP_VERSION} - Linux (PHP-${PHP_VERSION} branch)"
+            grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
+            exit 1
+          fi
+          # Same skip budget as the Linux lane: gd is loaded, no pdfio.
+          SKIPPED=$(grep -oP '^Tests skipped\s*:\s*\K[0-9]+' /tmp/test-output.txt | head -1)
+          SKIPPED=${SKIPPED:-0}
+          echo "Tests skipped: $SKIPPED (ceiling 25)"
+          if [ "$SKIPPED" -gt 25 ]; then
+            echo "::error::Skip count $SKIPPED exceeds ceiling 25 on PHP ${PHP_VERSION} - Linux (PHP-${PHP_VERSION} branch): a capability likely vanished (gd/webp/fonts); tests are hiding in the skip counter"
+            grep -E '^SKIP\b' /tmp/test-output.txt || true
+            exit 1
+          fi
+
+      - name: E_ALL deprecation gate
+        # Newest-branch counterpart of the 8.5 gate in the Linux lane.
+        run: |
+          /tmp/php-src-install/bin/php -d error_reporting=E_ALL -d display_errors=1 \
+            -d extension="$PWD/modules/fastchart.so" \
+            scripts/deprecation-gate.php
+
   pdf:
     name: PHP ${{ matrix.php }} - PDF backend (--with-pdfio)
     runs-on: ubuntu-latest
@@ -553,7 +682,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.4']
+        php: ['8.4', '8.6']
 
     env:
       # detect_leaks=1 is the default but pinning it makes intent
