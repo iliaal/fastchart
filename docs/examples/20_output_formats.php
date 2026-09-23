@@ -1,6 +1,5 @@
 <?php
-/* Every way to get pixels (or vector markup) out of a chart in
- * v1.0:
+/* Every way to get pixels or vector markup out of a chart:
  *   - renderToFile($path)         : file, format inferred from extension
  *                                   (.svg | .png | .jpg | .webp)
  *   - renderSvg()                 : full SVG document (vector)
@@ -11,10 +10,8 @@
  *                                   means "use setJpegQuality()", default 88
  *   - renderWebp($quality = 90)   : WebP bytes (libwebp)
  *
- * The bytes-returning helpers skip the encode-to-disk roundtrip and
- * are convenient for HTTP responses, base64 data URIs, or hashing.
- * GIF / AVIF / draw(\GdImage) were removed in v1.0; the SVG pipeline
- * + libpng/libjpeg-turbo/libwebp covers every supported format. */
+ * Use the bytes-returning helpers for HTTP responses, base64 data
+ * URIs, or hashing. */
 
 require __DIR__ . '/_bootstrap.php';
 
@@ -28,8 +25,7 @@ $line = (new FastChart\LineChart(400, 200))
 /* Direct-to-file: format from extension. */
 $line->renderToFile(__DIR__ . '/20a_renderToFile.png');
 
-/* Bytes-returning helpers. Print a tiny header summary so the
- * example doubles as a shape check. */
+/* Print each result's header bytes as a format check. */
 $svg  = $line->renderSvg();
 $png  = $line->renderPng();
 $jpg  = $line->renderJpeg(85);

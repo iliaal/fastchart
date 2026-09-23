@@ -116,9 +116,9 @@ int fastchart_target_pdf_finish(fastchart_target_t *t)
      * pdfio objects in the same call. A memory_limit bailout during that
      * flush would longjmp past the frees, leaking pdfio's malloc'd
      * objects (untracked by the request allocator) for the life of a
-     * worker — and pdfioFileClose is not re-entrant (it re-adds the PDF/A
+     * worker, and pdfioFileClose is not re-entrant (it re-adds the PDF/A
      * OutputIntent and re-closes objects on each call), so the interrupted
-     * close cannot simply be retried. Lift the limit across the bounded
+     * close cannot be retried. Lift the limit across the bounded
      * flush so the close runs to completion atomically; the zend_try guard
      * still tears the document down before re-entering the bailout should
      * any other fatal (e.g. timeout) fire. */
@@ -401,12 +401,11 @@ static void fastchart_glyph_cache_drop_face(FT_Face victim)
 
 /* Advance-only glyph lookup for text measurement, backed by the
  * per-thread measure cache. The caller must have positioned the face
- * with FT_Set_Char_Size(size_64, dpi) already — the cache key records
+ * with FT_Set_Char_Size(size_64, dpi) already; the cache key records
  * that size so a hit returns an advance consistent with it. On a miss
- * the glyph is loaded for its advance (no outline decompose — the
- * measure path never needs the path stream) and cached. Returns 0 with
- * the advance in *out_adv, or -1 on FT_Load_Glyph failure (caller skips
- * the glyph, matching the pre-cache behaviour). */
+ * the glyph is loaded for its advance only (no outline decompose) and
+ * cached. Returns 0 with the advance in *out_adv, or -1 on FT_Load_Glyph
+ * failure (caller skips the glyph). */
 int fastchart_measured_advance(FT_Face face, int32_t size_64, int dpi,
                                uint32_t codepoint, int32_t *out_adv)
 {
@@ -588,7 +587,7 @@ FT_Face fastchart_ft_face(const char *font_path)
 
 void fastchart_ft_library_shutdown(void)
 {
-    /* Free cached glyph paths first — they reference cached faces. */
+    /* Free cached glyph paths first; they reference cached faces. */
     fc_glyph_cache_entry *gcache = FASTCHART_G(glyph_cache);
     for (int i = 0; i < FC_GLYPH_CACHE_N; i++) {
         free(gcache[i].ops);
@@ -598,11 +597,10 @@ void fastchart_ft_library_shutdown(void)
     memset(FASTCHART_G(measure_cache), 0,
            sizeof(fc_measure_cache_entry) * FC_MEASURE_CACHE_N);
 
-    /* Free cached faces explicitly. FT_Done_FreeType would walk and
-     * free them anyway, but doing it ourselves keeps the cache state
-     * machine deterministic and the path-string ownership tidy.
-     * Called from PHP_GSHUTDOWN — once per thread under ZTS, once
-     * at MSHUTDOWN under NTS. */
+    /* Free cached faces explicitly (FT_Done_FreeType would too) so the
+     * cache state and path-string ownership stay deterministic. Called
+     * from PHP_GSHUTDOWN: once per thread under ZTS, once at MSHUTDOWN
+     * under NTS. */
     fc_ft_face_slot *cache = FASTCHART_G(ft_face_cache);
     for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
         if (cache[i].face) {
@@ -631,7 +629,7 @@ void fastchart_ft_library_shutdown(void)
  * insert via fastchart_glyph_cache_insert).
  *
  * Caller MUST have already called FT_Set_Pixel_Sizes(face, 0, pix_size)
- * to position the face at the requested size — the cache uses
+ * to position the face at the requested size; the cache uses
  * (face, pix_size, codepoint) as the key but does not touch FT state.
  */
 const fc_glyph_cache_entry *fastchart_glyph_cache_get(
@@ -737,8 +735,8 @@ void fastchart_target_resolve_font_family(fastchart_target_t *t,
     copy_family_name(out, out_n, raw[0] ? raw : NULL);
 
     /* Cache (path,family). Capacity is FASTCHART_TARGET_FONT_CACHE;
-     * past that we silently skip the cache (next call hits FT
-     * again — rare, since charts use 1-4 fonts max). */
+     * past that the cache is skipped and the next call hits FT again
+     * (rare, since charts use 1-4 fonts). */
     if (t->font_cache_n < FASTCHART_TARGET_FONT_CACHE) {
         fastchart_target_font_cache_entry *e =
             &t->font_cache[t->font_cache_n++];
@@ -836,7 +834,7 @@ static const char *fc_sniff_image_mime(const unsigned char *data, size_t n)
 /* Walk a PNG's chunk list and verify every declared chunk length
  * fits within the buffer. The vendored stb_image accepts IDAT chunk
  * lengths up to ~1 GB before attempting the read, so a 30-byte PNG
- * declaring length=0x3FFFFFFF triggers a ~1 GB realloc — single-
+ * declaring length=0x3FFFFFFF triggers a ~1 GB realloc, a single-
  * request OOM-kill on memory-constrained workers. stb's threat
  * model treats resource validation as the caller's responsibility,
  * so the check lives here. Returns 0 on PNGs with self-consistent
@@ -849,7 +847,7 @@ static int fc_validate_png_chunks(const unsigned char *b, size_t n)
         return 0;
     }
     size_t off = 8; /* past PNG signature */
-    /* Cap iterations purely as a runaway guard — each pass advances off
+    /* Cap iterations only as a runaway guard: each pass advances off
      * by at least 12 bytes, so a buffer under FC_IMAGE_MAX_BYTES already
      * bounds the loop. libpng emits ~8KB IDATs, so a valid file near the
      * cap can hold well over 1000 chunks; keep the ceiling high enough
@@ -931,7 +929,7 @@ static int fastchart_load_source_image(const char *path,
      * indefinitely (the plain-files wrapper forced by IGNORE_URL
      * passes no O_NONBLOCK), so the post-open non-regular-file check
      * below would never be reached for exactly the FIFO case it
-     * names. A stat failure falls through — the open below reports
+     * names. A stat failure falls through; the open below reports
      * it with proper warning suppression. The post-open fstat stays
      * authoritative; it closes the swap race this pre-check alone
      * would reintroduce. */
@@ -955,13 +953,12 @@ static int fastchart_load_source_image(const char *path,
     }
 
     /* Reject non-regular files (directories, FIFOs, sockets, char
-     * devices, /proc entries). The stream wrapper happily opens any
-     * readable inode; without this check a render fed
-     * /proc/self/maps would either trip the byte cap or return
-     * unbounded data before the MIME sniff rejects it. The stat
-     * call uses the stream's own backend (so wrappers without a real
-     * stat — http, php://memory — silently fall through and the
-     * MIME sniff is the only gate; that's intentional). */
+     * devices, /proc entries). The stream wrapper opens any readable
+     * inode; without this check a render fed /proc/self/maps would
+     * either trip the byte cap or return unbounded data before the
+     * MIME sniff rejects it. The stat uses the stream's own backend, so
+     * wrappers without a real stat (http, php://memory) fall through
+     * and the MIME sniff is the only gate, by design. */
     php_stream_statbuf ssb;
     if (php_stream_stat(stream, &ssb) == 0) {
         if (!S_ISREG(ssb.sb.st_mode)) {
@@ -987,9 +984,8 @@ static int fastchart_load_source_image(const char *path,
 
     int src_w = 0, src_h = 0;
     if (fc_sniff_image_dims_mem(bytes, n, &src_w, &src_h) != 0) {
-        /* MIME passed but dimensions couldn't be recovered — refuse
-         * the load. The dim cap is part of the contract; we don't
-         * accept inputs the cap can't enforce. */
+        /* MIME passed but dimensions couldn't be recovered: refuse
+         * inputs the dim cap can't enforce. */
         zend_string_release(raw);
         return -1;
     }

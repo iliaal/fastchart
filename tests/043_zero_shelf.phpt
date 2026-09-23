@@ -61,7 +61,7 @@ $has_h_axis_run = function ($im, $w, $h) {
 echo "off_no_shelf: ", $has_h_axis_run($im_off, 500, 400) ? "yes(unexpected)" : "no", "\n";
 echo "on_has_shelf: ", $has_h_axis_run($im_on, 500, 400) ? "yes" : "no", "\n";
 
-// Range that doesn't cross zero -- shelf is suppressed.
+// Range that doesn't cross zero: shelf is suppressed.
 $bytes_pos = (new FastChart\LineChart(500, 400))
     ->setZeroShelf(true)
     ->setSeries([10, 20, 30])

@@ -1,5 +1,5 @@
 --TEST--
-round 4 deferred: protocol-relative href, setShadowAlpha range, locale-immune format dispatch
+Protocol-relative href, setShadowAlpha range, locale-immune format dispatch
 --EXTENSIONS--
 fastchart
 --FILE--

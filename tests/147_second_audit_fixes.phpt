@@ -1,5 +1,5 @@
 --TEST--
-Second audit fixes: input caps, PNG dim UB, Gantt narrowing, ISO date validation
+Input caps, PNG dim UB, Gantt narrowing, ISO date validation
 --EXTENSIONS--
 fastchart
 --FILE--
@@ -14,7 +14,7 @@ function value_error(string $label, callable $fn): void {
     }
 }
 
-/* CR-001: Input caps on the new chart families. ecalloc'ing
+/* Input caps on the new chart families. ecalloc'ing
  * unbounded user-supplied counts let a 100M-entry array DoS the
  * worker. Over-cap input is now rejected instead of silently
  * truncating to the public cap. */
@@ -37,7 +37,7 @@ value_error('sankey_link_cap_throws',
         ->setNodes([['label' => 'a'], ['label' => 'b']])
         ->setLinks(array_fill(0, 1025, ['from' => 0, 'to' => 1, 'value' => 1])));
 
-/* CR-003: Gantt depends narrowing. Pre-fix, depends => [4294967296]
+/* Gantt depends narrowing. Pre-fix, depends => [4294967296]
  * silently became depends => [0] via signed-int cast. */
 $svg = (new FastChart\GanttChart(400, 200))
     ->setTasks([
@@ -48,7 +48,7 @@ $svg = (new FastChart\GanttChart(400, 200))
     ->renderSvg();
 echo "gantt_big_dep_renders: ", (strlen($svg) > 100 ? "ok" : "fail"), "\n";
 
-/* CR-004: Calendar ISO date validation. Pre-fix, 2026-02-31 parsed
+/* Calendar ISO date validation. Pre-fix, 2026-02-31 parsed
  * cleanly into days_from_civil and normalized to 2026-03-03. Same
  * for non-leap-year Feb-29 and 31-day months on 30-day calendars. */
 $c1 = (new FastChart\CalendarHeatmap(400, 200))
@@ -72,14 +72,14 @@ $svg2 = $c2->renderSvg();
 echo "calendar_invalid_dropped: ",
     (strlen($svg1) === strlen($svg2) ? "ok" : "fail"), "\n";
 
-/* CR-002: PNG dimension sniffer signed-left-shift UB. Pre-fix,
+/* PNG dimension sniffer signed-left-shift UB. Pre-fix,
  * a PNG header with IHDR width whose high byte was >= 0x80 hit
  * UB on `b[16] << 24` (signed-int promotion into the sign bit).
  * Craft a minimal PNG header with width=0xC0000001 and height=1,
  * feed via setBackgroundImage, render. ASan would catch the UB
  * pre-fix; post-fix the sniffer returns -1 (width > INT_MAX) and
  * the image load refuses the file. We don't need the PNG to be
- * decodeable — only the first 24 bytes are read by the sniffer. */
+ * decodeable: only the first 24 bytes are read by the sniffer. */
 $tmp = tempnam(sys_get_temp_dir(), 'fcpng_');
 $png_signature = "\x89PNG\r\n\x1A\n";
 $ihdr_len      = "\x00\x00\x00\x0D";

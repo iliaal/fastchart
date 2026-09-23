@@ -1,5 +1,5 @@
 --TEST--
-Round-4 audit fixes: Sunburst atomic, <use> rejection
+Sunburst atomic, <use> rejection
 --EXTENSIONS--
 fastchart
 --FILE--
@@ -46,7 +46,7 @@ echo "sunburst_recoverable: ",
  * cycle detector compares element pointers along the ancestor chain
  * but does NOT count fan-out. A 1.4 KB SVG with 8 nested <g> levels
  * where each contains 10x <use> of the next triggers ~10^8 shape
- * renders (~14s on commodity hardware) — billion-laughs equivalent
+ * renders (~14s on commodity hardware): billion-laughs equivalent
  * that escapes any naive source-count cap.
  *
  * A prior fix capped source <use> count at 256; that was insufficient
@@ -57,7 +57,7 @@ $benign = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">'
 $png = FastChart\Chart::svgToPng($benign);
 echo "no_use_ok: ", (substr($png, 0, 8) === "\x89PNG\r\n\x1A\n" ? "ok" : "fail"), "\n";
 
-/* Single <use> — would have been accepted under the old count cap,
+/* Single <use>: would have been accepted under the old count cap,
  * now rejected. */
 $one_use = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">'
          . '<defs><g id="a"><rect width="10" height="10"/></g></defs>'

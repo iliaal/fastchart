@@ -59,7 +59,7 @@ $chart = (new FastChart\StockChart(400, 240))
 $png = $chart->renderPng();
 var_dump(strlen($png) > 0);
 
-// 4) Re-adding the overlay after the second setOhlcv must work — the
+// 4) Re-adding the overlay after the second setOhlcv must work: the
 //    fix clears overlays so the next add() starts from a clean slate.
 $chart = (new FastChart\StockChart(400, 240))
     ->setOhlcv($big)
@@ -70,7 +70,7 @@ $png = $chart->renderPng();
 var_dump(strlen($png) > 0);
 
 // 5) setOhlcv with the SAME size as before (replacing not shrinking)
-//    — still triggers the issue if overlays aren't cleared, because
+//    still triggers the issue if overlays aren't cleared, because
 //    the overlay's ov->a/b/c are now stale references to the freed
 //    candles' indexed values. Without the fix, this is a use-after-
 //    free of the OLD overlay arrays' indices into the NEW candles.

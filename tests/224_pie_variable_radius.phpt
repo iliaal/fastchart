@@ -57,7 +57,7 @@ echo "reset_clears_mode: ", ($chart->renderSvg() === $plainPie) ? "yes" : "no", 
 
 /* The largest-radius slice drives normalization. If it is folded into
  * the "Other" bucket by setOtherThreshold, the surviving slices must
- * still scale up so the largest survivor reaches the full radius -- the
+ * still scale up so the largest survivor reaches the full radius: the
  * max is recomputed over the drawn slices, not the setter-time set.
  * Extract the largest wedge radius (the "A<r>,<r>" arc command). */
 function max_arc_radius(string $svg): int {

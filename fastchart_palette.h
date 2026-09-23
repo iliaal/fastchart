@@ -31,8 +31,8 @@ typedef struct {
 } fastchart_palette;
 
 /* Allocate target colors for `theme` (0=light, 1=dark) and fill in the
- * palette struct. Field values are opaque target color handles —
- * pass directly into the fastchart_target_* primitive API. Idempotent:
+ * palette struct. Field values are opaque target color handles;
+ * pass them directly into the fastchart_target_* primitive API. Idempotent:
  * a second call re-allocates. */
 void fastchart_palette_init(fastchart_target_t *t, int theme, fastchart_palette *pal);
 

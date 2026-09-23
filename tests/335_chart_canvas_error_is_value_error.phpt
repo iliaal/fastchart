@@ -27,7 +27,7 @@ echo 'pareto: ', which(fn() => (new FastChart\ParetoChart(100, 300))
     ->renderSvg()), "\n";
 
 /* Wide enough to clear the margin check, but 128 bars (the cap) in a
- * ~100px plot truncate the per-bar slot below 1px — the other
+ * ~100px plot truncate the per-bar slot below 1px: the other
  * doesn't-fit rejection in pareto. */
 $nbars = [];
 for ($i = 0; $i < 128; $i++) { $nbars[] = ['label' => "n$i", 'value' => $i + 1]; }

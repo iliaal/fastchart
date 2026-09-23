@@ -63,7 +63,7 @@ int fastchart_bubble_render_to_target(fastchart_bubble_obj *self, fastchart_targ
             /* Log axis: subtractive ymin pad could push ymin <= 0
              * and trip the log validator. Multiplicative pad keeps
              * ymin strictly positive while still giving the
-             * smallest-data bubble vertical room — without it, the
+             * smallest-data bubble vertical room; without it, the
              * bottom-most bubble's radius spills below the X axis.
              *
              * Clamp the padded ymin to *just above* its decade floor

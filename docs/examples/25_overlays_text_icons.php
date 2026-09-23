@@ -10,10 +10,9 @@
  *
  * addIconAt needs an image file on disk. fastchart's loader accepts
  * PNG and JPEG; plutosvg's data-URI consumer in the SVG backend has
- * the same restriction. We generate a tiny star icon via ext/gd if
- * it's loaded, otherwise we fall back to a plain marker and skip the
- * icon overlay. ext/gd is no longer a fastchart runtime dependency,
- * so this example is portable to gd-less PHP builds. */
+ * the same restriction. The example draws a small star icon with
+ * ext/gd when it's loaded, and otherwise skips the icon overlay.
+ * fastchart itself doesn't need gd. */
 
 require __DIR__ . '/_bootstrap.php';
 

@@ -1,5 +1,5 @@
 --TEST--
-Title and category labels honor "\n" — width = max line, height = first + (n-1)*advance
+Title and category labels honor "\n": width = max line, height = first + (n-1)*advance
 --EXTENSIONS--
 fastchart
 gd
@@ -45,7 +45,7 @@ $multi_n  = dark_pixels($multi);
 echo "multi_more_ink: ", ($multi_n > $single_n ? "yes" : "no"),
      " ($single_n vs $multi_n)\n";
 
-/* Trailing newline should be tolerated (one empty line at the end —
+/* Trailing newline should be tolerated (one empty line at the end
  * just consumes vertical space, doesn't crash). */
 $trailing = (new FastChart\LineChart(400, 240))
     ->setTitle("Tail\n")

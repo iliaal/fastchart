@@ -44,7 +44,7 @@ for ($i = 0; $i < 30; $i++) {
 $mk = fn(array $ohlcv) => (new FastChart\StockChart(600, 400))->setOhlcv($ohlcv);
 
 /* Zero-volatility input: each indicator must be constant (one flat
- * line) and emit no NaN — CCI divides by mean deviation (0 here). */
+ * line) and emit no NaN: CCI divides by mean deviation (0 here). */
 foreach (['addATR' => 'atr', 'addStdDev' => 'stddev', 'addCCI' => 'cci'] as $meth => $name) {
     $svg = $mk($flat)->$meth(5)->renderSvg();
     $lines = pane_lines($svg);

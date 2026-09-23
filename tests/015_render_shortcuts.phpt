@@ -23,7 +23,7 @@ $jpg_low = $base->renderJpeg(20);
 $jpg_hi  = $base->renderJpeg(95);
 echo "jpg_low_smaller: ", (strlen($jpg_low) < strlen($jpg_hi) ? "yes" : "no"), "\n";
 
-// WebP -- starts with "RIFF????WEBP"
+// WebP: starts with "RIFF????WEBP"
 $webp = $base->renderWebp();
 echo "webp_riff: ", substr($webp, 0, 4) === 'RIFF' ? "ok" : "bad", "\n";
 echo "webp_marker: ", substr($webp, 8, 4) === 'WEBP' ? "ok" : "bad", "\n";

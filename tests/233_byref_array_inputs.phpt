@@ -12,8 +12,8 @@ asan.detect_leaks=0
  * IS_REFERENCE wrapper, and the references survive the loop. A parser
  * that inspects Z_TYPE_P(bucket) without ZVAL_DEREF rejects the
  * wrapper and silently drops valid data. Pass each family the same
- * data twice -- once untouched, once after recursively converting every
- * bucket to a reference -- and require byte-identical, well-formed SVG. */
+ * data twice: once untouched, once after recursively converting every
+ * bucket to a reference, and require byte-identical, well-formed SVG. */
 
 function deref_all(&$a) {
     if (is_array($a)) {

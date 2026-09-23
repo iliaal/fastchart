@@ -27,7 +27,7 @@ $c->setImageMap([
     ['href' => '/second/2'],
     ['href' => '/second/3'],
 ]);
-/* No render between setImageMap calls — getImageMap should return
+/* No render between setImageMap calls: getImageMap should return
  * empty because the old areas were reset and the new entries haven't
  * been rendered yet. Critical: must not UAF read into freed entries. */
 $map2 = $c->getImageMap('b');

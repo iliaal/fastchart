@@ -47,7 +47,7 @@ void fc_svg_fmt_num(smart_str *buf, double v)
     /* %.1f-equivalent, locale-independent and allocation-free: this is the
      * hottest formatter (every coordinate of every primitive), so skip
      * snprintf's format-parse + dtoa. Integer-valued inputs (the common
-     * case — pixel coords) take the exact fast path; the fractional tail
+     * case: pixel coords) take the exact fast path; the fractional tail
      * rounds via nearbyint under the default FE_TONEAREST, matching %.1f.
      * Coordinates are canvas-bounded (< 2^31), so the cast is exact. */
     if (v == 0.0) { smart_str_appendc(buf, '0'); return; }
@@ -141,7 +141,7 @@ void fc_svg_escape(smart_str *buf, const char *s, size_t len)
         unsigned char c = (unsigned char)s[i];
 
         /* Fast path: ASCII printable (0x20..0x7E excluding the five
-         * metacharacters) — keep walking, the trailing append flushes
+         * metacharacters): keep walking, the trailing append flushes
          * the run. */
         if (c >= 0x20 && c < 0x80) {
             const char *esc = NULL;
@@ -162,7 +162,7 @@ void fc_svg_escape(smart_str *buf, const char *s, size_t len)
             continue;
         }
 
-        /* Allowed C0 controls — pass through. */
+        /* Allowed C0 controls pass through. */
         if (c == 0x09 || c == 0x0A || c == 0x0D) { i++; continue; }
 
         /* C0 controls outside TAB/LF/CR -> U+FFFD. */
@@ -209,7 +209,7 @@ void fc_svg_escape(smart_str *buf, const char *s, size_t len)
             || cp > 0x10FFFF) {
             fc_emit_run(buf, s, run_start, i);
             smart_str_appendl(buf, REPL, sizeof(REPL) - 1);
-            /* Advance by one byte only — resync on the next start
+            /* Advance by one byte only and resync on the next start
              * byte rather than skipping `n` bytes of garbage. */
             run_start = ++i;
             continue;
@@ -551,8 +551,8 @@ void fc_svg_emit_text(smart_str *buf,
  * directly in SVG coordinates and no scale(1,-1) wrapper is needed.
  *
  * Errors: any FT_* failure produces an empty <g> (nothing emitted).
- * The chart still renders; the text is simply absent. Loud errors
- * here would break otherwise-fine raster output.                       */
+ * The chart still renders without the text, so raster output is not
+ * broken by a font failure.                                             */
 
 /* Capture ctx for the cache-build pass: records ops + pts at pen_x=0
  * into growing buffers, then hands ownership to the glyph cache. */
@@ -694,7 +694,7 @@ static void fc_replay_cached_glyph(smart_str *out, const fc_glyph_cache_entry *e
 #define fc_utf8_next fc_utf8_next_cp
 
 /* FT_Library and FT_Face are both shared. The face cache (4-slot LRU
- * in fastchart_target.c) skips the FT_New_Face cost — opening a font
+ * in fastchart_target.c) skips the FT_New_Face cost; opening a font
  * parses the entire file once. The size mutation (FT_Set_Pixel_Sizes)
  * still happens every call because callers want different sizes for
  * title vs axis labels; that's microseconds. */
@@ -768,10 +768,9 @@ void fc_svg_emit_text_as_path(smart_str *buf,
 	 * every miss, so we read each resolved entry before the next
 	 * resolve can shuffle it, replaying it into `d` and accumulating
 	 * pen_x. The alignment shift is applied in the <g transform>
-	 * wrapper emitted after `d` is fully built, so pen_x — the summed
-	 * advance over every resolved glyph — is exactly the run width
-	 * the wrapper needs; a separate advance-summing pass would repeat
-	 * the identical work. */
+	 * wrapper emitted after `d` is fully built, so pen_x (the summed
+	 * advance over every resolved glyph) is exactly the run width
+	 * the wrapper needs. */
 	smart_str d = {0};
 	double pen_x = 0.0;
 	{
@@ -804,7 +803,7 @@ void fc_svg_emit_text_as_path(smart_str *buf,
 			/* fastchart_text_draw_rotated uses CCW degrees; SVG
 			 * rotate() needs negative degrees. Pivot at the anchor
 			 * (x, y) and apply the alignment shift AFTER the rotate,
-			 * along the rotated baseline — matching the <text> path,
+			 * along the rotated baseline, matching the <text> path,
 			 * where text-anchor shifts along the glyph run. A
 			 * pre-rotation shift displaces the whole run in unrotated
 			 * space by up to the text width. */

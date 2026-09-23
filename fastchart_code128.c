@@ -470,7 +470,7 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
     /* Reserve a strip at the bottom for the human-readable text when
      * show_text is on AND a font is available. The default font path
      * is auto-detected at MINIT before any per-request open_basedir is
-     * known, so re-check it here — a request that narrowed
+     * known, so re-check it here: a request that narrowed
      * open_basedir to exclude /usr/share/fonts must not be able to
      * open the auto-detected font any more. Silent fall-through
      * (warn=0) on rejection; bars-only render is still valid output.
@@ -504,7 +504,7 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
      * Centre the bars on the canvas. With integer-rounded module_px,
      * the bars rarely consume the whole canvas; left-aligning at the
      * minimum quiet zone would dump all the slack on the right edge.
-     * The configured/default quiet zone is treated as the minimum —
+     * The configured/default quiet zone is treated as the minimum;
      * actual quiet on each side may be larger when the canvas has
      * slack from rounding. Mirrors the QR renderer's centring
      * convention in fastchart_qrcode.c. */
@@ -535,8 +535,7 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
 
     /* Human-readable text below the bars. Centred horizontally; the
      * raw input data is rendered as-is, control chars stripped to
-     * spaces (otherwise FreeType may produce odd glyphs or truncate
-     * at NUL — though setData already rejects NUL).
+     * spaces (otherwise FreeType may produce odd glyphs).
      *
      * Uses fastchart_text_draw with CENTER alignment so native text
      * and flattened glyph-path output share the same anchoring
@@ -576,8 +575,7 @@ int fastchart_code128_render_to_target(fastchart_code128_obj *self,
         if (ty + 2 > H) ty = H - 2;
         (void)fastchart_text_draw(t, text_font, pt, fg, tx, ty,
                                   FASTCHART_ALIGN_CENTER, buf, NULL, 0);
-        /* If the draw fails (font load issue), silently skip — bars
-         * are still valid output. */
+        /* On draw failure (font load issue), skip; bars alone are valid. */
     }
 
     return 0;

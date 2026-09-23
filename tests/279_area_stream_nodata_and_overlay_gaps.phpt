@@ -35,7 +35,7 @@ $contig = (new FastChart\BarChart(400, 300))->setCategoryLabels(['a', 'b', 'c'])
     ->addOverlaySeries('area', [10, 20, 30])->renderSvg();
 echo "gap_valid: ", (strlen($gapped) > 100 ? "yes" : "no"), "\n";
 /* the gapped fill (single run of 2 valid points -> one polygon) differs
- * from the contiguous fill (3 points) — the point is it does not span
+ * from the contiguous fill (3 points): the point is it does not span
  * the gap, so its polygon has fewer vertices than the contiguous one. */
 echo "gap_differs: ", ($gapped !== $contig ? "yes" : "no"), "\n";
 

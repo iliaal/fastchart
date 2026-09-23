@@ -1,5 +1,5 @@
 <?php
-/* Catch-all for the remaining utility setters in v1.0:
+/* Remaining utility setters:
  *   - FastChart\Chart::version()       : extension version string (static)
  *   - setSize(w, h)                    : change canvas size after construction
  *     (constructor accepts the same args; setter is for already-built objects)
@@ -10,15 +10,14 @@
  *     setSeries cells with a TypeError instead of silently coercing to NaN
  *   - setBoxWidth(percent)             : boxplot box width as a percent of
  *     the per-category slot
- *   - setBackgroundImage(path)         : overlay a background image
+ *   - setBackgroundImage(path)         : draw an image behind the chart
  *
- * The v1.0 cleanup removed draw($canvas) / renderGif / renderAvif;
- * the two-charts-on-one-canvas pattern now goes through
- * drawSvgFragment() + outer-SVG composition (see 31b below).
+ * To put two charts on one canvas, compose drawSvgFragment() output in
+ * an outer SVG document (31b below).
  *
- * ext/gd is no longer a fastchart runtime dependency. This example
- * only uses ext/gd to build a synthetic gradient background image
- * for setBackgroundImage; if gd is not loaded, that section skips. */
+ * fastchart doesn't need ext/gd. This example uses it only to build a
+ * gradient image for setBackgroundImage, and skips that part without
+ * gd. */
 
 require __DIR__ . '/_bootstrap.php';
 

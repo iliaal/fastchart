@@ -5,14 +5,14 @@ fastchart
 --FILE--
 <?php
 
-/* fnd_7ec12b11 — fastchart_draw_x_axis_time calendar-stride branch.
+/* fastchart_draw_x_axis_time calendar-stride branch.
  *
  * setDateAxisStride() enables the calendar-aware tick path, which
  * breaks t_min down with gmtime_r before snapping to a unit boundary.
  * gmtime_r returns NULL when the year overflows struct tm's int
  * tm_year. Candle timestamps arrive unclamped from setOhlcv, so a
  * PHP_INT_MAX timestamp left tm_buf indeterminate and the subsequent
- * timegm()/strftime() read uninitialized members — UB (UBSan abort on
+ * timegm()/strftime() read uninitialized members: UB (UBSan abort on
  * CI builds, garbage ticks otherwise). The numeric/auto path below
  * already clamped; the calendar branch did not.
  *
@@ -47,7 +47,7 @@ foreach ([
 
 /* Case 2: same extreme input in NATIVE text mode. On 64-bit PHP the
  * timestamp overflows struct tm, so the numeric fallback emits the raw
- * integer as the label (a long digit run inside a <text>) — this is the
+ * integer as the label (a long digit run inside a <text>): this is the
  * discriminator that catches the unfixed indeterminate-tm read. On
  * 32-bit PHP zend_long == time_t == 32-bit, so PHP_INT_MAX is a valid
  * 2038 timestamp and the overflow is unreachable; assert clean render. */

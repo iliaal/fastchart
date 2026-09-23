@@ -19,7 +19,7 @@ try {
 asan.detect_leaks=0
 --FILE--
 <?php
-/* setShadowAlpha(127) is libgd's "fully transparent" — fastchart_effects.c
+/* setShadowAlpha(127) is libgd's "fully transparent": fastchart_effects.c
  * maps it to an alpha byte of 0, and the SVG backend emits rgba(...,0),
  * which renders invisibly. The PDF backend previously treated alpha 0 as
  * opaque and drew the shadow solid. Post-fix a fully-transparent shape

@@ -2,8 +2,8 @@
 /* Funnel STYLE_CONE: pyramid layout with front-facing ellipse arcs
  * at each band's top and bottom edges. Visually suggests a 3D cone
  * seen from the side. Layout (apex at top, base at bottom, band
- * heights proportional to value) matches STYLE_PYRAMID exactly —
- * only the silhouette changes. */
+ * heights proportional to value) matches STYLE_PYRAMID; only the
+ * silhouette changes. */
 
 require __DIR__ . '/_bootstrap.php';
 

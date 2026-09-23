@@ -37,7 +37,7 @@ $c3 = clone $o3;
 $c3->setTitle('there');
 echo "title_isolated: ", $o3->renderPng() !== $c3->renderPng() ? "yes" : "no", "\n";
 
-// Free the original first, then render the clone — the clone must
+// Free the original first, then render the clone: the clone must
 // still own its strings.
 $o4 = (new FastChart\BarChart(300, 200))
     ->setSeries([5, 10, 15])

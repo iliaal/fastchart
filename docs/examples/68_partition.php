@@ -1,7 +1,7 @@
 <?php
 /* Partition: a hierarchy as nested rectangular subdivisions. Each level
  * is a fixed band; a node's children split its span in proportion to
- * their subtree totals. ORIENT_VERTICAL is the icicle layout — the root
+ * their subtree totals. ORIENT_VERTICAL is the icicle layout: the root
  * spans the top, descendants stack downward. Here, source size by
  * package. */
 

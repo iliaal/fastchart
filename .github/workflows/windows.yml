@@ -66,16 +66,15 @@ jobs:
           # Tests run in our own step below: the action's test step
           # hardcodes TEST_PHP_ARGS to `-n` + fastchart.dll only, so the
           # ~90 gd round-trip phpts skip, and its test-runner-args input
-          # can't inject a gd load — run-tests.php addslashes()es every
-          # `-d` value it forwards, mangling Windows paths (run
-          # 29161651431 red across all 20 lanes).
+          # can't inject a gd load: run-tests.php addslashes()es every
+          # `-d` value it forwards, mangling Windows paths.
           run-tests: 'false'
           # --enable-fastchart-dev turns MSVC warnings into errors (/WX,
           # config.w32:113-117), matching the -Werror bar the Unix lanes
           # hold. This workflow also feeds release publishing (the
           # `release` job below fires on release:published), so /WX now
           # gates release DLLs too: a warning-bearing DLL fails the build
-          # and never publishes. That is intended.
+          # and never publishes.
           args: --enable-fastchart --enable-fastchart-dev
           # Four pkg-config deps fastchart's config.m4 probes for. The
           # action wires these into the Windows build's vcpkg sysroot so
@@ -96,7 +95,7 @@ jobs:
           $bdir = Get-ChildItem build -Directory -ErrorAction SilentlyContinue |
             Where-Object { Test-Path (Join-Path $_.FullName 'php-bin\php.exe') } |
             Select-Object -First 1
-          if (-not $bdir) { throw "no build\<guid>\php-bin found — action layout changed?" }
+          if (-not $bdir) { throw "no build\<guid>\php-bin found; action layout changed?" }
           Set-Location $bdir.FullName
           $ws = (Get-Location).Path
           $php = Join-Path $ws 'php-bin\php.exe'
@@ -158,9 +157,8 @@ jobs:
   # its runtime DLLs are then staged next to the built extension because
   # PHP >= 7.4 on Windows does not consult %PATH% for extension
   # dependencies. (php/setup-php-sdk was rejected for this lane: its
-  # run.ps1 null-derefs in bare Invoke-WebRequest on WinPS 5.1 — upstream
-  # bug present at v0.12 and master.) Blocking since run 29162247340 went
-  # green (7/7 PDF tests, 0 skips). Not part of release publishing — this
+  # run.ps1 null-derefs in bare Invoke-WebRequest on WinPS 5.1, an upstream
+  # bug present at v0.12 and master.) Not part of release publishing: this
   # lane builds a --with-pdfio DLL that the release job
   # intentionally does not upload (release DLLs are pdfio-less, matching
   # the Linux prebuilt).
@@ -211,7 +209,7 @@ jobs:
             $rt | Copy-Item -Destination "$prefix\bin\" -Force
             Write-Host "pdfio runtime DLLs staged: $($rt.Name -join ', ')"
           } else {
-            Write-Host "pdfio produced no runtime DLL (static build) — contents of ${libdir}:"
+            Write-Host "pdfio produced no runtime DLL (static build); contents of ${libdir}:"
             Get-ChildItem $libdir | Select-Object -ExpandProperty Name
           }
           # config.w32's CHECK_LIB / CHECK_HEADER_ADD_INCLUDE consult the
@@ -242,7 +240,7 @@ jobs:
           $bdir = Get-ChildItem build -Directory -ErrorAction SilentlyContinue |
             Where-Object { Test-Path (Join-Path $_.FullName 'php-bin\php.exe') } |
             Select-Object -First 1
-          if (-not $bdir) { throw "no build\<guid>\php-bin found — action layout changed?" }
+          if (-not $bdir) { throw "no build\<guid>\php-bin found; action layout changed?" }
           Set-Location $bdir.FullName
           $php = Join-Path $bdir.FullName 'php-bin\php.exe'
           $dllItem = Get-ChildItem . -Recurse -Filter php_fastchart.dll |
@@ -252,8 +250,8 @@ jobs:
           $dll = $dllItem.FullName
           # PHP >= 7.4 on Windows resolves extension dependencies via the
           # altered DLL search path (the module's own directory), NOT
-          # %PATH% — run 29162048084 failed "module could not be found"
-          # on an existing dll for exactly this reason. Stage pdfio's
+          # %PATH%, so a present dll still fails with "module could not
+          # be found" unless its dependencies sit beside it. Stage pdfio's
           # runtime DLLs next to the extension and next to php.exe.
           if (Test-Path "$env:PDFIO_PREFIX\bin") {
             Copy-Item "$env:PDFIO_PREFIX\bin\*.dll" (Split-Path $dll) -Force -ErrorAction SilentlyContinue
@@ -279,7 +277,7 @@ jobs:
           # Every PDF test must PASS, not skip: a skip here means pdfio
           # didn't link and the lane proved nothing.
           if ($LASTEXITCODE -ne 0 -or $passed -lt $pdfTests.Count) {
-            Write-Error "PDF tests: $passed/$($pdfTests.Count) passed — pdfio may not have linked (see SKIPs above)"
+            Write-Error "PDF tests: $passed/$($pdfTests.Count) passed; pdfio may not have linked (see SKIPs above)"
             exit 1
           }
 

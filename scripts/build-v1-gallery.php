@@ -1,5 +1,5 @@
 <?php
-/* v1.0 four-up gallery: SVG | PNG | JPG | WebP side-by-side for every
+/* Four-up gallery: SVG | PNG | JPG | WebP side-by-side for every
  * chart variant in the README. Drives the same case list as
  * scripts/build-readme-gallery.php; columns cover renderSvg,
  * renderPng, renderJpeg (default setJpegQuality=88), and renderWebp.
@@ -28,7 +28,7 @@ foreach ($cases as $idx => $case) {
 
     /* Image-map probe: chart families that populate area data after a
      * render expose it through getImageMap(). When non-empty, emit a
-     * single working PNG + <map> instead of the four-format quad —
+     * single working PNG + <map> instead of the four-format quad;
      * the point of the case is the clickable hot-spots, not codec
      * comparison. Mostly catches BarChart / PieChart / ScatterChart. */
     $png = $c->renderPng();
@@ -42,7 +42,7 @@ foreach ($cases as $idx => $case) {
         /* Rewrite area hrefs to a same-page anchor. The case data sets
          * realistic-looking URLs (/reports/2026qN) to model production
          * usage, but those paths don't resolve from the static gallery
-         * page — leave the tooltips intact, defuse the navigation. */
+         * page. Keep the tooltips, defuse the navigation. */
         $img_map = preg_replace('/href="[^"]*"/', 'href="#row-' . $n . '"', $img_map);
         $rows .= <<<HTML
 <section class="row" id="row-{$n}">

@@ -8,7 +8,7 @@ fastchart
 /* fnd_2423e27e: with setSecondaryYAxis(true) and a band series flagged
  * 'axis' => 'right', the range loop routed that boundary into the right
  * range while the band draw path mapped both boundaries through the left
- * range — the right-flagged boundary flat-lined against a plot edge and
+ * range: the right-flagged boundary flat-lined against a plot edge and
  * an orphan right axis was drawn. Both-right threw despite valid data.
  * Band mode now ignores the secondary axis like stream mode does. */
 

@@ -5,13 +5,13 @@
  *
  *   - BarChart: rect hot-spot per category column
  *   - PieChart: poly hot-spot per slice (6-vertex wedge)
- *   - ScatterChart: circle hot-spot per point (legacy: via setPoints
- *                   entries with 'href' / 'tooltip' keys)
+ *   - ScatterChart: circle hot-spot per point (via 'href' /
+ *                   'tooltip' keys on setPoints entries)
  *
- * URL scheme is allowlisted (http / https / mailto / relative `/`
- * or fragment `#` only — javascript:, data:, vbscript:, etc. are
- * silently dropped). Tooltip text is HTML-escaped. NUL bytes are
- * rejected. The map name is sanitized to [A-Za-z0-9_-]. */
+ * Only http, https, mailto, relative `/`, and fragment `#` URLs are
+ * kept; javascript:, data:, vbscript:, and other schemes are silently
+ * dropped. Tooltip text is HTML-escaped, NUL bytes are rejected, and
+ * the map name is sanitized to [A-Za-z0-9_-]. */
 
 require __DIR__ . '/_bootstrap.php';
 
@@ -31,8 +31,8 @@ $bar = (new FastChart\BarChart(640, 360))
         ['href' => '/reports/2026q4', 'tooltip' => 'Q4: $25.3M'],
     ]);
 
-/* getImageMap MUST run after a render — the renderer populates the
- * hot-spot geometry as it draws each bar. */
+/* Call getImageMap after a render: the renderer records hot-spot
+ * geometry as it draws each bar. */
 $bar->renderToFile(__DIR__ . '/56_image_map_bar.png');
 $bar_map = $bar->getImageMap('quarterly');
 

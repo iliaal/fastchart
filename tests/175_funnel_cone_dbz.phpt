@@ -5,7 +5,7 @@ fastchart
 --FILE--
 <?php
 
-/* Regression: fastchart_funnel.c:141 — in CONE mode the layout
+/* Regression in fastchart_funnel.c:141: in CONE mode the layout
  * subtracts cone_bottom_reserve (≈22% of max_half) from (y1 - y0)
  * to form total_h. A wide-and-short canvas (e.g. W=1890, H=210)
  * produces max_half≈845, reserve≈186, y1-y0≈186 → total_h == 0.

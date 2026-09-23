@@ -29,8 +29,7 @@
  * total incident flow; links are ribbons whose ends attach to value-
  * proportional slices of each endpoint's arc and curve through the
  * centre. Ribbon edges are quadratic beziers (control point = centre)
- * flattened to a polygon — same flatten-to-polygon strategy SankeyChart
- * uses for its horizontal ribbons. */
+ * flattened to a polygon, as SankeyChart does for its horizontal ribbons. */
 
 typedef struct {
     double incident;       /* sum of link values touching this node */

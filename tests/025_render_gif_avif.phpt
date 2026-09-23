@@ -5,7 +5,7 @@ fastchart
 --FILE--
 <?php
 
-/* v1.0 dropped GIF and AVIF entirely — including the C-side methods.
+/* v1.0 dropped GIF and AVIF entirely, including the C-side methods.
  * Calling the method now hits PHP's engine-level "Call to undefined
  * method" path. The test asserts that exact behaviour so a future
  * accidental re-add of renderGif() / renderAvif() returning empty
@@ -31,7 +31,7 @@ foreach (['renderGif', 'renderAvif'] as $method) {
 }
 
 /* renderToFile('.gif' / '.avif') still has an explicit "dropped in
- * v1.0" branch that throws — that path is reachable and should keep
+ * v1.0" branch that throws: that path is reachable and should keep
  * working. */
 foreach (['gif' => 'GIF', 'avif' => 'AVIF'] as $ext => $label) {
     try {

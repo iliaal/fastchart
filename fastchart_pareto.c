@@ -29,7 +29,7 @@
 
 /* Pareto chart: bar series (left Y axis, absolute values) + a
  * cumulative-percentage line overlay (right Y axis, 0..100%).
- * Caller controls bar order — the rendering does NOT re-sort. */
+ * Caller controls bar order; the rendering does NOT re-sort. */
 int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_target_t *t)
 {
     fastchart_palette pal;
@@ -218,7 +218,7 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
     }
 
     /* Threshold lines (addHorizontalLine) map onto the left value axis,
-     * which is a plain 0-based linear scale [0, y_axis_max] — the bars
+     * which is a plain 0-based linear scale [0, y_axis_max]. The bars
      * above use the same mapping, so build a matching range rather than
      * the niced `yr` (whose min may not be 0). */
     fastchart_draw_h_annotations(t, (fastchart_obj *)self, &ann_plot, &pal,

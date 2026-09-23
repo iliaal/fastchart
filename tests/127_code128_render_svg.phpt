@@ -31,7 +31,7 @@ var_dump($xml instanceof SimpleXMLElement);
 
 // Code128 emits bars as filled <rect> elements; HELLO + start/check/
 // stop produces a healthy number of bar rects. The opaque bg also
-// contributes one rect. Lower-bound at 20 — a structurally correct
+// contributes one rect. Lower-bound at 20: a structurally correct
 // Code128 sits comfortably above this.
 $rect_n = substr_count($svg, "<rect");
 echo "rect>=20: ", ($rect_n >= 20 ? "yes" : "no ($rect_n)"), "\n";

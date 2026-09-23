@@ -23,7 +23,7 @@ $perturbed[0]['value'] = 200;  /* A doubles, others shrink proportionally */
 $alt = (new FastChart\Treemap(320, 200))->setItems($perturbed)->renderPng();
 echo "perturb_differs: ", ($alt !== $base ? "yes" : "no"), "\n";
 
-/* Custom color flows through — different color, different bytes. */
+/* Custom color flows through: different color, different bytes. */
 $colored = $base_items;
 $colored[0]['color'] = 0xFF0000;
 $col = (new FastChart\Treemap(320, 200))->setItems($colored)->renderPng();

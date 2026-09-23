@@ -167,11 +167,9 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
     if (self->trend_line && n >= 2) {
         int deg = (int)self->trend_degree;
         if (deg < 1) deg = 1;
-        /* Cap at 3. Quintic / quartic fits over raw scatter data
-         * are essentially never the right answer — they overfit
-         * noise and the high-order Vandermonde is numerically
-         * fragile even with normalization. Three is high enough
-         * for the vast majority of "is there a trend?" use cases. */
+        /* Cap at 3. Higher-order fits over raw scatter data overfit
+         * noise, and the high-order Vandermonde is numerically fragile
+         * even with normalization. */
         if (deg > 3) deg = 3;
         if (deg + 1 > n) deg = n - 1;
         if (deg < 1) deg = 1;
@@ -236,7 +234,7 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
                 for (int r = k + 1; r < m; r++) {
                     if (fabs(A[r][k]) > best) { best = fabs(A[r][k]); piv = r; }
                 }
-                if (best < 1e-12) { /* singular -- skip */ goto no_fit; }
+                if (best < 1e-12) { /* singular: skip */ goto no_fit; }
                 if (piv != k) {
                     for (int c = 0; c <= m; c++) {
                         double tmp = A[k][c]; A[k][c] = A[piv][c]; A[piv][c] = tmp;

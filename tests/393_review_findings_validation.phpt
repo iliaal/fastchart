@@ -1,5 +1,5 @@
 --TEST--
-Review findings: numeric, cap, and scalar setter validation preserves state
+Numeric, cap, and scalar setter validation preserves state
 --EXTENSIONS--
 fastchart
 --FILE--

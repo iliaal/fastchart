@@ -31,7 +31,7 @@ echo 'svg outline count stable: ',
 		? "yes\n" : "NO\n";
 
 /* PDF half: pdfio stamps two random file IDs per document, so normalize
- * those before comparing — replay parity then compares content, which
+ * those before comparing: replay parity then compares content, which
  * subsumes outline-count stability because pdfio's deflate is
  * deterministic for identical input. No --SKIPIF-- on pdfio (the lane
  * counts are tight): without the backend both calls must fail closed

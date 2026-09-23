@@ -50,7 +50,7 @@ try {
     echo "userland subclass: ", strpos($e->getMessage(), 'internal') !== false ? 'ok' : 'BAD', "\n";
 }
 
-/* Userland subclass with its own __construct — the previous bug
+/* Userland subclass with its own __construct: the previous bug
  * class. The sentinel must prevent the inherited userland
  * constructor from running on a vanilla zend_object that lacks
  * FASTCHART_BASE_FIELDS. */

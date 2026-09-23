@@ -6,7 +6,7 @@ fastchart
 <?php
 
 /* fnd_3444b260: the overlay area-fill polygon used a fixed 2048-slot
- * buffer — the top edge stopped at the first 1024 valid points while the
+ * buffer: the top edge stopped at the first 1024 valid points while the
  * bottom edge walked in from the last category, closing a self-crossing
  * polygon over disjoint x-ranges. The buffer is now sized to the data. */
 

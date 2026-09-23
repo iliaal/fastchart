@@ -9,7 +9,7 @@
   | Author: Ilia Alshanetsky <ilia@ilia.ws>                              |
   +----------------------------------------------------------------------+
 
-  PDF render backend — see fastchart_pdf.h for the design notes. Built
+  PDF render backend; see fastchart_pdf.h for the design notes. Built
   only when configured --with-pdfio.
 */
 
@@ -82,7 +82,7 @@ static inline double cc(uint32_t v) { return (double)v / 255.0; }
  * SVG backend emits rgba(...,0), which renders invisibly, so the PDF
  * backend must skip the paint to match. Legacy bare RGB (also alpha
  * byte 0, but meaning opaque) reaches the backend only through the
- * gradient fallbacks — which force 0xFF — and the canvas-background
+ * gradient fallbacks (which force 0xFF) and the canvas-background
  * capture in fc_pdf_emit_rect, both handled explicitly. Everywhere else
  * alpha 0 is a suppressed shape, e.g. a drop shadow at setShadowAlpha(127)
  * (fastchart_effects.c maps 127 to alpha byte 0). */
@@ -93,7 +93,7 @@ static inline int fc_pdf_transparent(uint32_t rgba)
 
 /* Flatten a translucent 0xAARRGGBB onto the page background. Alpha byte
  * 255 (opaque) and 0 (legacy bare-RGB canvas fill, also opaque) pass
- * through; genuinely-transparent handles are caught by fc_pdf_transparent
+ * through; transparent handles are caught by fc_pdf_transparent
  * at the emitters before reaching here. */
 static uint32_t fc_pdf_flatten(const fc_pdf_state *s, uint32_t rgba)
 {
@@ -172,7 +172,7 @@ int fc_pdf_doc_close(fc_pdf_state *s)
 }
 
 /* Bailout-unwind teardown: releases every malloc'd pdfio object without
- * touching request memory beyond the state itself — the output callback
+ * touching request memory beyond the state itself; the output callback
  * swallows the close-time flush. */
 void fc_pdf_doc_abort(fc_pdf_state *s)
 {
@@ -448,7 +448,7 @@ void fc_pdf_emit_text_as_path(fc_pdf_state *s, double x, double y,
 	 * y-up space; that flip mirrors the rotation direction relative to
 	 * fastchart's CCW-in-y-down convention, so the page rotation is
 	 * -angle. Pivot at the anchor (x, y) and apply the alignment shift
-	 * AFTER the rotate, along the rotated baseline — matching
+	 * AFTER the rotate, along the rotated baseline, matching
 	 * fc_svg_emit_text_as_path. (At angle 0 the shift folds into the
 	 * translate and text is already correct.) */
 	if (angle_deg != 0.0) {
@@ -508,7 +508,7 @@ void fc_pdf_emit_gradient_rect(fc_pdf_state *s, double x, double y,
                                 uint32_t to_rgb, int dir)
 {
 	(void)to_rgb; (void)dir;
-	/* No axial shading in this pdfio build — solid fallback of from_rgb.
+	/* No axial shading in this pdfio build; fall back to solid from_rgb.
 	 * When the caller packed a non-zero alpha into the high byte (AreaChart
 	 * band mode, fastchart_area.c), honor it so the fill composites against
 	 * the captured page background instead of rendering opaque; a zero high

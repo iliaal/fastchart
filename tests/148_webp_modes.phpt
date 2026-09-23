@@ -39,7 +39,7 @@ foreach ($modes as $name => $mode) {
     $sizes[$name] = strlen($w);
 }
 
-/* The four modes must produce at least three distinct sizes — if
+/* The four modes must produce at least three distinct sizes: if
  * everything is identical, setWebpMode() isn't wired through. */
 echo "modes_differ: ", (count(array_unique($sizes)) >= 3 ? "ok" : "fail"), "\n";
 

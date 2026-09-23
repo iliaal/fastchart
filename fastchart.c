@@ -206,7 +206,7 @@ static zend_object_handlers fastchart_serpentine_handlers;
 static zend_object_handlers fastchart_dendrogram_handlers;
 static zend_object_handlers fastchart_partition_handlers;
 
-/* Base lifecycle. Operates on the common-initial-sequence layout —
+/* Base lifecycle. Operates on the common-initial-sequence layout:
  * any fastchart_X_obj* aliases as fastchart_obj* for these reads /
  * writes since base fields share offsets across all per-type structs. */
 static void fastchart_base_init_defaults(fastchart_obj *b)
@@ -897,9 +897,8 @@ static int fastchart_parse_series(zval *series_zv, fastchart_series_t *out, int 
 
 /* Parse the user setSeries() input into self->series[]. Accepts
  * either a flat numeric list (single series) or a list of
- * series-dicts. Returns 0 on success, -1 on shape error. Caller
- * already cleared any previously-parsed state via the array
- * release helper. */
+ * series-dicts. Returns 0 on success, -1 on shape error. The caller
+ * has already released prior state. */
 static int fastchart_collect_series_into(zval *arr, fastchart_series_t *out,
                                          int *out_n, int *out_max_len, int flags)
 {
@@ -910,7 +909,7 @@ static int fastchart_collect_series_into(zval *arr, fastchart_series_t *out,
     int n = (int)zend_hash_num_elements(ht);
     if (n == 0) return 0;
 
-    /* Multi-series detection: FIRST element (in hash order — index 0
+    /* Multi-series detection: FIRST element (in hash order; index 0
      * may not exist after unset/array_filter) is an array with a
      * 'data' key. Single-series fallback: the input is itself the
      * values. */
@@ -1629,8 +1628,7 @@ static void fastchart_funnel_init_extras(fastchart_funnel_obj *o)
     o->stages = NULL;
     o->stage_count = 0;
     o->funnel_style = FASTCHART_FUNNEL_STYLE_FUNNEL;
-    /* Override the base default (false) — funnels typically want
-     * the per-stage value rendered next to the label. */
+    /* Funnels default to showing the per-stage value next to the label. */
     ((fastchart_obj *)o)->show_values = true;
 }
 static void fastchart_funnel_release_extras(fastchart_funnel_obj *o)
@@ -3452,8 +3450,8 @@ static int fastchart_validate_double_format(const zend_string *fmt, const char *
                 i++;
             }
         }
-        /* Reject length modifiers (l, ll, h, etc. -- they imply
-         * non-double arg types). */
+        /* Reject length modifiers (l, ll, h, etc.); they imply
+         * non-double arg types. */
         if (i < len && (p[i] == 'l' || p[i] == 'L' || p[i] == 'h' ||
                         p[i] == 'j' || p[i] == 'z' || p[i] == 't')) {
             zend_value_error("FastChart\\Chart::%s() length modifiers are not allowed in format strings", where);
@@ -3951,8 +3949,8 @@ ZEND_METHOD(FastChart_ScatterChart, setTrendLine)
  *   - non-negative scalar M         -> lo = hi = M  (symmetric)
  *   - [lo, hi] array                -> as-is, with negative values
  *                                      coerced to NaN (no error bar)
- * Returns 0 on success; never fails for shape — bad cells silently
- * become NaN slots. Caller frees out_lo / out_hi via efree(). */
+ * Returns 0 on success; never fails for shape (bad cells become
+ * NaN slots). Caller frees out_lo / out_hi via efree(). */
 static int fastchart_parse_error_bars(zval *errs, uint32_t cap,
                                       double **out_lo,
                                       double **out_hi, int *out_n)
@@ -3966,8 +3964,8 @@ static int fastchart_parse_error_bars(zval *errs, uint32_t cap,
         return 0;
     }
     /* Cap is per-chart-type: line series cap at FASTCHART_MAX_POINTS_PER_SERIES
-     * (2048), scatter at FASTCHART_MAX_SCATTER_POINTS (4096). Extra entries
-     * beyond the cap simply have no data point to attach to. */
+     * (2048), scatter at FASTCHART_MAX_SCATTER_POINTS (4096). Entries
+     * beyond the cap have no data point to attach to. */
     if (n > cap) n = cap;
     double *lo = emalloc((size_t)n * sizeof(double));
     double *hi = emalloc((size_t)n * sizeof(double));
@@ -4119,7 +4117,7 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints)
     HashTable *ht = Z_ARRVAL_P(data_zv);
     int n_input = (int)zend_hash_num_elements(ht);
 
-    /* Detect multi-series: first element (in hash order — index 0 may
+    /* Detect multi-series: first element (in hash order; index 0 may
      * not exist after unset/array_filter) is dict with 'data' key. */
     zval *first = NULL;
     {
@@ -4609,7 +4607,7 @@ static int fastchart_svg_to_pixels(
         return -1;
     }
 
-    /* fastchart.max_render_pixels lowers the pixel budget here too —
+    /* fastchart.max_render_pixels lowers the pixel budget here too:
      * this path uses the same raster frame and encoder workspace as the
      * chart renderers, so an INI ceiling that only governed render*()
      * would leave svgTo*() as a bypass. */
@@ -4817,10 +4815,8 @@ ZEND_METHOD(FastChart_Chart, svgToWebp)
     RETURN_STR(out.s);
 }
 
-/* Small shared predicate for the href scheme allowlist used by both
- * getImageMap() (HTML emission) and getImageMapAreas() (structured).
- * Same rules as the original inline logic: empty, root-relative, or
- * one of the three explicit safe schemes. Everything else (javascript:,
+/* href scheme allowlist shared by getImageMap() and getImageMapAreas():
+ * empty, root-relative, or one of the three explicit safe schemes. Everything else (javascript:,
  * data:, etc.) is dropped silently. */
 static bool fastchart_href_scheme_allowed(const char *s, size_t len)
 {
@@ -4899,7 +4895,7 @@ ZEND_METHOD(FastChart_Chart, getImageMap)
          * vbscript:) are rejected. Relative paths, fragments, and
          * mailto: are allowed alongside http(s). Reject the whole
          * <area> entry on a bad scheme rather than emit a sanitized
-         * one -- callers can audit their input. Embedded NUL was
+         * one, so callers can audit their input. Embedded NUL was
          * already dropped by the setter; href_str is NUL-clean. */
         if (!fastchart_href_scheme_allowed(href_str, href_len)) continue;
 
@@ -4996,12 +4992,9 @@ ZEND_METHOD(FastChart_Chart, getImageMap)
     RETURN_STR(out.s);
 }
 
-/* Structured alternative to getImageMap(). Returns a PHP array of
- * hot-spot descriptors instead of an HTML string. Uses the exact
- * same areas array + scheme filter so behaviour (including which
- * entries are dropped) is identical. Rect coords are emitted in
- * the HTML <area> left/top/right/bottom form (per approved plan).
- * Shapes are lowercase strings. */
+/* Structured alternative to getImageMap(): same areas array and scheme
+ * filter, so the same entries are dropped. Rect coords use the HTML
+ * <area> left/top/right/bottom form; shapes are lowercase strings. */
 ZEND_METHOD(FastChart_Chart, getImageMapAreas)
 {
     ZEND_PARSE_PARAMETERS_NONE();
@@ -5046,7 +5039,7 @@ ZEND_METHOD(FastChart_Chart, getImageMapAreas)
         add_assoc_zval(&entry, "coords", &coords_arr);
 
         /* The stub documents 'index' as the position in the original
-         * setSeries/setSlices/setPoints — the area slot ordinal drifts
+         * setSeries/setSlices/setPoints; the area slot ordinal drifts
          * from it as soon as one entry is skipped (no href, NaN point). */
         add_assoc_long(&entry, "index", (zend_long)a->orig_index);
 
@@ -5318,8 +5311,8 @@ ZEND_METHOD(FastChart_Chart, addOverlaySeries)
      * hash order with a position counter rather than probing index i:
      * an array with holes has no index for some i < n, and the probe
      * would read that as an intentional gap and drop the tail. Non-
-     * numeric / non-finite entries become gaps — addOverlaySeries never
-     * validated under strict mode, so preserve the silent-drop contract. */
+     * numeric / non-finite entries become gaps: addOverlaySeries does not
+     * honor strict mode. */
     HashTable *vht = Z_ARRVAL_P(values);
     uint32_t un = zend_hash_num_elements(vht);
     if (un > FASTCHART_MAX_POINTS_PER_SERIES) {
@@ -5629,8 +5622,7 @@ ZEND_METHOD(FastChart_StockChart, setVolumeColors)
      * the rest fall back to the palette. Walk by integer key so array
      * holes (e.g. array_filter output) don't shift colors onto the
      * wrong candle; allocate through max(key)+1 capped at the cell cap.
-     * The previous positional 0..n-1 walk silently dropped any entry
-     * whose key exceeded the element count. Mirrors PieChart::setExplode. */
+     * Mirrors PieChart::setExplode. */
     zend_ulong max_key = 0;
     bool any_int = false;
     {
@@ -5997,10 +5989,8 @@ ZEND_METHOD(FastChart_PieChart, setExplode)
 
     /* The stub documents [2 => 12] sparse syntax: the user names a
      * slice index, the rest stay at 0. Walk by integer key so that
-     * sparse maps work; allocate through max(key) + 1 capped at
-     * FASTCHART_MAX_SLICES. The previous positional 0..n-1 walk
-     * silently dropped any entry whose key was beyond the element
-     * count (so [2 => 12] became n=1 and ignored slice 2). */
+     * sparse maps work (a positional walk would read [2 => 12] as n=1);
+     * allocate through max(key) + 1 capped at FASTCHART_MAX_SLICES. */
     zend_ulong max_key = 0;
     bool any_int = false;
     {
@@ -6351,9 +6341,7 @@ static int dispatch_svg_render(void *object, zend_class_entry *ce,
         return fastchart_dendrogram_render_to_target((fastchart_dendrogram_obj *)self, t);
     if (ce == fastchart_partition_ce)
         return fastchart_partition_render_to_target((fastchart_partition_obj *)self, t);
-    /* All 38 chart families are wired above. Reaching this branch
-     * means dispatch was invoked on a class entry the Chart base
-     * doesn't acknowledge — defensive, should never happen. */
+    /* Unreachable: all 38 chart families are wired above. */
     zend_throw_error(NULL,
         "FastChart: SVG dispatch found unknown class entry");
     return -1;
@@ -6495,7 +6483,7 @@ static int fastchart_chart_render_to_sink(fastchart_obj *self,
     }
 
     /* libwebp hard-caps each dimension at WEBP_MAX_DIMENSION (16383),
-     * one below fastchart's own physical cap — reject up front instead
+     * one below fastchart's own physical cap. Reject up front instead
      * of paying for the SVG build + rasterization and then failing with
      * a generic encoder error. */
     if (format == 2 && (alloc_w > 16383 || alloc_h > 16383)) {
@@ -6505,7 +6493,7 @@ static int fastchart_chart_render_to_sink(fastchart_obj *self,
         return -1;
     }
 
-    /* Build the SVG in PATHS mode regardless of self->svg_text_mode —
+    /* Build the SVG in PATHS mode regardless of self->svg_text_mode;
      * plutovg has no text-rendering support. */
     smart_str svg_buf = {0};
 	if (fastchart_build_svg(&svg_buf,
@@ -6659,9 +6647,8 @@ static void fastchart_render_to_svg(INTERNAL_FUNCTION_PARAMETERS, int fragment_o
 			dispatch_svg_render, self, Z_OBJCE_P(ZEND_THIS)) != 0) {
 		RETURN_THROWS();
     }
-    /* Hand the smart_str's underlying zend_string to the return slot
-     * directly — smart_str_0 has already NUL-terminated and finalised
-     * the buffer. Transfers refcount=1 ownership. */
+    /* Hand the smart_str's zend_string (already NUL-terminated by
+     * smart_str_0) to the return slot, transferring refcount=1 ownership. */
     RETURN_STR(buf.s);
 }
 
@@ -6709,7 +6696,7 @@ ZEND_METHOD(FastChart_Chart, drawSvgFragment)
 }
 
 /* Vector PDF. Like renderSvg, dimensions are the LOGICAL setSize()
- * values — PDF is vector-scalable so DPI doesn't multiply the page.
+ * values; DPI doesn't multiply the vector page.
  * Chart bodies emit the same primitives through the target abstraction;
  * the PDF target routes them to pdfio. Requires --with-pdfio at build
  * time; throws otherwise. Returns 0 on success, -1 (with a thrown
@@ -6820,7 +6807,7 @@ ZEND_METHOD(FastChart_Chart, setImageMap)
         HashTable *eh = Z_ARRVAL_P(entry);
         zval *zh = zend_hash_str_find(eh, "href",    sizeof("href")    - 1);
         zval *zt = zend_hash_str_find(eh, "tooltip", sizeof("tooltip") - 1);
-        /* Reject embedded NUL — `/safe\0javascript:alert(1)` would
+        /* Reject embedded NUL: `/safe\0javascript:alert(1)` would
          * pass the scheme allowlist on the visible prefix while the
          * downstream consumer (or copy-buffer) sees the full PHP
          * string. Mirrors the policy ScatterChart::setPoints applies
@@ -8947,8 +8934,8 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxes)
         }
         /* Five-number summaries are monotonic by definition. Unordered
          * input would render as negative-height SVG rects downstream.
-         * Drop the malformed entry — matches the silent-drop policy
-         * applied to other setters (e.g. setVectors with NaN). */
+         * Drop the malformed entry, like other setters do (e.g.
+         * setVectors with NaN). */
         if (!(out->min <= out->q1 && out->q1 <= out->median
               && out->median <= out->q3 && out->q3 <= out->max)) {
             fc_efree_opt(out->label);
@@ -9267,8 +9254,7 @@ ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
 /* Take ownership of `values` (efree'd by the dtor on failure or with
  * the chart on success) and clone the literal `name` into emalloc'd
  * storage. Returns 0 on success, -1 if the indicator-pane cap is
- * exhausted. The four native indicators below funnel through this
- * helper so all of them share the existing pane render path. */
+ * exhausted. */
 static int push_indicator_pane(fastchart_stock_obj *self,
                                const char *name, double *values, int n,
                                bool has_reference, double reference,
@@ -9928,7 +9914,7 @@ ZEND_METHOD(FastChart_StockChart, addMACD)
         Z_PARAM_LONG(signal_p)
     ZEND_PARSE_PARAMETERS_END();
     /* Upper-bound every period before the cast to int. signal_p in
-     * particular is later used as an array index — an unbounded
+     * particular is later used as an array index, and an unbounded
      * zend_long becomes a wraparound int and walks the buffer. */
     if (fast < 2 || slow < 2 || signal_p < 2 ||
         fast >= slow ||
@@ -9952,9 +9938,8 @@ ZEND_METHOD(FastChart_StockChart, addMACD)
     }
 
     /* MACD line = EMA(fast) - EMA(slow); signal = EMA(MACD, signal);
-     * histogram = MACD - signal. We collect everything into three
-     * parallel arrays and stash them on the pane via the multi-series
-     * fields. NaN fills the warm-up region. */
+     * histogram = MACD - signal, stored in the pane's three multi-series
+     * arrays. NaN fills the warm-up region. */
     double *closes = emalloc((size_t)n * sizeof(double));
     for (int i = 0; i < n; i++) closes[i] = c[i].close;
 
@@ -10024,8 +10009,7 @@ ZEND_METHOD(FastChart_StockChart, addStochastic)
         Z_PARAM_LONG(period)
         Z_PARAM_LONG(smooth)
     ZEND_PARSE_PARAMETERS_END();
-    /* Upper-bound smooth before any cast — same reasoning as
-     * addMACD: smooth drives index arithmetic at draw time and an
+    /* Upper-bound smooth before any cast, as in addMACD: smooth drives index arithmetic at draw time and an
      * unbounded zend_long wraps to a destructive int. */
     if (period < 2 || smooth < 1 ||
         period > FASTCHART_MAX_INDICATOR_VALUES ||
@@ -10251,7 +10235,7 @@ ZEND_METHOD(FastChart_StockChart, addParabolicSAR)
     for (int i = 1; i < n; i++) {
         s = s + af * (ep - s);
         if (up) {
-            /* Bound by min(low[i-1], low[i-2]) — SAR can't exceed
+            /* Bound by min(low[i-1], low[i-2]): SAR can't exceed
              * the prior two candles' lows in an uptrend. */
             if (i >= 2 && c[i - 2].low < s) s = c[i - 2].low;
             if (c[i - 1].low < s)           s = c[i - 1].low;
@@ -10714,10 +10698,8 @@ ZEND_METHOD(FastChart_Treemap, setItems)
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
 
-        /* Required: numeric `value`, must be > 0 to claim area.
-         * Items with non-positive values are silently dropped here
-         * to keep setItems() best-effort consistent with the other
-         * shape parsers (Pie, Scatter). */
+        /* Required: numeric `value` > 0. Non-positive items drop
+         * silently, like the Pie and Scatter parsers. */
         zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
         if (!zv) continue;
         double v;
@@ -11193,8 +11175,8 @@ static int fastchart_parse_iso_date(const char *s, size_t len, long *out)
     if (d < 1) return -1;
     /* Per-month day max with leap-year for February. Without this
      * "2026-02-31" parses cleanly into days_from_civil, which
-     * normalizes it to "2026-03-03" — the user's typo silently
-     * becomes a different valid date. */
+     * normalizes it to "2026-03-03", silently turning a typo into a
+     * different valid date. */
     static const int days_in_month[12] = {
         31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
     };
@@ -11205,7 +11187,7 @@ static int fastchart_parse_iso_date(const char *s, size_t len, long *out)
     }
     if (d > max_d) return -1;
 
-    /* Howard Hinnant's days_from_civil algorithm — exact for all
+    /* Howard Hinnant's days_from_civil algorithm, exact for all
      * proleptic Gregorian dates within long range. */
     y -= (m <= 2);
     long era = (y >= 0 ? y : y - 399) / 400;
@@ -12838,7 +12820,7 @@ FASTCHART_INIT_HANDLERS(linear_meter, fastchart_linear_meter_obj);
     fastchart_qrcode_ce->create_object  = fastchart_qrcode_create_object;
 
     fastchart_default_font_path = fastchart_probe_default_font();
-    /* A NULL probe result is not fatal -- users can still call
+    /* A NULL probe result is not fatal: users can still call
      * setFontPath() per-instance. The text helpers no-op on NULL. */
 
     return SUCCESS;
@@ -12861,9 +12843,8 @@ PHP_MINFO_FUNCTION(fastchart)
     php_info_print_table_row(2, "fastchart support", "enabled");
     php_info_print_table_row(2, "fastchart version", PHP_FASTCHART_VERSION);
 
-    /* FreeType runtime version. The shared library doesn't expose a
-     * version string macro at link time, only a runtime query — pull
-     * it via FT_Library_Version on the per-process library handle. */
+    /* FreeType exposes its version only at runtime, via
+     * FT_Library_Version on the per-process library handle. */
     FT_Library ft_lib = fastchart_ft_library();
     char ft_ver[32] = "(init failed)";
     if (ft_lib) {
@@ -12914,8 +12895,8 @@ zend_module_entry fastchart_module_entry = {
     PHP_MINFO(fastchart),
     PHP_FASTCHART_VERSION,
     PHP_MODULE_GLOBALS(fastchart),  /* globals descriptor */
-    PHP_GINIT(fastchart),       /* globals ctor — TSRMLS cache + zero-init */
-    PHP_GSHUTDOWN(fastchart),   /* globals dtor — per-thread cleanup */
+    PHP_GINIT(fastchart),       /* TSRMLS cache + zero-init */
+    PHP_GSHUTDOWN(fastchart),   /* per-thread cleanup */
     NULL,                       /* post_deactivate */
     STANDARD_MODULE_PROPERTIES_EX
 };

@@ -39,12 +39,9 @@ tmp-php.ini
 /config.h.in
 
 # phpize-generated PHP source mirror (when building against php-src
-# tree) and phpize/autotools junk. The /-anchored forms are
-# important: an unanchored "include/" was matching
-# vendor/plutovg/include/ and silently preventing plutovg.h from
-# being checked in, breaking every CI build that depended on the
-# header (the local working tree had the file, so the regression
-# only surfaced on a fresh clone — i.e. CI).
+# tree) and phpize/autotools junk. Keep these /-anchored: an unanchored
+# "include/" also matches vendor/plutovg/include/ and silently drops
+# plutovg.h from commits.
 /main/
 /include/
 /modules/
@@ -80,7 +77,7 @@ tests/**/*.php.out
 /compare-svg-png.html
 
 # perf-harness intermediate results (the harness lives in bench/, runs
-# emit timestamped JSON that's developer-local — not checked in)
+# emit timestamped JSON that's developer-local, not checked in)
 /bench/results/
 
 # codesage MCP server runtime (sock/pid/log)

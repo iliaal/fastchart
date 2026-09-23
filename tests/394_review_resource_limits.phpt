@@ -1,5 +1,5 @@
 --TEST--
-Review findings: renderToFile rejects non-atomic stream-wrapper destinations
+renderToFile rejects non-atomic stream-wrapper destinations
 --EXTENSIONS--
 fastchart
 --FILE--

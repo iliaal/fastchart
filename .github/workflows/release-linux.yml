@@ -14,7 +14,7 @@ name: Release Linux & macOS binaries
 # php:X.Y-cli Docker images are Debian-based; an .so.8-linked prebuilt
 # fails there with "libjpeg.so.8: cannot open shared object file".
 # Static linking eliminates all codec-lib NEEDED entries from the
-# produced .so — only libc / libm / libpthread / libz remain dynamic.
+# produced .so; only libc / libm / libpthread / libz remain dynamic.
 # Trade: +~4min per build slot (cacheable; see Cache step below);
 # .so grows from ~4MB to ~10MB.
 #
@@ -57,7 +57,7 @@ on:
   release:
     types: [published]
   # workflow_dispatch lets a maintainer re-run the prebuilt build
-  # without cutting a fresh release tag — useful when validating
+  # without cutting a fresh release tag, for example to validate
   # static-link changes to release-linux.yml itself before publishing.
   # The release step is gated on github.event_name == 'release' so a
   # manual run produces artifacts (visible in the run summary) but
@@ -234,19 +234,19 @@ jobs:
           readelf -d "$SO" | grep NEEDED || true
           echo "--- assertion ---"
           if readelf -d "$SO" | grep NEEDED | grep -qiE "libjpeg|libpng|libwebp|libfreetype"; then
-            echo "FAIL: codec libs still appear in NEEDED — static link did not take"
+            echo "FAIL: codec libs still appear in NEEDED; static link did not take"
             exit 1
           fi
           echo "OK: codec libs are statically linked into fastchart.so"
 
       # Load-test the produced binary (Linux + macOS). readelf/NEEDED
       # inspection above proves the codecs are statically linked but
-      # never dlopens the object or renders a pixel — a .so that loads
+      # never dlopens the object or renders a pixel, and a .so that loads
       # readelf-clean can still abort at MINIT or crash the encoder.
       # This runs on the same fastchart.so that the later packaging step
       # archives. Renders PNG/JPEG/WebP from a titled
       # LineChart and a QrCode, then validates each with
-      # getimagesizefromstring (header-parse only — no ext/gd needed for
+      # getimagesizefromstring (header-parse only, no ext/gd needed for
       # PNG/JPEG/WebP) asserting exact dimensions and non-trivial length.
       # No PDF render: release binaries are built without --with-pdfio.
       - name: Smoke-test built binary (load + render + decode)

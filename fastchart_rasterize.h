@@ -16,9 +16,9 @@
 
   plutosvg's element table covers rect/circle/ellipse/line/polygon/
   polyline/path/g/defs/use/symbol/svg/linearGradient/radialGradient/
-  stop/image — it does NOT render <text>. fastchart emits glyph paths
+  stop/image; it does NOT render <text>. fastchart emits glyph paths
   via FT_Outline_Decompose at SVG-build time when SVG_TEXT_PATHS is
-  selected (Phase 3); the rasterizer is text-agnostic.
+  selected; the rasterizer is text-agnostic.
 */
 
 #ifndef FASTCHART_RASTERIZE_H
@@ -46,7 +46,7 @@
  * PHP timer can interrupt). 2^32 ops ~ 256 full-canvas passes at 16 Mpx
  * (single-digit seconds) while ordinary icons/logos stay far below. The
  * count includes non-painting elements (g/defs/gradients), so the bound
- * fails closed — over-counting only over-blocks. */
+ * fails closed: over-counting only over-blocks. */
 #define FC_MAX_RENDER_OPS    (1LL << 32)
 
 /* Rasterize the given SVG bytes at the requested target dimensions.

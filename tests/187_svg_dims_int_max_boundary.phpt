@@ -9,7 +9,7 @@ fastchart
  * width="2147483648" straight into a float-to-int cast that is UB
  * (C11 6.3.1.4). The guard must use `>=`. Functionally identical on
  * x86 either way (the cast happens to produce INT_MIN, caught
- * downstream) — this test exists so the CI UBSan lane locks the
+ * downstream): this test exists so the CI UBSan lane locks the
  * boundary in. */
 
 /* The scientific form lands on/above 2^31 and must hit the >= guard
@@ -24,9 +24,9 @@ fastchart
  *   - FMA (aarch64 always; x86-64-v3 baseline e.g. EL-10): the fused
  *     op is exactly rounded to 2^31, trips the >= guard, and is
  *     rejected with the "intrinsic-dims" msg.
- * Both reject — which is the contract — so accept either message. */
+ * Both reject (the contract), so accept either message. */
 $cases = [
-    '2.147483648e9',  /* 2^31 — the boundary the guard must reject */
+    '2.147483648e9',  /* 2^31: the boundary the guard must reject */
     '1e10',           /* far past the boundary */
 ];
 
@@ -46,7 +46,7 @@ foreach ($cases as $dim) {
 /* All-digit forms at the boundary must be REJECTED, but which of the
  * two rejection paths fires is FP-contraction-dependent (see above).
  * Assert rejection with one of the two known messages, not a specific
- * one — but still reject an unexpected message (tighter than %s). */
+ * one, but still reject an unexpected message (tighter than %s). */
 foreach (['2147483520', '2147483648'] as $dim) {
     $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' . $dim
          . '" height="10"></svg>';

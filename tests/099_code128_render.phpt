@@ -25,7 +25,7 @@ var_dump($W === 200 && $H === 80);
 
 // Scan the middle row. Count bar→space and space→bar transitions.
 // "12345" produces ~44 transitions on this canvas; assert >= 30 as a
-// loose lower bound — a blank fill produces 0, a structurally
+// loose lower bound: a blank fill produces 0, a structurally
 // correct barcode is comfortably above 30.
 $y = (int)($H / 2);
 $transitions = 0;
@@ -70,7 +70,7 @@ for ($x = 0; $x < imagesx($im2); $x++) {
 }
 var_dump($bar_dark_pixels > 30);
 
-// Render JPEG / WebP / AVIF too — round-trip through the dispatch.
+// Render JPEG / WebP / AVIF too: round-trip through the dispatch.
 foreach (['Jpeg' => 90, 'Webp' => 80] as $fmt => $q) {
     $bytes = (new FastChart\Code128())
         ->setData('TEST123')
@@ -92,8 +92,8 @@ var_dump(strlen($bytes) > 0);
 // the tail position, which matches BOTH the ≥6 branch (would switch
 // to C and encode 3 pairs + CODE_B + trailing '7' in B = 5 codes for
 // the 7 digits) AND the odd_tail branch (emits 1 in B, then 6-even
-// remainder switches to C = 4 codes). The reorder fix ensures
-// odd_tail wins. Result: 9 data codes + checksum + STOP = 11 codes
+// remainder switches to C = 4 codes). Checking odd_tail first
+// makes it win. Result: 9 data codes + checksum + STOP = 11 codes
 // = 123 modules. With auto quiet (20 modules), needed width = 143
 // at module_px=1. Pre-reorder needed 154.
 $bytes = (new FastChart\Code128())->setData('ABC1234567')->setSize(143, 50)->renderPng();

@@ -5,8 +5,7 @@
  * The HTML-emitting counterpart is scripts/build-v1-gallery.php,
  * which loads the same case list.
  *
- * Run with the fastchart extension loaded — see CLAUDE.md for the
- * explicit -d extension= invocation. */
+ * Run with the fastchart extension loaded (php -d extension=...). */
 
 if (!class_exists('FastChart\\Chart')) {
     fwrite(STDERR, "FastChart not loaded; load fastchart.so + gd.so.\n");

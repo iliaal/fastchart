@@ -123,8 +123,8 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
          * angular width is the gap to the next point's angle (or
          * 360/n if a single series is uniformly spaced). Wedges are
          * filled with the series colour and outlined in the border
-         * colour for visual separation. The legacy line/area style
-         * stays as the default branch below. */
+         * colour for visual separation. The line/area style is the
+         * default branch below. */
         if (self->polar_style == FASTCHART_POLAR_STYLE_ROSE) {
             if (upto < 1) continue;
             for (int i = 0; i < upto; i++) {
@@ -167,7 +167,7 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
             double a = series[s].angles[i];
             double r = series[s].radii[i];
             /* fmod first, matching the rose branch above: a finite-but-huge
-             * angle overflows a * M_PI to Inf, and cos/sin(Inf) is NaN —
+             * angle overflows a * M_PI to Inf, and cos/sin(Inf) is NaN:
              * float-cast-overflow UB at the int casts below. */
             double rad = fmod(a, 360.0) * M_PI / 180.0;
             double rr = polar_clamp_radius(radius * r / rmax, radius);
@@ -270,7 +270,7 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
         for (int i = 0; i < self->n_vectors; i++) {
             const fastchart_polar_vector *v = &self->vectors[i];
             /* addVectors rejects NaN/Inf, but a finite-but-huge angle still
-             * overflows the M_PI multiply to Inf — fmod first, matching the
+             * overflows the M_PI multiply to Inf. fmod first, matching the
              * series branches, so the int casts below stay defined. */
             double a0 = fmod(v->angle, 360.0) * M_PI / 180.0;
             double a1 = fmod(v->angle_to, 360.0) * M_PI / 180.0;

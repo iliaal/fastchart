@@ -25,7 +25,7 @@ echo "band has polygon: ", strpos($svg, '<polygon') !== false ? 'yes' : 'NO', "\
 $png = $c->renderPng();
 echo "band png magic: ", substr(bin2hex($png), 0, 8) === '89504e47' ? 'ok' : 'BAD', "\n";
 
-/* Fallback when only one series is supplied — band mode must not
+/* Fallback when only one series is supplied: band mode must not
  * crash; behaves like the regular fill-to-baseline. */
 $c1 = (new FastChart\AreaChart())
     ->setSize(300, 200)

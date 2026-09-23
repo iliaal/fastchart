@@ -21,7 +21,7 @@ if ($home === '' || !is_dir($home) || !is_writable($home)) {
  * open_basedir natively at render time.
  *
  * Test: stage an outside-basedir file while open_basedir is wide,
- * setBackgroundImage() it (passes — the setter sees the file is
+ * setBackgroundImage() it (passes: the setter sees the file is
  * reachable), then narrow open_basedir before renderSvg(). The
  * render-time load must refuse the outside file and emit no
  * <image> element. */
@@ -51,7 +51,7 @@ $svg_inside = (new FastChart\LineChart(120, 80))
 echo "wide_inside_has_image: ",
     (str_contains($svg_inside, '<image ') ? "yes" : "no"), "\n";
 
-/* Narrow open_basedir to /tmp only — $outside is now outside the
+/* Narrow open_basedir to /tmp only: $outside is now outside the
  * allow-list. The setter already ran (and accepted); render must
  * still refuse the load. */
 ini_set('open_basedir', $tmp);
@@ -62,7 +62,7 @@ $svg_outside = $chart_outside
 echo "narrow_outside_has_image: ",
     (str_contains($svg_outside, '<image ') ? "yes" : "no"), "\n";
 
-/* The inside path is still in basedir after narrowing — its render
+/* The inside path is still in basedir after narrowing: its render
  * should still embed the image. Confirms the loader didn't go
  * fail-closed on all paths. */
 $svg_inside2 = (new FastChart\LineChart(120, 80))

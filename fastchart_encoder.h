@@ -10,8 +10,8 @@
   +----------------------------------------------------------------------+
 
   Raster encoder layer. Takes a plain RGBA pixel buffer (top-down,
-  pre-multiplied or straight alpha — caller's choice) and writes encoded
-  bytes into a generic sink. Smart-string wrappers preserve the original
+  pre-multiplied or straight alpha, caller's choice) and writes encoded
+  bytes into a generic sink. Smart-string wrappers provide the
   in-memory API; stream sinks let renderToFile avoid a second full encoded
   buffer.
 

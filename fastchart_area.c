@@ -98,7 +98,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
      * 0 for the centering total. */
     bool stream = self->stream_mode && n_series >= 2;
     if (stream) stacked = true;
-    /* Band mode requires exactly two series — the polygon is the
+    /* Band mode requires exactly two series: the polygon is the
      * envelope between series[0] (upper) and series[1] (lower).
      * Falls back to the regular fill-to-baseline path if the caller
      * set band_mode without two series, or stacked is also set
@@ -110,7 +110,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
     bool band = self->band_mode && n_series == 2 && !stacked;
 
     /* With secondary_y off, all series map to the left axis regardless
-     * of the per-series right_axis flag — mirrors LineChart. */
+     * of the per-series right_axis flag, as in LineChart. */
     int n_right = 0;
     if (self->secondary_y && !stream && !band) {
         for (int s = 0; s < n_series; s++) {
@@ -124,7 +124,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
     if (stacked) {
         /* The layer polygons span [cum, cum + v] (see the draw loop
          * below), so the axis range must cover every partial
-         * cumulative sum — not just the per-category total. Negative
+         * cumulative sum, not just the per-category total. Negative
          * values pull partials below zero; folding only the final sum
          * would clamp those layers onto the baseline. Left- and
          * right-axis series stack independently when secondary_y is on. */
@@ -421,7 +421,7 @@ int fastchart_area_render_to_target(fastchart_area_obj *self, fastchart_target_t
                 /* Curved layer: densify both the top (cum + v) and the
                  * bottom (cum) boundaries with the same interpolation so
                  * adjacent layers tile without gaps. stream_off is 0
-                 * here — stream excludes the curve path. */
+                 * here because stream excludes the curve path. */
                 int vcap = max_len * 21 + 8;
                 fastchart_point_t *rawt = emalloc((size_t)max_len * sizeof(fastchart_point_t));
                 fastchart_point_t *rawb = emalloc((size_t)max_len * sizeof(fastchart_point_t));

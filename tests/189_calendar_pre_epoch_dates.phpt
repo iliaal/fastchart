@@ -5,7 +5,7 @@ fastchart
 --FILE--
 <?php
 
-/* "1969-12-31" is day index -1 — the same value the date parser used
+/* "1969-12-31" is day index -1: the same value the date parser used
  * as its failure sentinel. Pre-fix every pre-1970 key was silently
  * dropped; an all-historical dataset then made draw() throw the
  * misleading "requires setData() with at least one entry". */
@@ -28,7 +28,7 @@ $c2 = (new FastChart\CalendarHeatmap(600, 200))
     ]);
 var_dump(strlen($c2->renderSvg()) > 0);
 
-/* Malformed keys must still be dropped — with ONLY bad keys the
+/* Malformed keys must still be dropped: with ONLY bad keys the
  * draw-time guard fires exactly as before. */
 $c3 = (new FastChart\CalendarHeatmap(600, 200))
     ->setData([

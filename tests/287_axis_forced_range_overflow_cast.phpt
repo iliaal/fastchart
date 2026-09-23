@@ -7,7 +7,7 @@ fastchart
 
 /* Regression (fnd_0a5ecbbf): setYAxisRange with near-DBL_MAX bounds makes
  * the range span overflow to +Inf, so (v-min)/span in fastchart_y_to_pixel
- * becomes NaN. NaN passes both frac clamps and reaches (int)NaN — a
+ * becomes NaN. NaN passes both frac clamps and reaches (int)NaN: a
  * float-cast-overflow UB the CI UBSan build traps. The guard must clamp
  * instead, so the output holds only sane, in-canvas integer coordinates
  * (the bug emitted the INT_MIN-derived value -2147483385). */

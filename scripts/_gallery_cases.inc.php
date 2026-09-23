@@ -2,17 +2,13 @@
 /* Canonical gallery case list. Required by both
  * scripts/build-readme-gallery.php (which prints summary stats) and
  * scripts/build-v1-gallery.php (which emits the four-up SVG/PNG/JPG/WebP
- * HTML at docs/v1-gallery.html). Previously build-v1-gallery.php
- * eval()'d a sliced copy of build-readme-gallery.php's prefix to share
- * $cases — that's now this file, returned as an array. Keeps eval()
- * out of the build pipeline and gives one canonical place to add a
- * new chart case.
+ * HTML at docs/v1-gallery.html). Add new chart cases here.
  *
  * Returns: ['font' => string, 'dpi' => int, 'cases' => array].
  * Caller must have fastchart.so + ext/gd loaded — every case's build
  * closure constructs a FastChart\* instance.
  *
- * Font picking shares the tests/_font_candidates.inc.php helper so
+ * Font picking shares the tests/_font_candidates.inc helper so
  * the example bootstrap, the test suite, and the gallery generators
  * all probe the same distro paths. */
 

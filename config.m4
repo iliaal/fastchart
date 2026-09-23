@@ -21,7 +21,7 @@ PHP_ARG_WITH(pdfio, whether to enable PDF output via system pdfio,
 [  --with-pdfio[=PREFIX]   Enable renderPdf() / renderToFile('*.pdf') using a
                           system-installed pdfio (msweet.org). Off by default;
                           PDF methods throw "PDF support not compiled in" when
-                          absent. Vector output — charts emit PDF path operators
+                          absent. Vector output: charts emit PDF path operators
                           directly, no rasterization. PREFIX of "yes" uses
                           whatever PKG_CONFIG_PATH already resolves.], no, no)
 
@@ -38,7 +38,7 @@ if test "$PHP_FASTCHART" != "no"; then
   dnl in SVG_TEXT_PATHS mode, and text bbox measurement for chart layout.
   dnl
   dnl libpng / libjpeg-turbo / libwebp: optional, probed independently.
-  dnl Each missing lib drops its corresponding output format — the
+  dnl Each missing lib drops its corresponding output format: the
   dnl encoder compiles to a stub that returns -2 and the PHP method
   dnl throws a clear "format not compiled in" error at call time.
   AC_PATH_PROG(FC_PKGCFG, pkg-config, no)
@@ -60,7 +60,7 @@ if test "$PHP_FASTCHART" != "no"; then
   dnl Without this, loading ext/gd (which dynamically links the
   dnl system libjpeg.so.8) alongside our statically-linked
   dnl libjpeg-turbo 3.x in the same process collides on the
-  dnl jpeg_CreateCompress / jpeg_destroy / etc. symbol table —
+  dnl jpeg_CreateCompress / jpeg_destroy / etc. symbol table:
   dnl callers inside fastchart.so end up resolving against
   dnl ext/gd's older libjpeg's symbol versions and JPEG_LIB_VERSION
   dnl validation rejects the call ("encoder produced no output").
@@ -77,7 +77,7 @@ if test "$PHP_FASTCHART" != "no"; then
   fi
 
   if ! $FC_PKGCFG --exists freetype2; then
-    AC_MSG_ERROR([pkg-config freetype2 not found. Install libfreetype-dev / freetype-devel — FreeType is required for text rendering.])
+    AC_MSG_ERROR([pkg-config freetype2 not found. Install libfreetype-dev / freetype-devel; FreeType is required for text rendering.])
   fi
 
   FC_PC_CFLAGS=`$FC_PKGCFG $FC_PKGCFG_STATIC --cflags freetype2`
@@ -93,14 +93,14 @@ if test "$PHP_FASTCHART" != "no"; then
       FC_OPT_DEFS="$FC_OPT_DEFS -D$fc_def=1"
       AC_MSG_NOTICE([fastchart: $fc_lib found, $fc_def enabled])
     else
-      AC_MSG_NOTICE([fastchart: $fc_lib not found — corresponding output format will be unavailable at runtime])
+      AC_MSG_NOTICE([fastchart: $fc_lib not found; corresponding output format will be unavailable at runtime])
     fi
   done
 
   dnl Optional PDF output via system pdfio (msweet.org). Opt-in: unlike
   dnl the codecs above (auto-detected), --with-pdfio must be requested,
   dnl and a request that can't be satisfied is a hard error rather than
-  dnl a silent skip — the user explicitly asked for PDF. pdfio is not
+  dnl a silent skip, since the user explicitly asked for PDF. pdfio is not
   dnl vendored; it carries a PDF parser fastchart never uses, so it
   dnl stays a system dependency. PDF emission is vector (chart bodies
   dnl emit PDF path operators directly through the target abstraction),
@@ -131,14 +131,14 @@ if test "$PHP_FASTCHART" != "no"; then
   dnl (libjpeg / libpng / libwebp / libfreetype .a) and --with-pdfio
   dnl linked against a static libpdfio.a (which drags in 200+ pdfio*/
   dnl ttf* symbols). PHP dlopens extensions with RTLD_GLOBAL, so any
-  dnl re-exported symbol can interpose another extension's copy — e.g.
+  dnl re-exported symbol can interpose another extension's copy, e.g.
   dnl our statically-linked libjpeg-turbo 3.x colliding with ext/gd's
   dnl dynamic libjpeg.so.8, where JPEG_LIB_VERSION validation then
   dnl rejects the call ("encoder produced no output"). -fvisibility=
   dnl hidden in CFLAGS can't reach static-archive objects; --exclude-libs
   dnl is the link-time equivalent. It is a no-op for dynamically NEEDED
   dnl libs, so applying it whenever the linker accepts it is safe. GNU ld
-  dnl and gold accept it; macOS ld64 does not — hence the link probe.
+  dnl and gold accept it; macOS ld64 does not, hence the link probe.
   FC_SAVE_LDFLAGS="$LDFLAGS"
   LDFLAGS="$LDFLAGS -Wl,--exclude-libs=ALL"
   AC_MSG_CHECKING([whether the linker accepts -Wl,--exclude-libs=ALL])
@@ -210,7 +210,7 @@ if test "$PHP_FASTCHART" != "no"; then
   dnl Vendored sources. Kept in a separate list so they can be compiled
   dnl with the warning suppressions they require (see FASTCHART_VENDOR_-
   dnl CFLAGS below) without those suppressions leaking onto first-party
-  dnl code — PHP applies one CFLAGS set per PHP_NEW_EXTENSION call.
+  dnl code. PHP applies one CFLAGS set per PHP_NEW_EXTENSION call.
   FASTCHART_VENDOR_SOURCES="vendor/qrcodegen/qrcodegen.c \
     vendor/plutovg/source/plutovg-blend.c \
     vendor/plutovg/source/plutovg-canvas.c \
@@ -241,7 +241,7 @@ if test "$PHP_FASTCHART" != "no"; then
   dnl Verify with:
   dnl   nm -D --defined-only modules/fastchart.so | grep -v get_module
   dnl Expected: only standard-library symbols (memcpy, etc.) remain.
-  dnl PLUTOVG_DISABLE_IMAGE_WRITE (opt #12): drops the plutovg_surface_-
+  dnl PLUTOVG_DISABLE_IMAGE_WRITE drops the plutovg_surface_-
   dnl write_to_* (PNG/JPEG file + stream) functions and their stb_image_
   dnl write.h backing. fastchart routes every raster output through
   dnl libpng / libjpeg-turbo / libwebp directly; nothing in fastchart,
@@ -252,7 +252,7 @@ if test "$PHP_FASTCHART" != "no"; then
   dnl build time.
   dnl -Wno-unused-parameter stays on first-party TUs: PHP's own headers
   dnl trip it under clang (zend_arena.h's static-inline stubs carry
-  dnl unused params in ZEND_DEBUG builds — the ASAN lane), and php-src
+  dnl unused params in ZEND_DEBUG builds, e.g. the ASAN lane), and php-src
   dnl compiles itself with the same suppression. Every other class from
   dnl the vendor suppression set below is enforced on first-party code.
   FASTCHART_CFLAGS="-Wall -Wextra \
@@ -266,7 +266,7 @@ if test "$PHP_FASTCHART" != "no"; then
   dnl stb_image_write* / stb_truetype headers + ft-stroker code that
   dnl trip a few standard warnings (unused statics, signed/unsigned
   dnl comparisons in tight inner loops, implicit fallthrough in case
-  dnl arms). These are scoped to the vendored TUs only — the
+  dnl arms). These are scoped to the vendored TUs only: the
   dnl PHP_ADD_SOURCES call below compiles FASTCHART_VENDOR_SOURCES with
   dnl this set, so the suppressions never mask a regression in first-
   dnl party fastchart*.c (which build under the strict FASTCHART_CFLAGS
@@ -311,7 +311,7 @@ if test "$PHP_FASTCHART" != "no"; then
   PHP_ADD_INCLUDE([$ext_srcdir/vendor/plutosvg/source])
 
   dnl PHP_NEW_EXTENSION compiles vendor/*/qrcodegen.c, plutovg-*.c, and
-  dnl plutosvg.c into matching .lo files — for VPATH builds the directory
+  dnl plutosvg.c into matching .lo files; for VPATH builds the directory
   dnl must exist under $ext_builddir or libtool will fail to write.
   PHP_ADD_BUILD_DIR([$ext_builddir/vendor/qrcodegen])
   PHP_ADD_BUILD_DIR([$ext_builddir/vendor/plutovg/source])

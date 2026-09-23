@@ -38,14 +38,14 @@ $c2->setPoints([
 ])->renderPng();
 $map2 = $c2->getImageMap();
 
-// Raw <script>, raw "&" outside entity form, raw "<" or ">" -- all must be absent.
+// Raw <script>, raw "&" outside entity form, raw "<" or ">": all must be absent.
 echo "amp_escaped:   ",  (str_contains($map2, '&amp;')  ? "ok" : "MISS"), "\n";
 echo "quot_escaped:  ",  (str_contains($map2, '&quot;') ? "ok" : "MISS"), "\n";
 echo "lt_escaped:    ",  (str_contains($map2, '&lt;')   ? "ok" : "MISS"), "\n";
 echo "gt_escaped:    ",  (str_contains($map2, '&gt;')   ? "ok" : "MISS"), "\n";
 echo "no_raw_script: ",  (str_contains($map2, '<script>')   ? "FAIL" : "ok"), "\n";
 
-// Map name must be alphanumeric / dash / underscore only -- attribute
+// Map name must be alphanumeric / dash / underscore only: attribute
 // injection via crafted name is dropped to its safe characters.
 $c3 = new FastChart\ScatterChart(400, 300);
 $c3->setPoints([[1,2,'href'=>'/x']])->renderPng();

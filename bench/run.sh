@@ -17,7 +17,7 @@ if [[ ! -x "$PHP_BIN" ]]; then
     echo "PHP not found at $PHP_BIN" >&2; exit 1
 fi
 if [[ ! -f "$EXT" ]]; then
-    echo "extension not found at $EXT — run 'make' first" >&2; exit 1
+    echo "extension not found at $EXT; run 'make' first" >&2; exit 1
 fi
 
 mkdir -p "$REPO_ROOT/bench/results"

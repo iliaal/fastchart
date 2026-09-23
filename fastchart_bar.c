@@ -211,7 +211,7 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
     if (self->stack_mode == FASTCHART_STACK_BESIDE) stacked = false;
     if (stack_layer && n_series > 1) stacked = true;
     bool floating = self->bar_floating;
-    /* Floating bars always render side-by-side — the [lo,hi] pair already
+    /* Floating bars always render side-by-side: the [lo,hi] pair already
      * encodes each bar's extent, so stacking has no meaning. Left on, the
      * collapsed sub-slot count pushes every series past the slot edge and
      * emits negative-width rects (invalid SVG, series invisible). */
@@ -306,8 +306,7 @@ int fastchart_bar_render_to_target(fastchart_bar_obj *self, fastchart_target_t *
 
         /* One hot-spot per category column. Covers the full plot
          * height so any click in the column registers on the bar's
-         * data point — more usable than a tight bar-bounding-box,
-         * especially for very short bars. */
+         * data point, which beats a tight bounding box for short bars. */
         if (self->n_image_map_entries > i &&
             bar_category_has_data(series, n_series, i, floating)) {
             fastchart_push_image_map_rect((fastchart_obj *)self, i,
@@ -499,7 +498,7 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
     if (self->stack_mode == FASTCHART_STACK_BESIDE) stacked = false;
     if (stack_layer && n_series > 1) stacked = true;
     bool floating = self->bar_floating;
-    /* Floating bars always render side-by-side — see the vertical
+    /* Floating bars always render side-by-side; see the vertical
      * renderer for the negative-width failure this prevents. */
     if (floating) { stacked = false; stack_layer = false; }
 
@@ -533,7 +532,7 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
     }
 
     /* Borrow category labels up front so layout can size the left
-     * margin to the widest one — categorical Y labels can be far
+     * margin to the widest one; categorical Y labels can be far
      * wider than the numeric "999999" probe (e.g. "/api/v2/exports").
      * Same buffer is then handed to the categorical Y-axis renderer. */
     const char **label_ptrs = fastchart_borrow_category_labels((fastchart_obj *)self, n_categories);
@@ -561,7 +560,7 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
      *   - addVerticalBand (X-range entries) -> value-axis stripes
      *     via the xrange V-bands helper.
      *   - addHorizontalBand (Y-range entries on the default
-     *     orientation) -> category-axis stripes via the new
+     *     orientation) -> category-axis stripes via the
      *     categorical H-bands helper, with low/high read as
      *     fractional category indices on the Y axis. */
     fastchart_draw_v_plot_bands_xrange(t, (fastchart_obj *)self, &plot,
@@ -601,7 +600,7 @@ static int fastchart_bar_render_horizontal(fastchart_bar_obj *self,
         int draw_h = g.draw;
         int sub_inset = g.inset;
 
-        /* One hot-spot per category row — full plot width, mirroring
+        /* One hot-spot per category row spanning the full plot width, mirroring
          * the vertical path's full-height column rects. */
         if (self->n_image_map_entries > i &&
             bar_category_has_data(series, n_series, i, floating)) {

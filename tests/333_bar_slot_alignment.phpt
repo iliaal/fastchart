@@ -9,7 +9,7 @@ asan.detect_leaks=0
 
 /* Vertical bars positioned slots as plot.x0 + i * (int)(W/n), so the
  * truncated slot width accumulated tens of pixels of drift by the last
- * category — the last bar sat far left of its label/gridline. Slot
+ * category: the last bar sat far left of its label/gridline. Slot
  * boundaries now come from double-precision division matching
  * fastchart_x_categorical_center(), so bar i centers on category i. */
 

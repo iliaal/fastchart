@@ -16,12 +16,12 @@ if (fc_pick_font() === '') echo "skip: no system font present\n";
 /* Regression for the open_basedir bypass via the per-render font
  * cache. Pre-fix, non-layout renderers (gauge / radar / polar /
  * surface / contour) only stamped DPI on entry and never invalidated
- * font_cache_valid — so a chart object warmed with a font path that
+ * font_cache_valid, so a chart object warmed with a font path that
  * sat outside open_basedir would keep rendering with that path after
  * a runtime ini_set('open_basedir') narrowing.
  *
  * Pick a font under /usr/share that we know is reachable on a
- * default-permissive runtime; if it isn't present, skip — the test
+ * default-permissive runtime; if it isn't present, skip: the test
  * is about cache invalidation, not font availability.
  */
 require __DIR__ . '/_font_candidates.inc';

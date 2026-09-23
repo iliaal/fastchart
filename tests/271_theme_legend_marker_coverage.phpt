@@ -11,7 +11,7 @@ if (fc_pick_font() === '') die('skip no system font available');
 <?php
 /* Coverage gap: the theme, legend-corner, and marker-shape enums had
  * setter smoke tests but nothing asserting they change the rendered
- * output — a regression that ignored the stored value would pass. */
+ * output: a regression that ignored the stored value would pass. */
 
 use FastChart\Chart;
 use FastChart\LineChart;

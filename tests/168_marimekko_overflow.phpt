@@ -8,9 +8,9 @@ fastchart
 /* Regression: each individual segment value passes isfinite() and >0,
  * but the running sum col_total or cross-column total_w can overflow
  * to +Inf. The renderer at fastchart_marimekko.c computes
- *   col_frac = col->total / self->total_width   -- inf/inf = NaN
- *   col_w    = NaN * avail_w                    -- NaN
- *   x1       = plot_x0 + (int)(cx_acc + 0.5)    -- float-to-int UB
+ *   col_frac = col->total / self->total_width  : inf/inf = NaN
+ *   col_w    = NaN * avail_w                   : NaN
+ *   x1       = plot_x0 + (int)(cx_acc + 0.5)   : float-to-int UB
  *
  * Expected behavior after fix: silently drop columns whose totals
  * are non-finite (matches the existing val<=0 / skept==0 silent-skip).

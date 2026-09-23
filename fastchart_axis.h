@@ -19,11 +19,11 @@
 
 #define FASTCHART_MAX_TICKS 16
 
-/* (double)ZEND_LONG_MAX rounds UP to 2^63 — LONG_MAX (2^63 - 1) is not
- * representable in IEEE-754 binary64. Casting that double back to
- * zend_long is undefined behaviour per Annex F.4. Use this constant —
- * the largest double <= LONG_MAX, exactly 2^63 - 1024 — whenever a
- * double is being clamped or range-checked before a (zend_long) cast.
+/* (double)ZEND_LONG_MAX rounds UP to 2^63 because LONG_MAX (2^63 - 1) is
+ * not representable in IEEE-754 binary64. Casting that double back to
+ * zend_long is undefined behaviour per Annex F.4. Use this constant (the
+ * largest double <= LONG_MAX, exactly 2^63 - 1024) whenever a double is
+ * being clamped or range-checked before a (zend_long) cast.
  * (double)ZEND_LONG_MIN = -2^63 IS exactly representable and round-
  * trips cleanly, so the lower bound stays (double)ZEND_LONG_MIN. */
 #define FASTCHART_LONG_MAX_AS_DOUBLE 9223372036854774784.0
@@ -74,7 +74,7 @@ bool fastchart_apply_plot_rect(const fastchart_obj *chart,
  *
  * `cat_y_labels` / `n_cat_y_labels` switch the left-margin reservation
  * from the numeric "999999" probe to the actual widest categorical
- * label width — needed for horizontal-bar layouts where the Y axis is
+ * label width, for horizontal-bar layouts where the Y axis is
  * categorical and label widths are arbitrary. Pass NULL / 0 for the
  * default numeric Y axis. */
 void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
@@ -88,8 +88,7 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
  * palette resolution, frame, title, common band drawing, X axis and
  * axis titles. The caller is still responsible for its own Y axis
  * (and optional right Y) plus any range-dependent plot bands that
- * must be drawn before the X axis. This removes the ~8-12 line
- * duplicated block that appeared in every cartesian render_to_target.
+ * must be drawn before the X axis.
  * Non-cartesian families (Treemap, Sankey, Gauge, Pie, Stock panes
  * etc.) continue to use begin_render + bespoke layout directly. */
 void fastchart_render_cartesian_setup(fastchart_obj *chart,
@@ -251,7 +250,7 @@ int fastchart_x_to_pixel(double x,
 	const fastchart_value_range *range, const fastchart_rect *plot);
 
 /* Map a [0,1] fraction onto the pixel span [lo, hi]. Clamps an
- * out-of-range fraction before the int cast — used for icon/overlay
+ * out-of-range fraction before the int cast. Used for icon/overlay
  * positions whose source coordinate is unbounded user input. */
 int fastchart_frac_to_px(double frac, int lo, int hi);
 
@@ -281,7 +280,7 @@ const char **fastchart_borrow_category_labels(fastchart_obj *b, int n);
  * can call it unconditionally without branching). Each pushed area
  * owns references to the entry's immutable strings. The rect form
  * stores (x, y, w, h); getImageMap() converts to <area> coords at
- * emit time. The poly form takes pairs of (x, y) — n_xy is the total
+ * emit time. The poly form takes pairs of (x, y); n_xy is the total
  * int count (2 * vertex_count) and must not exceed
  * FASTCHART_IMAGE_MAP_MAX_COORDS. */
 void fastchart_push_image_map_rect(fastchart_obj *b, int idx,
@@ -295,16 +294,14 @@ void fastchart_reset_image_map_areas(fastchart_obj *b);
 void fastchart_reserve_image_map_areas(fastchart_obj *b, int cap);
 
 /* Numeric X axis (ticks + gridlines + labels) for charts that put the
- * value axis on X — currently only horizontal-bar. Mirror of the
- * existing fastchart_draw_y_axis. */
+ * value axis on X (horizontal-bar). Mirror of fastchart_draw_y_axis. */
 void fastchart_draw_x_axis_numeric(fastchart_target_t *t, fastchart_obj *chart,
                                    const fastchart_rect *plot,
                                    const fastchart_palette *pal,
                                    const fastchart_value_range *range);
 
 /* Categorical Y axis (labels + tick marks on the left edge) for
- * charts that put the category axis on Y — currently only
- * horizontal-bar. Mirror of fastchart_draw_x_axis_categorical. */
+ * charts that put the category axis on Y (horizontal-bar). Mirror of fastchart_draw_x_axis_categorical. */
 void fastchart_draw_y_axis_categorical(fastchart_target_t *t, fastchart_obj *chart,
                                        const fastchart_rect *plot,
                                        const fastchart_palette *pal,
@@ -370,8 +367,8 @@ void fastchart_catmull_point(int p0x, int p0y, int p1x, int p1y,
                              int p2x, int p2y, int p3x, int p3y,
                              double t, int *ox, int *oy);
 
-/* Draw a numeric value label above (x, y) -- typically used by the
- * setShowValues() rendering path. Picks the value font + size and
+/* Draw a numeric value label above (x, y) for the setShowValues()
+ * rendering path. Picks the value font + size and
  * applies the chart's value_format (default "%g"). No-op if the
  * chart has no font or show_values is off. `value` is the raw
  * datum, NaN values render nothing. */
@@ -413,7 +410,7 @@ void fastchart_draw_overlays_time(fastchart_target_t *t, fastchart_obj *chart,
  * with a color swatch and a label. `colors[i]` and `labels[i]`
  * are paired. A label may be NULL, in which case the row is
  * skipped. The legend has an opaque background so it overdraws
- * data underneath -- callers place this last. No-op if
+ * data underneath, so callers place this last. No-op if
  * n_entries < 1, the chart has no font, or position == LEGEND_NONE. */
 void fastchart_draw_legend(fastchart_target_t *t, fastchart_obj *chart,
                            const fastchart_rect *plot,
@@ -440,7 +437,7 @@ void fastchart_draw_h_annotations(fastchart_target_t *t, fastchart_obj *chart,
                                   const fastchart_palette *pal,
                                   const fastchart_value_range *yrange);
 
-/* Vertical annotation drawing variants -- one per X-coordinate
+/* Vertical annotation drawing variants, one per X-coordinate
  * system. `position` in the annotation is interpreted per the
  * chart's X axis. */
 /* Annotation rendering for horizontal-bar layouts. Walks the shared

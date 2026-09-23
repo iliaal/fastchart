@@ -9,12 +9,12 @@
   | Author: Ilia Alshanetsky <ilia@ilia.ws>                              |
   +----------------------------------------------------------------------+
 
-  Render target abstraction. v1.0 has one backend — SVG into a
-  smart_str. Raster outputs (PNG/JPG/WebP) are produced by handing the
+  Render target abstraction. Backends: SVG into a smart_str, and PDF
+  when built --with-pdfio. Raster outputs (PNG/JPG/WebP) are produced by handing the
   finished SVG to plutovg via fastchart_rasterize_svg() and then to
   libpng / libjpeg-turbo / libwebp via fastchart_encoder.c.
 
-  The 28 high-level helpers in fastchart_axis.c, the 3 text helpers in
+  The high-level helpers in fastchart_axis.c, the text helpers in
   fastchart_text.c, and the palette take a fastchart_target_t*. Color
   allocation goes through fastchart_target_color(t, r, g, b, a) which
   returns an opaque int handle (0..n_colors-1).
@@ -55,7 +55,7 @@ const struct fc_glyph_cache_entry *fastchart_glyph_cache_get(
     FT_Face face, uint16_t pix_size, uint32_t codepoint);
 
 /* Inserts a new cache entry. Takes ownership of `ops_buf` and `pts_buf`
- * (they must be `malloc`'d or NULL). `n_ops == 0` is a valid entry —
+ * (they must be `malloc`'d or NULL). `n_ops == 0` is a valid entry:
  * whitespace glyphs have no contours but still cache an advance. */
 void fastchart_glyph_cache_insert(FT_Face face, uint16_t pix_size,
                                    uint32_t codepoint, int32_t advance_x_64,
@@ -181,7 +181,7 @@ typedef struct fastchart_target {
 	int image_cache_n;
 
     /* Shared color table. handle = index. Grown on demand (ramp-heavy
-     * charts — heatmap / treemap / word cloud — can allocate many more
+     * charts such as heatmap / treemap / word cloud can allocate many more
      * than a small fixed cap) and freed in fastchart_target_release(). */
     uint32_t *color_rgba;  /* 0xAARRGGBB */
     int n_colors;
@@ -214,7 +214,7 @@ void fastchart_target_from_svg(fastchart_target_t *t, smart_str *buf,
 
 /* Initialise as a PDF-backed target (configure --with-pdfio). Streams a
  * one-page PDF sized width x height into `out`. Like SVG, output is
- * DPI-invariant — layout uses the 96-DPI baseline; the vector page
+ * DPI-invariant: layout uses the 96-DPI baseline; the vector page
  * scales freely. After this call the caller MUST check
  * fastchart_target_pdf_ok(t): a NULL pdfio state means doc creation
  * failed. Only declared/usable when built with PDF support. */

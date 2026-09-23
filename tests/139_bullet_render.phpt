@@ -17,7 +17,7 @@ $svg = (new FastChart\BulletChart(400, 80))
     ->setTarget(85)
     ->renderSvg();
 
-/* Background, 3 band rects, performance rect (filled+stroke), border —
+/* Background, 3 band rects, performance rect (filled+stroke), border:
  * count rects loosely; we mostly want to know we got a coherent draw. */
 echo "rects_ge_5: ", (substr_count($svg, '<rect') >= 5 ? "yes" : "no"), "\n";
 echo "has_line: ", (str_contains($svg, '<line') ? "yes" : "no"), "\n";

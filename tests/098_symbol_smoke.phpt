@@ -63,7 +63,7 @@ var_dump(strlen($png) > 0);
 var_dump(substr($png, 0, 8) === "\x89PNG\r\n\x1a\n");
 
 // renderJpeg / renderWebp each produce non-empty output. GIF and AVIF
-// were dropped in v1.0 — see test 025.
+// were dropped in v1.0: see test 025.
 var_dump(strlen($code->renderJpeg(80)) > 0);
 var_dump(strlen($code->renderWebp(80)) > 0);
 
@@ -85,7 +85,7 @@ try {
 }
 
 // Userland cannot subclass the abstract bases. ZEND_ACC_ABSTRACT alone
-// does NOT block this — `class MySym extends Symbol {}; new MySym()`
+// does NOT block this: `class MySym extends Symbol {}; new MySym()`
 // would otherwise allocate a vanilla zend_object that cannot back the
 // typed C struct, and any inherited setter would walk OOB. The
 // abstract-create_object trampoline catches this.

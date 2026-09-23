@@ -21,7 +21,7 @@ asan.detect_leaks=0
 <?php
 /* AreaChart band mode packs a per-band alpha into the high byte of the
  * gradient endpoints (fastchart_area.c). The PDF gradient fallback used
- * to discard it (from_rgb | 0xFF), rendering every band opaque — so a
+ * to discard it (from_rgb | 0xFF), rendering every band opaque, so a
  * translucent band and an opaque band produced identical output. Post-
  * fix the packed alpha is flattened against the captured page
  * background, so the two fills differ; the content stream differs and

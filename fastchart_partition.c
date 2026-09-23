@@ -29,7 +29,7 @@
  * drawn as nested rectangles. Depth maps to fixed-width bands; each node's
  * span on the value axis is subdivided among its children in proportion to
  * their leaf-value sums. ORIENT_VERTICAL turns it into an icicle. Only this
- * layout/draw pass is partition-specific — parse / free / clone are reused. */
+ * layout/draw pass is partition-specific; parse / free / clone are reused. */
 
 /* Subtree total = sum of leaf values (a leaf contributes its own value,
  * clamped to >= 0). Also tracks the deepest level seen. */

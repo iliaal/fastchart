@@ -422,7 +422,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `Chart::renderPdf(): string` and `Chart::renderToFile('out.pdf')` — vector PDF output. Chart bodies emit PDF path operators through the same `fastchart_target_t` primitive layer as `renderSvg()`, so all 26 chart classes render with no rasterization; text flattens to glyph outlines via the shared glyph cache (TrueType quadratics degree-elevated to PDF cubics, arcs/ellipses approximated with cubic Béziers). Opt-in at build time: `./configure --with-pdfio` links a system [pdfio](https://www.msweet.org/pdfio) statically, so the runtime dependency set is unchanged. Without the flag both methods throw `"PDF support not compiled in"` and the PDF tests skip.
+- `Chart::renderPdf(): string` and `Chart::renderToFile('out.pdf')`: vector PDF output. Chart bodies emit PDF path operators through the same `fastchart_target_t` primitive layer as `renderSvg()`, so all 26 chart classes render with no rasterization; text flattens to glyph outlines via the shared glyph cache (TrueType quadratics degree-elevated to PDF cubics, arcs/ellipses approximated with cubic Béziers). Opt-in at build time: `./configure --with-pdfio` links a system [pdfio](https://www.msweet.org/pdfio) statically, so the runtime dependency set is unchanged. Without the flag both methods throw `"PDF support not compiled in"` and the PDF tests skip.
 
   v1 limitations: gradient fills fall back to solid, raster background images are omitted (the caller falls back to solid fill), and alpha is ignored, so fills render opaque.
 
@@ -430,7 +430,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `Chart::getImageMapAreas(): array` — structured hot-spot data (shape strings "rect"/"circle"/"poly", HTML <area>-style coords for rects, href/tooltip/index). Same filtering and lifetime rules as the HTML `getImageMap()`. Useful for custom overlays or link generation without parsing HTML.
+- `Chart::getImageMapAreas(): array`: structured hot-spot data (shape strings "rect"/"circle"/"poly", HTML <area>-style coords for rects, href/tooltip/index). Same filtering and lifetime rules as the HTML `getImageMap()`. Use it for custom overlays or link generation without parsing HTML.
 - PHP 8.1 support (lowered the minimum from 8.3).
 
 ### Changed
@@ -495,7 +495,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SVG geometry was corrupted under comma-decimal locales.** Every
   coordinate, dimension, and rgba alpha was formatted with
   `snprintf("%f", …)`, which honours `LC_NUMERIC`. Under a locale such
-  as `de_DE`/`fr_FR` this emitted `width="307,0"`, `x="69,5"` — and a
+  as `de_DE`/`fr_FR` this emitted `width="307,0"`, `x="69,5"`, and a
   comma is SVG's own coordinate separator, so the output was silently
   mangled for every consumer (browser and the plutovg rasterizer), with
   no error. A single userland `setlocale(LC_NUMERIC, 'de_DE')` anywhere
@@ -506,7 +506,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the locale.
 
 - **`AreaChart` / `BarChart` / `ScatterChart` / `BoxPlot` icon coordinate
-  casts were unguarded** — the same UB fixed for `LineChart` in 1.1.1, not
+  casts were unguarded**: the same UB fixed for `LineChart` in 1.1.1, not
   propagated to its siblings. `addIconAt` rejects only NaN/Inf, so a
   finite-but-large coordinate overflowed `frac * plot_width` past
   `INT_MAX` and the float-to-int cast was undefined (C11 §6.3.1.4p1).
@@ -518,11 +518,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   span.** `setData`'s 16384-entry cap did not constrain the rendered
   grid, whose size is keyed on `last − first` days. Two entries a few
   decades apart (2 entries, well under the cap) forced a multi-million
-  `<rect>` render — a memory/CPU denial of service. The grid is now
+  `<rect>` render, a memory/CPU denial of service. The grid is now
   capped at `FASTCHART_MAX_CALENDAR_WEEKS` (2400, ≈46 years) with a
   clean `Error` for wider spans (`fastchart_calendar.c`).
 
-- **`PolarChart::addVectors()` had no upper bound on vector count** — the
+- **`PolarChart::addVectors()` had no upper bound on vector count**: the
   one additive array setter missing the `FASTCHART_MAX_VECTORS` (4096)
   ceiling its siblings enforce. One large array, or repeated calls,
   grew the backing buffer without limit (memory-exhaustion DoS). The
@@ -557,7 +557,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overflows `struct tm`'s `int tm_year`. Candle timestamps arrive
   unclamped from `setOhlcv()`, so a `PHP_INT_MAX` timestamp left the
   `struct tm` indeterminate and the following `timegm()` / `strftime()`
-  read uninitialised members — undefined behaviour. The adjacent
+  read uninitialised members (undefined behaviour). The adjacent
   numeric/auto-density path already clamped; the calendar branch did not.
   `fc_gmtime` now reports break-down failure, the stride branch falls
   through to the numeric path on failure, and both label paths fall back
@@ -567,8 +567,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `MINIT` rather than lazily on first rasterize, closing a ZTS data race
   on its unsynchronised ready flag (`fastchart_rasterize.c`).
   `fastchart_y_to_pixel` / `fastchart_x_to_pixel` self-guard against a
-  non-finite argument (the frac clamps never caught NaN), making the
-  coordinate chokepoint robust regardless of caller discipline
+  non-finite argument (the frac clamps never caught NaN), so the
+  coordinate chokepoint no longer depends on caller discipline
   (`fastchart_axis.c`). The hand-rolled SVG number formatter self-guards
   its integer cast against a non-finite or out-of-range value
   (`fastchart_svg.c`), the treemap strip-ratio divide guards against a
@@ -642,13 +642,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`PieChart::setExplode()` accepted unbounded `zend_long` offsets.**
   A value near `PHP_INT_MAX` overflowed `(int)(off * cos(mid_rad))`
-  in the renderer. Offset is now capped to the slice diameter — beyond
+  in the renderer. Offset is now capped to the slice diameter; beyond
   that the slice center is off-canvas anyway.
 
 - **`StockChart` STYLE_VECTOR climax-deque ring-buffer overflow.**
   After 11 successful pushes without tail-domination (a strictly
   decreasing `cv` sequence), `dq_tail` wrapped to `dq_head` and the
-  deque was silently corrupted — every subsequent bar trivially
+  deque was silently corrupted: every subsequent bar trivially
   satisfied `climax >= climax_max=0` and got misclassified as a
   climax. The stale-front drop now runs **before** the push, keeping
   the deque within its unambiguous capacity.
@@ -663,7 +663,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`fastchart_text_draw_rotated` did not split multi-line strings
   on `\n`.** It emitted a single `<text>` with the raw newline in the
-  body — SVG `<text>` collapses newlines to whitespace, so the label
+  body. SVG `<text>` collapses newlines to whitespace, so the label
   rendered as one squashed line while the companion `_measure`
   function reported a multi-line height. Now mirrors the
   unrotated-draw line loop with per-line baseline offsets computed
@@ -674,7 +674,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sizeof(buf) - 1` bytes; the cap was in bytes (not codepoints) so
   it could split a multi-byte UTF-8 sequence and produce malformed
   XML, and long single-line annotations lost their tail without
-  signal. Fixed buffer dropped — both functions now operate directly
+  signal. The fixed buffer is gone; both functions now operate directly
   on the source pointer + byte length (`fc_svg_emit_text` already
   takes a length).
 
@@ -708,7 +708,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timestamps.** `setOhlcv` accepts the full `zend_long` range so
   callers can supply `LLONG_MIN .. LLONG_MAX` candle timestamps. Four
   call sites computed `t_max - t_min` (or `t_min + 86400` in the
-  Gantt renderer) in signed arithmetic — UB per C, and the wrapped
+  Gantt renderer) in signed arithmetic (UB per C), and the wrapped
   value defeated the subsequent `<= 0` early-return, collapsing all
   candles to `plot.x0`. Promoted to double arithmetic at
   `fastchart_x_time_to_pixel` and the time-axis fallback tick
@@ -723,8 +723,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Introduces `FASTCHART_LONG_MAX_AS_DOUBLE = 9223372036854774784.0`
   (the largest double ≤ `LONG_MAX`, exactly `2^63 - 1024`) and uses
   it for the upper-bound clamp at four call sites in
-  `fastchart_axis.c`. Lower bound stays `(double)ZEND_LONG_MIN` —
-  `-2^63` is exactly representable.
+  `fastchart_axis.c`. Lower bound stays `(double)ZEND_LONG_MIN`
+  because `-2^63` is exactly representable.
 
 - **`StockChart` half-step time padding overflowed signed
   `zend_long`.** The `(t_max - t_min) / (n - 1) / 2` half-step pad
@@ -751,14 +751,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`Funnel::setStyle(STYLE_CONE)`** — pyramid layout with
+- `Funnel::setStyle(STYLE_CONE)`: pyramid layout with
   front-facing ellipse-arc edges at each band's top and bottom,
   suggesting a 3D cone seen from the side. Layout is identical to
   `STYLE_PYRAMID` (apex at top, base at bottom, band heights
   proportional to value); only the silhouette changes. See
   `docs/examples/52_funnel_cone.php`.
 
-- **`AreaChart::setBandMode(bool)`** — with exactly two series the
+- `AreaChart::setBandMode(bool)`: with exactly two series the
   chart fills the envelope between them instead of filling each
   series down to the baseline. `series[0]` is the upper bound,
   `series[1]` is the lower. Useful for confidence intervals,
@@ -766,13 +766,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-series fill when `n_series != 2` or `setStacked(true)` is
   also active. See `docs/examples/53_area_band.php`.
 
-- **`PolarChart::setInterpolation(int $mode)`** — `INTERP_LINEAR`
+- `PolarChart::setInterpolation(int $mode)`: `INTERP_LINEAR`
   (default) connects points with straight segments; `INTERP_SMOOTH`
   runs Catmull-Rom subdivision through each segment for a curved
   fit. Markers anchor to the original data points. Ignored in
   `STYLE_ROSE`.
 
-- **`PolarChart::addVectors(array $vectors)`** — overlay arrow
+- `PolarChart::addVectors(array $vectors)`: overlay arrow
   vectors anchored in the same `(angle, radius)` data space as the
   series. Each entry is `['angle' => float, 'radius' => float,
   'angle_to' => float, 'radius_to' => float, 'color' => int?]`.
@@ -780,13 +780,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entry mid-list aborts the entire call without partial state. See
   `docs/examples/54_polar_smooth_vectors.php`.
 
-- **`BubbleChart::setYAxisScale(SCALE_LOG)`** — log-10 Y axis for
+- `BubbleChart::setYAxisScale(SCALE_LOG)`: log-10 Y axis for
   exponential-shaped data. Matches the existing Line / Bar / Area /
   Scatter / Stock log-axis API. Y values must be strictly positive.
   See `docs/examples/55_bubble_log_axis.php`.
 
-- **`Chart::setImageMap(array $entries)` + `Chart::getImageMap(string
-  $name = 'fastchart')`** — per-data-point HTML image-map hot-spots
+- `Chart::setImageMap(array $entries)` + `Chart::getImageMap(string
+  $name = 'fastchart')`: per-data-point HTML image-map hot-spots
   on the Chart base class. Entries are index-aligned with
   `setSeries() / setSlices() / setPoints()`. The renderer captures
   hot-spot geometry during draw; `getImageMap()` emits the matching
@@ -900,8 +900,8 @@ Debian PHP fell back to source build.
   do not upload.
 - `release-linux.yml` adds a `Verify codec libs are static` step
   that fails the job if `libjpeg`, `libpng`, `libwebp`, or
-  `libfreetype` appears in the produced `.so`'s NEEDED entries —
-  catches link-flag regressions immediately.
+  `libfreetype` appears in the produced `.so`'s NEEDED entries,
+  catching link-flag regressions immediately.
 - Static-built codec libs cached via `actions/cache@v4` keyed on
   the pinned lib versions (env: `FT_VERSION`, `PNG_VERSION`,
   `JPEG_VERSION`, `WEBP_VERSION`). First build ~4min; subsequent
@@ -913,7 +913,7 @@ in exchange for cross-distro portability.
 ## [1.0.1] - 2026-05-15
 
 This is the first release with prebuilt binaries on GitHub Releases.
-No API changes — every change in this release is build / packaging /
+No API changes; every change in this release is build / packaging /
 ZTS-correctness.
 
 ### Added
@@ -923,12 +923,12 @@ ZTS-correctness.
   so PIE prefers a prebuilt asset and falls back to source build when
   no asset matches the install target. Two new workflows attach
   binaries on release publish:
-  - `.github/workflows/windows.yml` — Windows DLLs for PHP-8.3/8.4/8.5
+  - `.github/workflows/windows.yml`: Windows DLLs for PHP-8.3/8.4/8.5
     (NTS + TS, x64 + x86) via `php/php-windows-builder`. System
     deps (freetype, libpng, libjpeg-turbo, libwebp) come through the
     action's `libs:` input and resolve via the PHP-on-Windows SDK
     deps server.
-  - `.github/workflows/release-linux.yml` — Linux x86_64
+  - `.github/workflows/release-linux.yml`: Linux x86_64
     (`ubuntu-24.04`), Linux arm64 (`ubuntu-24.04-arm`), and macOS arm64
     (`macos-14`) `.so` binaries for PHP-8.4 and 8.5 (NTS) via
     `php/pie-ext-binary-builder`. apt-get / brew install the four
@@ -936,7 +936,7 @@ ZTS-correctness.
 
   PHP-8.3 on Linux/macOS, macOS Intel, and Alpine musl users continue
   to source-build via PIE's composer-default fallback.
-- **`config.w32`** — Windows build manifest mirroring `config.m4`.
+- `config.w32`: Windows build manifest mirroring `config.m4`.
   All 29 wrapper sources + 12 vendor sources (qrcodegen + plutovg +
   plutosvg), FreeType mandatory via `CHECK_LIB("freetype_a.lib;...")`
   + `CHECK_HEADER_ADD_INCLUDE("ft2build.h", ..., ..\deps\include\
@@ -960,7 +960,7 @@ ZTS-correctness.
   Added `ZEND_TSRMLS_CACHE_DEFINE()` at the `COMPILE_DL_FASTCHART`
   level and `ZEND_TSRMLS_CACHE_UPDATE()` in `PHP_GINIT_FUNCTION`.
   Without these, every `FASTCHART_G(...)` dereference from a loaded
-  DSO under ZTS reads an undefined `__declspec(thread)` slot —
+  DSO under ZTS reads an undefined `__declspec(thread)` slot:
   silent on Linux ZTS (GCC `__thread` has weaker linkage), segfault
   on Windows ZTS at first access. Mirrors what ext/intl, ext/mbstring,
   ext/curl have always done.
@@ -979,7 +979,7 @@ ZTS-correctness.
   `C:\Windows\Fonts\segoeui.ttf`.
 - **MSVC C2057 in `fastchart_stock.c`.** `const int baseT = 10`
   followed by `int dq[baseT + 1]` is portable C99 (a VLA on GCC /
-  Clang but with a compile-time-constant bound) — MSVC's C front-end
+  Clang but with a compile-time-constant bound), but MSVC's C front-end
   rejects it as "expected constant expression". Converted `baseT` to
   a `#define` (scoped `#undef` at function end). All 17 other uses
   in arithmetic / bounds checks work unchanged with macro
@@ -987,7 +987,7 @@ ZTS-correctness.
 
 ### Changed
 
-- **`tests/089_font_cache_open_basedir.phpt`** — moved the
+- `tests/089_font_cache_open_basedir.phpt`: moved the
   `/usr/share`-font probe into `--SKIPIF--`. The test was an early
   `echo "skip: ..."` + `exit;` inside `--FILE--`, which run-tests.php
   treated as a failed assertion (no `--SKIPIF--` block means "treat
@@ -1024,7 +1024,7 @@ rasterizing through plutovg, and encoding with libpng / libjpeg-turbo
   error.
 - **`ext/gd` is no longer a runtime requirement.** Loading fastchart
   no longer triggers `\GdImage` class lookup at MINIT. ext/gd can be
-  absent and fastchart still functions — but if you still call
+  absent and fastchart still functions, but if you still call
   `imagecreatefromstring()` to consume `renderPng()` output, you
   obviously still want it loaded.
 - **Default JPEG quality is now 88** (was 90). Matches the
@@ -1038,23 +1038,23 @@ rasterizing through plutovg, and encoding with libpng / libjpeg-turbo
 ### Added
 
 - **Seven new chart families** lifting the family count from 19 to 26:
-  - `BulletChart` — Stephen Few bullet: performance bar against
+  - `BulletChart`: Stephen Few bullet, performance bar against
     qualitative bands with a target tick.
-  - `ParetoChart` — descending bars + cumulative-percentage line
+  - `ParetoChart`: descending bars + cumulative-percentage line
     overlay (the 80/20 visualization).
-  - `CalendarHeatmap` — GitHub-style day-grid keyed by `YYYY-MM-DD`
+  - `CalendarHeatmap`: GitHub-style day-grid keyed by `YYYY-MM-DD`
     with a low/high color ramp.
-  - `SunburstChart` — radial hierarchical donut; recursive `children`
+  - `SunburstChart`: radial hierarchical donut; recursive `children`
     arrays with optional `value` per node (interior nodes auto-sum).
-  - `SankeyChart` — bipartite / multi-layer flow with bezier ribbons;
+  - `SankeyChart`: bipartite / multi-layer flow with bezier ribbons;
     `setNodes()` + `setLinks()` with `from` / `to` indices.
-  - `MarimekkoChart` — variable-width stacked columns where column
+  - `MarimekkoChart`: variable-width stacked columns where column
     width is proportional to category total.
-  - `VectorChart` — arrow-on-grid vector field with magnitude scaling
+  - `VectorChart`: arrow-on-grid vector field with magnitude scaling
     and optional ramp coloring.
 - **`Funnel::STYLE_PYRAMID`**: opt into a triangle-with-bands layout
   instead of the default descending-trapezoid look. Value still
-  drives shape — band heights are value-proportional, widths follow
+  drives shape: band heights are value-proportional, widths follow
   the triangle's natural taper.
 - **`Chart::svgToPng() / svgToJpeg() / svgToWebp()`**: three static
   methods that hand caller-supplied SVG bytes to the same plutovg +
@@ -1071,7 +1071,7 @@ rasterizing through plutovg, and encoding with libpng / libjpeg-turbo
   rejected (plutosvg's data-URI loader bypasses the output-dim cap,
   and its `<use>` renderer's cycle detector doesn't count fan-out,
   so a nested `<g><use/>×10` tree can hit billion-laughs expansion).
-  Text in caller-supplied SVG renders blank — plutovg has no text
+  Text in caller-supplied SVG renders blank because plutovg has no text
   renderer; flatten `<text>` to `<path>` upstream.
 - **`Chart::setWebpMode(int)`** with class constants `WEBP_DRAWING`
   (default; encoder preset tuned for vector-like content),
@@ -1087,8 +1087,8 @@ rasterizing through plutovg, and encoding with libpng / libjpeg-turbo
   support of its own; fastchart flattens text at SVG-build time.
 - **`Chart::setSvgTextMode(int)`** with class constants
   `SVG_TEXT_PATHS` (default; every `<text>` becomes a
-  `<g><path d="…"/></g>` via FreeType outline decomposition — self-
-  contained SVG, renders in any rasterizer) and `SVG_TEXT_NATIVE`
+  `<g><path d="…"/></g>` via FreeType outline decomposition, giving
+  self-contained SVG that renders in any rasterizer) and `SVG_TEXT_NATIVE`
   (raw `<text>` elements, smaller files, requires consumer text
   support). Symbol gains the same setter.
 - **`Chart::setJpegQuality(int)`** (1..100, default 88). Affects
@@ -1109,7 +1109,7 @@ rasterizing through plutovg, and encoding with libpng / libjpeg-turbo
   abstraction; chart families thread the target down to the primitive
   layer. SVG primitives use native `<text>` (no path-embedded glyphs)
   with the font family resolved via FreeType. SVG output is DPI-
-  invariant — vector strokes scale infinitely, so `setDpi()` no longer
+  invariant because vector strokes scale infinitely, so `setDpi()` no longer
   inflates the SVG viewport while the raster path retains DPI scaling.
 
 ### Fixed
@@ -1155,14 +1155,14 @@ rasterizing through plutovg, and encoding with libpng / libjpeg-turbo
   `gradient_filled_*` now emits `<linearGradient>` defs with stops
   at the chart's `gradient_from`/`_to`; `shadow_filled_*` emits an
   offset-duplicate shape with the shadow color before the main
-  draw. (Hard-edged shadow rather than Gaussian-blurred — plutosvg
+  draw. (Hard-edged shadow rather than Gaussian-blurred, since plutosvg
   doesn't parse `<filter>`.) Wired into Bar and Pie families.
 - **Background image / icon SVG emission.** `fastchart_target_image()`
   loads the source file, base64-encodes the bytes, and emits
   `<image href="data:image/png;base64,…" preserveAspectRatio="none">`.
   Source-image byte and dimension caps (8 MiB / 4096 px / 16 Mpx)
   enforced at render time; open_basedir re-checked. PNG and JPEG
-  source files only — WebP/GIF/AVIF source files are silently
+  source files only; WebP/GIF/AVIF source files are silently
   skipped because plutosvg's data-URI loader handles only those two.
 - **Pixel-tolerance test sweep.** 7 tests that scanned for exact
   RGB matches now use `fc_color_near()` which accepts any AA-blended
@@ -1193,7 +1193,7 @@ rasterizing through plutovg, and encoding with libpng / libjpeg-turbo
   per-call `FT_Init_FreeType` / `FT_Done_FreeType` overhead on the
   raster path.
 - **Optional codec libs.** `libpng` / `libjpeg-turbo` / `libwebp` are
-  now probed independently by `config.m4` — each missing lib turns
+  now probed independently by `config.m4`, and each missing lib turns
   the matching `renderXxx()` into a clear "format not compiled in"
   Error at call time. FreeType remains mandatory (text rendering
   depends on it). SVG output stays available regardless of which
@@ -1216,7 +1216,7 @@ rasterizing through plutovg, and encoding with libpng / libjpeg-turbo
   pins `detect_leaks=1`; `.github/lsan-suppressions.txt` covers
   ext/gd's MINIT-time persistent allocations (intentional, not bugs)
   and nothing else. A "Render-only leak smoke" CI step exercises
-  fastchart without ext/gd loaded — any `LeakSanitizer` output is a
+  fastchart without ext/gd loaded; any `LeakSanitizer` output is a
   fastchart regression and fails the job. The post-test grep also
   flags `Tests leaked: [1-9]` so a leak-only failure can't slip
   past via the existing `Tests failed: [1-9]` guard.
@@ -1230,7 +1230,7 @@ rasterizing through plutovg, and encoding with libpng / libjpeg-turbo
 - **Build / CI deps cleaned.** Drop `libgd-dev` from the linux + macOS
   CI jobs (fastchart no longer links it; the ASAN job keeps it for
   the ext/gd built into the sanitized PHP). `scripts/pie-smoke.sh`
-  rewritten for v1.0 — drops the removed `draw(\GdImage)` reference,
+  rewritten for v1.0: drops the removed `draw(\GdImage)` reference,
   asserts PNG / JPEG / WebP / SVG output via magic-byte checks.
 
 ### Removed (1.0.0 cleanup tail)
@@ -1238,7 +1238,7 @@ rasterizing through plutovg, and encoding with libpng / libjpeg-turbo
 - Dead `renderGif()` / `renderAvif()` `ZEND_METHOD` bodies on `Chart`
   and `Symbol`. Never registered in the arginfo method tables, so
   PHP-land calls hit the engine's standard "undefined method" error
-  anyway — the bodies were unreachable.
+  anyway, so the bodies were unreachable.
 - `fastchart_gd_image_ce` NULL global and its extern declaration in
   `php_fastchart.h`. No code referenced it after the libgd link was
   removed.
@@ -1284,7 +1284,7 @@ Tests added in this followup wave: 132 (open_basedir TOCTOU), 133
   a refcounted persistent zend_string; per-chart `zend_string_copy`
   on it called the non-atomic `GC_ADDREF`. Under ZTS two threads
   constructing charts concurrently raced on the refcount. Now
-  interned via `zend_string_init_interned(..., permanent=1)` —
+  interned via `zend_string_init_interned(..., permanent=1)`, so
   copy returns the same pointer without touching the refcount.
 - **AreaChart gradient honors `setFillOpacity()`.** The gradient
   emitter forced opaque stops; non-stacked overlay layers with
@@ -1300,7 +1300,7 @@ Tests added in this followup wave: 132 (open_basedir TOCTOU), 133
   entries up-front; stream wrappers without a real stat backend
   (http, php://memory) fall through to the MIME gate.
 - **MINFO row labels.** `libjpeg-turbo => libjpeg-turbo 2.1.2`
-  reduced to `libjpeg => 2.1.2 (turbo)` — value carries just the
+  reduced to `libjpeg => 2.1.2 (turbo)`; the value carries just the
   version with a flavour suffix, matching ext/gd's "libJPEG
   Version" idiom.
 - **PLUTOVG_VERSION_STRING / PLUTOSVG_VERSION_STRING.** Dropped
@@ -1369,7 +1369,7 @@ harden behaviour the 1.0.0 surface already exposed.
 - **PNG dimension field UB**. Background-image PNG dimensions
   parsed via signed shift, which is undefined for the high bit.
   Parsed via `uint32_t` now and rejected when above `INT_MAX`.
-- **`GanttChart`**: dependency narrowing — `zend_long` bounded into
+- **`GanttChart`**: dependency narrowing; `zend_long` bounded into
   `[0, INT_MAX]` before the `(int)` cast.
 - **`CalendarHeatmap`**: per-month day validation with leap-year
   handling. Bad ISO dates (`2026-02-30`) are rejected at setter
@@ -1395,7 +1395,7 @@ JPEG quality). 118 / 118 phpts pass.
   `FastChart\Code128` (1D barcode, ISO/IEC 15417) and
   `FastChart\QrCode` (2D matrix code, ISO/IEC 18004). Render-only API
   (`renderPng()`, `renderJpeg()`, `renderWebp()`, `renderGif()`,
-  `renderAvif()`, `renderToFile()`) — Symbol classes do not accept a
+  `renderAvif()`, `renderToFile()`); Symbol classes do not accept a
   caller-supplied `\GdImage`. `Code128` auto-switches between subsets
   A/B/C with an odd-tail-to-C optimisation; mod-103 checksum is
   appended automatically; `setShowText(true)` renders the human-
@@ -1411,7 +1411,7 @@ JPEG quality). 118 / 118 phpts pass.
   indicator-pane buffers when the new candle count is shorter than
   the previous one. Previously the overlay's `n` field kept the old
   length and the renderer walked off the end of the new candle
-  array — a use-after-realloc OOB read on the candle pointer.
+  array, a use-after-realloc OOB read on the candle pointer.
 - Setters that accept paths (`setFont`, `setBackgroundImage`,
   `addIconAt`) now throw an explicit `Error` before
   `RETURN_THROWS` when `php_check_open_basedir` blocks the path.

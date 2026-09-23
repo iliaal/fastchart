@@ -184,26 +184,18 @@ extern zend_class_entry *fastchart_partition_ce;
 /* Symbol family (1D/2D codes). Parallel hierarchy to Chart: the slim
  * fastchart_symbol_obj base shares none of FASTCHART_BASE_FIELDS, since
  * axes / palettes / plot rect / font cache do not apply to symbologies.
- * Symbol classes are render-only (renderSvg/Png/Jpeg/Webp/toFile);
- * ext/gd is not a runtime dependency in v1.0+. */
+ * Symbol classes are render-only (renderSvg/Png/Jpeg/Webp/toFile). */
 extern zend_class_entry *fastchart_symbol_ce;
 extern zend_class_entry *fastchart_barcode_ce;
 extern zend_class_entry *fastchart_code128_ce;
 extern zend_class_entry *fastchart_qrcode_ce;
 
-/* Per-class object layout. Every chart subclass owns its own struct
- * laid out as { FASTCHART_BASE_FIELDS, <per-type fields>, zend_object std }
- * so per-class create/free/clone handlers can size and initialize the
- * exact memory their class needs. The shared FASTCHART_BASE_FIELDS
- * macro ensures every per-type struct presents the same field layout
- * at offset 0; that common-initial-sequence lets base setters and
- * shared helpers cast any per-type pointer to fastchart_obj* and
- * touch base fields by their natural names without the per-type-
- * setters needing a base accessor. The std member sits at the end of
- * each per-type struct, and each class registers its own
- * zend_object_handlers with offset = offsetof(class_struct, std)
- * so Z_FASTCHART_OBJ_P below lands on the start of the user struct
- * (= the base layout) regardless of which subclass we're in. */
+/* Per-class object layout: { FASTCHART_BASE_FIELDS, <per-type fields>,
+ * zend_object std }. The shared prefix is a common initial sequence, so
+ * base setters and helpers can cast any per-type pointer to
+ * fastchart_obj*. Each class registers handlers with
+ * offset = offsetof(class_struct, std), so Z_FASTCHART_OBJ_P lands on
+ * the start of the struct regardless of subclass. */
 #define FASTCHART_BASE_FIELDS \
     zend_long width; \
     zend_long height; \
@@ -287,7 +279,7 @@ extern zend_class_entry *fastchart_qrcode_ce;
     int n_icons; \
     /* Combo overlays added via addOverlaySeries(). Values parse into a \
      * typed double array (NaN marks a gap) at setter time so the object \
-     * retains no user zval — keeping the raw array in config would form \
+     * retains no user zval. Keeping the raw array in config would form \
      * an engine-invisible cycle (config is a C-struct zval with no \
      * get_gc handler). */ \
     struct fastchart_combo_overlay *combo_overlays; \
@@ -307,9 +299,8 @@ extern zend_class_entry *fastchart_qrcode_ce;
      * files, requires consumer SVG renderer with text support); 1 = \
      * PATHS (every <text> flattened to <g><path/></g> via FreeType \
      * outline decomposition, self-contained but ~30%+ larger). Default \
-     * is PATHS because the internal raster path (plutovg) cannot render \
-     * <text> at all — Phase 4's renderPng/Jpeg/Webp force PATHS \
-     * regardless of this setting. */ \
+     * is PATHS because plutovg cannot render <text>; renderPng/Jpeg/Webp \
+     * force PATHS regardless of this setting. */ \
     zend_long svg_text_mode; \
     /* JPEG encode quality 1..100, default 88. Affects renderJpeg() and \
      * renderToFile('*.jpg'). */ \
@@ -334,10 +325,9 @@ extern zend_class_entry *fastchart_qrcode_ce;
 	int image_map_areas_cap; \
 	zval config;
 
-/* Base view type. fastchart_obj* is what base setters and shared
- * helpers receive. It deliberately omits zend_object std — concrete
- * instances always belong to one of the per-type structs below, and
- * the embedded std lives at the end of those. */
+/* Base view type passed to base setters and shared helpers. It omits
+ * zend_object std: concrete instances are always one of the per-type
+ * structs below, which embed std at the end. */
 typedef struct _fastchart_obj { FASTCHART_BASE_FIELDS } fastchart_obj;
 
 /* Shared series shape for the cartesian chart families (Line, Area,
@@ -690,7 +680,7 @@ typedef struct {
     bool candle_derived;
 } fastchart_indicator_pane;
 
-/* Phase-2 price-pane overlays (Bollinger Bands, Parabolic SAR).
+/* Price-pane overlays (Bollinger Bands, Parabolic SAR).
  * Computed at addX() time from the typed candle array, drawn as
  * an overlay on the price pane during stock render. Up to 4
  * overlays per chart. */
@@ -715,8 +705,8 @@ typedef struct {
 #define FASTCHART_MAX_INDICATOR_PANES 6
 #define FASTCHART_MAX_INDICATOR_VALUES 4096
 
-/* Per-setter input caps for the remaining list-shaped setters that
- * previously allocated against the user-supplied count. */
+/* Input caps for list-shaped setters that allocate against the
+ * user-supplied count. */
 #define FASTCHART_MAX_VOLUME_COLORS    FASTCHART_MAX_CANDLES
 #define FASTCHART_MAX_OUTLIERS         128       /* per box */
 #define FASTCHART_MAX_LEVELS           32        /* contour */
@@ -1296,9 +1286,8 @@ typedef struct {
 } fastchart_serpentine_obj;
 
 /* Walk back from zend_object* to the start of the containing per-type
- * struct using each class's handlers->offset. Cast to fastchart_obj*
- * is the common-initial-sequence access — base fields land at the
- * same offsets in every per-type struct. */
+ * struct using each class's handlers->offset. The fastchart_obj* cast
+ * is valid because base fields share offsets in every per-type struct. */
 static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
     return (fastchart_obj *)((char *)(obj) - obj->handlers->offset);
 }
@@ -1452,15 +1441,10 @@ static inline fastchart_obj *fastchart_obj_from_zend(zend_object *obj) {
 
 /* Read a string label from an array-shaped setter, dropping the
  * value if it carries an embedded NUL or exceeds FASTCHART_MAX_TEXT_BYTES.
- * Public scalar setters reject both conditions with ValueError;
- * per-element strings inside arrays (series labels, slice labels,
- * gantt task names, category labels, overlay labels, etc.) take the
- * silent-drop path because rejecting them with an exception would
- * force every chart-type setter to walk the whole input array up
- * front. The render-vs-stored divergence (text draw paths use
- * C-string sentinels, PHP strings carry an explicit length) is what
- * we're guarding against; the length cap keeps one oversized label
- * from ballooning glyph-path SVG output. */
+ * Scalar setters reject both with ValueError; per-element array strings
+ * drop silently so setters need not pre-walk the whole input. The NUL
+ * check matters because text draw paths use C-string sentinels; the
+ * length cap keeps one label from ballooning glyph-path SVG output. */
 static inline const char *fastchart_label_or_null(const zval *zv)
 {
     if (zv && Z_TYPE_P(zv) == IS_REFERENCE) zv = Z_REFVAL_P(zv);
@@ -1475,7 +1459,7 @@ static inline const char *fastchart_label_or_null(const zval *zv)
  * Proportional so 127 rounds to 0 cleanly; the naive `255 - a * 2`
  * left a 1/255 floor that surfaced as rgba(...,0.004) for a band or
  * fill the caller asked to be fully transparent. Shared so plot
- * bands, area fills, and drop shadows can't drift apart again. */
+ * bands, area fills, and drop shadows can't drift apart. */
 static inline int fastchart_gd_alpha_to_byte(int a)
 {
     if (a < 0) a = 0; else if (a > 127) a = 127;
@@ -1484,10 +1468,9 @@ static inline int fastchart_gd_alpha_to_byte(int a)
 
 char *fastchart_format_double_label(const char *fmt, double value);
 
-/* Per-chart SVG rendering helpers. Each chart family implements
+/* Per-chart rendering entries. Each chart family implements
  * fastchart_<name>_render_to_target(self, t), called by
- * dispatch_svg_render. The legacy image-backend wrappers retired
- * in v1.0. */
+ * dispatch_svg_render. */
 struct fastchart_target;
 int fastchart_line_render_to_target(fastchart_line_obj *self,
                                      struct fastchart_target *t);
@@ -1609,8 +1592,8 @@ typedef struct _fastchart_symbol_obj { FASTCHART_SYMBOL_BASE_FIELDS } fastchart_
 /* Code 128: auto-switching A/B/C subset encoder. show_text toggles
  * the human-readable payload below the bars; the font is whatever
  * fastchart_default_font_path resolved to at MINIT (re-checked
- * against open_basedir on every render). No per-instance font setter
- * yet — add the field plus a setter when one is needed. */
+ * against open_basedir on every render). There is no per-instance
+ * font setter. */
 typedef struct {
     FASTCHART_SYMBOL_BASE_FIELDS
     bool show_text;
@@ -1667,8 +1650,7 @@ static inline fastchart_symbol_obj *fastchart_symbol_obj_from_zend(zend_object *
 #define Z_FASTCHART_CODE128_OBJ_P(zv) ((fastchart_code128_obj *)Z_FASTCHART_SYMBOL_OBJ_P(zv))
 #define Z_FASTCHART_QRCODE_OBJ_P(zv)  ((fastchart_qrcode_obj *)Z_FASTCHART_SYMBOL_OBJ_P(zv))
 
-/* Target-based render entries — the only entry point now that
- * libgd has been dropped. SVG-backed targets emit vector elements;
+/* Target-based render entries. SVG-backed targets emit vector elements;
  * raster outputs go through dispatch_svg_render then plutovg. */
 int fastchart_code128_render_to_target(fastchart_code128_obj *self,
                                         struct fastchart_target *t);
@@ -1701,19 +1683,15 @@ extern zend_object *fastchart_qrcode_clone_object(zend_object *src_obj);
  * at the engine level; userland subclasses (`class MySym extends
  * FastChart\Symbol {}`) bypass that and would otherwise allocate a
  * vanilla zend_object whose layout cannot back the typed C struct
- * Z_FASTCHART_SYMBOL_OBJ_P expects — every inherited method would
- * read out-of-bounds. This handler throws on any such instantiation. */
+ * Z_FASTCHART_SYMBOL_OBJ_P expects, and every inherited method would
+ * read out of bounds. This handler throws on any such instantiation. */
 extern zend_object *fastchart_symbol_abstract_create_object(zend_class_entry *ce);
 
-/* Same sentinel for the Chart family. FastChart\Chart is abstract;
- * `class MyChart extends FastChart\Chart {}` would otherwise inherit
- * no create_object and the engine would allocate a vanilla
- * zend_object lacking the FASTCHART_BASE_FIELDS prefix our methods
- * expect. Z_FASTCHART_OBJ_P then casts into memory we don't own and
- * the next setter or destructor scribbles past the object. Wired in
- * at MINIT for both the abstract class entry and any future abstract
- * intermediates so userland subclassing is rejected at instantiation
- * time rather than corrupting heap. */
+/* Same sentinel for the Chart family. `class MyChart extends
+ * FastChart\Chart {}` would otherwise get a vanilla zend_object without
+ * the FASTCHART_BASE_FIELDS prefix, and the next setter or destructor
+ * would write past the object. Wired at MINIT for every abstract class
+ * entry so userland subclassing fails at instantiation. */
 extern zend_object *fastchart_chart_abstract_create_object(zend_class_entry *ce);
 
 /* Auto-detected sans-serif TTF path probed at MINIT in fastchart.c.

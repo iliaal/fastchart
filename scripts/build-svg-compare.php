@@ -4,8 +4,7 @@
  * (PHP-highlighted), then SVG (inlined) and PNG (base64 data URI) for
  * the same chart. Output: compare-svg-png.html in the repo root.
  *
- * Run with the fastchart + gd extensions loaded — see CLAUDE.md for
- * the explicit -d extension= invocation. */
+ * Run with the fastchart + gd extensions loaded (php -d extension=...). */
 
 if (!class_exists('FastChart\\Chart')) {
     fwrite(STDERR, "FastChart not loaded; load fastchart.so + gd.so on the CLI.\n");

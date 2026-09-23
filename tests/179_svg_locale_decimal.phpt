@@ -13,7 +13,7 @@ fastchart
 /* Regression: fc_svg_fmt_num / fc_emit_num / fc_svg_fmt_color formatted SVG
  * coordinates with snprintf("%f"), which honours LC_NUMERIC. Under a
  * comma-decimal locale (de_DE, fr_FR, ...) that emitted width="307,0",
- * x="69,5" etc. — and a comma is SVG's own coordinate separator, so the
+ * x="69,5" etc., and a comma is SVG's own coordinate separator, so the
  * geometry was silently corrupted for every consumer (browser, plutovg).
  * Geometry must always use '.'; only human-readable LABEL text may localise.
  * Pre-fix this exact chart produced 118 comma-decimal coordinate attributes. */

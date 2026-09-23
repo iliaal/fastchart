@@ -81,12 +81,9 @@ static plutosvg_document_t *fastchart_load_svg(const char *svg,
  *   inv_alpha[0] = 0  (the a==0 branch short-circuits and never reads)
  *
  * Worst-case product: c_p ≤ a (premultiplication invariant), so
- *   c_p * inv_alpha[a] ≤ a * round(16711680/a) ≈ 16711680 < 2^31
- * — no 32-bit overflow.
- *
- * Idempotent init: filling the table is ~1 KB of integer divides at
- * MINIT (or first call). Cost is irrelevant; the table is process-wide
- * read-only data after init. */
+ *   c_p * inv_alpha[a] ≤ a * round(16711680/a) ≈ 16711680 < 2^31,
+ * so there is no 32-bit overflow. The table is process-wide read-only
+ * data after init. */
 static uint32_t fc_inv_alpha[256];
 static int      fc_inv_alpha_ready = 0;
 
@@ -94,8 +91,8 @@ static void fc_init_inv_alpha(void)
 {
 	fc_inv_alpha[0] = 0;
 	for (int a = 1; a < 256; a++) {
-		/* +a/2 for round-to-nearest; matches the original
-		 * (c * 255 + a/2) / a semantics. */
+		/* +a/2 for round-to-nearest, matching
+		 * (c * 255 + a/2) / a. */
 		fc_inv_alpha[a] = (uint32_t)((255u * 65536u + a / 2) / a);
 	}
 	fc_inv_alpha_ready = 1;
@@ -107,7 +104,7 @@ static int fc_cpu_has_ssse3(void);
 
 /* Fill the LUT once at module load. After this, fc_inv_alpha_ready is
  * already 1 before any request thread runs, so the lazy first-call branch
- * in fastchart_rasterize_doc is never taken concurrently — closing the
+ * in fastchart_rasterize_doc is never taken concurrently, which avoids a
  * ZTS data race on the unsynchronised ready flag. The SSSE3 capability
  * cache is prewarmed here for the same reason. */
 void fastchart_rasterize_init(void)
@@ -362,7 +359,7 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
 	    (long long)budget) {
 		return -1;
 	}
-	/* Destination first — see fastchart_rasterize_doc's no-Zend-alloc
+	/* Destination first; see fastchart_rasterize_doc's no-Zend-alloc
 	 * contract for the vendor-state window. */
 	pix->rgba = safe_emalloc((size_t)target_w * (size_t)target_h, 4, 0);
 
@@ -417,7 +414,7 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 	/* >= : (float)INT_MAX rounds up to 2^31, which `>` would admit
 	 * straight into the UB (int) cast below. (plutosvg returns -1 for
 	 * percentage dims without a container, 0 when neither width/height
-	 * nor viewBox exists — both are "unresolvable" here.) */
+	 * nor viewBox exists; both are "unresolvable" here.) */
 	if (!isfinite(w) || !isfinite(h) || w <= 0 || h <= 0
 	    || w >= (float)INT_MAX || h >= (float)INT_MAX) {
 		plutosvg_document_destroy(doc);
@@ -442,7 +439,7 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 	 * but immediate-mode rasterization re-pays the whole canvas per
 	 * painted element (no culling/dedup), so worst-case work is
 	 * element_count x canvas pixels. A cap-compliant document (65,536
-	 * full-canvas shapes) drives ~1.1e12 pixel ops — minutes of CPU no
+	 * full-canvas shapes) drives ~1.1e12 pixel ops, minutes of CPU no
 	 * PHP timer can interrupt. Reject above the op budget before
 	 * rasterizing. The 64-bit product cannot overflow: element_count
 	 * <= 65,536 and iw*ih <= max_pixels <= FC_IMAGE_MAX_PIXELS. */

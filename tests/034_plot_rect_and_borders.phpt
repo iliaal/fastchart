@@ -75,7 +75,7 @@ $im2 = imagecreatefromstring($bytes2);
 // (left edge has the Y-axis line which is separate).
 $top_border_pixels = 0;
 for ($x = 60; $x < 380; $x++) {
-    /* Sample at the y-coord just inside the plot top -- if BORDER_TOP
+    /* Sample at the y-coord just inside the plot top: if BORDER_TOP
      * was drawn, the border color would dominate. */
     if (fc_color_near(imagecolorat($im2, $x, 50), $border)) $top_border_pixels++;
 }

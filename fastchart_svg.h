@@ -98,8 +98,8 @@ void fc_svg_emit_text(smart_str *buf,
  * each glyph's contours pre-translated by the cumulative pen advance.
  * Alignment shifts the translate-x by 0 / -w/2 / -w for left / center
  * / right respectively. font_path is loaded via FT_New_Face. On any
- * FT failure the function emits nothing (silent fallback — the text
- * is simply missing rather than producing a broken SVG). */
+ * FT failure the function emits nothing, so the text is missing
+ * rather than producing a broken SVG. */
 void fc_svg_emit_text_as_path(smart_str *buf,
                                double x, double y,
                                const char *font_path, double size_px,

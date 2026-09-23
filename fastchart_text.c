@@ -186,10 +186,8 @@ int fastchart_text_draw(fastchart_target_t *t,
 
     /* Emit each line directly from the source pointer + byte length.
      * fc_svg_emit_text and fc_svg_emit_text_as_path both accept a
-     * (text, len) pair, so no intermediate NUL-terminated copy is
-     * needed — that removes the old byte-truncating char buf[1024]
-     * which could split a multi-byte UTF-8 sequence mid-line and
-     * silently drop the tail of long single-line labels. */
+     * (text, len) pair, so no intermediate NUL-terminated copy (which
+     * could split a UTF-8 sequence or truncate long lines) is needed. */
     double line_y = (double)y;
     const char *p = text;
     while (1) {
@@ -243,11 +241,9 @@ int fastchart_text_draw_rotated(fastchart_target_t *t,
      * rotation by angle θ (CCW), a vertical line-step of S becomes:
      *   delta_x = -S * sin(θ)
      *   delta_y =  S * cos(θ)
-     * The unrotated path emitted one element with raw \n bytes in
-     * the body; SVG <text> collapses \n to whitespace at render
-     * time, so the multi-line label rendered as a single line —
-     * while the companion measure() function reports the multi-line
-     * height, so layout and rendering disagreed. */
+     * One element with raw \n bytes would not work: SVG <text>
+     * collapses \n to whitespace, while measure() reports the
+     * multi-line height. */
     char family[64];
     /* Family name only feeds the NATIVE <text> branch; resolve lazily so
      * PATHS mode and PDF/raster renders skip the cache scan + snprintfs. */

@@ -12,12 +12,20 @@
   - RHEL / Fedora: `dnf install libpng-devel libjpeg-turbo-devel libwebp-devel freetype-devel`
 
   Probed via pkg-config in `config.m4`. plutovg + plutosvg are
-  vendored under `vendor/` — no install needed.
+  vendored under `vendor/`, so they need no install.
 - ext/gd is **not** a runtime requirement. The test suite uses ext/gd
   in roughly 90 PHPT files to round-trip raster output for pixel
   inspection; those tests SKIP cleanly when ext/gd isn't available.
-  If you want to run the full suite, build ext/gd once against your
-  PHP install (recipe in AGENTS.md).
+  To run the full suite, build ext/gd once as a shared module against
+  your PHP install, with WebP, JPEG, and FreeType support:
+
+  ```sh
+  cd $HOME/php-src-8.4/ext/gd
+  $HOME/php-install-PHP-8.4/bin/phpize
+  ./configure --with-php-config=$HOME/php-install-PHP-8.4/bin/php-config \
+      --enable-gd --with-jpeg --with-webp --with-freetype
+  make -j
+  ```
 
 ## Bug reports
 
@@ -60,8 +68,8 @@ Before filing, try to reproduce against the latest `master` branch.
    $HOME/php-install-PHP-8.4/bin/php run-tests.php tests/
    ```
 
-   `detect_leaks=0` is for the routine local ext/gd sweep when using
-   the ASAN debug PHP build described in AGENTS.md. The CI-style leak
+   `detect_leaks=0` is for the routine local ext/gd sweep when your
+   PHP is an ASAN debug build. The CI-style leak
    check uses `detect_leaks=1` and the narrow suppressions file in
    `.github/lsan-suppressions.txt`; run that path when validating
    memory-management changes. For a quick render smoke without ext/gd:
@@ -120,13 +128,10 @@ Before filing, try to reproduce against the latest `master` branch.
 - Memory: use PHP's `emalloc` / `efree` at the Zend boundary.
   `efree(NULL)` is undefined behavior in Zend; keep the `fc_efree_opt`
   null-guard wrapper rather than removing it as "dead code".
-- Truecolor canvas only. `fastchart_require_truecolor()` rejects
-  palette images at every `draw()` entry. New entry points must
-  call it.
 - Per-class state lives on the chart's typed C struct
   (`fastchart_<name>_obj`), not the generic `fastchart_obj`. Setters
-  parse user input into typed C arrays at setter time; `draw()` is
-  pure rasterisation.
+  parse user input into typed C arrays at setter time, so rendering
+  does no input parsing.
 
 ### Release workflow
 

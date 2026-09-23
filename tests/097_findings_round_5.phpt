@@ -1,5 +1,5 @@
 --TEST--
-Findings round 5: bound indicator periods, heatmap cap, source-image dims, Bollinger range, Funnel format, Waterfall kind, LinearMeter empty format
+Bound indicator periods, heatmap cap, source-image dims, Bollinger range, Funnel format, Waterfall kind, LinearMeter empty format
 --EXTENSIONS--
 fastchart
 gd
@@ -17,7 +17,7 @@ for ($i = 0; $i < 60; $i++) {
                min($open, $close) - 0.5, $close, 1000];
 }
 
-/* FC-001: addMACD signal_p / addStochastic smooth must reject
+/* addMACD signal_p / addStochastic smooth must reject
  * unbounded values BEFORE the int cast that drives index math. */
 try {
     (new FastChart\StockChart(560, 360))
@@ -36,7 +36,7 @@ try {
     echo "stoch_huge_smooth: ValueError\n";
 }
 
-/* FC-002: Heatmap::setGrid must enforce the same 10000-cell cap
+/* Heatmap::setGrid must enforce the same 10000-cell cap
  * as Surface / Contour. 101 x 100 = 10100 must reject. */
 $big = [];
 for ($r = 0; $r < 101; $r++) {
@@ -58,7 +58,7 @@ try {
     echo "surface_grid_cap: ValueError\n";
 }
 
-/* FC-003: a small JPEG-shaped buffer with a SOF marker that
+/* a small JPEG-shaped buffer with a SOF marker that
  * declares 100000 x 100000 dimensions must be silently skipped
  * by setBackgroundImage. We forge the SOI + APP0 + SOF0 segments
  * by hand; libgd will fail to decode the body but our preflight
@@ -93,7 +93,7 @@ $with_small_bg = (new FastChart\LineChart(160, 100))
 echo "small_dim_used:   ", ($with_small_bg !== $base ? "yes" : "no"), "\n";
 @unlink($tmp_small);
 
-/* FC-004: Bollinger overlays must expand the stock price range so
+/* Bollinger overlays must expand the stock price range so
  * upper / lower bands don't pin to the plot edge. Construct two
  * close prices (100, 200) so the candle high/low IS [99.5, 200.5]
  * but Bollinger(period=2, stddev=2) puts upper=250 / lower=50 well
@@ -116,7 +116,7 @@ $with_boll = (new FastChart\StockChart(400, 240))
  * distinct dark rows in the central band than the baseline. */
 echo "boll_range_used:  ", ($with_boll !== $baseline ? "yes" : "no"), "\n";
 
-/* FC-005: Funnel honours the inherited setShowValues($flag, $fmt)
+/* Funnel honours the inherited setShowValues($flag, $fmt)
  * format string. The default %.0f and a custom "%.2f" must produce
  * different bytes (the rendered values change). */
 $stages = [
@@ -130,7 +130,7 @@ $ffmt = (new FastChart\Funnel(320, 220))
     ->renderPng();
 echo "funnel_format:    ", ($fdef !== $ffmt ? "differs" : "same"), "\n";
 
-/* FC-006: Waterfall kind must EXACT-match "total" — "totalXYZ" is
+/* Waterfall kind must EXACT-match "total": "totalXYZ" is
  * not a valid kind and should fall back to delta. Compare against
  * a chart with only delta bars: the rendered output must match. */
 $wf_total_xyz = (new FastChart\Waterfall(320, 200))
@@ -153,7 +153,7 @@ $wf_total = (new FastChart\Waterfall(320, 200))
     ])->renderPng();
 echo "wf_total_works:   ", ($wf_total !== $wf_pure_delta ? "yes" : "no"), "\n";
 
-/* FC-007: LinearMeter setValueFormat('') must reset to the default
+/* LinearMeter setValueFormat('') must reset to the default
  * "%.0f", not store an empty string that produces blank labels. */
 $lm_default = (new FastChart\LinearMeter(360, 120))
     ->setRange(0, 100)->setValue(50)

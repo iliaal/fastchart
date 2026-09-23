@@ -26,7 +26,7 @@ $c2 = (new FastChart\PolarChart())
     ->setInterpolation(FastChart\Chart::INTERP_LINEAR)
     ->setFilled(true);
 $svg_linear = $c2->renderSvg();
-/* Smooth curve writes more polygon points than the linear one — the
+/* Smooth curve writes more polygon points than the linear one: the
  * polygon's points= attribute is longer. */
 preg_match('/<polygon points="([^"]+)"/', $svg_smooth, $m_s);
 preg_match('/<polygon points="([^"]+)"/', $svg_linear, $m_l);

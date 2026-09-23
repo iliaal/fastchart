@@ -5,9 +5,8 @@
 
 require __DIR__ . '/_bootstrap.php';
 
-/* Synthetic 2D rotational field: arrows swirl around (5, 5)
- * proportional to distance from center — a classic rotational
- * field plot. */
+/* Rotational field: arrows swirl around (5, 5) with length
+ * proportional to distance from the center. */
 $vecs = [];
 $cx = 5; $cy = 5;
 for ($x = 0; $x <= 10; $x++) {

@@ -3,7 +3,7 @@
  * optional `'tooltip'`) which getImageMap turns into HTML <area>
  * tags. The intended workflow:
  *   1. setPoints with href/tooltip per point
- *   2. draw / renderToFile produces the image
+ *   2. renderToFile (or a render* method) produces the image
  *   3. getImageMap returns the <map> markup
  *   4. embed both in your HTML alongside <img usemap="#mapname">
  *
@@ -34,8 +34,8 @@ $chart = (new FastChart\ScatterChart(560, 360))
 
 $chart->renderToFile(__DIR__ . '/30_image_map.png');
 
-/* getImageMap must run AFTER draw / render: the renderer is the one
- * that pixel-maps each point. Schemes outside http(s)/mailto/relative
+/* Call getImageMap after rendering: the renderer computes each
+ * point's pixel position. Schemes outside http(s)/mailto/relative
  * paths are silently rejected, attribute values are HTML-escaped. */
 $map = $chart->getImageMap('quarterly');
 

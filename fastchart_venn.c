@@ -30,8 +30,8 @@
  * area matches the requested intersection. Circles are filled with a
  * translucent colour so overlaps blend visually. The triple-overlap
  * region (3 sets) emerges from the pairwise geometry rather than being
- * independently fitted — exact 3-set area proportionality has no general
- * solution, which is why this is deliberately capped at 3 sets. */
+ * independently fitted. Exact 3-set area proportionality has no general
+ * solution, hence the 3-set cap. */
 
 static double venn_clampd(double v, double lo, double hi)
 {

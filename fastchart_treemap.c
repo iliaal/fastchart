@@ -81,7 +81,7 @@ static void place_row(const double *areas,
      * available; that fraction times the shorter side gives the
      * pixel thickness of the strip. */
     if (w <= h) {
-        /* Shorter side is width — lay row vertically across height. */
+        /* Shorter side is width: lay row vertically across height. */
         int strip_w = (int)((row_sum / denom) * (double)w + 0.5);
         if (strip_w < 1) strip_w = 1;
         if (strip_w > w) strip_w = w;
@@ -102,7 +102,7 @@ static void place_row(const double *areas,
         }
         rect->x0 += strip_w;
     } else {
-        /* Shorter side is height — lay row horizontally across width. */
+        /* Shorter side is height: lay row horizontally across width. */
         int strip_h = (int)((row_sum / denom) * (double)h + 0.5);
         if (strip_h < 1) strip_h = 1;
         if (strip_h > h) strip_h = h;
@@ -165,7 +165,7 @@ static void squarify(const double *areas, const int *order, int n,
             total_remaining -= row_sum;
             n_row = 0;
             row_sum = row_min = row_max = 0;
-            /* don't advance i — re-process the current item in a
+            /* don't advance i; re-process the current item in a
              * fresh row in the new (smaller) rect. */
         }
     }

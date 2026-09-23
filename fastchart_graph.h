@@ -18,8 +18,7 @@
 /* Shared node/edge data model for the graph chart family (ArcDiagram,
  * ChordDiagram, NetworkChart). Same shape SankeyChart parses inline;
  * these charts share the parse/free/clone helpers below instead of
- * duplicating the logic per class. SankeyChart predates this header
- * and keeps its own copy — folding it in is a later dedupe. */
+ * duplicating the logic per class. SankeyChart keeps its own copy. */
 
 #define FASTCHART_MAX_GRAPH_NODES   512    /* per chart */
 #define FASTCHART_MAX_GRAPH_LINKS   2048   /* per chart */

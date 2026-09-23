@@ -5,7 +5,7 @@ fastchart
 --FILE--
 <?php
 
-// renderPng without setData throws Error (not ValueError) — matches
+// renderPng without setData throws Error (not ValueError): matches
 // the Code128 + Chart family pattern.
 try {
     (new FastChart\QrCode())->renderPng();
@@ -35,7 +35,7 @@ foreach ([0, 41, -5] as $bad_v) {
 // Cross-bound check fires at render time, not at setter time. The
 // setters intentionally allow transient out-of-order state so that
 // `setMinVersion(40)->setMaxVersion(40)` is valid (the intermediate
-// state has min=40, max=default 40 — fine).
+// state has min=40, max=default 40: fine).
 try {
     (new FastChart\QrCode())
         ->setData('x')

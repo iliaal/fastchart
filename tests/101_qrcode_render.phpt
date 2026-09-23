@@ -50,10 +50,10 @@ var_dump($dark > 100);
 $sample = function ($x, $y) use ($im) {
     return (imagecolorat($im, $x, $y) & 0xFFFFFF) < 0x808080;
 };
-var_dump($sample(75, 75));    // top-left finder centre — dark
-var_dump(!$sample(55, 55));   // top-left finder white ring — light
-var_dump($sample(215, 75));   // top-right finder centre — dark
-var_dump($sample(75, 215));   // bottom-left finder centre — dark
+var_dump($sample(75, 75));    // top-left finder centre: dark
+var_dump(!$sample(55, 55));   // top-left finder white ring: light
+var_dump($sample(215, 75));   // top-right finder centre: dark
+var_dump($sample(75, 215));   // bottom-left finder centre: dark
 
 // All four ECC levels encode and render.
 foreach ([

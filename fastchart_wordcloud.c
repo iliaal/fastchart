@@ -121,8 +121,7 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
 
     /* Uniform bucket grid over the canvas: collision candidates come
      * from the cells a box overlaps instead of the whole placed list,
-     * which went quadratic as the canvas saturated (late words burned
-     * the full spiral budget re-scanning every placed box per step).
+     * which goes quadratic as the canvas saturates.
      * Decisions are EXACTLY the full scan's: boxes are inserted
      * inflated by the 1px collision margin, so any pair that could
      * satisfy the margin test shares a cell, and the final test below

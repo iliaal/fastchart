@@ -29,8 +29,7 @@
 /* Circle packing: a hierarchy of nested circles. Leaves are sized by
  * value (radius proportional to sqrt(value) so area tracks value); each
  * parent is the enclosing circle of its spiral-packed children. The
- * spiral placement keeps siblings non-overlapping — the property that
- * actually matters visually — at the cost of a slightly loose
+ * spiral placement keeps siblings non-overlapping at the cost of a slightly loose
  * (non-minimal) enclosing circle. A fixed iteration cap bounds the
  * search; in the rare case it is exhausted the last candidate is used
  * as-is (see pack_siblings). Coordinates are kept abstract during

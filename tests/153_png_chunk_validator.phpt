@@ -8,7 +8,7 @@ fastchart
 /* Defends against stb_image's IDAT chunk-length amplifier: a 30-byte
  * PNG with a falsified IDAT chunk length of 0x3FFFFFFF causes
  * vendored stb_image to attempt a ~1 GB realloc before reading any
- * payload — single-request OOM-kill on memory-constrained workers.
+ * payload: single-request OOM-kill on memory-constrained workers.
  * fastchart_target.c::fc_validate_png_chunks walks the chunk list
  * and rejects any declared length that overruns the buffer. */
 

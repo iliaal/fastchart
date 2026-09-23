@@ -30,7 +30,7 @@ apt-get update -qq >/dev/null
 # Build tools: PIE needs git (clones source via git clone), bison +
 # libtoolize (PIE's build-tools check requires both even though phpize
 # itself does not), and ca-certificates for HTTPS clones. `unzip` is
-# load-bearing — composer shells out to /usr/bin/unzip when extracting
+# required: composer shells out to /usr/bin/unzip when extracting
 # the prebuilt-binary zip PIE sets via setDistUrl(); if missing,
 # composer silently falls back to PHP's ZipArchive which lays out the
 # file at a path PIE's prePackagedBinary check doesn't look at, and the

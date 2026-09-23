@@ -186,8 +186,8 @@ int fastchart_line_render_to_target(fastchart_line_obj *self, fastchart_target_t
             }
         }
 
-        /* Error bars attach to the first series only -- multi-series
-         * line charts get crowded fast otherwise. */
+        /* Error bars attach to the first series only; multi-series
+         * line charts get crowded otherwise. */
         if (err_lo && err_n > 0 && s == 0) {
             int lim = n < err_n ? n : err_n;
             for (int i = 0; i < lim; i++) {

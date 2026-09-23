@@ -45,7 +45,7 @@ echo "has_plutovg_row: ",
         ? "yes" : "no"), "\n";
 
 /* The renderXxx paths should either succeed (codec present) or throw
- * a clear "not compiled in" Error — never crash or produce garbage. */
+ * a clear "not compiled in" Error: never crash or produce garbage. */
 $line = (new FastChart\LineChart(120, 80))->setSeries([1, 2, 3]);
 
 foreach ([

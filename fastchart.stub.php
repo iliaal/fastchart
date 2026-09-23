@@ -96,7 +96,7 @@ abstract class Chart
      *
      * `SVG_TEXT_PATHS` (default) flattens every `<text>` element to a
      * `<g><path d="..."/></g>` group via FreeType outline
-     * decomposition. The resulting SVG is self-contained — it renders
+     * decomposition. The resulting SVG is self-contained: it renders
      * correctly in any SVG rasterizer, including ones that don't
      * support text (such as plutovg, which fastchart uses internally
      * for PNG/JPG/WebP output). File size grows ~30%+ vs native text.
@@ -107,7 +107,7 @@ abstract class Chart
      *
      * `renderPng()`, `renderJpeg()`, `renderWebp()`, and
      * `renderToFile()` for raster formats always use PATHS internally
-     * regardless of this setting — they go through plutovg.
+     * regardless of this setting because they go through plutovg.
      */
     public const int SVG_TEXT_NATIVE = 0;
     public const int SVG_TEXT_PATHS  = 1;
@@ -115,17 +115,17 @@ abstract class Chart
     /**
      * WebP encoder modes selected via `setWebpMode()`.
      *
-     * `WEBP_DRAWING` (default) — `WEBP_PRESET_DRAWING` + `method=2`,
+     * `WEBP_DRAWING` (default): `WEBP_PRESET_DRAWING` + `method=2`,
      * tuned for chart-shaped content (flat fills, sharp edges, small
      * palette). Best speed/size trade-off for most charts.
      *
-     * `WEBP_PHOTO` — `WEBP_PRESET_PHOTO` + `method=4`. Better for
+     * `WEBP_PHOTO`: `WEBP_PRESET_PHOTO` + `method=4`. Better for
      * charts that embed photographic background images via
      * `setBackgroundImage()`; libwebp's photo entropy model handles
      * gradient and natural-image regions more efficiently than the
      * drawing preset.
      *
-     * `WEBP_LOSSLESS` — `lossless=1` + `method=6`. Bit-exact output
+     * `WEBP_LOSSLESS`: `lossless=1` + `method=6`. Bit-exact output
      * with no perceptual loss. For chart content with limited
      * palettes, lossless WebP often produces similar or smaller
      * files than lossy at quality 90 and is faster to encode (no
@@ -133,7 +133,7 @@ abstract class Chart
      * downstream tooling needs pixel-exact recovery. The `quality`
      * parameter to `renderWebp()` is ignored in this mode.
      *
-     * `WEBP_FAST` — `WEBP_PRESET_DRAWING` + `method=0`. Fastest
+     * `WEBP_FAST`: `WEBP_PRESET_DRAWING` + `method=0`. Fastest
      * encode at the cost of larger files (~10-20% larger than
      * DRAWING). Use for short-lived previews and hot paths where
      * encode time dominates.
@@ -155,20 +155,19 @@ abstract class Chart
 
     /**
      * Rasterize a caller-supplied SVG document to PNG bytes via the
-     * same plutosvg + plutovg + libpng pipeline that powers
-     * `renderPng()`. Useful for converting stitched
-     * `drawSvgFragment()` output back to raster, or for any
-     * SVG-bytes → PNG conversion that fastchart can serve in-process
-     * (no fork / ImageMagick dependency).
+     * same plutosvg + plutovg + libpng pipeline as `renderPng()`.
+     * Use it to convert stitched `drawSvgFragment()` output back to
+     * raster, or for any in-process SVG-to-PNG conversion (no fork or
+     * ImageMagick dependency).
      *
      * Output dimensions are read from the root `<svg>` element's
      * `width` / `height` / `viewBox`. Percentage dimensions are
-     * rejected — fastchart doesn't carry an outer viewport.
+     * rejected because fastchart doesn't carry an outer viewport.
      *
      * **SVG `<text>` elements are not rendered.** plutovg has no
      * text engine; fastchart's own SVG output flattens text to
      * `<path>` data via `SVG_TEXT_PATHS` mode before rasterizing.
-     * Caller-supplied SVG must do the same — `<text>` elements
+     * Caller-supplied SVG must do the same: `<text>` elements
      * survive parsing but produce no glyph geometry in the output.
      * Use Inkscape's "Object to Path", Illustrator's "Create
      * Outlines", or `text-to-path` in your SVG toolchain before
@@ -181,7 +180,7 @@ abstract class Chart
      *   dimension caps below. Decode embedded images separately
      *   if your workflow needs them.
      * - SVG containing `<use>` elements (any case). plutosvg's
-     *   reference-expansion path is a billion-laughs vector — a
+     *   reference-expansion path is a billion-laughs vector: a
      *   sub-2-KB SVG can trigger 10^8+ shape renders via nested
      *   `<use>` fan-out. Inline the referenced content with
      *   `<g transform="...">` to compose multiple chart fragments
@@ -200,7 +199,7 @@ abstract class Chart
      * Rasterize SVG to JPEG bytes. Same constraints as
      * `svgToPng()`, plus a flat background color (`$bgRgb`,
      * 24-bit RGB, default white `0xFFFFFF`) is composited under
-     * the rasterized output before JPEG encoding — JPEG has no
+     * the rasterized output before JPEG encoding. JPEG has no
      * alpha channel, so transparent SVG regions would otherwise
      * render as black.
      *
@@ -216,7 +215,7 @@ abstract class Chart
      * `svgToPng()`. `$quality` is 1..100; ignored when
      * `$mode === Chart::WEBP_LOSSLESS`. `$mode` is one of
      * `WEBP_DRAWING` (default), `WEBP_PHOTO`, `WEBP_LOSSLESS`,
-     * `WEBP_FAST` — see the `WEBP_*` constants for the per-mode
+     * `WEBP_FAST`; see the `WEBP_*` constants for the per-mode
      * encoder configuration.
      */
     public static function svgToWebp(string $svg, int $quality = 90,
@@ -335,8 +334,8 @@ abstract class Chart
      * `$path` is opened at draw time through PHP's stream layer
      * (which enforces `open_basedir` natively); missing or invalid
      * images are silently skipped so a typo doesn't abort the whole
-     * render. Supported formats: PNG and JPEG only — plutosvg's
-     * data-URI loader handles those two; WebP / GIF / AVIF sources
+     * render. Supported formats: PNG and JPEG only, because plutosvg's
+     * data-URI loader handles only those two; WebP / GIF / AVIF sources
      * are skipped. `$maxWidth` / `$maxHeight` cap the display size
      * while preserving the source aspect ratio (-1 = use the source
      * dimension as-is). Source files larger than 8 MiB OR with
@@ -417,8 +416,8 @@ abstract class Chart
      *
      * `$format` is an sprintf conversion applied to each value.
      * `null` (or omitting the argument) leaves the current format
-     * unchanged — toggling visibility without disturbing a format set
-     * earlier. `''` resets to the built-in default ("%g"). A non-empty
+     * unchanged, so you can toggle visibility without disturbing a
+     * format set earlier. `''` resets to the built-in default ("%g"). A non-empty
      * string sets the format (validated for exactly one numeric
      * conversion).
      */
@@ -435,7 +434,7 @@ abstract class Chart
      * Composite a background image onto the canvas before drawing
      * any chart elements. Path is resolved through PHP's filesystem
      * policy (`open_basedir`). Supported source formats: PNG and
-     * JPEG only — plutosvg's data-URI loader handles those two and
+     * JPEG only; plutosvg's data-URI loader handles only those two and
      * the SVG embed silently skips other formats. The image is
      * scaled to fill the entire canvas.
      *
@@ -478,8 +477,7 @@ abstract class Chart
      * Add a series that draws on top of the primary chart's data,
      * using the same X axis and (by default) the same Y axis.
      * Lets a `BarChart` carry a trend line, an `AreaChart` carry
-     * a target band, etc. -- the v0.x equivalent of GDChart's
-     * `COMBO_*` chart types.
+     * a target band, and so on, like GDChart's `COMBO_*` chart types.
      *
      * `$type` is `'line'` or `'area'`. `$values` is a list of
      * numeric values parallel to the primary's categories (or
@@ -516,7 +514,7 @@ abstract class Chart
     /**
      * sprintf format string for X-axis tick labels when the X axis
      * is numeric (Stock charts, scatter). Empty string reverts to
-     * auto-formatting. No effect on category-axis charts -- use
+     * auto-formatting. No effect on category-axis charts; use
      * setCategoryLabels() instead.
      */
     public function setXAxisLabelFormat(string $format): static {}
@@ -537,8 +535,8 @@ abstract class Chart
     public function setBarWidth(int $percent): static {}
 
     /**
-     * Edge (outline) color for filled shapes -- bars, area fills,
-     * pie slices. 24-bit RGB or -1 for no outline (default).
+     * Edge (outline) color for filled shapes (bars, area fills,
+     * pie slices). 24-bit RGB or -1 for no outline (default).
      */
     public function setEdgeColor(int $rgb): static {}
 
@@ -564,7 +562,7 @@ abstract class Chart
 
     /**
      * Thumbnail mode auto-shrinks fonts and elides labels for tiny
-     * preview renders. Useful for sparkline-style or grid-of-charts
+     * preview renders, such as sparkline-style or grid-of-charts
      * layouts. Default false.
      */
     public function setThumbnailMode(bool $enabled): static {}
@@ -665,7 +663,7 @@ abstract class Chart
     /**
      * Select the SVG text emission mode used by `renderSvg()`,
      * `drawSvgFragment()`, and `renderToFile('*.svg')`. One of
-     * `self::SVG_TEXT_PATHS` (default — self-contained) or
+     * `self::SVG_TEXT_PATHS` (default, self-contained) or
      * `self::SVG_TEXT_NATIVE` (compact, requires consumer text
      * support). Raster outputs are unaffected (they always use
      * PATHS internally).
@@ -685,7 +683,7 @@ abstract class Chart
      * `renderToFile('*.png')`. Range 0 (store) to 9 (max); the
      * default is libpng's own default (6). Chart-shaped content
      * compresses ~30-40% faster at level 3 for a 13-22% larger
-     * file — a worthwhile trade when PNGs are served once and
+     * file, a good trade when PNGs are served once and
      * discarded.
      */
     public function setPngCompressionLevel(int $level): static {}
@@ -749,7 +747,7 @@ abstract class Chart
      * The output viewport matches the logical `setSize()` dimensions.
      * SVG is DPI-invariant: `setDpi()` still scales the raster canvas
      * for `renderPng()` / `renderJpeg()` / etc., but does not multiply
-     * the SVG viewport — vector strokes scale infinitely, so layout
+     * the SVG viewport. Vector strokes scale infinitely, so layout
      * and text measurement stay at the 96-DPI baseline regardless of
      * the configured DPI.
      *
@@ -758,8 +756,8 @@ abstract class Chart
      * outline decomposition. The output is self-contained and
      * renders identically in any rasterizer including plutovg.
      * Call `setSvgTextMode(SVG_TEXT_NATIVE)` to switch to raw
-     * `<text>` elements with the font family resolved via FreeType
-     * — smaller files, but consumers need text rendering support.
+     * `<text>` elements with the font family resolved via FreeType:
+     * smaller files, but consumers need text rendering support.
      */
     public function renderSvg(): string {}
 
@@ -768,7 +766,7 @@ abstract class Chart
      * single page sized to the logical `setSize()` dimensions).
      *
      * Chart bodies emit PDF path operators directly through the same
-     * primitive layer as `renderSvg()` — no rasterization — so the
+     * primitive layer as `renderSvg()`, with no rasterization, so the
      * output stays crisp at any zoom and print resolution. Text is
      * flattened to glyph outlines (no font embedding in this release).
      *
@@ -788,21 +786,21 @@ abstract class Chart
      *
      * Gradient and clip-path ids inside a fragment are `fcg1`, `fcc1`,
      * … per chart; stitching two fragments that both use gradients or
-     * clips into ONE host document therefore collides — chart 2's
+     * clips into ONE host document therefore collides: chart 2's
      * `url(#fcg1)` resolves to chart 1's gradient. When stitching N
      * fragments into one document each MUST use a distinct `$idPrefix`
      * (1-16 chars of `[A-Za-z0-9_-]`, starting with a letter or
      * underscore) to namespace the ids (`a_fcg1`); reusing the default
      * (null) prefix across stitched fragments is unsupported.
      *
-     * Available on every concrete `Chart` subclass — same coverage as
+     * Available on every concrete `Chart` subclass, same as
      * `renderSvg()`.
      */
     public function drawSvgFragment(?string $idPrefix = null): string {}
 
     /**
      * Attach per-data-point href / tooltip metadata. The array is
-     * index-aligned with setSeries() / setSlices() / setPoints() —
+     * index-aligned with setSeries() / setSlices() / setPoints():
      * entry $i becomes the hot-spot for data point $i. Each entry
      * is `['href' => string, 'tooltip' => string?]`. ScatterChart
      * already takes per-point href/tooltip on setPoints() directly;
@@ -891,7 +889,7 @@ final class AreaChart extends Chart
 
     /**
      * Fill alpha for non-stacked overlapping areas (0..127, where
-     * 127 is fully transparent and 0 is fully opaque — the same
+     * 127 is fully transparent and 0 is fully opaque, the same
      * convention `imagecolorallocatealpha()` uses). Default 64.
      * Stacked areas are always opaque.
      */
@@ -950,7 +948,7 @@ final class BarChart extends Chart
      * Bar orientation. BAR_VERTICAL (default) draws traditional
      * vertical bars with categories along the X axis. BAR_HORIZONTAL
      * draws bars running left-to-right with categories along the Y
-     * axis -- useful when category labels are long. All other bar
+     * axis, for long category labels. All other bar
      * features (stacking, floating, per-point colors, value labels)
      * carry over with X/Y semantics swapped. BAR_RADIAL draws a
      * circular ("race track") bar chart: each category is a concentric
@@ -1113,7 +1111,7 @@ final class StockChart extends Chart
 
     /**
      * Per-bar volume color override. `$colors` is an array of
-     * 24-bit RGB ints parallel to the OHLCV rows -- one entry per
+     * 24-bit RGB ints parallel to the OHLCV rows, one entry per
      * candle. When set, replaces the candle-direction up/down
      * volume coloring. Pass `[]` to revert to the default coloring.
      */
@@ -1553,16 +1551,16 @@ final class Treemap extends Chart
  */
 final class Funnel extends Chart
 {
-    /** setStyle(): default funnel layout — each stage is a trapezoid
+    /** setStyle(): default funnel layout. Each stage is a trapezoid
      *  whose top width is its own value and bottom width is the next
      *  stage's value, both scaled to the largest stage. */
     public const int STYLE_FUNNEL  = 0;
-    /** setStyle(): pyramid layout — a single triangle subdivided into
+    /** setStyle(): pyramid layout: a single triangle subdivided into
      *  horizontal bands. Each band's height is proportional to its
      *  stage value; bandwidths follow the triangle's natural taper
      *  (apex at the top, widest band at the base). */
     public const int STYLE_PYRAMID = 1;
-    /** setStyle(): cone layout — pyramid bands with front-facing
+    /** setStyle(): cone layout: pyramid bands with front-facing
      *  ellipse arcs at each band's top and bottom edges, suggesting
      *  a 3D cone seen from the side. Layout is identical to
      *  STYLE_PYRAMID; only the silhouette changes. */
@@ -1581,7 +1579,7 @@ final class Funnel extends Chart
      * scales the width), `STYLE_PYRAMID` (single triangle with
      * value-proportional band heights), and `STYLE_CONE` (pyramid
      * layout with ellipse-arc band edges that suggest a 3D cone).
-     * All three render the same stages — only the silhouette
+     * All three render the same stages; only the silhouette
      * changes.
      */
     public function setStyle(int $style): static {}
@@ -1729,8 +1727,8 @@ final class ParetoChart extends Chart
     /**
      * Bars in display order. Each entry:
      * `['label' => string, 'value' => number, 'color' => int?]`.
-     * Negative values are dropped. The renderer does NOT re-sort —
-     * caller controls the order so labels stay meaningful.
+     * Negative values are dropped. The renderer does NOT re-sort;
+     * the caller controls the order.
      */
     public function setBars(array $bars): static {}
 
@@ -2144,7 +2142,7 @@ final class Pictogram extends Chart
  * Venn diagram for 2 or 3 sets. Circle areas are proportional to set
  * size and pairwise centre distances are solved so each overlap lens
  * area matches the requested intersection; circles blend through
- * translucent fills. Capped at 3 sets — exact area-proportional layout
+ * translucent fills. Capped at 3 sets because exact area-proportional layout
  * has no general solution beyond that.
   * @strict-properties
  */
@@ -2285,7 +2283,7 @@ final class VectorChart extends Chart
 
 /**
  * Symbol family: 1D barcodes and 2D matrix codes (QR). Render-only
- * surface — Symbol classes do not accept a caller-supplied canvas.
+ * surface: Symbol classes do not accept a caller-supplied canvas.
  * Use the render*() / renderToFile() helpers to materialise the symbol.
  *
  * Symbol does not extend `Chart`; the two hierarchies share no state
@@ -2308,9 +2306,9 @@ abstract class Symbol
     /**
      * Logical canvas size in pixels. Both arguments must be positive
      * and ≤ 65535. Setting size 0 is rejected; if you want the
-     * class default, simply do not call `setSize()`. Physical
+     * class default, do not call `setSize()`. Physical
      * dimensions scale with `setDpi()` and are capped at 16384px /
-     * 64M pixels — see Chart::setDpi() docs for the cap policy.
+     * 64M pixels; see Chart::setDpi() docs for the cap policy.
      */
     public function setSize(int $width, int $height): static {}
 
@@ -2367,7 +2365,7 @@ abstract class Symbol
      * WebP encoder mode. QrCode defaults to WEBP_LOSSLESS; Code128
      * defaults to WEBP_DRAWING. Pass WEBP_DRAWING, WEBP_PHOTO,
      * WEBP_LOSSLESS, WEBP_FAST to override. LOSSLESS is the natural
-     * pick for QR codes — bit-exact recovery matters for machine-
+     * pick for QR codes: bit-exact recovery matters for machine-
      * readable codes, and the encoder compresses the flat black/
      * white pattern efficiently. See Chart::setWebpMode().
      */
@@ -2453,7 +2451,7 @@ final class Code128 extends Barcode
  * **Input encoding:** `setData()` payloads must be valid UTF-8 (or
  * the ASCII subset thereof). The underlying encoder treats the
  * string as UTF-8 text and selects the most compact QR mode that
- * fits — numeric, alphanumeric, or byte. Invalid UTF-8 byte
+ * fits: numeric, alphanumeric, or byte. Invalid UTF-8 byte
  * sequences are not rejected by `setData()` (which forbids embedded
  * NULs and payloads above 7089 bytes) but produce QR symbols that
  * decode back to garbage or unspecified bytes. If you need to encode

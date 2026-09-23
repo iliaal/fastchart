@@ -11,7 +11,7 @@ if (fc_pick_font() === '') die('skip no system font available');
 --FILE--
 <?php
 /* Test 131 covers 31 chart families; these seven shipped later (or
- * were skipped) and had SVG-only coverage — a raster-path break in
+ * were skipped) and had SVG-only coverage: a raster-path break in
  * any of them (rasterize, un-premultiply, encoder) went unseen. */
 
 require __DIR__ . '/_font_candidates.inc';

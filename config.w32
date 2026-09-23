@@ -1,5 +1,5 @@
 // vim:ft=javascript
-// Windows build manifest for fastchart. Mirrors config.m4 — every
+// Windows build manifest for fastchart. Mirrors config.m4: every
 // source listed there must appear here, every optional codec
 // (libpng / libjpeg-turbo / libwebp) is gated by the same
 // HAVE_LIBxxx define, and the plutovg / plutosvg / qrcodegen vendor
@@ -17,8 +17,8 @@
 
 ARG_ENABLE("fastchart", "Enable fastchart support", "no");
 ARG_ENABLE("fastchart-dev", "Upgrade wrapper warnings to /WX (development builds)", "no");
-// PDF output via system pdfio (msweet.org). Opt-in, off by default —
-// mirrors config.m4's --with-pdfio. When enabled, fastchart_pdf.c joins
+// PDF output via system pdfio (msweet.org). Opt-in, off by default,
+// mirroring config.m4's --with-pdfio. When enabled, fastchart_pdf.c joins
 // the build and HAVE_FASTCHART_PDF gates renderPdf() / renderToFile('*.pdf').
 ARG_WITH("pdfio", "fastchart: enable PDF output via pdfio (msweet.org)", "no");
 
@@ -36,16 +36,16 @@ if (PHP_FASTCHART != "no") {
             PHP_FASTCHART + ";" + PHP_PHP_BUILD + "\\include\\freetype2;" +
             PHP_PHP_BUILD + "\\include\\freetype")) {
         // freetype found; the checks above added the lib + include path.
-        // No define needed — the sources reference FreeType unconditionally.
+        // No define needed; the sources reference FreeType unconditionally.
     } else {
-        WARNING("fastchart not enabled — freetype is required.");
+        WARNING("fastchart not enabled: freetype is required.");
         PHP_FASTCHART = "no";
     }
 
     if (PHP_FASTCHART != "no") {
 
         // Optional codec libs. Each missing lib drops its
-        // corresponding renderXxx() — the encoder compiles to a
+        // corresponding renderXxx(): the encoder compiles to a
         // stub that returns -2 and the PHP method throws a clear
         // "format not compiled in" error at call time. Mirrors the
         // config.m4 per-lib loop.
@@ -56,7 +56,7 @@ if (PHP_FASTCHART != "no") {
             ADD_FLAG("CFLAGS_FASTCHART", "/DHAVE_LIBPNG=1");
             STDOUT.WriteLine("fastchart: libpng found");
         } else {
-            STDOUT.WriteLine("fastchart: libpng not found — PNG output disabled");
+            STDOUT.WriteLine("fastchart: libpng not found; PNG output disabled");
         }
 
         if (CHECK_LIB("libjpeg_a.lib;libjpeg.lib", "fastchart", PHP_FASTCHART) &&
@@ -66,7 +66,7 @@ if (PHP_FASTCHART != "no") {
             ADD_FLAG("CFLAGS_FASTCHART", "/DHAVE_LIBJPEG=1");
             STDOUT.WriteLine("fastchart: libjpeg-turbo found");
         } else {
-            STDOUT.WriteLine("fastchart: libjpeg-turbo not found — JPEG output disabled");
+            STDOUT.WriteLine("fastchart: libjpeg-turbo not found; JPEG output disabled");
         }
 
         if (CHECK_LIB("libwebp_a.lib;libwebp.lib", "fastchart", PHP_FASTCHART) &&
@@ -76,7 +76,7 @@ if (PHP_FASTCHART != "no") {
             ADD_FLAG("CFLAGS_FASTCHART", "/DHAVE_LIBWEBP=1");
             STDOUT.WriteLine("fastchart: libwebp found");
         } else {
-            STDOUT.WriteLine("fastchart: libwebp not found — WebP output disabled");
+            STDOUT.WriteLine("fastchart: libwebp not found; WebP output disabled");
         }
 
         // Optional PDF output via system pdfio. Unlike the codecs above

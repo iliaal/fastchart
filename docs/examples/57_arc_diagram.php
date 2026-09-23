@@ -1,7 +1,7 @@
 <?php
 /* ArcDiagram: relationships in a 1-D ordering drawn as semicircular
  * arcs over a shared node baseline. Here, module dependencies in a
- * small codebase — arc thickness tracks how many symbols cross the
+ * small codebase; arc thickness tracks how many symbols cross the
  * edge. SPLIT orientation routes forward edges above the baseline and
  * back-edges below, so cycles stand out. */
 

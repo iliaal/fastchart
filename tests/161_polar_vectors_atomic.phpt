@@ -1,5 +1,5 @@
 --TEST--
-PolarChart::addVectors(): atomic commit — partial entries don't persist on throw
+PolarChart::addVectors(): atomic commit, partial entries don't persist on throw
 --EXTENSIONS--
 fastchart
 --FILE--

@@ -7,7 +7,7 @@ fastchart
 
 /* Regression: fc_ft_measure() at fastchart_text.c:54-61 recognised
  * only 1-, 2-, and 3-byte UTF-8 leads. A 4-byte lead (0xF0-0xF7,
- * covering U+10000+ — emoji, CJK extensions, math symbols) fell into
+ * covering U+10000+: emoji, CJK extensions, math symbols) fell into
  * the else { p++; continue; } and each of the three continuation
  * bytes was then skipped (no branch matched). Result: every non-BMP
  * codepoint contributed 0 to the measured width.

@@ -180,7 +180,7 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
 
     fastchart_rect plot;
     fastchart_palette pal;
-    /* No axes for pie charts -- pass 0/0 so layout reserves space
+    /* No axes for pie charts: pass 0/0 so layout reserves space
      * only for the title. */
     fastchart_render_cartesian_setup((fastchart_obj *)self, t, 0, 0, NULL, 0,
                                      &plot, &pal);
@@ -259,7 +259,7 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
         if (explode && orig_idx[i] >= 0 && orig_idx[i] < explode_count) {
             zend_long off = explode[orig_idx[i]];
             if (off > 0) {
-                /* Cap to the slice diameter — beyond that the slice
+                /* Cap to the slice diameter; beyond that the slice
                  * center is off-canvas anyway, and an unclamped large
                  * `off` overflows the int cast on `off * cos()` (UB
                  * per C11 6.3.1.4p1). setExplode accepts any positive
@@ -308,7 +308,7 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
             }
         }
         /* fc_image_map_push rejects idx < 0, so the Other bucket (-1)
-         * simply gets no hot-spot. */
+         * gets no hot-spot. */
         fastchart_push_image_map_poly((fastchart_obj *)self, orig_idx[i],
                                        poly_xy, poly_n);
 
@@ -334,9 +334,8 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
     }
 
     /* Donut overdraw: paint a plot-bg-colored disk over the center.
-     * With explode, the donut hole stays centered (which is the
-     * standard appearance — exploding slices leave the center
-     * looking ring-broken on purpose). */
+     * With explode, the donut hole stays centered, the standard
+     * appearance. */
     if (donut > 0) {
         int hole = (int)((double)diameter * donut);
         if (hole < 4) hole = 4;
@@ -407,7 +406,7 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
                                     anchor_x, ly + (int)(size * 0.35),
                                     align, buf, NULL, 0);
             } else {
-                /* INSIDE -- skip labels for very small slices to
+                /* INSIDE: skip labels for very small slices to
                  * avoid overlap. The 8-degree threshold roughly
                  * matches the GDChart default. */
                 if (sweep >= 8.0) {

@@ -12,7 +12,7 @@ simplexml
  * input makes a conforming XML parser reject the document.
  *
  * v1.0's first sanitizer pass only replaced single-byte C0 controls
- * and let bytes >= 0x80 through verbatim — which let ill-formed
+ * and let bytes >= 0x80 through verbatim, which let ill-formed
  * UTF-8 (lone 0xC3, surrogate-pair-encoded U+D800, overlong forms,
  * trailing continuation bytes) escape into <text> content and break
  * downstream XML parsers. The hardened sanitizer validates UTF-8

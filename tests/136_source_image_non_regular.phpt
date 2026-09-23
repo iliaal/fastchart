@@ -19,7 +19,7 @@ if (!is_readable('/proc/self/cmdline')) {
  * depth check rejects non-regular files up-front so the rest of
  * the pipeline only sees disk file bytes. */
 
-/* Directory — open succeeds on Linux, would emit zero bytes on read. */
+/* Directory: open succeeds on Linux, would emit zero bytes on read. */
 $svg_dir = (new FastChart\LineChart(120, 80))
     ->setBackgroundImage(sys_get_temp_dir())
     ->setSeries([1, 2, 3])
@@ -27,7 +27,7 @@ $svg_dir = (new FastChart\LineChart(120, 80))
 echo "directory_has_image: ",
     (strpos($svg_dir, '<image ') !== false ? "yes" : "no"), "\n";
 
-/* /proc entry — open succeeds; content is a NUL-separated argv blob,
+/* /proc entry: open succeeds; content is a NUL-separated argv blob,
  * not a PNG/JPEG; MIME sniff would catch it but S_ISREG catches it
  * earlier. */
 $svg_proc = (new FastChart\LineChart(120, 80))
@@ -37,7 +37,7 @@ $svg_proc = (new FastChart\LineChart(120, 80))
 echo "proc_has_image: ",
     (strpos($svg_proc, '<image ') !== false ? "yes" : "no"), "\n";
 
-/* Regular file still works — sanity check the check isn't fail-closed. */
+/* Regular file still works: sanity check the check isn't fail-closed. */
 $tmp = tempnam(sys_get_temp_dir(), 'fc_isreg_');
 $im = imagecreatetruecolor(8, 8);
 imagepng($im, $tmp);

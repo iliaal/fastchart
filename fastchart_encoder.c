@@ -14,12 +14,11 @@
 
   libpng:        the high-level API (png_set_compression_level default
                  6, RGBA streamed row by row).
-  libjpeg-turbo: optimize_coding TRUE, 4:2:0 subsampling, non-progressive.
-                 Matches the q88 reference established in the plutovg
-                 quality-eval; RGB ingest, alpha is flattened over white
-                 since JPEG has no alpha channel.
-  libwebp:       WebPEncodeRGBA simple API for lossy at quality q;
-                 alpha preserved.
+  libjpeg-turbo: optimize_coding TRUE, 4:2:0 subsampling, non-progressive,
+                 RGB ingest; alpha is flattened over white since JPEG
+                 has no alpha channel.
+  libwebp:       advanced WebPConfig / WebPEncode API with a per-mode
+                 preset; alpha preserved.
 */
 
 #ifdef HAVE_CONFIG_H
@@ -52,8 +51,8 @@
 #define FC_TIMED_OUT() EG(timed_out)
 #endif
 /* Same SIMD gates as fastchart_rasterize.c: x86 uses SSSE3 runtime
- * dispatch via raw CPUID (see the rationale there — __builtin_cpu_supports
- * drags in libgcc's __cpu_model and breaks static/musl/zig dlopen);
+ * dispatch via raw CPUID (__builtin_cpu_supports drags in libgcc's
+ * __cpu_model and breaks static/musl/zig dlopen);
  * AArch64 uses baseline NEON. */
 #if (defined(__x86_64__) || defined(_M_X64)) && defined(__GNUC__)
 #  define FC_ENC_HAVE_X86_SIMD 1
@@ -378,14 +377,11 @@ static void fc_jpeg_error_exit(j_common_ptr cinfo)
 }
 
 /* Custom destination manager writing straight into the caller's sink.
- * jpeg_mem_dest is avoided on
- * purpose: it publishes the final buffer address only at
- * term_destination, so once its internal buffer grows past the initial
- * allocation the caller-side pointer dangles at a block
- * empty_mem_output_buffer already freed — an error_exit longjmp
- * mid-encode would then double-free it and leak the live grown buffer.
- * Streaming into the sink leaves no malloc'd intermediate to
- * clean up on either path. */
+ * jpeg_mem_dest publishes the final buffer address only at
+ * term_destination, so once its buffer grows the caller-side pointer
+ * dangles at a block empty_mem_output_buffer already freed, and an
+ * error_exit longjmp mid-encode would double-free it. Streaming into
+ * the sink leaves no malloc'd intermediate. */
 #define FC_JPEG_STAGE_SZ 8192
 
 struct fc_jpeg_dest {
@@ -439,13 +435,9 @@ int fastchart_encode_jpeg_sink(fastchart_sink_t *sink,
 	struct fc_jpeg_dest dest;
 	dest.sink = sink;
 
-	/* `volatile` keeps the pointer's live value in memory across the
-	 * setjmp boundary. Per C99 §7.13.2.1, automatic-storage locals
-	 * modified after setjmp() and read in the longjmp() recovery branch
-	 * have indeterminate values unless declared volatile. Without it,
-	 * the optimizer may keep rgb_row in a register that libjpeg's
-	 * longjmp() clobbers — the cleanup branch would then read a stale
-	 * NULL or garbage and either leak the allocation or double-free. */
+	/* Per C99 7.13.2.1, locals modified after setjmp() and read in the
+	 * longjmp() branch are indeterminate unless volatile; without it the
+	 * cleanup branch could leak or double-free rgb_row. */
 	uint8_t * volatile rgb_row = NULL;
 	/* Gate the destroy on a completed create: if jpeg_create_compress
 	 * itself longjmps (struct/version mismatch), cinfo.mem is still
@@ -461,9 +453,8 @@ int fastchart_encode_jpeg_sink(fastchart_sink_t *sink,
 	if (setjmp(err.jmp)) {
 		if (created) jpeg_destroy_compress(&cinfo);
 		if (rgb_row)  efree(rgb_row);
-		/* Partial bytes already streamed into the sink are the caller's
-		 * to discard — same
-		 * convention as the PNG encoder. */
+		/* The caller discards partial bytes already streamed into the
+		 * sink, as with the PNG encoder. */
 		rc = -1;
 		goto done;
 	}
@@ -488,9 +479,8 @@ int fastchart_encode_jpeg_sink(fastchart_sink_t *sink,
 		cinfo.X_density = (UINT16)pix->dpi;
 		cinfo.Y_density = (UINT16)pix->dpi;
 	}
-	/* 4:2:0 chroma subsampling — matches the eval reference. Setting
-	 * it explicitly because jpeg_set_quality flips to 4:4:4 above
-	 * q=90 in some libjpeg-turbo versions. */
+	/* 4:2:0 chroma subsampling, set explicitly because jpeg_set_quality
+	 * flips to 4:4:4 above q=90 in some libjpeg-turbo versions. */
 	cinfo.comp_info[0].h_samp_factor = 2;
 	cinfo.comp_info[0].v_samp_factor = 2;
 	cinfo.comp_info[1].h_samp_factor = 1;
@@ -693,19 +683,16 @@ int fastchart_encode_webp_sink(fastchart_sink_t *sink,
 	picture->height = pix->h;
 	/* Lossless must import straight into the ARGB plane: with
 	 * use_argb == 0 libwebp converts RGBA to YUV420 at import time
-	 * (4:2:0 chroma decimation — lossy per webp/encode.h), and VP8L
+	 * (4:2:0 chroma decimation, lossy per webp/encode.h), and VP8L
 	 * would encode the degraded pixels. Lossy modes keep the YUV
 	 * import; it is their native fast path and the opaque-detect
 	 * note below depends on it. */
 	picture->use_argb = (mode == FASTCHART_WEBP_LOSSLESS);
 
-	/* Always import RGBA — no manual RGB pack. When the input is
-	 * opaque (pix->has_alpha == 0, set by fastchart_rasterize_doc's
-	 * opaque-detect), libwebp's internal WebPPictureHasTransparency
-	 * sees all-FF alphas and skips the alpha plane during YUV
-	 * conversion. Saves a w*h*3 emalloc and a per-pixel scalar
-	 * copy that previously dominated the encoder's CPU on opaque
-	 * charts. */
+	/* Always import RGBA; no manual RGB pack. On opaque input
+	 * (pix->has_alpha == 0, set by fastchart_rasterize_doc's
+	 * opaque-detect), libwebp's WebPPictureHasTransparency sees all-FF
+	 * alphas and skips the alpha plane during YUV conversion. */
 	if (!WebPPictureImportRGBA(picture, pix->rgba, pix->w * 4)) {
 		WebPPictureFree(picture);
 		efree(picture);

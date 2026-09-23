@@ -11,7 +11,7 @@ fastchart
  * text mode the emitted size is 40 * 4/3 = 53.3 (derived from the pt
  * value; the file is never opened, so any existing regular file
  * satisfies the setter's existence gate). The Y axis is hidden so only
- * the X tick labels remain — otherwise the Y labels (which already honor
+ * the X tick labels remain: otherwise the Y labels (which already honor
  * the axis size) would mask the X-axis bug. */
 
 $svg = (new FastChart\ScatterChart(400, 300))

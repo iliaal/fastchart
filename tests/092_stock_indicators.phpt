@@ -22,7 +22,7 @@ for ($i = 0; $i < 60; $i++) {
 }
 
 /* Each indicator should produce a render that differs from a
- * baseline render with no indicators — proves the pane lands and
+ * baseline render with no indicators: proves the pane lands and
  * draws. Only one indicator at a time so we don't blow the
  * 6-pane cap when stacking. */
 function render_with(array $rows, ?string $kind, $arg = null): string {

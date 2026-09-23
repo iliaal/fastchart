@@ -45,7 +45,7 @@ echo "9000-byte series label dropped: ",
     (strlen($svg) > 0 && !str_contains($svg, $big)) ? "ok" : "FAIL", "\n";
 
 // Treemap / Funnel / Waterfall parse labels manually (not through the
-// shared label helper) — each must apply the same cap. A dropped label
+// shared label helper): each must apply the same cap. A dropped label
 // renders byte-identically to the same chart with no label at all.
 $huge = str_repeat('A', 100000);
 

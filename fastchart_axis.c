@@ -102,7 +102,7 @@ int fastchart_zval_to_double(zval *zv, double *out)
 }
 
 /* zend_long is int64_t on 64-bit and int32_t on 32-bit (regardless of
- * how the platform sizes `long` — Windows LLP64 has 32-bit `long` with
+ * how the platform sizes `long`; Windows LLP64 has 32-bit `long` with
  * 64-bit zend_long). Take and return zend_long so timestamps past
  * 2038 round-trip correctly on every PHP-supported platform. */
 int fastchart_zval_to_long(zval *zv, zend_long *out)
@@ -416,7 +416,7 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
     double size = chart->font_size > 0 ? chart->font_size : FASTCHART_DEFAULT_FONT_SIZE;
     /* Per-role sizes: the draw paths honor set{Title,Axis}Font size
      * overrides via fastchart_resolve_font_size, so layout must reserve
-     * with the same sizes — measuring with the base size leaves an
+     * with the same sizes. Measuring with the base size leaves an
      * oversized title clipping off-canvas and oversized axis labels
      * overrunning the reserved margins into the plot. */
     double title_size      = fastchart_resolve_font_size(chart, FC_FONT_TITLE, size * 1.4);
@@ -441,17 +441,10 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
         }
     }
 
-    /* Y-axis: reserve enough room for the widest tick label.
-     *
-     * For numeric Y axes the actual label width is data-dependent;
-     * we pick a conservative "999999" sample so layout is stable
-     * across data ranges.
-     *
-     * For categorical Y axes (horizontal-bar) the labels can be
-     * arbitrarily long ("/api/v2/exports", etc.) — measure the
-     * widest one so it doesn't get clipped at the canvas edge.
-     * Falls back to the numeric probe if none of the labels can be
-     * measured. */
+    /* Y-axis: reserve room for the widest tick label. Numeric axes use
+     * a conservative "999999" sample so layout is stable across data
+     * ranges. Categorical axes (horizontal-bar) measure the widest
+     * label, falling back to the numeric probe if none can be measured. */
     if (labels_drawn && has_y_axis && probe_ok) {
         int y_label_w = probe_w;
         if (cat_y_labels && n_cat_y_labels > 0 && axis_font) {
@@ -515,7 +508,7 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
          * entirely there. When it does run, stride exactly like
          * fastchart_draw_x_axis_categorical (rotated -> max_visible 30,
          * times the user stride) so only labels that will actually be
-         * drawn are measured — a strided-out label can't clip. */
+         * drawn are measured; a strided-out label can't clip. */
         if (chart->x_axis_label_angle != 0
             && chart->category_labels && chart->n_category_labels > 0
             && axis_font) {
@@ -1107,7 +1100,7 @@ void fastchart_draw_v_plot_bands_time(fastchart_target_t *t, fastchart_obj *char
     for (int i = 0; i < chart->n_plot_bands; i++) {
         const fastchart_plot_band *b = &chart->plot_bands[i];
         if (!b->is_vertical) continue;
-        /* addVerticalBand screens b->low / b->high for NaN/Inf only —
+        /* addVerticalBand screens b->low / b->high for NaN/Inf only;
          * a finite-but-out-of-range double (e.g. 1e30) flowing into
          * (zend_long) is UB per C / Annex F. Clamp to the destination
          * range before the cast. */
@@ -1124,8 +1117,8 @@ void fastchart_draw_v_plot_bands_time(fastchart_target_t *t, fastchart_obj *char
 }
 
 /* Paint the canvas-wide background honoring the compositing flags:
- * has_plot_rect (skip — caller owns/composites the canvas), transparent_bg
- * (skip — leave alpha 0), bg_image_path (base fill + composite), else a
+ * has_plot_rect (skip: caller owns/composites the canvas), transparent_bg
+ * (skip: leave alpha 0), bg_image_path (base fill + composite), else a
  * plain fill. Shared by fastchart_draw_frame and the charts that draw their
  * own frame instead of going through it (surface, serpentine), so those
  * honor setTransparentBackground / setPlotRect / setBackgroundImage too. */
@@ -1136,13 +1129,13 @@ void fastchart_paint_canvas_bg(fastchart_target_t *t, fastchart_obj *chart,
     fastchart_target_get_dims(t, &W, &H);
 
     /* setPlotRect implies the caller is compositing multiple charts on
-     * one canvas — wiping the whole image to bg would erase neighbours.
+     * one canvas; wiping the whole image to bg would erase neighbours.
      * Skip the canvas-wide fill in that case; each chart's own region is
      * painted separately. The caller pre-fills the canvas they own. */
     if (chart->has_plot_rect) {
         /* no-op: caller manages canvas-wide background */
     } else if (chart->transparent_bg) {
-        /* SVG: no-op — implicit transparency. plutovg rasterizes
+        /* SVG: no-op, implicit transparency. plutovg rasterizes
          * unpainted regions as alpha=0; encoders honor it on PNG/WebP. */
     } else if (chart->bg_image_path) {
         /* Background image: paint a base bg first (so the corners
@@ -1457,9 +1450,8 @@ void fastchart_draw_x_axis_numeric(fastchart_target_t *t, fastchart_obj *chart,
     /* Measure once: ascender pixel height at the chart's DPI so the
      * label's TOP sits below plot.y1 + tick. Falls back to the
      * point-size heuristic when measurement fails (no font installed,
-     * etc.). The previous heuristic of `size * 1.2` undersized the
-     * offset at all DPIs — the rendered ascender at 11pt + 96 DPI is
-     * already ~12px tall, leaving ~1px clearance over the plot rect. */
+     * etc.). A plain `size * 1.2` undersizes the offset: the rendered
+     * ascender at 11pt + 96 DPI is already ~12px tall. */
     int probe_h = 0;
     if (fastchart_text_measure(t, font, size, "Mg9", NULL, &probe_h, NULL, 0) != 0) {
         probe_h = (int)(size * 1.2 * chart_dpi_scale(chart, t));
@@ -1527,8 +1519,7 @@ void fastchart_draw_y_axis_categorical(fastchart_target_t *t, fastchart_obj *cha
     bool draw_labels = (chart->tick_mode & FASTCHART_TICK_LABELS) != 0;
     if (chart->thumbnail_mode) draw_labels = false;
 
-    /* Cap labels to ~20 visible categories — Y has more vertical room
-     * than X for label stacking, but enough is enough. */
+    /* Cap labels to ~20 visible categories. */
     int max_visible = 20;
     int stride = 1;
     if (n_categories > max_visible + 2) {
@@ -1672,7 +1663,7 @@ void fastchart_draw_x_axis_categorical(fastchart_target_t *t, fastchart_obj *cha
 int fastchart_x_time_to_pixel(const fastchart_rect *plot,
                               zend_long ts, zend_long t_min, zend_long t_max)
 {
-    /* Promote to double before subtracting — setOhlcv accepts the
+    /* Promote to double before subtracting: setOhlcv accepts the
      * full zend_long range, so t_max - t_min as zend_long arithmetic
      * is signed overflow UB on adversarial timestamps (e.g. LLONG_MIN
      * .. LLONG_MAX). Double has 53 bits of mantissa, enough to lose a
@@ -1879,7 +1870,7 @@ void fastchart_draw_overlays_categorical(fastchart_target_t *t, fastchart_obj *c
             int r = (int)((rgba >> 16) & 0xFFu);
             int g = (int)((rgba >>  8) & 0xFFu);
             int b = (int)( rgba        & 0xFFu);
-            /* 80 in the legacy 0..127 alpha convention -> 95 in 0..255. */
+            /* 80 in the libgd 0..127 alpha convention -> 95 in 0..255. */
             int alpha_color = fastchart_target_color(t, r, g, b, 95);
 
             /* Sized for every valid point: a fixed cap would truncate the
@@ -1960,7 +1951,7 @@ void fastchart_draw_overlays_horizontal_bar(fastchart_target_t *t, fastchart_obj
             int b = (int)( rgba        & 0xFFu);
             int alpha_color = fastchart_target_color(t, r, g, b, 95);
 
-            /* Sized for every valid point — see the categorical helper
+            /* Sized for every valid point; see the categorical helper
              * above for why a fixed cap self-crosses. */
             fastchart_point_t *poly = safe_emalloc((size_t)n_categories,
                                          2 * sizeof(fastchart_point_t), 0);
@@ -2085,9 +2076,8 @@ void fastchart_draw_h_annotations(fastchart_target_t *t, fastchart_obj *chart,
     } ZEND_HASH_FOREACH_END();
 }
 
-/* Shared body for vertical annotations -- the only difference
- * across the three coord systems is how `position` becomes a pixel
- * x. We accept a callback. */
+/* Shared body for vertical annotations. The three coord systems differ
+ * only in how `position` becomes a pixel x, supplied as a callback. */
 typedef int (*v_pos_to_x)(const fastchart_rect *plot, double position, void *ctx);
 
 static int v_pos_categorical(const fastchart_rect *plot, double position, void *ctx)
@@ -2349,7 +2339,7 @@ void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
     /* Calendar-aware stride: emit ticks at unit boundaries (week
      * starts, month starts, etc.) instead of evenly-spaced dividers
      * across the range. Reverts to auto-density when every == 0.
-     * fc_gmtime fails when t_min's year overflows struct tm — candle
+     * fc_gmtime fails when t_min's year overflows struct tm; candle
      * timestamps arrive unclamped from setOhlcv, so reading tm_buf
      * after a failed break-down would be UB. Fall through to the
      * numeric auto-density path below in that case. */
@@ -2454,8 +2444,8 @@ void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
     /* Rotated labels are narrower so they can pack more densely. */
     const int N = (angle == 0) ? 5 : 8;
     for (int i = 0; i < N; i++) {
-        /* Cast each side to double before subtracting — see comment
-         * in fastchart_x_time_to_pixel. The intermediate is clamped
+        /* Cast each side to double before subtracting (see comment
+         * in fastchart_x_time_to_pixel). The intermediate is clamped
          * to zend_long range before the final cast so an extreme
          * span doesn't UB the double->zend_long conversion either. */
         double dt = (double)t_max - (double)t_min;

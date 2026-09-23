@@ -7,7 +7,7 @@ fastchart
 /* Coverage gap: ZigZag was only well-formed-SVG-checked. The pivot
  * line connects confirmed pivots (2px, the only such line here).
  * Series A rises, reverses down past the 10% threshold, then rises
- * past it again — four pivots: start(100), peak(110), trough(95),
+ * past it again, giving four pivots: start(100), peak(110), trough(95),
  * final(117); three segments. Series B has the same rise with a
  * sub-threshold dip (110 -> 109, ~0.9%) that must NOT create a pivot,
  * leaving only start and final (one segment). All prices positive. */

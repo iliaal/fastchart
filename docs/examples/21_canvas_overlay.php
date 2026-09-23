@@ -1,17 +1,14 @@
 <?php
-/* Overlay extra graphics on top of a chart via SVG composition.
- * v1.0 retired draw($canvas), so the canonical workflow is:
+/* Overlay extra graphics on a chart through SVG composition:
  *   1. build the chart, call drawSvgFragment() to get a <g>...</g>
  *      group
  *   2. assemble an outer <svg> document with the fragment + your own
  *      overlay elements (text, shapes, embedded images)
  *   3. write the assembled SVG to disk, or rasterize it through any
- *      SVG-aware tool (Inkscape, librsvg, the user's own browser).
+ *      SVG-aware tool (Inkscape, librsvg, a browser).
  *
- * This example builds a stock chart, then overlays a translucent
- * "DRAFT" watermark, a footer credit line, and a colored ring at a
- * specific data point. All overlays live in the same SVG document
- * as the chart, side-by-side with the chart group. */
+ * This example overlays a translucent "DRAFT" watermark, a footer
+ * credit line, and a highlight ring on a stock chart. */
 
 require __DIR__ . '/_bootstrap.php';
 
@@ -62,9 +59,8 @@ $svg .= '<text x="8" y="' . ($H - 8) . '"'
       . ' font-family="sans-serif" font-size="11" fill="#646464">'
       . 'Generated ' . date('Y-m-d') . ' (confidential)</text>';
 
-/* Highlight ring near the right edge — coordinates chosen relative
- * to the canvas, not the chart's data space, since drawSvgFragment
- * doesn't expose pixel positions of individual data points. */
+/* Canvas coordinates, not data coordinates: drawSvgFragment doesn't
+ * expose the pixel positions of data points. */
 $rx = $W - 60; $ry = 200;
 $svg .= '<circle cx="' . $rx . '" cy="' . $ry . '" r="12"'
       . ' fill="none" stroke="#FFDC00" stroke-width="2"/>';
@@ -74,10 +70,8 @@ $svg .= '<circle cx="' . $rx . '" cy="' . $ry . '" r="13"'
 $svg .= '</svg>';
 file_put_contents(__DIR__ . '/21_canvas_overlay.svg', $svg);
 
-/* For a PNG: render the chart directly, then assemble a composite
- * image via any external rasterizer. The fastchart-side step is the
- * .svg above; the .png path below is a chart-only render for the
- * cookbook image. */
+/* Chart-only PNG for the cookbook. For a composite PNG, rasterize
+ * the .svg above with an external tool. */
 (new FastChart\StockChart($W, $H))
     ->setFontPath($font)
     ->setDpi($dpi)

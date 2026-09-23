@@ -8,7 +8,7 @@ fastchart
  * gets its own palette colour, so the count of distinct 2px-line
  * stroke colours equals the number of accepted overlays. Invalid
  * entries (non-int, < 2) are silently dropped by the bulk setter
- * (unlike addMovingAverage(), which throws — exercised below). */
+ * (unlike addMovingAverage(), which throws; exercised below). */
 
 function overlay_colors(string $svg): array {
     preg_match_all('/stroke="(#[0-9A-F]{6})" stroke-width="2"/', $svg, $m);

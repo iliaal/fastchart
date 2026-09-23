@@ -23,7 +23,7 @@ $a = (new FastChart\PolarChart(200, 200))->setSeries([['data' => $pts_a]])->rend
 $b = (new FastChart\PolarChart(200, 200))->setSeries([['data' => $pts_b]])->renderPng();
 echo "polar_index_1023: ", ($a !== $b ? "rendered" : "dropped"), "\n";
 
-/* Radar: 128 axes. Same shape — perturb axis 127 only. */
+/* Radar: 128 axes. Same shape: perturb axis 127 only. */
 $series_a = [['data' => array_fill(0, 128, 1.0)]];
 $series_b = [['data' => array_fill(0, 128, 1.0)]];
 $series_b[0]['data'][127] = 5.0;

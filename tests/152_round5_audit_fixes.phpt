@@ -1,5 +1,5 @@
 --TEST--
-Round-5 audit fixes: clone deep-copies config; renderToFile honors setJpegQuality
+Clone deep-copies config; renderToFile honors setJpegQuality
 --EXTENSIONS--
 fastchart
 --FILE--
@@ -85,7 +85,7 @@ $clone_has = substr_count($svg_b, 'first') >= 1
 echo "nested_text_isolation: ",
     ($orig_has && $clone_has ? "ok" : "fail"), "\n";
 
-/* Same scenario for overlays — different config key, different inner
+/* Same scenario for overlays: different config key, different inner
  * list, exercises the deep-copy walk against another nested array. */
 $ov = (new FastChart\LineChart(400, 200))
     ->setSeries([['data' => [1, 2, 3]]]);

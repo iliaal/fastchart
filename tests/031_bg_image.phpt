@@ -6,7 +6,7 @@ gd
 --FILE--
 <?php
 
-// Build a synthetic "background image" -- a 100x100 PNG filled
+// Build a synthetic "background image": a 100x100 PNG filled
 // with a unique color we can fingerprint after compositing.
 $bg = imagecreatetruecolor(100, 100);
 $pink = imagecolorallocate($bg, 0xFF, 0x00, 0xCC);
@@ -21,7 +21,7 @@ $bytes = (new FastChart\LineChart(400, 300))
 unlink($bg_path);
 
 $im = imagecreatefromstring($bytes);
-// Sample a corner -- the bg image fills the whole canvas, so the
+// Sample a corner: the bg image fills the whole canvas, so the
 // corner should be the magenta-ish bg-image color (or close to it
 // after PNG roundtrip).
 $rgba = imagecolorat($im, 5, 5);
@@ -31,7 +31,7 @@ $b = ($rgba)       & 0xFF;
 $is_pinkish = $r > 200 && $g < 50 && $b > 150;
 echo "corner_is_bg: ", ($is_pinkish ? "yes" : sprintf("no (#%02x%02x%02x)", $r, $g, $b)), "\n";
 
-// Plot area still readable -- it's drawn on top of the bg image.
+// Plot area still readable: it's drawn on top of the bg image.
 ob_start(); imagepng($im); $rerendered = ob_get_clean();
 echo "renders_ok: ", strlen($rerendered) > 1024 ? "yes" : "no", "\n";
 

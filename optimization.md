@@ -1,6 +1,6 @@
-# fastchart Vendored-Library Performance Optimization
+# fastchart vendored-library performance optimization
 
-Deep analysis of the three vendored libraries (plutovg, plutosvg, qrcodegen) and
+Analysis of the three vendored libraries (plutovg, plutosvg, qrcodegen) and
 the fastchart code that drives them, scoped to fastchart's actual workload:
 small canvases (600×400 to 1600×1200), 1k–5k primitives per render, mostly
 opaque fills, text always pre-flattened to paths via FreeType, no `<use>` /
@@ -41,7 +41,7 @@ Per-render hot paths, in approximate proportion (estimated):
 
 ---
 
-## Tier 1 — Highest ROI, low/medium risk
+## Tier 1: highest ROI, low/medium risk
 
 ### 1. Per-target glyph outline cache (fastchart-side)
 
@@ -68,12 +68,12 @@ decompose-and-cache.
 
 **Estimated gain:** 5–15 ms per text-heavy chart (saves 50–200 µs × ~40–60
 redundant glyph loads). Also cuts SVG size by 3–8 KB on label-heavy charts,
-which reduces plutosvg's path-parse work proportionally — second-order win.
+which reduces plutosvg's path-parse work proportionally.
 
 **Risk:** Low. Pure speedup; miss path is unchanged. Cache key uses `face_ptr`
 (not family name) so multi-face charts can't collide. Lifetime is per-target
-(target is short-lived; cache dies when target dies — no cross-render leak
-risk).
+(the cache dies with the short-lived target, so nothing leaks across
+renders).
 
 ---
 
@@ -81,7 +81,7 @@ risk).
 
 **Where:** `vendor/qrcodegen/qrcodegen.c:405` (`reedSolomonMultiply`).
 
-**Verified:** Bit-by-bit Russian-peasant loop. The code comment literally says
+**Verified:** Bit-by-bit Russian-peasant loop. The code comment says
 *"This could be implemented as a 256*256 lookup table."*
 
 ```c
@@ -121,8 +121,8 @@ SVG document only once.
 `plutosvg_document_t`, reads width/height, destroys it) then immediately calls
 `fastchart_rasterize_svg` (which parses it AGAIN, renders, destroys).
 
-**Cost:** Two full parser passes — XML lex, attribute extraction, element tree
-allocation — on the same bytes. For a 200 KB user SVG, ~2–5 ms duplicated.
+**Cost:** Two full parser passes (XML lex, attribute extraction, element tree
+allocation) on the same bytes. For a 200 KB user SVG, ~2–5 ms duplicated.
 
 **Fix:** Refactor `fastchart_rasterize.c` to expose a "rasterize from
 already-loaded doc" entry point. `fastchart_svg_to_pixels` loads once, reads
@@ -131,11 +131,11 @@ dimensions from the loaded doc, checks caps, renders, destroys.
 **Estimated gain:** 2–5 ms per `Chart::svgToPng()` call on a moderately-sized
 input SVG. Zero impact on the chart-render hot path.
 
-**Risk:** None — same code paths, just merging two parser calls into one.
+**Risk:** None. Same code paths, with two parser calls merged into one.
 
 ---
 
-## Tier 2 — Worth doing, smaller impact
+## Tier 2: worth doing, smaller impact
 
 ### 4. Un-premultiply: SSE/NEON opaque fast path
 
@@ -160,7 +160,7 @@ integer divide).
   precomputed. Eliminates the integer divide.
 
 **Estimated gain:** 0.5–2 ms per render on a 1200×800 canvas; most charts hit
-the all-opaque case so the SSE shuffle dominates — realistic 3–5× throughput on
+the all-opaque case so the SSE shuffle dominates, for a realistic 3–5× throughput on
 this stage. Smaller absolute number than glyph cache because the stage is
 already thin.
 
@@ -222,7 +222,7 @@ For a 30-label chart, ~300 path strings × ~30 commands each = 9 000
 **Fix (two options):**
 - *Plutosvg API extension*: add a "path-by-id" callback so plutosvg can ask
   fastchart for an already-built `plutovg_path_t*` rather than re-parsing.
-- *Drop SVG round-trip for text entirely*: split the render path — non-text
+- *Drop SVG round-trip for text entirely*: split the render path. Non-text
   SVG goes through plutosvg as today; text is built once as `plutovg_path_t*`
   by fastchart and stitched in via a post-parse hook.
 
@@ -253,7 +253,7 @@ JPEG is encoder-bound (libjpeg-turbo dominates), but free.
 
 ---
 
-## Tier 3 — Lower priority
+## Tier 3: lower priority
 
 ### 9. Bézier flatten tolerance is hard-coded at 0.25 px
 
@@ -281,13 +281,13 @@ profile.
 
 **Cost:** Every `plutovg_canvas_fill()` call constructs and destroys a
 `PVG_FT_Outline`. The FT raster has an 8 KB stack pool and `malloc`s on
-overflow — overflow is common for the larger filled rects fastchart emits.
+overflow, which is common for the larger filled rects fastchart emits.
 
 **Fix:** Per-canvas pooled outline + bump the rasterizer's default pool to
 32 KB. Both confined to the vendored plutovg.
 
-**Estimated gain:** 5–8% on primitive-heavy charts (1000+ shapes). Real but
-not dramatic — the allocator on modern glibc is fast.
+**Estimated gain:** 5–8% on primitive-heavy charts (1000+ shapes). Modest,
+because the allocator on modern glibc is fast.
 
 **Risk:** Medium. Need to verify the FT raster reuses worker state cleanly.
 
@@ -351,19 +351,19 @@ Stacking tiers 1–2 on a representative 1200×800 chart with 30 labels and
 | 11 | plutovg blend SIMD                                  | 0.4–0.6 ms| medium   | medium |
 | 12 | Strip plutovg-stb-image-write.h                     | build-time| trivial  | low    |
 
-What I would *not* do:
+Not worth doing:
 
 - Cache the parsed `plutosvg_document_t` across renders. fastchart rebuilds
   the SVG each call, so the cache key is the SVG bytes themselves. Without
   changing the renderPng API to accept "same document, different size," this
   saves nothing.
-- Strip `plutovg-stb-image.h` outright — breaks the embedded-image path.
+- Strip `plutovg-stb-image.h` outright. It breaks the embedded-image path.
 
 ---
 
-## Implementation status (this branch)
+## Implementation status
 
-**Nine optimizations shipped** — three Tier 1 (#1, #2, #3), three Tier 2
+Nine optimizations shipped: three Tier 1 (#1, #2, #3), three Tier 2
 (#4, #5, #7), and three Tier 3 (#8, #10, #12). Combined wall-time
 reduction is **42–53% vs vanilla** across all bench scenarios. PNG
 output sizes drop 8–10% as a side effect of the opaque-detect in #4
@@ -405,7 +405,7 @@ their per-primitive sizes already fit the original 8 KB pool.
 
 Output bytes are byte-identical to baseline through opts #1–3. Opts #4
 (opaque detect) and #7 (deferred text via plutovg vs SVG path) change the
-output bytes — PNG drops the alpha plane on opaque output (smaller files,
+output bytes. PNG drops the alpha plane on opaque output (smaller files,
 same pixels), and the text path takes plutovg's direct render path (same
 pixels because cached glyphs are byte-identical inputs to both renders).
 
@@ -422,7 +422,7 @@ via `bench/diff.php`. Lower is better.
 | svg_to_png    |   45.22  |   45.65  |   39.44  |   41.31  |  +0.9% |  +4.7% |
 | basic_chart   |    9.59  |    9.45  |    8.78  |    8.61  | −1.5%  | −2.0%  |
 
-Untouched scenarios (basic_chart) swing ±2% — that's the system noise floor
+Untouched scenarios (basic_chart) swing ±2%, which is the system noise floor
 even at 200 iterations.
 
 ### Per-finding outcome
@@ -436,8 +436,8 @@ even at 200 iterations.
 | 5 | ✓ | ✓ | WebP/JPEG path code shrink, +0.5 ms saved on WebP | Removed the dead RGB-pack scalar loop (was unreachable until #4 made `has_alpha=0` possible, then was redundant because libwebp drops the alpha plane internally on opaque inputs). |
 | 7 | ✓ | ✓ | label_chart additional −9% on top of #4 | Defers PATHS-mode text to a plutovg post-pass. plutosvg sees a much smaller document (no glyph d-strings) and the rasterizer skips text-related element traversal. Win is concentrated on text-heavy charts; svg_to_png and qr_v10 (no fastchart text emit) see no benefit. |
 | 8 | ✓ | ✓ | label_jpeg min −9.9% | SSSE3 `_mm_shuffle_epi8` packs 4 opaque RGBA pixels → 12 RGB bytes per instruction on x86; AArch64 NEON packs 16 pixels through interleaved loads/stores. The x86 helper sits behind `__builtin_cpu_supports("ssse3")` runtime check + `target("ssse3")` attribute so the generic build picks it up automatically when the host supports it. AArch64 uses NEON as a baseline feature. On `gir`, label_jpeg p50 moved from 14.76 ms to 13.43 ms (−9.0%). |
-| 10 | ✓ | ✓ | svg_to_png min −10.8% | Bumped `PVG_FT_MINIMUM_POOL_SIZE` from 8 KB to 32 KB in the vendored plutovg FT raster. Eliminates the malloc-on-overflow + re-render path for nearly every primitive fastchart emits. The outline-pool half of the original #10 proposal (per-canvas reusable `PVG_FT_Outline`) was skipped — it would have required pointer fixup on grow and risked reentrancy bugs through plutovg's clip-via-rasterize path, for a likely sub-noise gain on top of the pool bump. |
-| 11 | attempted, reverted | ✓ correctness | within noise floor | Wrote SSE2 `composition_source_over` in `vendor/plutovg/source/plutovg-blend.c`: 4 pixels per iteration via unpack/mullo/pack 16-bit lane math, alpha-broadcast via 4 shifts + 3 ORs, byte-wise add for the final src + scaled_dst. Output bytes byte-identical to scalar, 138/138 tests pass. **Perf neutral-to-slightly-worse on every bench scenario** (min Δ −2.1% to +7.0%, p50 Δ −0.7% to +4.2%). Reverted. Diagnosis: fastchart's chart workload is dominated by short spans (axis ticks 1–3 px, gridlines 1 px, labels 10–20 px). The SIMD setup cost per chunk (alpha broadcast + two unpack/pack pairs) overwhelms the parallelism gain on spans this short. The scalar opaque-src short-circuit `if(s >= 0xff000000) dest[i] = s` is also a tight predictable branch that GCC already optimizes well. The agent's 0.4–0.6 ms estimate extrapolated from long opaque spans (large gradient fills) that fastchart doesn't emit in chart workloads. |
+| 10 | ✓ | ✓ | svg_to_png min −10.8% | Bumped `PVG_FT_MINIMUM_POOL_SIZE` from 8 KB to 32 KB in the vendored plutovg FT raster. Eliminates the malloc-on-overflow + re-render path for nearly every primitive fastchart emits. The outline-pool half of the original #10 proposal (per-canvas reusable `PVG_FT_Outline`) was skipped: it would have required pointer fixup on grow and risked reentrancy bugs through plutovg's clip-via-rasterize path, for a likely sub-noise gain on top of the pool bump. |
+| 11 | attempted, reverted | ✓ correctness | within noise floor | Wrote SSE2 `composition_source_over` in `vendor/plutovg/source/plutovg-blend.c`: 4 pixels per iteration via unpack/mullo/pack 16-bit lane math, alpha-broadcast via 4 shifts + 3 ORs, byte-wise add for the final src + scaled_dst. Output bytes byte-identical to scalar, 138/138 tests pass. **Perf neutral-to-slightly-worse on every bench scenario** (min Δ −2.1% to +7.0%, p50 Δ −0.7% to +4.2%). Reverted. Diagnosis: fastchart's chart workload is dominated by short spans (axis ticks 1–3 px, gridlines 1 px, labels 10–20 px). The SIMD setup cost per chunk (alpha broadcast + two unpack/pack pairs) overwhelms the parallelism gain on spans this short. The scalar opaque-src short-circuit `if(s >= 0xff000000) dest[i] = s` is also a tight predictable branch that GCC already optimizes well. The 0.4–0.6 ms estimate extrapolated from long opaque spans (large gradient fills) that fastchart doesn't emit in chart workloads. |
 | 12 | ✓ | ✓ | build-time only, .so −62 KB | Wrapped the four `plutovg_surface_write_to_*` functions and the `#include "plutovg-stb-image-write.h"` in `#ifndef PLUTOVG_DISABLE_IMAGE_WRITE` (`vendor/plutovg/source/plutovg-surface.c`), added `-DPLUTOVG_DISABLE_IMAGE_WRITE` to `FASTCHART_CFLAGS` (`config.m4`). Verified nothing in fastchart, plutosvg, or the phpt suite calls these functions, and `-fvisibility=hidden` already kept them out of the dynamic symbol table. Exact saving measured at 63 664 bytes off `modules/fastchart.so` (1.5%); ~1 s shaved off incremental builds because stb_image_write.h's 1700-line translation unit no longer compiles. The 4 prototypes stay declared in `plutovg.h` for source-compat; only definitions disappear. |
 
 ### Correctness verification
@@ -466,8 +466,8 @@ The svg_to_png and qr_v10 wins look small here for the same reason: the
 non-vendor parts of the pipeline (libpng encode, plutovg rasterize) end
 up dominating wall-time once the targeted hot spot shrinks.
 
-The optimizations remain worth keeping — they are correctness-clean,
-trivially maintainable, and the savings compound on cold-cache /
+The optimizations stay because they are correctness-clean and easy to
+maintain, and the savings compound on cold-cache /
 debug-build / high-text-count workloads where the targeted code paths
 are a larger fraction of the total.
 
@@ -475,15 +475,16 @@ are a larger fraction of the total.
 
 Tier 2 / Tier 3 candidates still on the table:
 
-- **#6 drop-shadow grouping** — only helps shadowed charts; structural
+- #6 drop-shadow grouping: only helps shadowed charts; structural
   change to the effects emitter.
-- **#9 configurable Bézier flatten tolerance** — would expose a plutovg
+- #9 configurable Bézier flatten tolerance: would expose a plutovg
   API for fastchart to ease tolerance from 0.25 px at higher DPI. 2–4% on
   label-heavy raster renders. The practical gain after #7's text bypass
   is probably sub-noise.
-**Closed without merging:**
 
-- **#11 SSE2 source-over** — implemented, tested (138/138 pass, output
+Closed without merging:
+
+- #11 SSE2 source-over: implemented, tested (138/138 pass, output
   byte-identical), measured neutral-to-slightly-worse across the bench.
   Reverted. See the #11 row above for the diagnosis.
 
@@ -491,23 +492,23 @@ The dominant remaining cost on the chart-render hot path is plutovg's
 own primitive rasterization (band scanning in plutovg-ft-raster.c, span
 composition in plutovg-blend.c). Further significant wall-time wins
 would need to attack the FT raster's band-scanning algorithm itself or
-reduce the primitive count in fastchart's emitters — both substantial
-interventions. The low-hanging raster optimizations are done.
+reduce the primitive count in fastchart's emitters, both substantial
+changes. The low-hanging raster optimizations are done.
 
-## Round 2 — the renderSvg build path (2026-05-29)
+## Round 2: the renderSvg build path (2026-05-29)
 
 Round 1 benchmarked only raster output (renderPng/Jpeg/Webp), where
 libpng/plutovg dominate and the SVG-string build is a rounding error. It
-never measured `renderSvg()` — the project's *canonical* output — where
+never measured `renderSvg()`, the project's canonical output, where
 the build phase is 100% of the cost. Three renderSvg scenarios added to
 the harness (`scatter_trend`, `log_line`, `dense_svg`) surfaced a large,
 previously-invisible win.
 
-### 13. Hand-rolled SVG number formatting — **−80% renderSvg**
+### 13. Hand-rolled SVG number formatting (−80% renderSvg)
 
 `fc_svg_fmt_num` (every coordinate of every primitive) and `fc_emit_num`
 (every glyph-outline coordinate) formatted via `snprintf("%.1f"/"%.2f")`
-plus a separator-normalize pass plus a trailing-zero trim — three passes,
+plus a separator-normalize pass plus a trailing-zero trim: three passes,
 and `snprintf`'s `%f` carries a format-string parse and a full dtoa per
 call. Replaced with an allocation-free integer/fraction emitter: integer
 fast-path for the common pixel-coordinate case, `nearbyint` (default
@@ -535,18 +536,18 @@ on every call on a log axis (per data point). Cached `log_min`/`log_span`
 in `fastchart_value_range` at `compute_log` time; the per-call division
 is unchanged so output is byte-identical. The standalone effect is within
 the noise floor of #13 on `log_line` (the formatter dominates even there),
-but it removes genuine redundant work and keeps the 60-caller chokepoint
+but it removes redundant work and keeps the 60-caller chokepoint
 clean. Kept on those grounds, not on a measured delta.
 
-**Closed without merging (round 2):**
+Closed without merging (round 2):
 
-- **Polyline batching for the scatter trend fit** — replacing the 200
+- Polyline batching for the scatter trend fit: replacing the 200
   `fastchart_target_line` sub-segments with `fastchart_draw_polyline` is a
-  no-op: that helper emits the same N−1 individual `<line>` elements (no
+  no-op. That helper emits the same N−1 individual `<line>` elements (no
   `<polyline>` element), so output bytes and primitive count are
   unchanged, and it would additionally apply `chart->line_style` to a
   trend that is always solid (a latent dash regression). Reverted. A real
   win needs a new `<polyline points="…">` target primitive (one element,
-  fewer plutosvg parse events) routed through line/area/scatter — a
-  larger change touching the target API and many test expectations. Still
-  the standing lever for "reduce primitive count," now scoped.
+  fewer plutosvg parse events) routed through line/area/scatter. That is a
+  larger change touching the target API and many test expectations, and
+  remains the main option for reducing primitive count.

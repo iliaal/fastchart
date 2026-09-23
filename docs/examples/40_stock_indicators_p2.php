@@ -1,5 +1,5 @@
 <?php
-/* Phase-2 stock indicators: MACD / Stochastic in their own panes,
+/* More stock indicators: MACD / Stochastic in their own panes,
  * Bollinger Bands + Parabolic SAR overlaid on the price pane.
  *
  *   - addMACD($fast = 12, $slow = 26, $signal = 9)

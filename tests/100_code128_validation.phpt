@@ -5,7 +5,7 @@ fastchart
 --FILE--
 <?php
 
-// renderPng without setData throws Error (not ValueError) — the
+// renderPng without setData throws Error (not ValueError): the
 // "no data set" guard fires before the encoder.
 try {
     (new FastChart\Code128())->renderPng();
@@ -15,7 +15,7 @@ try {
 }
 
 // Oversized payload: CR-009 rejects 81+ chars at setData time
-// (ValueError), before mutating — the encoder cap never sees it.
+// (ValueError), before mutating: the encoder cap never sees it.
 try {
     (new FastChart\Code128())
         ->setData(str_repeat('A', 81))
@@ -26,7 +26,7 @@ try {
     echo "oversized: ", str_contains($e->getMessage(), 'at most 80 characters') ? "ok" : $e->getMessage(), "\n";
 }
 
-// Non-ASCII byte (> 127) — Code 128 v0 does not support FNC4 extended
+// Non-ASCII byte (> 127): Code 128 v0 does not support FNC4 extended
 // ASCII. CR-009 rejects at setData time, naming the offending byte.
 try {
     (new FastChart\Code128())

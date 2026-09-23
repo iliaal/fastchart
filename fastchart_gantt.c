@@ -53,11 +53,10 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
         }
     }
 
-    /* Palette is initialized before compute_layout here — the reverse of
+    /* Palette is initialized before compute_layout here, the reverse of
      * fastchart_render_cartesian_setup. Gantt interleaves task-label width
      * measurement and the bars-rect derivation between layout and
-     * draw_frame, so it deliberately can't fold into that helper; keep
-     * this ordering. */
+     * draw_frame, so it can't fold into that helper. */
     fastchart_palette pal;
     fastchart_palette_init(t, (int)self->theme, &pal);
     fastchart_palette_apply_overrides(t, (fastchart_obj *)self, &pal);
@@ -87,7 +86,7 @@ int fastchart_gantt_render_to_target(fastchart_gantt_obj *self, fastchart_target
     /* A single long task name can measure wider than the plot,
      * pushing x0 past x1; downstream time→pixel math then runs on a
      * negative width and mirrors the axis. Keep the x1 >= x0 + 10
-     * invariant fastchart_compute_layout enforces — labels truncate
+     * invariant fastchart_compute_layout enforces; labels truncate
      * visually instead. */
     if (bars.x0 > bars.x1 - 10) bars.x0 = bars.x1 - 10;
 

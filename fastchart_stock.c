@@ -55,7 +55,7 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
      * Compute step in double so an adversarial t_min == LONG_MIN /
      * t_max == LONG_MAX span doesn't UB on the subtract. Skip
      * padding when t_min/t_max sit close enough to the zend_long
-     * extremes that the pad itself would overflow — at that scale
+     * extremes that the pad itself would overflow; at that scale
      * the half-step offset is invisible relative to the domain. */
     if (n > 1) {
         double step_d = ((double)t_max - (double)t_min) / (double)(n - 1);
@@ -192,11 +192,9 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
     fastchart_value_range yrange;
     if (self->y_axis_scale == FASTCHART_SCALE_LOG) {
         if (fastchart_value_range_compute_log(y_min, y_max, &yrange) != 0) {
-            /* `candles` aliases self->candles — the per-class extras
-             * destructor (fastchart_stock_release_extras) frees that
-             * buffer, so we must NOT efree the alias here. Doing so
-             * leaves self->candles pointing at freed memory; the next
-             * unset($obj) double-frees. */
+            /* `candles` aliases self->candles, which
+             * fastchart_stock_release_extras frees. Do NOT efree the
+             * alias here or the next unset($obj) double-frees. */
             zend_value_error("FastChart\\StockChart::draw(): log Y-axis requires strictly-positive prices");
             return -1;
         }
@@ -274,8 +272,8 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
 
     /* Sliding-window state for rolling volume average over the previous
      * baseT bars. Both the vector and volume blocks consume the same
-     * (sum, cnt) shape — keep one running window updated each step
-     * instead of recomputing from scratch (was O(n*baseT)). */
+     * (sum, cnt) shape, so one running window updated each step
+     * avoids an O(n*baseT) recompute. */
     double win_sum = 0;
     int    win_cnt = 0;
 
@@ -302,7 +300,7 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
             /* Push (i-1) into climax-max deque: drop tail entries
              * whose value is <= the new one (they can never be the
              * max of any future window that includes i-1). Skip bars
-             * without volume — the original loop did the same. */
+             * without volume. */
             if (i >= 1 && candles[i - 1].has_volume) {
                 double cv_new = candles[i - 1].volume *
                     (candles[i - 1].high - candles[i - 1].low);
@@ -363,13 +361,13 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
      * bars by direction (so the up/down distinction is preserved
      * where the signal is strongest). Rising-volume bars (150-200%
      * of the trailing avg) collapse to a single blue/purple
-     * regardless of direction — the candle body shape carries
+     * regardless of direction: the candle body shape carries
      * direction; color carries strength. Neutral bars fall back to
      * gray so the eye is drawn to the unusual ones. */
-    int v_climax_up = 0;     /* lime    — high buying climax */
-    int v_climax_dn = 0;     /* fuchsia — high selling climax */
-    int v_rising    = 0;     /* purple  — moderate-high volume, either direction */
-    int v_neutral   = 0;     /* gray    — standard market conditions */
+    int v_climax_up = 0;     /* lime: high buying climax */
+    int v_climax_dn = 0;     /* fuchsia: high selling climax */
+    int v_rising    = 0;     /* purple: moderate-high volume, either direction */
+    int v_neutral   = 0;     /* gray: standard market conditions */
     if (candle_style == FASTCHART_STYLE_VECTOR) {
         v_climax_up = fastchart_target_color_rgb(t, 0x00E640);
         v_climax_dn = fastchart_target_color_rgb(t, 0xE600C0);
@@ -753,7 +751,7 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
             /* Histogram (third series) drawn FIRST so the line series
              * sit on top. Bars span baseline 0 to value, half-cell
              * wide. Per-bar colour: pal.up if value >= 0, pal.down
-             * otherwise — matches the conventional MACD histogram. */
+             * otherwise, the conventional MACD histogram. */
             if (pane->values3 && pane->histogram_third) {
                 int baseline_y = fastchart_y_to_pixel(0.0, &pr, &indicator_panes[slot]);
                 int span = indicator_panes[slot].x1 - indicator_panes[slot].x0;
@@ -859,7 +857,7 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
             const fastchart_icon *ic = &self->icons[i];
             /* addIconAt rejects only NaN/Inf; a finite-but-huge x would
              * make the zend_long cast UB. Clamp like fastchart_axis.c
-             * does — out-of-range icons are off-plot either way. */
+             * does; out-of-range icons are off-plot either way. */
             double ts_d = ic->x;
             if (ts_d < (double)ZEND_LONG_MIN) ts_d = (double)ZEND_LONG_MIN;
             else if (ts_d > FASTCHART_LONG_MAX_AS_DOUBLE) ts_d = FASTCHART_LONG_MAX_AS_DOUBLE;

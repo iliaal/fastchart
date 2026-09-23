@@ -83,7 +83,7 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
     int first_dow = fastchart_dow_from_days(first);
     long grid_start = first - first_dow;
     /* Render cost (cells emitted, civil_from_days calls, SVG size) scales
-     * with the date SPAN, not the entry count — setData's 16384-entry cap
+     * with the date SPAN, not the entry count; setData's 16384-entry cap
      * does not bound it. Two entries a millennium apart pass setData yet
      * force millions of cells. Compute the span in long to avoid an int
      * overflow on the cast, then reject an unrenderably wide grid. */
@@ -182,7 +182,7 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
     /* Cells: walk every day from grid_start to last. self->days is
      * sorted and the outer day loop is monotonically increasing, so a
      * single forward scan of data_idx (amortized linear, never reset)
-     * lands each cell on its entry — cheaper than per-cell bsearch. */
+     * lands each cell on its entry, cheaper than per-cell bsearch. */
     int data_idx = 0;
     for (int w = 0; w < n_weeks; w++) {
         for (int r = 0; r < 7; r++) {
@@ -215,7 +215,7 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
         }
         /* Month label only when day-1 of a month falls inside this
          * week (GitHub-style placement). Avoids stub labels on
-         * partial leading columns — when grid_start lands mid-month,
+         * partial leading columns: when grid_start lands mid-month,
          * week 0 spans two months but only the canonical "new month
          * starts here" label should appear, one cell to the right. */
         if (font) {

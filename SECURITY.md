@@ -73,7 +73,7 @@ Out of scope:
   cap checks are in scope.
 - Behavior of the `setStrict(false)` default mode for chart types
   outside Line / Area / Bar / Funnel. Silent drop of malformed entries is
-  documented (see AGENTS.md "Public API").
+  documented (see `setStrict()` in `fastchart.stub.php`).
 
 ## Resource sizing for operators
 

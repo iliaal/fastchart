@@ -10,7 +10,7 @@ asan.detect_leaks=0
 
 /* Eviction is behavioral: thirteen 1152x1152 icons decode past the 64
  * MiB reuse budget, so the first twelve must be re-decoded when reused
- * below — yet every placement still draws its own colour. A plutosvg
+ * below, yet every placement still draws its own colour. A plutosvg
  * refresh that dropped the bounded policy would either blow the budget
  * or mis-draw; both show up in the pixel asserts, not in source text. */
 

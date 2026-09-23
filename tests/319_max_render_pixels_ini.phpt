@@ -32,7 +32,7 @@ echo "0.81M pixels renders: ", strlen($small->renderPng()) > 100 ? "ok" : "FAIL"
 echo "svg unaffected: ", strlen($c->renderSvg()) > 100 ? "ok" : "FAIL", "\n";
 
 // The static svgTo*() conversions share the frame-buffer path and must
-// honor the same ceiling — 1100x910 = 1,001,000 pixels, just over.
+// honor the same ceiling: 1100x910 = 1,001,000 pixels, just over.
 $overSvg  = (new FastChart\LineChart(1100, 910))->setSeries([1, 2, 3])->renderSvg();
 $underSvg = (new FastChart\LineChart(900, 900))->setSeries([1, 2, 3])->renderSvg();
 foreach (['svgToPng', 'svgToJpeg', 'svgToWebp'] as $m) {

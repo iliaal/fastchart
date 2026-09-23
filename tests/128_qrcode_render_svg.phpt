@@ -31,7 +31,7 @@ var_dump($xml instanceof SimpleXMLElement);
 // QrCode emits dark modules as filled <rect>s (coalesced into runs
 // along the x-axis). Even a short payload at version 1..3 produces
 // a few dozen rect elements; longer payloads scale up. Lower-bound
-// at 30 — sits comfortably below any realistic QR output.
+// at 30: sits comfortably below any realistic QR output.
 $rect_n = substr_count($svg, "<rect");
 echo "rect>=30: ", ($rect_n >= 30 ? "yes" : "no ($rect_n)"), "\n";
 

@@ -1,5 +1,5 @@
 --TEST--
-Review-round 3: setDpi bounds + scaling, JPEG/WebP quality 0, scatter error bars > 2048, format-width caps
+setDpi bounds + scaling, JPEG/WebP quality 0, scatter error bars > 2048, format-width caps
 --EXTENSIONS--
 fastchart
 gd
@@ -63,7 +63,7 @@ try {
 } catch (\ValueError $e) { echo "ValueError\n"; }
 
 /* Tiny-canvas-clamp: setDpi(24) on 1x1 logical rounds to 0x0 if
- * unclamped — libgd would emit a warning then return NULL. The
+ * unclamped: libgd would emit a warning then return NULL. The
  * resolver clamps each dimension to >= 1 so the render succeeds. */
 $tiny = (new FastChart\LineChart(1, 1))
     ->setDpi(24)

@@ -13,9 +13,9 @@ if (!function_exists('imagecreatefromwebp')) die('skip gd built without webp sup
 /* Both render paths rasterize the same SVG into the same RGBA
  * buffer; PNG is lossless by construction, so a truly lossless WebP
  * must decode to identical pixels. The saturated-red foreground is
- * load-bearing: black-on-white survives YUV420 (neutral chroma
+ * the discriminating input: black-on-white survives YUV420 (neutral chroma
  * everywhere, luma roundtrips exactly for 0/255), but colored module
- * edges have non-neutral chroma that 4:2:0 decimation bleeds —
+ * edges have non-neutral chroma that 4:2:0 decimation bleeds;
  * pre-fix (RGBA imported via YUV420) this comparison reports
  * thousands of differing pixels. */
 

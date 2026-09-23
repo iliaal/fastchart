@@ -49,7 +49,7 @@ static int fastchart_sankey_compute_layers(
     /* A DAG's longest path has at most node_count-1 edges, so the
      * relaxation reaches a fixed point within node_count passes. If the
      * node_count-th pass still changes something, a cycle keeps promoting
-     * layers indefinitely — reject rather than emit an order-dependent,
+     * layers indefinitely. Reject rather than emit an order-dependent,
      * backward-ribbon layout. */
     int converged = 0;
     for (int pass = 0; pass < node_count; pass++) {

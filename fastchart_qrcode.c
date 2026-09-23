@@ -98,15 +98,8 @@ int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,
 
     /* Quiet zone: spec says 4 modules around every QR symbol. The
      * setQuietZone() unit for QrCode is modules (per the stub). -1
-     * sentinels "use class default".
-     *
-     * The Symbol-level setQuietZone validator accepts up to 4096
-     * (a generic upper cap that fits any reasonable Code128 pixel
-     * margin) but for QR the unit is modules and 256 modules of
-     * quiet zone already dwarfs any conceivable symbol size. Reject
-     * anything above 256 with a specific exception rather than
-     * silently clamping — silent clamps surprise callers who
-     * configured a value the setter accepted. */
+     * sentinels "use class default". Anything above 256 modules throws
+     * rather than silently clamping a value the setter accepted. */
     int quiet_modules;
     if (base->quiet_zone < 0) {
         quiet_modules = 4;
@@ -123,7 +116,7 @@ int fastchart_qrcode_render_to_target(fastchart_qrcode_obj *self,
     int total_modules = N + 2 * quiet_modules;
 
     /* Module pixel size: the symbol must fit in the SHORTER canvas
-     * dimension so it stays square. Floor division — slack pixels
+     * dimension so it stays square. Floor division; slack pixels
      * land in the centring offsets below. */
     int module_px_w = W / total_modules;
     int module_px_h = H / total_modules;

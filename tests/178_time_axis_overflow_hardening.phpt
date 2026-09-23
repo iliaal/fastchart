@@ -6,12 +6,12 @@ fastchart
 <?php
 
 /* Four regressions in the same family:
- *   fnd_b5fe448f — fastchart_x_time_to_pixel: zend_long span = t_max - t_min
+ *   fastchart_x_time_to_pixel: zend_long span = t_max - t_min
  *                  overflows when timestamps straddle the zend_long range
- *   fnd_1db3f20f — fastchart_draw_x_axis_time fallback ticks: same pattern
- *   fnd_5c7d3d47 — fastchart_draw_v_plot_bands_time: out-of-range double
+ *   fastchart_draw_x_axis_time fallback ticks: same pattern
+ *   fastchart_draw_v_plot_bands_time: out-of-range double
  *                  cast to zend_long is UB per Annex F
- *   fnd_50d3eeb8 — Gantt renderer: t_max = t_min + 86400 overflows when
+ *   Gantt renderer: t_max = t_min + 86400 overflows when
  *                  t_min == ZEND_LONG_MAX
  *
  * For each, the discriminator is "renders without crashing on extreme
@@ -43,7 +43,7 @@ echo "candles_spread_across_canvas: ",
     ($max_x > 400 ? "ok" : "BAD (max_rect_x=$max_x — candles clustered left)"), "\n";
 
 /* Case 2: vertical plot bands with finite-but-huge doubles
- * (1e30 — well outside the zend_long range). The pre-fix code
+ * (1e30: well outside the zend_long range). The pre-fix code
  * cast to zend_long unconditionally → UB. */
 $rows2 = [];
 for ($i = 0; $i < 5; $i++) {

@@ -2,8 +2,8 @@
 /* PolarChart::setInterpolation(INTERP_SMOOTH): Catmull-Rom curves
  * through the polar points instead of straight segments. Markers
  * still anchor to the original data points. addVectors() overlays
- * arrow vectors anchored in the same (angle, radius) data space —
- * useful for wind / flow / phase diagrams. */
+ * arrows anchored in the same (angle, radius) data space, for wind,
+ * flow, or phase diagrams. */
 
 require __DIR__ . '/_bootstrap.php';
 

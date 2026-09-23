@@ -2,9 +2,9 @@
 /* QR Code variants. Same payload, all four error-correction levels.
  *
  * The encoder picks the smallest QR version that fits the data at
- * the requested ECC level — higher ECC eats codeword space and may
- * push the symbol up a version (more modules per side, denser look),
- * but the decoded payload survives more pixel damage:
+ * the requested ECC level. Higher ECC uses more codeword space and may
+ * push the symbol up a version (more modules per side), but the
+ * payload survives more damage:
  *   - ECC_L: ~7%  recovery  (smallest symbol)
  *   - ECC_M: ~15% recovery  (default; balanced)
  *   - ECC_Q: ~25% recovery  (logo overlays, partial occlusion)

@@ -7,7 +7,7 @@ fastchart
 
 /* Regression: render cost (cells emitted, civil_from_days calls, SVG size)
  * scales with the date SPAN, not the entry count. setData's 16384-entry cap
- * does not bound it — two entries a few decades apart pass setData yet force
+ * does not bound it: two entries a few decades apart pass setData yet force
  * a multi-million-cell render. The span is now capped at
  * FASTCHART_MAX_CALENDAR_WEEKS (2400 ≈ 46 yrs). */
 

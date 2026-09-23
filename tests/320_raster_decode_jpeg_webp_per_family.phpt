@@ -15,7 +15,7 @@ if (!function_exists('imagecreatefromwebp')) die("skip gd built without webp sup
 /* Test 131 checks only magic bytes + a length floor for JPEG/WebP.
  * Across the whole suite JPEG bytes are decoded in exactly one Symbol
  * test and WebP in one QrCode test, so no CHART family's JPEG or WebP
- * output was ever fed back through a decoder — an encoder that emitted
+ * output was ever fed back through a decoder: an encoder that emitted
  * a valid header over a corrupt frame would pass 131 unnoticed. This
  * test builds the union of the 131 and 270 family sets (all 38 chart
  * classes plus both Symbol classes), decodes each family's JPEG and

@@ -418,7 +418,7 @@ foreach ($families as $name => $build) {
      * token. Scan two surfaces:
      *
      *   1. The uncompressed object/xref/trailer structure (strip the
-     *      streams first — their bytes aren't PDF syntax). Word
+     *      streams first: their bytes aren't PDF syntax). Word
      *      boundaries avoid matching the legitimate "/Info" trailer key.
      *   2. Every FlateDecode stream, inflated. This is where the drawing
      *      operands actually live; without inflating them the scan can
@@ -444,7 +444,7 @@ foreach ($families as $name => $build) {
         $len = strlen($inf);
         $printable = strlen(preg_replace('/[^\x09\x0a\x0d\x20-\x7e]/', '', $inf));
         if ($printable / $len < 0.9) {
-            continue; /* binary stream (ICC profile) — not drawing operands */
+            continue; /* binary stream (ICC profile): not drawing operands */
         }
         $scanned++;
         if (preg_match('/\bnan\b/i', $inf)) {
@@ -456,7 +456,7 @@ foreach ($families as $name => $build) {
     }
     /* Every render must yield at least one inflatable, printable
      * drawing stream. $scanned == 0 means the extractor or inflater
-     * regressed and the operand scan above ran on nothing — that must
+     * regressed and the operand scan above ran on nothing: that must
      * fail loudly, not pass vacuously. */
     if ($scanned === 0) {
         echo "FAIL $name: no content stream was inflated and scanned\n";

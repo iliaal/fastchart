@@ -48,7 +48,7 @@ try {
     echo "overdepth: threw\n";
 }
 
-/* Raster round-trip (no imagedestroy — deprecated in 8.5). */
+/* Raster round-trip (no imagedestroy: deprecated in 8.5). */
 $im = imagecreatefromstring(
     (new FastChart\Dendrogram(400, 300))->setHierarchy($h)->renderPng());
 echo "png_ok: ", ($im !== false ? "yes" : "no"), "\n";

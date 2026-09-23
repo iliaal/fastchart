@@ -7,10 +7,9 @@ require __DIR__ . '/_bootstrap.php';
 
 /* Four-layer e-commerce flow: Store -> Category -> Items -> Brands.
  * Modeled after the ChartExpo "Store Orders Analysis" example
- * (https://chartexpo.com/blog/sankey-chart-examples). One brand
- * (Samsung) receives from two items (Mobile + Tablet) — the rest
- * are 1:1, which exercises the multi-source-to-one-sink ribbon
- * stacking path. */
+ * (https://chartexpo.com/blog/sankey-chart-examples). Samsung
+ * receives from two items (Mobile and Tablet); every other brand
+ * has one source. */
 (new FastChart\SankeyChart(860, 540))
     ->setFontPath($font)
     ->setDpi($dpi)

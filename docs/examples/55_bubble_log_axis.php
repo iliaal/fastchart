@@ -1,8 +1,8 @@
 <?php
-/* BubbleChart with log-10 Y axis. Useful when Y spans several
- * orders of magnitude (e.g. cost vs traffic across small + large
- * customers). Same setYAxisScale(SCALE_LOG) API as Line / Bar /
- * Area / Scatter / Stock — all Cartesian families share the gate.
+/* BubbleChart with a log-10 Y axis, for Y values that span several
+ * orders of magnitude (e.g. cost vs traffic across small and large
+ * customers). setYAxisScale(SCALE_LOG) works the same on Line, Bar,
+ * Area, Scatter, and Stock.
  *
  * The chart errors if any Y is non-positive (log domain). The
  * X axis stays linear; switching X to log isn't supported yet. */

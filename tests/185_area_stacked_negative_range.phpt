@@ -16,7 +16,7 @@ function has_negative_tick(string $svg): bool {
     return (bool) preg_match('/>-\d/', $svg);
 }
 
-/* Mixed-sign: partial sums per category are 5,-5 and 5,7 — the
+/* Mixed-sign: partial sums per category are 5,-5 and 5,7: the
  * axis must reach down to -5. */
 $c = (new FastChart\AreaChart(400, 300))
     ->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE)

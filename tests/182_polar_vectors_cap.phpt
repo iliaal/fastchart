@@ -6,7 +6,7 @@ fastchart
 <?php
 
 /* Regression: addVectors was the only additive array setter missing the
- * FASTCHART_MAX_VECTORS (4096) ceiling its siblings enforce — one huge
+ * FASTCHART_MAX_VECTORS (4096) ceiling its siblings enforce: one huge
  * array (emalloc(incoming * sizeof)) or repeated calls grew self->vectors
  * without limit (memory-exhaustion DoS). Each vector renders as ~3 <line>
  * elements (shaft + two arrowhead strokes), so the drawn-vector count is

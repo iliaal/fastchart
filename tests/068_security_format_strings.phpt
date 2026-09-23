@@ -10,7 +10,7 @@ fastchart
 // otherwise read uninitialized integer registers or write-through
 // pointers via %n.
 $bad_formats = [
-    '%s',         // wrong arg type -- crash
+    '%s',         // wrong arg type: crash
     '%n',         // write-where
     '%d',         // wrong arg type (int from a double slot)
     '%i',

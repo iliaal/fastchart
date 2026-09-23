@@ -95,7 +95,7 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
      * bottom of every band. Each arc dips below its boundary y by
      * ring_h ≈ 22% of the half-width at that boundary. The bottom-most
      * boundary is max_half (the widest point), so reserve max_half *
-     * 0.22 pixels at the bottom of the plot region — otherwise the
+     * 0.22 pixels at the bottom of the plot region; otherwise the
      * bottom band's arc spills past the canvas edge. */
     int cone_bottom_reserve = cone ? (int)(max_half * 0.22 + 0.5) : 0;
     int total_h = (y1 - y0) - cone_bottom_reserve;
@@ -188,7 +188,7 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
             /* Trace: top arc (left→right, dipping below yt), down
              * right wall, bottom arc (right→left, dipping below yb),
              * up left wall. ring_h sets the apparent perspective
-             * tilt — 25% of the band's average half-width gives a
+             * tilt: 25% of the band's average half-width gives a
              * moderate camera angle. ARC_N=14 samples per arc keeps
              * the silhouette smooth without blowing the polygon
              * point budget. */
@@ -196,8 +196,8 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
             /* Depth each arc from the half-width AT that boundary, not
              * the band average: a shared boundary (this band's bottom,
              * the next band's top) has one width, so both arcs get the
-             * same depth and tile seamlessly. Averaging gave each side
-             * of a boundary a different depth -> white crescents. */
+             * same depth and tile without gaps. Averaging would give each
+             * side of a boundary a different depth -> white crescents. */
             int ring_h_top = (int)(half_top * 0.22 + 0.5);
             int ring_h_bot = (int)(half_bot * 0.22 + 0.5);
             if (ring_h_top < 1) ring_h_top = 1;

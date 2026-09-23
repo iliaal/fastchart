@@ -28,7 +28,7 @@
 /* Serpentine timeline: events are laid out in reading rows that reverse
  * direction each line (boustrophedon), so the connecting path snakes
  * back and forth and a long sequence fits a compact rectangle. The snake
- * geometry falls out of the alternating per-row x assignment — connecting
+ * geometry falls out of the alternating per-row x assignment: connecting
  * consecutive event centres in order yields the U-turns for free. */
 
 int fastchart_serpentine_render_to_target(fastchart_serpentine_obj *self, fastchart_target_t *t)
@@ -115,7 +115,7 @@ int fastchart_serpentine_render_to_target(fastchart_serpentine_obj *self, fastch
         fastchart_target_ellipse(t, (int)ex[i], (int)ey[i], r, r, pal.border, 0, 1);
 
         if (font) {
-            /* Date above the marker, label below — keeps both clear of
+            /* Date above the marker, label below, keeping both clear of
              * the connecting path that runs through the marker centre. */
             if (self->events[i].date) {
                 fastchart_text_draw(t, font, size * 0.85, pal.text,

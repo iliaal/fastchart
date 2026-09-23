@@ -6,7 +6,7 @@ fastchart
 <?php
 
 /* Regression: with no positive size the scale fraction fell back to 0.5,
- * so every zero-size bubble drew at half the maximum radius — reading as
+ * so every zero-size bubble drew at half the maximum radius, reading as
  * real magnitude. The fallback is now 0.0, leaving only the rad<2 floor,
  * so zero-size points are tiny. */
 

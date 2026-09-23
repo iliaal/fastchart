@@ -1,5 +1,5 @@
 --TEST--
-Review-round 4: physical-pixel product cap + rotated label perf with TICK_POINTS
+Physical-pixel product cap + rotated label perf with TICK_POINTS
 --EXTENSIONS--
 fastchart
 gd
@@ -65,7 +65,7 @@ try {
 /* Rotated categorical X-axis with TICK_POINTS: labels are
  * suppressed, so the previous unconditional measurement walk burned
  * >1s on 4096 categories at 200 DPI. Compare against TICK_NONE on
- * the same data — the difference must be small (well under 500ms);
+ * the same data: the difference must be small (well under 500ms);
  * a regression to per-category measurement runs ~1s. */
 $categories = [];
 for ($i = 0; $i < 4096; $i++) {

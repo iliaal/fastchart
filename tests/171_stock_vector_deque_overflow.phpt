@@ -5,7 +5,7 @@ fastchart
 --FILE--
 <?php
 
-/* Regression: fastchart_stock.c:262 — the monotone-decreasing deque
+/* Regression in fastchart_stock.c:262: the monotone-decreasing deque
  * for the sliding-window max of climax_value (volume × (high−low))
  * uses a ring buffer of capacity baseT+1 = 11, where head==tail
  * means "empty". The push happens BEFORE the stale-front drop, so
@@ -51,7 +51,7 @@ $climax_total = $lime + $fuchsia;
  * any bar after a volume-less stretch) with an empty deque no longer
  * trivially satisfies climax >= 0. All cv values here sit below the true
  * window max and none reaches 2x the trailing average. We allow [0, 8] to
- * stay robust to palette/emit details.
+ * tolerate palette/emit details.
  *
  * Under the BUG, bar 0 plus bars 11..18 (9 climax bars × 2 colors per bar
  * = 18 occurrences) flood the SVG with lime. */

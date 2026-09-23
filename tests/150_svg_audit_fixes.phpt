@@ -1,11 +1,11 @@
 --TEST--
-Audit fixes: data:image URI, atomic setSeries, BoxPlot monotonic 5-number summary
+data:image URI, atomic setSeries, BoxPlot monotonic 5-number summary
 --EXTENSIONS--
 fastchart
 --FILE--
 <?php
 
-/* CR-001: Chart::svgToPng/Jpeg/Webp must reject SVG that contains
+/* Chart::svgToPng/Jpeg/Webp must reject SVG that contains
  * a data:image/ URI. plutosvg's <image href="data:image/..."> loader
  * decodes the embedded raster directly, bypassing fastchart's
  * output-dim cap. A 10x10 root SVG carrying a 4097x4097 embedded
@@ -31,7 +31,7 @@ $bad_upper = str_replace('data:image/', 'DATA:IMAGE/', $bad);
 try { FastChart\Chart::svgToPng($bad_upper); echo "upper_accepted: REGRESSION\n"; }
 catch (\ValueError $e) { echo "upper_rejected: ok\n"; }
 
-/* CR-002: Line/Area/Bar setSeries() must be atomic on strict-mode
+/* Line/Area/Bar setSeries() must be atomic on strict-mode
  * failure. The pre-fix code released self->series first, then
  * parsed; a TypeError thrown mid-parse left self with the accepted
  * prefix of the new data, and the original series was gone. */
@@ -53,7 +53,7 @@ foreach (['LineChart', 'AreaChart', 'BarChart'] as $cls) {
     }
 }
 
-/* CR-003: BoxPlot::setBoxes() must reject unordered five-number
+/* BoxPlot::setBoxes() must reject unordered five-number
  * summaries. Pre-fix, min/q1/median/q3/max were parsed without
  * monotonicity check and could produce negative-height SVG rects. */
 $c = (new FastChart\BoxPlot(400, 300))->setBoxes([
@@ -84,7 +84,7 @@ echo "boxplot_positional_validated: ",
 
 /* Bonus: Surface/ContourChart::setGrid() now uses parse-then-swap
  * (was clear-then-parse). The throw must come from INSIDE
- * fastchart_parse_grid (not from ZEND_PARSE_PARAMETERS) — pass an
+ * fastchart_parse_grid (not from ZEND_PARSE_PARAMETERS): pass an
  * oversized array that gets past Z_PARAM_ARRAY but trips the cell-
  * count cap (FASTCHART_MAX_GRID_CELLS=10000) deep in the C body.
  * That's the path the fix actually changed; an arg-parse failure

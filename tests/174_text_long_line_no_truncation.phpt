@@ -29,7 +29,7 @@ if (!preg_match_all('#<text[^>]*>([^<]*)</text>#', $svg, $m)) {
     exit;
 }
 
-/* Find the longest body — that's our annotation. */
+/* Find the longest body: that's our annotation. */
 $longest = '';
 foreach ($m[1] as $body) {
     if (strlen($body) > strlen($longest)) $longest = $body;

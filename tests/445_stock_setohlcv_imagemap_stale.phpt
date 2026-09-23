@@ -6,7 +6,7 @@ fastchart
 <?php
 
 /* Mirrors 183_scatter_setpoints_imagemap_stale.phpt on the StockChart
- * lane. StockChart renders no hot-spots, so the map is empty — the
+ * lane. StockChart renders no hot-spots, so the map is empty: the
  * contract is that swapping the candle buffer can neither resurrect
  * a stale map view nor crash: empty before, empty after the swap,
  * empty after a fresh render. */

@@ -16,7 +16,7 @@ function clean(string $svg): bool {
     return simplexml_load_string($svg, null, LIBXML_NOERROR | LIBXML_NOWARNING) !== false;
 }
 
-/* CR-001: ViolinPlot with finite-but-enormous samples. All values are
+/* ViolinPlot with finite-but-enormous samples. All values are
  * beyond the magnitude cap, so they drop and the chart has no data. */
 try {
     (new FastChart\ViolinPlot(400, 300))
@@ -32,7 +32,7 @@ $v = (new FastChart\ViolinPlot(400, 300))
     ->renderSvg();
 echo "violin_mixed_clean: ", clean($v) ? "yes" : "no", "\n";
 
-/* CR-002: ChordDiagram with huge duplicate links. */
+/* ChordDiagram with huge duplicate links. */
 $c = (new FastChart\ChordDiagram(400, 400))
     ->setNodes([['label' => 'A'], ['label' => 'B'], ['label' => 'C']])
     ->setLinks([
@@ -43,13 +43,13 @@ $c = (new FastChart\ChordDiagram(400, 400))
     ->renderSvg();
 echo "chord_huge_clean: ", clean($c) ? "yes" : "no", "\n";
 
-/* CR-004: CirclePacking with a huge leaf value. */
+/* CirclePacking with a huge leaf value. */
 $p = (new FastChart\CirclePacking(400, 400))
     ->setHierarchy(['children' => [['value' => 1e308], ['value' => 5], ['value' => 8]]])
     ->renderSvg();
 echo "circlepack_huge_clean: ", clean($p) ? "yes" : "no", "\n";
 
-/* CR-003: CirclePacking child array far larger than the node cap must
+/* CirclePacking child array far larger than the node cap must
  * not allocate beyond the cap; over-cap input is rejected at the setter. */
 $kids = [];
 for ($i = 0; $i < 50000; $i++) { $kids[] = ['value' => 1]; }
@@ -60,7 +60,7 @@ try {
     echo "circlepack_bigarray_throws: threw\n";
 }
 
-/* CR-005: VennDiagram on a canvas too small to draw into renders blank,
+/* VennDiagram on a canvas too small to draw into renders blank,
  * not a negative radius. */
 $vn = (new FastChart\VennDiagram(20, 20))
     ->setSets([['size' => 10], ['size' => 10]])
@@ -69,7 +69,7 @@ $vn = (new FastChart\VennDiagram(20, 20))
 echo "venn_tiny_clean: ", clean($vn) ? "yes" : "no", "\n";
 echo "venn_tiny_blank: ", (substr_count($vn, '<circle') === 0 ? "yes" : "no"), "\n";
 
-/* CR-007: duplicate / reversed Venn pairs collapse to one (last wins). */
+/* duplicate / reversed Venn pairs collapse to one (last wins). */
 $vd = (new FastChart\VennDiagram(400, 400))
     ->setSets([['size' => 10], ['size' => 10], ['size' => 10]])
     ->setIntersections([
@@ -80,7 +80,7 @@ $vd = (new FastChart\VennDiagram(400, 400))
     ->renderSvg();
 echo "venn_dedup_clean: ", clean($vd) ? "yes" : "no", "\n";
 
-/* CR-009: a ViolinPlot group whose values are all non-finite is dropped,
+/* a ViolinPlot group whose values are all non-finite is dropped,
  * not kept as a blank column. One good group => one violin (2 polygons). */
 $ve = (new FastChart\ViolinPlot(400, 300))
     ->setGroups([
@@ -90,7 +90,7 @@ $ve = (new FastChart\ViolinPlot(400, 300))
     ->renderSvg();
 echo "violin_empty_dropped: ", (substr_count($ve, '<polygon') === 2 ? "yes" : "no"), "\n";
 
-/* CR-010: only the fractional boundary icon gets a clip path; full icons
+/* only the fractional boundary icon gets a clip path; full icons
  * are drawn directly. 3.5 of 10 => 3 full + 1 partial => 1 clip. */
 $pg = (new FastChart\Pictogram(400, 200))
     ->setTotal(10)->setValue(3.5)->setIconCount(10)
@@ -109,7 +109,7 @@ try {
     echo "circlepack_overdepth_throws: threw\n";
 }
 
-/* CR-007: a geometrically impossible overlap (larger than the smaller
+/* a geometrically impossible overlap (larger than the smaller
  * set) is dropped, not saturated to full containment. Dropped lays the
  * two equal circles side by side; a valid full-containment overlap makes
  * them concentric. The two layouts differ. */

@@ -160,7 +160,7 @@ void fastchart_symbol_fill_background(fastchart_symbol_obj *self,
 /* ---------------- Symbol render dispatch + shortcuts -------------- */
 
 /* Resolve the logical (post-default) canvas size for a Symbol
- * instance. Width / height of 0 means "user did not call setSize()" —
+ * instance. Width / height of 0 means "user did not call setSize()";
  * substitute the per-class default (300x80 for Code128, 300x300 for
  * QrCode). Anything > 0 is taken at face value; the cap policy in
  * fastchart_resolve_canvas_dims handles the upper bound after DPI
@@ -198,14 +198,14 @@ static int dispatch_symbol_svg_render(void *object, zend_class_entry *ce,
     return -1;
 }
 
-/* v1.0 Symbol raster pipeline: build a glyph-flattened SVG, hand to
+/* Symbol raster pipeline: build a glyph-flattened SVG, hand to
  * plutovg, encode with libpng / libjpeg-turbo / libwebp. Symbols
  * mostly render as pure geometry (paths + rects) so PATHS mode adds
- * no overhead vs NATIVE — only Code128's human-readable line uses
+ * no overhead vs NATIVE; only Code128's human-readable line uses
  * text. format: 0 PNG, 1 JPEG, 2 WebP. */
 /* Shared rasterize-and-encode pipeline. Used by renderPng/Jpeg/Webp
  * (which return bytes) and renderToFile (which writes bytes to a
- * stream). The two call sites previously duplicated 60+ lines each.
+ * stream).
  *
  * On error: sets a PHP exception and returns -1. On success: returns
  * 0 after writing all encoded bytes to the caller-owned sink.
@@ -335,8 +335,8 @@ static void fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAMETERS,
 
 /* Shared SVG entry. fragment_only=0 emits a full document; =1 emits
  * just the <g class="fastchart-symbol"> group. Output viewport = the
- * Symbol's logical canvas size (default-substituted per class) at 1:1
- * — DPI does not multiply the viewport (SVG is vector). Mirrors
+ * Symbol's logical canvas size (default-substituted per class) at 1:1;
+ * DPI does not multiply the viewport (SVG is vector). Mirrors
  * fastchart.c:fastchart_render_to_svg for the Chart family. */
 static void fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAMETERS,
                                             int fragment_only,

@@ -1,12 +1,12 @@
 <?php
 /* Shared font-candidate list for phpts that need a system TrueType
- * face. Single source of truth — both --SKIPIF-- and --FILE-- blocks
+ * face. Both --SKIPIF-- and --FILE-- blocks
  * pull from here so a new distro / repackage path only needs to be
  * added once. docs/examples/_bootstrap.php has a wider list that
  * also covers macOS; phpts skip on non-Linux so this stays
  * Linux-only.
  *
- * EXTENSION NOTE — this file is `.inc`, not `.inc.php`, deliberately:
+ * This file is `.inc`, not `.inc.php`, on purpose:
  * `phpize --clean` shells out `rm -f tests/*.php` to wipe the per-test
  * generated PHP files (run-tests.php drops one .php sibling per .phpt
  * during a test run, and phpize clean is meant to wipe those). Any

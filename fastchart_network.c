@@ -29,7 +29,7 @@
 /* Fruchterman-Reingold layout with a seeded PRNG and fixed iteration
  * count for deterministic output. Repulsion costs O(n^2) per pass. */
 
-/* xorshift32 — seed must be non-zero. */
+/* xorshift32; seed must be non-zero. */
 static inline uint32_t fc_xs_next(uint32_t *s)
 {
     uint32_t x = *s;

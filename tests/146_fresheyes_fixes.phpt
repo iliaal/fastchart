@@ -1,5 +1,5 @@
 --TEST--
-Fresh-eyes audit fixes: Sankey OOB, Sunburst depth, Vector inf, Bullet narrow
+Sankey OOB, Sunburst depth, Vector inf, Bullet narrow
 --EXTENSIONS--
 fastchart
 --FILE--
@@ -16,7 +16,7 @@ try {
     $c->renderSvg();
     echo "h1_stale_link_kept: REGRESSION\n";
 } catch (\Throwable $e) {
-    /* render now fails cleanly because links were wiped — caller
+    /* render now fails cleanly because links were wiped: caller
      * must re-call setLinks after setNodes. */
     echo "h1_links_wiped: ",
         (str_contains($e->getMessage(), 'setLinks') ? "ok" : "wrong-msg"), "\n";

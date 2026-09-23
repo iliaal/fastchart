@@ -6,7 +6,7 @@ fastchart
 <?php
 
 // Larger stride should reduce the number of labels rendered. We
-// don't pixel-count labels (they overlap with bars) -- just make
+// don't pixel-count labels (they overlap with bars): just make
 // sure both stride values produce a valid render and the setter
 // rejects bad input.
 foreach ([1, 2, 5] as $s) {

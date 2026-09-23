@@ -80,7 +80,7 @@ foreach ($types as $name => $type) {
         $expected = ypix($refs[$name]($i), $MIN, $MAX, $pr);
         $maxdiff = max($maxdiff, abs((int)$p[1] - $expected));
     }
-    /* m = 13 is bar index 22 — three bars after the step. */
+    /* m = 13 is bar index 22: three bars after the step. */
     $ys22[$name] = (int)$pts[13][1];
     echo "$name: npts=", count($pts), " maxdiff=$maxdiff\n";
 }

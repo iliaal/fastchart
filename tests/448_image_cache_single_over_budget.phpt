@@ -12,7 +12,7 @@ fastchart.max_image_cache_bytes=512
  * reuse). tests/__icon.png is 16x16, so it decodes to 1024 RGBA bytes:
  * twice the 512-byte budget here, and the only image in the render, so
  * it can never be retained. The render must still succeed with the icon
- * drawn — over budget means "decode every time", never "drop the
+ * drawn: over budget means "decode every time", never "drop the
  * image". No gd needed: the with/without byte-difference proves the
  * icon contributes pixels, and getimagesizefromstring() is core. */
 echo 'configured: ', ini_get('fastchart.max_image_cache_bytes'), "\n";

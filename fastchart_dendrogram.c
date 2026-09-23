@@ -30,7 +30,7 @@
  * parser) drawn as a node-link tree. A tidy-tree layout assigns each leaf
  * a sequential cross position and centres each internal node over its
  * children; depth maps to the perpendicular axis. Only this layout/draw
- * pass is dendrogram-specific — parse / free / clone are reused verbatim. */
+ * pass is dendrogram-specific; parse / free / clone are reused verbatim. */
 
 /* Post-order placement: store cross position in node->x, depth in node->y
  * (both abstract units). Returns the node's cross coordinate. */

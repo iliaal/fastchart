@@ -186,7 +186,7 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
         double rad = aV * M_PI / 180.0;
         int nx = cx + (int)((double)(radius - 6) * cos(rad));
         int ny = cy - (int)((double)(radius - 6) * sin(rad));
-        /* Needle thickness scales with gauge size — visible on a
+        /* Needle thickness scales with gauge size: visible on a
          * 1200x800 canvas, not dominant on a 480x320 one. SVG renderers
          * AA at the layer level so the thick stroke suffices. */
         double needle_thickness = (double)diameter / 200.0 + 2.0;

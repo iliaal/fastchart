@@ -21,7 +21,7 @@ asan.detect_leaks=0
 <?php
 /* fastchart_target_polyline (used by ChordDiagram STYLE_LINE) used to
  * decompose a curve into n-1 independently stroked segments, each with
- * its own save/restore and butt caps — visible notches at interior
+ * its own save/restore and butt caps: visible notches at interior
  * vertices for thickness > 1. It now builds one path and strokes once
  * (fc_pdf_emit_polyline). The op sequence lives in a FlateDecode-
  * compressed stream, so this test pins that the many-vertex, thick

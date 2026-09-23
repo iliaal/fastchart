@@ -20,8 +20,7 @@
   layouts (FASTCHART_BASE_FIELDS vs FASTCHART_SYMBOL_BASE_FIELDS) with
   no common parent type.
 
-  v1.0: the former fastchart_encode_image() helper retired. Raster
-  outputs go through fastchart_encoder.c (PNG/JPG/WebP via libpng /
+  Raster outputs go through fastchart_encoder.c (PNG/JPG/WebP via libpng /
   libjpeg-turbo / libwebp) after fastchart_rasterize.c rasterizes the
   SVG document via plutovg.
 */

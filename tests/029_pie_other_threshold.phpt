@@ -16,7 +16,7 @@ $slices = [
     'Tiny4' => 2,
 ];
 
-// Without threshold -- all 6 slices visible (6 distinct palette colors).
+// Without threshold: all 6 slices visible (6 distinct palette colors).
 $bytes = (new FastChart\PieChart(600, 600))
     ->setSlices($slices)
     ->renderPng();

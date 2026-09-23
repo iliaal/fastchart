@@ -67,7 +67,7 @@ make -j
 make test
 ```
 
-Strict-warnings dev build (recommended for contributors):
+For contributors, a strict-warnings dev build:
 
 ```sh
 ./configure --enable-fastchart --enable-fastchart-dev
@@ -98,8 +98,7 @@ php -d extension=./modules/fastchart.so \
 
 ## Quick start
 
-The shortest path is the `renderToFile()` helper, which picks the
-encoder from the file extension:
+`renderToFile()` picks the encoder from the file extension:
 
 ```php
 (new FastChart\LineChart(640, 320))
@@ -153,11 +152,10 @@ Raster memory: the physical canvas (`setSize()` × `setDpi()/96`) is
 capped at 16384 px per dimension and 64M pixels total. Peak raster
 memory is one RGBA frame counted against PHP's `memory_limit`, plus
 encoder workspace. At the 64M-pixel cap the frame is ~256 MiB.
-Use the
+To enforce a lower per-render pixel ceiling process-wide, set the
 `fastchart.max_render_pixels` INI (`PHP_INI_SYSTEM`, default
-67108864) to enforce a lower per-render pixel ceiling process-wide —
-renders above it throw `ValueError` before any frame buffer is
-allocated.
+67108864). Renders above it throw `ValueError` before any frame buffer
+is allocated.
 
 A second ceiling, `fastchart.max_image_cache_bytes` (`PHP_INI_SYSTEM`,
 default 67108864), bounds the decoded source images
@@ -214,7 +212,7 @@ $chart->renderToFile('/tmp/dau.pdf');    // inferred from the extension
 ```
 
 Without `--with-pdfio`, both methods throw `"PDF support not compiled
-in"`. This first cut falls back to solid fills for gradients, omits
+in"`. PDF output falls back to solid fills for gradients, omits
 raster background images, and flattens alpha against the page
 background. Stacked translucent overlaps won't match SVG/raster
 exactly because the current pdfio API doesn't expose per-shape
@@ -226,9 +224,9 @@ first; the Windows CI and prebuilt DLLs ship PDF-disabled.
 
 Three static methods on `FastChart\Chart` rasterize caller-supplied
 SVG bytes through the same plutovg + libpng / libjpeg-turbo /
-libwebp pipeline. Useful for round-tripping `renderSvg()` output, or
-for stitching multiple `drawSvgFragment()` calls into one outer SVG
-and rasterizing the result, all in-process. When stitching, pass each
+libwebp pipeline. Use them to round-trip `renderSvg()` output, or to
+stitch multiple `drawSvgFragment()` calls into one outer SVG and
+rasterize the result in-process. When stitching, pass each
 fragment a distinct `drawSvgFragment($idPrefix)` so gradient and
 clip-path ids from different charts can't collide:
 
@@ -278,8 +276,7 @@ therefore add the rasterize cost on top of the SVG-only number.
 | Treemap      |   0.11 |  39.76 |   31.74 |   9.74 |
 | Waterfall    |   0.09 |  39.21 |   32.05 |  10.08 |
 
-SVG stays well under a quarter-millisecond across the board (0.02 to
-0.22 ms) because there's no rasterization; the backend appends strings
+SVG takes 0.02 to 0.22 ms because there's no rasterization; the backend appends strings
 into a `smart_str` via an allocation-free integer/fraction number
 emitter.
 The raster encoders split into three bands: JPG fastest (9-15 ms,
@@ -294,7 +291,7 @@ with SSSE3/NEON shuffle, deferred text overlays, larger FT raster pool);
 see
 [`optimization.md`](optimization.md) for the per-finding breakdown.
 
-Repro the numbers locally:
+To reproduce the numbers locally:
 
 ```sh
 php -d extension=./modules/fastchart.so docs/bench/bench.php

@@ -9,7 +9,7 @@ fastchart
  * linear formula `255 - a * 2`, clamping the input to [0,127]. With
  * input 127 (libgd convention for "fully transparent") the output is
  * 1/255, not 0. The SVG drop-shadow then renders as
- * rgba(0,0,0,0.004) — a faint dot of black rather than truly
+ * rgba(0,0,0,0.004): a faint dot of black rather than truly
  * invisible. */
 
 $svg = (new FastChart\BarChart(200, 200))

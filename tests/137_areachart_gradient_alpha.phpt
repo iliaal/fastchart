@@ -5,7 +5,7 @@ fastchart
 --FILE--
 <?php
 
-/* CR-007: previously the AreaChart gradient branch forced fully
+/* Regression: the AreaChart gradient branch forced fully
  * opaque stops, so a non-stacked overlay with gradient on lost
  * the translucency that setFillOpacity (alias setAreaAlpha) gives
  * solid-fill overlays. The fix composes the alpha byte into the
@@ -38,7 +38,7 @@ echo "opaque_uses_hex_stop: ",
     (preg_match('/<stop[^>]+stop-color="#[A-F0-9]{6}"/', $svg_op)
         ? "yes" : "no"), "\n";
 
-/* Stacked AreaChart stays opaque regardless of setFillOpacity —
+/* Stacked AreaChart stays opaque regardless of setFillOpacity:
  * stacked is documented as always opaque. Gradient still applies. */
 $svg_st = (new FastChart\AreaChart(200, 120))
     ->setSeries([
@@ -53,7 +53,7 @@ echo "stacked_uses_hex_stop: ",
     (preg_match('/<stop[^>]+stop-color="#[A-F0-9]{6}"/', $svg_st)
         ? "yes" : "no"), "\n";
 
-/* BarChart gradient (no alpha setter on bars) stays opaque —
+/* BarChart gradient (no alpha setter on bars) stays opaque:
  * verifies the default-to-0xFF logic in fc_svg_emit_gradient_def
  * for callers passing bare 24-bit RGB. */
 $svg_bar = (new FastChart\BarChart(200, 120))

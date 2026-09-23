@@ -9,7 +9,7 @@ simplexml
 /* A TOTAL bar is anchored to zero but keeps its sign: a net-loss
  * subtotal (a negative total) draws from the value up to the baseline,
  * below the axis, the way waterfall charts conventionally show a
- * negative cumulative total — not fabs()'d to render as a positive-height
+ * negative cumulative total, not fabs()'d to render as a positive-height
  * bar identical to its absolute value. The signed span pulls the y-axis
  * into the negative region. */
 
