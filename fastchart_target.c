@@ -668,10 +668,25 @@ static int fc_pin_cache_store(const char *canonical, const char *leaf,
     return 0;
 }
 
+/* The PHP internal stream-path predicate is not exported by all supported
+ * builds. Keep the same scheme grammar locally so the resource loader never
+ * treats a wrapper URL as a filesystem path. */
+static bool fc_path_is_stream_path(const char *filename)
+{
+    const unsigned char *p = (const unsigned char *)filename;
+    while ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z')
+        || (*p >= '0' && *p <= '9') || *p == '+' || *p == '-'
+        || *p == '.') {
+        p++;
+    }
+    return p != (const unsigned char *)filename
+        && p[0] == ':' && p[1] == '/' && p[2] == '/';
+}
+
 static int fc_pin_canonical_path(const char *path, char *canonical)
 {
     if (VCWD_REALPATH(path, canonical) != NULL) return 1;
-    if (!php_is_stream_path(path)) return 0;
+    if (!fc_path_is_stream_path(path)) return 0;
     const char *path_for_open = NULL;
     int er = EG(error_reporting);
     EG(error_reporting) = 0;
@@ -909,7 +924,7 @@ static bool fc_path_is_blocked_file_wrapper(const char *path)
 static php_stream *fc_open_wrapped_source(const char *path, bool *handled)
 {
     *handled = false;
-    if (!php_is_stream_path(path)) return NULL;
+    if (!fc_path_is_stream_path(path)) return NULL;
     *handled = true;
     if (fc_path_has_nested_url(path)) return NULL;
     if (fc_path_is_php_filter(path)) return NULL;
