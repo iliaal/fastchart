@@ -10279,6 +10279,130 @@ ZEND_METHOD(FastChart_StockChart, addParabolicSAR)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+/* Power-of-two scaled Neumaier accumulator. The represented value is
+ * (sum + correction) * 2^scale_exp. Aligning to a larger term halves the
+ * stored components exactly; protecting an addition from overflow also
+ * halves them. Either way an opposite-sign cancellation exposes the
+ * compensation instead of losing the residual. */
+typedef struct {
+    double sum;
+    double correction;
+    int scale_exp;
+} fastchart_scaled_sum;
+
+static void fastchart_scaled_sum_init(fastchart_scaled_sum *acc)
+{
+    acc->sum = 0.0;
+    acc->correction = 0.0;
+    acc->scale_exp = 0;
+}
+
+static void fastchart_scaled_sum_halve(fastchart_scaled_sum *acc)
+{
+    acc->sum *= 0.5;
+    acc->correction *= 0.5;
+    acc->scale_exp--;
+}
+
+static void fastchart_scaled_sum_align_up(fastchart_scaled_sum *acc)
+{
+    acc->sum *= 0.5;
+    acc->correction *= 0.5;
+    acc->scale_exp++;
+}
+
+static void fastchart_scaled_sum_rebase(fastchart_scaled_sum *acc)
+{
+    double live = acc->sum + acc->correction;
+    if (live == 0.0) {
+        /* A complete cancellation leaves a stale large scale. Reset it so
+         * the next, much smaller term is not flushed to zero. */
+        acc->sum = 0.0;
+        acc->correction = 0.0;
+        acc->scale_exp = 0;
+    }
+}
+
+static void fastchart_scaled_sum_add_term(
+    fastchart_scaled_sum *acc, double term)
+{
+    if (term == 0.0) return;
+    if ((term > 0.0) == (acc->sum > 0.0)
+        && fabs(acc->sum) > DBL_MAX * 0.25) {
+        fastchart_scaled_sum_halve(acc);
+        term *= 0.5;
+    }
+    double next = acc->sum + term;
+    if (!isfinite(next)) {
+        fastchart_scaled_sum_halve(acc);
+        term *= 0.5;
+        next = acc->sum + term;
+    }
+    if (fabs(acc->sum) >= fabs(term)) {
+        acc->correction += (acc->sum - next) + term;
+    } else {
+        acc->correction += (term - next) + acc->sum;
+    }
+    acc->sum = next;
+}
+
+static void fastchart_scaled_sum_add_value(
+    fastchart_scaled_sum *acc, double value)
+{
+    if (value == 0.0) return;
+    int value_exp;
+    double mantissa = frexp(value, &value_exp);
+    fastchart_scaled_sum_rebase(acc);
+    while (value_exp > acc->scale_exp) {
+        fastchart_scaled_sum_align_up(acc);
+    }
+    fastchart_scaled_sum_add_term(
+        acc, ldexp(mantissa, value_exp - acc->scale_exp));
+}
+
+static void fastchart_scaled_sum_add_product(
+    fastchart_scaled_sum *acc, double left, double right)
+{
+    if (left == 0.0 || right == 0.0) return;
+    int left_exp, right_exp;
+    double mantissa = frexp(left, &left_exp) * frexp(right, &right_exp);
+    int product_exp = left_exp + right_exp;
+
+    /* Align the represented scale with the product before materializing
+     * it; the product itself is never formed as a double. */
+    fastchart_scaled_sum_rebase(acc);
+    while (product_exp > acc->scale_exp) {
+        fastchart_scaled_sum_align_up(acc);
+    }
+    fastchart_scaled_sum_add_term(
+        acc, ldexp(mantissa, product_exp - acc->scale_exp));
+}
+
+static double fastchart_scaled_sum_average(
+    const fastchart_scaled_sum *acc, double count)
+{
+    double normalized = acc->sum + acc->correction;
+    if (normalized == 0.0 || count <= 0.0) return 0.0;
+    int exponent;
+    double mantissa = frexp(normalized, &exponent);
+    return scalbn(mantissa / count, exponent + acc->scale_exp);
+}
+
+static double fastchart_scaled_sum_ratio(
+    const fastchart_scaled_sum *numerator,
+    const fastchart_scaled_sum *denominator)
+{
+    double num = numerator->sum + numerator->correction;
+    double den = denominator->sum + denominator->correction;
+    if (den == 0.0) return 0.0;
+    int num_exp, den_exp;
+    double num_mantissa = frexp(num, &num_exp);
+    double den_mantissa = frexp(den, &den_exp);
+    return scalbn(num_mantissa / den_mantissa,
+        (num_exp + numerator->scale_exp)
+        - (den_exp + denominator->scale_exp));
+}
+
 ZEND_METHOD(FastChart_StockChart, addVWAP)
 {
     zend_long color = -1;
@@ -10297,25 +10421,51 @@ ZEND_METHOD(FastChart_StockChart, addVWAP)
         "FastChart\\StockChart::addVWAP()", &n);
     if (!c) RETURN_THROWS();
 
-    /* Cumulative VWAP: running sum(typical*volume)/sum(volume), typical =
-     * (high+low+close)/3. With no usable volume, fall back to the
-     * cumulative typical-price average so the line is still meaningful. */
+    /* Accumulate the weighted price and weight sums separately, each as a
+     * power-of-two scaled Neumaier sum, then divide once per point. This
+     * avoids price*volume and cumulative-volume overflow while keeping
+     * uniform inputs exact. The raw three-price sum is tried first so
+     * close-price cancellation residuals survive; dividing before summing
+     * is only the overflow fallback. */
     int any_vol = 0;
     for (int i = 0; i < n; i++) {
-        if (c[i].has_volume && c[i].volume > 0) { any_vol = 1; break; }
+        if (c[i].has_volume && c[i].volume > 0.0) {
+            any_vol = 1;
+            break;
+        }
     }
+    ZEND_ASSERT(n > 0);
     double *out = emalloc((size_t)n * sizeof(double));
-    double cum_pv = 0, cum_v = 0, cum_tp = 0;
+    fastchart_scaled_sum weighted;
+    fastchart_scaled_sum weights;
+    fastchart_scaled_sum prices;
+    fastchart_scaled_sum_init(&weighted);
+    fastchart_scaled_sum_init(&weights);
+    fastchart_scaled_sum_init(&prices);
+    bool have_weighted_sample = false;
     for (int i = 0; i < n; i++) {
-        double tp = (c[i].high + c[i].low + c[i].close) / 3.0;
-        cum_tp += tp;
+        double pair = c[i].high + c[i].low;
+        double sum = pair + c[i].close;
+        double tp = isfinite(sum)
+            ? sum / 3.0
+            : c[i].high / 3.0 + c[i].low / 3.0 + c[i].close / 3.0;
         if (any_vol) {
-            double v = (c[i].has_volume && c[i].volume > 0) ? c[i].volume : 0.0;
-            cum_pv += tp * v;
-            cum_v  += v;
-            out[i] = cum_v > 0 ? cum_pv / cum_v : tp;
+            double volume = (c[i].has_volume && c[i].volume > 0.0)
+                ? c[i].volume : 0.0;
+            if (volume > 0.0) {
+                fastchart_scaled_sum_add_product(&weighted, tp, volume);
+                fastchart_scaled_sum_add_value(&weights, volume);
+                double value = fastchart_scaled_sum_ratio(&weighted, &weights);
+                out[i] = isfinite(value) ? value : tp;
+                have_weighted_sample = true;
+            } else if (have_weighted_sample) {
+                out[i] = fastchart_scaled_sum_ratio(&weighted, &weights);
+            } else {
+                out[i] = tp;
+            }
         } else {
-            out[i] = cum_tp / (double)(i + 1);
+            fastchart_scaled_sum_add_value(&prices, tp);
+            out[i] = fastchart_scaled_sum_average(&prices, (double)(i + 1));
         }
     }
 
@@ -11297,11 +11447,10 @@ static int fastchart_sunburst_build_rec(
             ZEND_HASH_FOREACH_VAL(cht, ce) {
                 if (ce) ZVAL_DEREF(ce);
                 if (Z_TYPE_P(ce) != IS_ARRAY) continue;
-                if (fastchart_sunburst_build_rec(
-                        Z_ARRVAL_P(ce), nodes, n, cap,
-                        self_idx, depth + 1, max_depth) != 0) {
-                    return -1;
-                }
+                int child_result = fastchart_sunburst_build_rec(
+                    Z_ARRVAL_P(ce), nodes, n, cap,
+                    self_idx, depth + 1, max_depth);
+                if (child_result != 0) return child_result;
                 kept++;
             } ZEND_HASH_FOREACH_END();
             self = &(*nodes)[self_idx];  /* erealloc may have moved it */
@@ -11311,15 +11460,21 @@ static int fastchart_sunburst_build_rec(
     }
 
     /* Aggregate value: explicit if leaf or if user set one; sum of
-     * children otherwise. */
-    if (self->child_count > 0 && !have_val) {
+     * children otherwise. Child values are finite non-negative doubles,
+     * but their mathematical sum can exceed DBL_MAX. Return a distinct
+     * status so setHierarchy() can reject the input without replacing the
+     * previously committed tree. */
+    if (self->child_count > 0) {
         /* Depth-first storage interleaves children with descendants; select
-         * direct children by parent index, not a contiguous child range. */
+         * direct children by parent index, not a contiguous child range.
+         * The renderer partitions by this sum even when the user supplied
+         * an explicit parent value, so both paths require a finite total. */
         double sum = 0.0;
         for (int i = self->child_first; i < *n; i++) {
             if ((*nodes)[i].parent == self_idx) sum += (*nodes)[i].value;
         }
-        self->value = sum;
+        if (!isfinite(sum)) return -2;
+        self->value = have_val ? val_set : sum;
     } else {
         self->value = have_val ? val_set : 0.0;
     }
@@ -11338,17 +11493,24 @@ ZEND_METHOD(FastChart_SunburstChart, setHierarchy)
     /* Build before releasing prior state so depth/node-limit failures are atomic. */
     fastchart_sunburst_node *nodes = NULL;
     int n = 0, cap = 0, max_depth = 0;
-    if (fastchart_sunburst_build_rec(
-            Z_ARRVAL_P(root), &nodes, &n, &cap, -1, 0, &max_depth) != 0) {
+    int build_result = fastchart_sunburst_build_rec(
+        Z_ARRVAL_P(root), &nodes, &n, &cap, -1, 0, &max_depth);
+    if (build_result != 0) {
         if (nodes) {
             for (int i = 0; i < n; i++) {
                 if (nodes[i].label) efree(nodes[i].label);
             }
             efree(nodes);
         }
-        zend_value_error(
-            "FastChart\\SunburstChart::setHierarchy() received a malformed "
-            "hierarchy (max nesting depth is 32)");
+        if (build_result == -2) {
+            zend_value_error(
+                "FastChart\\SunburstChart::setHierarchy() aggregate values "
+                "exceed the supported numeric range");
+        } else {
+            zend_value_error(
+                "FastChart\\SunburstChart::setHierarchy() received a malformed "
+                "hierarchy (max nesting depth is 32)");
+        }
         RETURN_THROWS();
     }
 
