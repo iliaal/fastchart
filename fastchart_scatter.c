@@ -28,6 +28,49 @@
 #define MAX_POINTS 8192
 #define FASTCHART_MAX_SCATTER_SERIES 8
 
+static inline void fastchart_scatter_y_parts(
+    double y, double scale, double *scaled, double *residual)
+{
+    *scaled = y / scale;
+    *residual = y - *scaled * scale;
+}
+
+static bool fastchart_scatter_solve_normal_equations(
+    double aug[4][5], int m, double out[4])
+{
+    for (int k = 0; k < m; k++) {
+        int piv = k;
+        double best = fabs(aug[k][k]);
+        for (int r = k + 1; r < m; r++) {
+            if (fabs(aug[r][k]) > best) {
+                best = fabs(aug[r][k]);
+                piv = r;
+            }
+        }
+        if (best < 1e-12) return false;
+        if (piv != k) {
+            for (int c = 0; c <= m; c++) {
+                double tmp = aug[k][c];
+                aug[k][c] = aug[piv][c];
+                aug[piv][c] = tmp;
+            }
+        }
+        double pivval = aug[k][k];
+        for (int c = 0; c <= m; c++) aug[k][c] /= pivval;
+        for (int r = 0; r < m; r++) {
+            if (r == k) continue;
+            double f = aug[r][k];
+            if (f == 0.0) continue;
+            for (int c = 0; c <= m; c++) aug[r][c] -= f * aug[k][c];
+        }
+    }
+    for (int k = 0; k < m; k++) {
+        out[k] = aug[k][m];
+        if (!isfinite(out[k])) return false;
+    }
+    return true;
+}
+
 int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_target_t *t)
 {
 	fastchart_reset_image_map_areas((fastchart_obj *)self);
@@ -178,90 +221,100 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
             ? fastchart_target_color_rgb(t, (int)self->trend_line_color)
             : pal.axis;
 
-        /* Normalize x to xn = (x - x_mid) / x_half so xn ∈ [-1, 1]
-         * across the input range. The Vandermonde of normalized x
-         * is several orders of magnitude better-conditioned than
-         * raw x for any non-trivial domain (e.g. timestamps near
-         * 1.7e9 + degree 3 produces matrix entries near 1e30, well
-         * past double-precision recovery). Evaluation re-applies
-         * the same normalization. */
-        double x_mid  = 0.5 * (x_min + x_max);
-        double x_half = 0.5 * (x_max - x_min);
+        /* Center X before division to preserve low-order differences. Y is
+         * split into a bounded main part and an exact scaling residual, so
+         * moments stay finite without discarding tiny values. */
+        double x_mid = 0.5 * x_min + 0.5 * x_max;
+        double x_half = 0.5 * x_max - 0.5 * x_min;
         if (x_half <= 0) x_half = 1.0;
+        double y_scale = fmax(fabs(y_min), fabs(y_max));
+        if (y_scale == 0.0) y_scale = 1.0;
 
-        double coeffs[4] = {0};
+        double coeffs_scaled[4] = {0};
+        double coeffs_residual[4] = {0};
         if (deg == 1) {
-            double sx = 0, sy = 0, sxx = 0, sxy = 0;
+            double sx = 0.0, sxx = 0.0;
+            double sy_scaled = 0.0, sy_residual = 0.0;
+            double sxy_scaled = 0.0, sxy_residual = 0.0;
             for (int i = 0; i < n; i++) {
                 double xn = (points[i].x - x_mid) / x_half;
-                sx  += xn;
-                sy  += points[i].y;
+                double ys, yr;
+                fastchart_scatter_y_parts(
+                    points[i].y, y_scale, &ys, &yr);
+                sx += xn;
                 sxx += xn * xn;
-                sxy += xn * points[i].y;
+                sy_scaled += ys;
+                sy_residual += yr;
+                sxy_scaled += xn * ys;
+                sxy_residual += xn * yr;
             }
-            double denom = n * sxx - sx * sx;
-            /* All-equal x (e.g. a vertical scatter) makes denom 0; the
-             * fit is undefined. Skip like the singular-matrix case below
-             * rather than plotting the zero-initialized y=0 line. */
+            double mean_x = sx / (double)n;
+            double denom = sxx / (double)n - mean_x * mean_x;
             if (denom == 0.0 || !isfinite(denom)) goto no_fit;
-            coeffs[1] = (n * sxy - sx * sy) / denom;
-            coeffs[0] = (sy - coeffs[1] * sx) / n;
+
+            double mean_y_scaled = sy_scaled / (double)n;
+            double mean_y_residual = sy_residual / (double)n;
+            double cov_scaled = sxy_scaled / (double)n - mean_x * mean_y_scaled;
+            double cov_residual = sxy_residual / (double)n
+                - mean_x * mean_y_residual;
+            coeffs_scaled[1] = cov_scaled / denom;
+            coeffs_scaled[0] = mean_y_scaled - coeffs_scaled[1] * mean_x;
+            coeffs_residual[1] = cov_residual / denom;
+            coeffs_residual[0] = mean_y_residual
+                - coeffs_residual[1] * mean_x;
         } else {
-            /* Normal equations for polynomial of degree `deg` in
-             * normalized x:
-             *   A[k][j] = sum xn^(j+k)        for j,k in 0..deg
-             *   b[k]    = sum y * xn^k
-             * Solve A * c = b (size deg+1) via partial-pivot Gauss. */
             int m = deg + 1;
-            double A[4][5] = {{0}};   /* augmented [m | b] */
+            double A[4][4] = {{0}};
+            double b_scaled[4] = {0};
+            double b_residual[4] = {0};
             for (int i = 0; i < n; i++) {
                 double xn = (points[i].x - x_mid) / x_half;
-                double yi = points[i].y;
-                double xpow_row[8]; /* xn^0 .. xn^(2*deg) for deg<=3 */
+                double ys, yr;
+                fastchart_scatter_y_parts(
+                    points[i].y, y_scale, &ys, &yr);
+                double xpow_row[8];
                 xpow_row[0] = 1.0;
-                for (int p = 1; p <= 2 * deg; p++) xpow_row[p] = xpow_row[p-1] * xn;
+                for (int p = 1; p <= 2 * deg; p++) {
+                    xpow_row[p] = xpow_row[p - 1] * xn;
+                }
                 for (int k = 0; k < m; k++) {
                     for (int j = 0; j < m; j++) {
                         A[k][j] += xpow_row[j + k];
                     }
-                    A[k][m] += yi * xpow_row[k];
+                    b_scaled[k] += ys * xpow_row[k];
+                    b_residual[k] += yr * xpow_row[k];
                 }
             }
-            /* Gauss-Jordan with partial pivoting. */
+
+            double aug[4][5] = {{0}};
             for (int k = 0; k < m; k++) {
-                int piv = k;
-                double best = fabs(A[k][k]);
-                for (int r = k + 1; r < m; r++) {
-                    if (fabs(A[r][k]) > best) { best = fabs(A[r][k]); piv = r; }
-                }
-                if (best < 1e-12) { /* singular: skip */ goto no_fit; }
-                if (piv != k) {
-                    for (int c = 0; c <= m; c++) {
-                        double tmp = A[k][c]; A[k][c] = A[piv][c]; A[piv][c] = tmp;
-                    }
-                }
-                double pivval = A[k][k];
-                for (int c = 0; c <= m; c++) A[k][c] /= pivval;
-                for (int r = 0; r < m; r++) {
-                    if (r == k) continue;
-                    double f = A[r][k];
-                    if (f == 0) continue;
-                    for (int c = 0; c <= m; c++) A[r][c] -= f * A[k][c];
-                }
+                for (int j = 0; j < m; j++) aug[k][j] = A[k][j];
+                aug[k][m] = b_scaled[k];
             }
-            for (int k = 0; k < m; k++) coeffs[k] = A[k][m];
+            if (!fastchart_scatter_solve_normal_equations(
+                    aug, m, coeffs_scaled)) goto no_fit;
+            for (int k = 0; k < m; k++) {
+                for (int j = 0; j < m; j++) aug[k][j] = A[k][j];
+                aug[k][m] = b_residual[k];
+            }
+            if (!fastchart_scatter_solve_normal_equations(
+                    aug, m, coeffs_residual)) goto no_fit;
         }
 
-        /* Plot 200 sub-segments. Normalize x exactly as the fit did. */
         const int N = 200;
         int prev_px = 0, prev_py = 0;
         for (int s = 0; s <= N; s++) {
             double frac_s = (double)s / (double)N;
-            double x = x_min + frac_s * (x_max - x_min);
+            double x = fastchart_lerp_finite(x_min, x_max, frac_s);
             double xn = (x - x_mid) / x_half;
-            double y = 0;
-            double xp = 1.0;
-            for (int k = 0; k <= deg; k++) { y += coeffs[k] * xp; xp *= xn; }
+            double ys = coeffs_scaled[deg];
+            double yr = coeffs_residual[deg];
+            for (int k = deg - 1; k >= 0; k--) {
+                ys = ys * xn + coeffs_scaled[k];
+                yr = yr * xn + coeffs_residual[k];
+            }
+            double y = ys * y_scale + yr;
+            if (!isfinite(y)) break;
 			double frac = fastchart_normalize_finite(x, xrange.min,
 				xrange.max);
             int px = fastchart_frac_to_px(frac, plot.x0, plot.x1);

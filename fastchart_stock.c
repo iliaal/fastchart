@@ -27,6 +27,13 @@
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 
+static inline void fastchart_stock_close_parts(
+    double close, double scale, double *scaled, double *residual)
+{
+    *scaled = close / scale;
+    *residual = close - *scaled * scale;
+}
+
 int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target_t *t)
 {
     if (!self->candles || self->candle_count == 0) {
@@ -503,6 +510,15 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
     if (vol_scale) efree(vol_scale);
 
     if (sma_count > 0) {
+        /* Split each close into a bounded main part and the residual left by
+         * that scaling. Main parts prevent overflow; residuals preserve tiny
+         * values that would underflow beside much larger opposite-sign data. */
+        double close_scale = 0.0;
+        for (int i = 0; i < n; i++) {
+            close_scale = fmax(close_scale, fabs(candles[i].close));
+        }
+        if (close_scale == 0.0) close_scale = 1.0;
+
         for (int s = 0; s < sma_count; s++) {
             int period = sma_periods[s];
             int type = sma_types[s];
@@ -511,21 +527,30 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
             int has_prev = 0;
 
             if (type == FASTCHART_MA_EMA) {
-                /* Seed EMA with SMA over the first `period` closes
-                 * so the warm-up region has a stable starting value
-                 * (raw EMA seeded with closes[0] would over-weight
-                 * the first bar for the first ~period steps). */
-                double sum = 0;
-                for (int k = 0; k < period; k++) sum += candles[k].close;
-                double ema = sum / (double)period;
+                double sum_scaled = 0.0, sum_residual = 0.0;
+                for (int k = 0; k < period; k++) {
+                    double scaled, residual;
+                    fastchart_stock_close_parts(
+                        candles[k].close, close_scale, &scaled, &residual);
+                    sum_scaled += scaled;
+                    sum_residual += residual;
+                }
+                double ema_scaled = sum_scaled / (double)period;
+                double ema_residual = sum_residual / (double)period;
                 double alpha = 2.0 / ((double)period + 1.0);
                 for (int i = period - 1; i < n; i++) {
                     if (i >= period) {
-                        ema = alpha * candles[i].close + (1.0 - alpha) * ema;
+                        double scaled, residual;
+                        fastchart_stock_close_parts(
+                            candles[i].close, close_scale, &scaled, &residual);
+                        ema_scaled = alpha * scaled + (1.0 - alpha) * ema_scaled;
+                        ema_residual = alpha * residual
+                            + (1.0 - alpha) * ema_residual;
                     }
+                    double value = ema_scaled * close_scale + ema_residual;
                     int x = fastchart_x_time_to_pixel(&price_pane,
                                                       candles[i].ts, t_min, t_max);
-                    int y = fastchart_y_to_pixel(ema, &yrange, &price_pane);
+                    int y = fastchart_y_to_pixel(value, &yrange, &price_pane);
                     if (has_prev) {
                         fastchart_target_line(t, prev_x, prev_y, x, y,
                                               color, 2, FASTCHART_DASH_SOLID);
@@ -533,32 +558,40 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                     prev_x = x; prev_y = y; has_prev = 1;
                 }
             } else if (type == FASTCHART_MA_WMA) {
-                /* Linear-weighted MA: weights 1..period applied
-                 * oldest-to-newest. Sliding update keeps two running
-                 * sums (sum_close, sum_weighted) so each step is O(1)
-                 * regardless of period. Identity: shifting the window
-                 * one bar drops the oldest close (weight 1) and
-                 * decreases each remaining weight by 1, so
-                 *   new_sum_weighted = old_sum_weighted
-                 *                    + period * new_close
-                 *                    - old_sum_close. */
-                double sum_close = 0, sum_weighted = 0;
+                double sum_close_scaled = 0.0, sum_close_residual = 0.0;
+                double sum_weighted_scaled = 0.0, sum_weighted_residual = 0.0;
                 for (int k = 0; k < period; k++) {
-                    sum_close += candles[k].close;
-                    sum_weighted += (double)(k + 1) * candles[k].close;
+                    double scaled, residual;
+                    fastchart_stock_close_parts(
+                        candles[k].close, close_scale, &scaled, &residual);
+                    sum_close_scaled += scaled;
+                    sum_close_residual += residual;
+                    sum_weighted_scaled += (double)(k + 1) * scaled;
+                    sum_weighted_residual += (double)(k + 1) * residual;
                 }
                 double denom_inv = 2.0 / ((double)period * (double)(period + 1));
                 for (int i = period - 1; i < n; i++) {
                     if (i >= period) {
-                        double new_close = candles[i].close;
-                        double drop = candles[i - period].close;
-                        sum_weighted += (double)period * new_close - sum_close;
-                        sum_close += new_close - drop;
+                        double new_scaled, new_residual;
+                        double drop_scaled, drop_residual;
+                        fastchart_stock_close_parts(
+                            candles[i].close, close_scale,
+                            &new_scaled, &new_residual);
+                        fastchart_stock_close_parts(
+                            candles[i - period].close, close_scale,
+                            &drop_scaled, &drop_residual);
+                        sum_weighted_scaled += (double)period * new_scaled
+                            - sum_close_scaled;
+                        sum_weighted_residual += (double)period * new_residual
+                            - sum_close_residual;
+                        sum_close_scaled += new_scaled - drop_scaled;
+                        sum_close_residual += new_residual - drop_residual;
                     }
-                    double wma = sum_weighted * denom_inv;
+                    double value = sum_weighted_scaled * denom_inv * close_scale
+                        + sum_weighted_residual * denom_inv;
                     int x = fastchart_x_time_to_pixel(&price_pane,
                                                       candles[i].ts, t_min, t_max);
-                    int y = fastchart_y_to_pixel(wma, &yrange, &price_pane);
+                    int y = fastchart_y_to_pixel(value, &yrange, &price_pane);
                     if (has_prev) {
                         fastchart_target_line(t, prev_x, prev_y, x, y,
                                               color, 2, FASTCHART_DASH_SOLID);
@@ -566,17 +599,33 @@ int fastchart_stock_render_to_target(fastchart_stock_obj *self, fastchart_target
                     prev_x = x; prev_y = y; has_prev = 1;
                 }
             } else {
-                /* SMA via sliding-window sum: O(n) per overlay
-                 * regardless of period. */
-                double sum = 0;
-                for (int k = 0; k < period && k < n; k++) sum += candles[k].close;
+                double sum_scaled = 0.0, sum_residual = 0.0;
+                for (int k = 0; k < period; k++) {
+                    double scaled, residual;
+                    fastchart_stock_close_parts(
+                        candles[k].close, close_scale, &scaled, &residual);
+                    sum_scaled += scaled;
+                    sum_residual += residual;
+                }
                 double inv_p = 1.0 / (double)period;
                 for (int i = period - 1; i < n; i++) {
-                    if (i >= period) sum += candles[i].close - candles[i - period].close;
-                    double avg = sum * inv_p;
+                    if (i >= period) {
+                        double new_scaled, new_residual;
+                        double drop_scaled, drop_residual;
+                        fastchart_stock_close_parts(
+                            candles[i].close, close_scale,
+                            &new_scaled, &new_residual);
+                        fastchart_stock_close_parts(
+                            candles[i - period].close, close_scale,
+                            &drop_scaled, &drop_residual);
+                        sum_scaled += new_scaled - drop_scaled;
+                        sum_residual += new_residual - drop_residual;
+                    }
+                    double value = sum_scaled * inv_p * close_scale
+                        + sum_residual * inv_p;
                     int x = fastchart_x_time_to_pixel(&price_pane,
                                                       candles[i].ts, t_min, t_max);
-                    int y = fastchart_y_to_pixel(avg, &yrange, &price_pane);
+                    int y = fastchart_y_to_pixel(value, &yrange, &price_pane);
                     if (has_prev) {
                         fastchart_target_line(t, prev_x, prev_y, x, y,
                                               color, 2, FASTCHART_DASH_SOLID);

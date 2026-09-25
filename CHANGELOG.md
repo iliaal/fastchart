@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve finite precision in moving averages, VWAP, scatter trends, and
+  calendar heatmap scaling when values approach floating-point limits.
+
 ## [1.7.4] - 2026-09-17
 
 ### Fixed

@@ -10297,26 +10297,52 @@ ZEND_METHOD(FastChart_StockChart, addVWAP)
         "FastChart\\StockChart::addVWAP()", &n);
     if (!c) RETURN_THROWS();
 
-    /* Cumulative VWAP: running sum(typical*volume)/sum(volume), typical =
-     * (high+low+close)/3. With no usable volume, fall back to the
-     * cumulative typical-price average so the line is still meaningful. */
+    /* Cumulative VWAP is a convex update: blend the prior mean with the
+     * current typical price using the new sample's volume fraction. This
+     * avoids price*volume and cumulative-volume overflow. Try the raw
+     * three-price sum first so close-price cancellation residuals survive;
+     * divide before summing only when that raw sum overflows. */
     int any_vol = 0;
+    double volume_scale = 0.0;
     for (int i = 0; i < n; i++) {
-        if (c[i].has_volume && c[i].volume > 0) { any_vol = 1; break; }
-    }
-    double *out = emalloc((size_t)n * sizeof(double));
-    double cum_pv = 0, cum_v = 0, cum_tp = 0;
-    for (int i = 0; i < n; i++) {
-        double tp = (c[i].high + c[i].low + c[i].close) / 3.0;
-        cum_tp += tp;
-        if (any_vol) {
-            double v = (c[i].has_volume && c[i].volume > 0) ? c[i].volume : 0.0;
-            cum_pv += tp * v;
-            cum_v  += v;
-            out[i] = cum_v > 0 ? cum_pv / cum_v : tp;
-        } else {
-            out[i] = cum_tp / (double)(i + 1);
+        if (c[i].has_volume && c[i].volume > 0.0) {
+            any_vol = 1;
+            volume_scale = fmax(volume_scale, c[i].volume);
         }
+    }
+    ZEND_ASSERT(n > 0);
+    double *out = emalloc((size_t)n * sizeof(double));
+    double mean = 0.0;
+    double cum_v = 0.0;
+    bool have_weighted_sample = false;
+    for (int i = 0; i < n; i++) {
+        double pair = c[i].high + c[i].low;
+        double sum = pair + c[i].close;
+        double tp = isfinite(sum)
+            ? sum / 3.0
+            : c[i].high / 3.0 + c[i].low / 3.0 + c[i].close / 3.0;
+        if (any_vol) {
+            double v = (c[i].has_volume && c[i].volume > 0.0)
+                ? c[i].volume / volume_scale : 0.0;
+            if (v > 0.0) {
+                if (have_weighted_sample) {
+                    double new_weight = v / (cum_v + v);
+                    mean = mean * (1.0 - new_weight) + tp * new_weight;
+                } else {
+                    mean = tp;
+                    have_weighted_sample = true;
+                }
+                cum_v += v;
+            } else if (!have_weighted_sample) {
+                mean = tp;
+            }
+        } else if (i == 0) {
+            mean = tp;
+        } else {
+            double old_weight = (double)i / (double)(i + 1);
+            mean = mean * old_weight + tp / (double)(i + 1);
+        }
+        out[i] = mean;
     }
 
     if (push_price_overlay(self, FASTCHART_OVERLAY_VWAP, out, NULL, NULL, n, color_rgb) != 0) {
@@ -11297,11 +11323,10 @@ static int fastchart_sunburst_build_rec(
             ZEND_HASH_FOREACH_VAL(cht, ce) {
                 if (ce) ZVAL_DEREF(ce);
                 if (Z_TYPE_P(ce) != IS_ARRAY) continue;
-                if (fastchart_sunburst_build_rec(
-                        Z_ARRVAL_P(ce), nodes, n, cap,
-                        self_idx, depth + 1, max_depth) != 0) {
-                    return -1;
-                }
+                int child_result = fastchart_sunburst_build_rec(
+                    Z_ARRVAL_P(ce), nodes, n, cap,
+                    self_idx, depth + 1, max_depth);
+                if (child_result != 0) return child_result;
                 kept++;
             } ZEND_HASH_FOREACH_END();
             self = &(*nodes)[self_idx];  /* erealloc may have moved it */
@@ -11311,15 +11336,21 @@ static int fastchart_sunburst_build_rec(
     }
 
     /* Aggregate value: explicit if leaf or if user set one; sum of
-     * children otherwise. */
-    if (self->child_count > 0 && !have_val) {
+     * children otherwise. Child values are finite non-negative doubles,
+     * but their mathematical sum can exceed DBL_MAX. Return a distinct
+     * status so setHierarchy() can reject the input without replacing the
+     * previously committed tree. */
+    if (self->child_count > 0) {
         /* Depth-first storage interleaves children with descendants; select
-         * direct children by parent index, not a contiguous child range. */
+         * direct children by parent index, not a contiguous child range.
+         * The renderer partitions by this sum even when the user supplied
+         * an explicit parent value, so both paths require a finite total. */
         double sum = 0.0;
         for (int i = self->child_first; i < *n; i++) {
             if ((*nodes)[i].parent == self_idx) sum += (*nodes)[i].value;
         }
-        self->value = sum;
+        if (!isfinite(sum)) return -2;
+        self->value = have_val ? val_set : sum;
     } else {
         self->value = have_val ? val_set : 0.0;
     }
@@ -11338,17 +11369,24 @@ ZEND_METHOD(FastChart_SunburstChart, setHierarchy)
     /* Build before releasing prior state so depth/node-limit failures are atomic. */
     fastchart_sunburst_node *nodes = NULL;
     int n = 0, cap = 0, max_depth = 0;
-    if (fastchart_sunburst_build_rec(
-            Z_ARRVAL_P(root), &nodes, &n, &cap, -1, 0, &max_depth) != 0) {
+    int build_result = fastchart_sunburst_build_rec(
+        Z_ARRVAL_P(root), &nodes, &n, &cap, -1, 0, &max_depth);
+    if (build_result != 0) {
         if (nodes) {
             for (int i = 0; i < n; i++) {
                 if (nodes[i].label) efree(nodes[i].label);
             }
             efree(nodes);
         }
-        zend_value_error(
-            "FastChart\\SunburstChart::setHierarchy() received a malformed "
-            "hierarchy (max nesting depth is 32)");
+        if (build_result == -2) {
+            zend_value_error(
+                "FastChart\\SunburstChart::setHierarchy() aggregate values "
+                "exceed the supported numeric range");
+        } else {
+            zend_value_error(
+                "FastChart\\SunburstChart::setHierarchy() received a malformed "
+                "hierarchy (max nesting depth is 32)");
+        }
         RETURN_THROWS();
     }
 
