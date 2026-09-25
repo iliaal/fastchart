@@ -215,6 +215,7 @@ static int fc_sink_write(fastchart_sink_t *sink, const uint8_t *data,
 void fastchart_sink_init_smart_str(fastchart_sink_t *sink, smart_str *out)
 {
 	sink->write = fc_smart_str_sink_write;
+	sink->smart_target = out;
 	sink->context = out;
 	sink->bytes_written = 0;
 	sink->failed = 0;
@@ -226,6 +227,15 @@ void fastchart_sink_init_stream(fastchart_sink_t *sink, php_stream *stream)
 	sink->context = stream;
 	sink->bytes_written = 0;
 	sink->failed = 0;
+	sink->smart_target = NULL;
+}
+
+void fastchart_sink_abort(fastchart_sink_t *sink)
+{
+	if (sink != NULL && sink->smart_target != NULL) {
+		smart_str_free(sink->smart_target);
+		sink->smart_target = NULL;
+	}
 }
 
 /* --------------------------- PNG ----------------------------------- */

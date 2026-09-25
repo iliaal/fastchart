@@ -6565,6 +6565,11 @@ static int fastchart_chart_render_to_sink(fastchart_obj *self,
 			break;
 		}
 	} zend_catch {
+		/* The frame and whatever the encoder already streamed out
+		 * both belong to this scope; a buffer-API render would
+		 * otherwise strand its partial output for the rest of the
+		 * request. */
+		fastchart_sink_abort(sink);
 		fastchart_pixels_release(&pix);
 		zend_bailout();
 	} zend_end_try();

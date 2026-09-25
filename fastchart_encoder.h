@@ -47,6 +47,10 @@ typedef struct {
 	void                   *context;
 	size_t                  bytes_written;
 	int                     failed;
+	/* Buffer-API destination, NULL for a stream sink. A timeout or
+	 * memory bailout inside an encoder abandons the bytes written so
+	 * far, and this is what the owning render path releases. */
+	smart_str              *smart_target;
 } fastchart_sink_t;
 
 /* Sink callbacks return zero only after consuming the full write. Stream
@@ -54,6 +58,11 @@ typedef struct {
  * makes no forward progress. */
 void fastchart_sink_init_smart_str(fastchart_sink_t *sink, smart_str *out);
 void fastchart_sink_init_stream(fastchart_sink_t *sink, php_stream *stream);
+
+/* Release what a bailout would otherwise strand: the buffer-API output
+ * of a smart_str sink, and nothing for a stream sink (its caller owns
+ * the destination and aborts its own staging file). */
+void fastchart_sink_abort(fastchart_sink_t *sink);
 
 /* One-time module-load init: prewarms the SSSE3 capability cache so
  * its lazy first-call branch can't race under ZTS. */
