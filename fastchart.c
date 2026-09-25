@@ -135,6 +135,10 @@ const char *fastchart_default_font_path = NULL;
 /* FreeType state is per-thread under ZTS; GSHUTDOWN releases each thread's
  * cache because MSHUTDOWN runs only once per process. */
 ZEND_DECLARE_MODULE_GLOBALS(fastchart)
+extern int fastchart_pin_path(const char *path);
+extern void fastchart_pin_cache_shutdown(void);
+
+
 
 static PHP_GINIT_FUNCTION(fastchart)
 {
@@ -2669,6 +2673,13 @@ ZEND_METHOD(FastChart_Chart, setFontPath)
     if (fastchart_validate_font_path(path, "setFontPath") != 0) {
         RETURN_THROWS();
     }
+    if (fastchart_pin_path(ZSTR_VAL(path)) != 0
+        && PG(open_basedir) && *PG(open_basedir)) {
+        zend_throw_error(NULL,
+            "FastChart\\Chart::setFontPath() could not pin the font parent directory");
+        RETURN_THROWS();
+    }
+
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (self->font_path) {
@@ -3223,6 +3234,13 @@ ZEND_METHOD(FastChart_Chart, addIconAt)
         }
         RETURN_THROWS();
     }
+    if (fastchart_pin_path(ZSTR_VAL(path)) != 0
+        && PG(open_basedir) && *PG(open_basedir)) {
+        zend_throw_error(NULL,
+            "FastChart\\Chart::addIconAt() could not pin the icon parent directory");
+        RETURN_THROWS();
+    }
+
     if ((max_w != -1 && (max_w < 1 || max_w > 4096)) ||
         (max_h != -1 && (max_h < 1 || max_h > 4096))) {
         zend_value_error("FastChart\\Chart::addIconAt() max width / height must be -1 or in [1, 4096]");
@@ -3533,6 +3551,12 @@ ZEND_METHOD(FastChart_Chart, setBackgroundImage)
             RETURN_THROWS();
         }
     }
+        if (fastchart_pin_path(ZSTR_VAL(path)) != 0
+            && PG(open_basedir) && *PG(open_basedir)) {
+            zend_throw_error(NULL,
+                "FastChart\\Chart::setBackgroundImage() could not pin the image parent directory");
+            RETURN_THROWS();
+        }
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
     if (self->bg_image_path) zend_string_release(self->bg_image_path);
@@ -11668,6 +11692,24 @@ ZEND_METHOD(FastChart_NetworkChart, setIterations)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+
+static int fastchart_collection_text_add(zval *zv, const char *method,
+                                         size_t *total)
+{
+    ZEND_ASSERT(*total <= FASTCHART_MAX_RENDER_TEXT_BYTES);
+    const char *text = fastchart_label_or_null(zv);
+    if (!text) return 0;
+
+    size_t len = (size_t)strlen(text);
+    if (len > FASTCHART_MAX_RENDER_TEXT_BYTES - *total) {
+        zend_value_error("%s aggregate text exceeds the %d-byte limit",
+                         method, (int)FASTCHART_MAX_RENDER_TEXT_BYTES);
+        return -1;
+    }
+    *total += len;
+    return 0;
+}
+
 /* --- PopulationPyramid ---------------------------------------------- */
 
 #define FASTCHART_MAX_PYRAMID_ROWS 256
@@ -11727,6 +11769,16 @@ ZEND_METHOD(FastChart_PopulationPyramid, setCategories)
         ht, FASTCHART_MAX_PYRAMID_ROWS,
         "FastChart\\PopulationPyramid::setCategories()", "categories");
     if (n < 0) RETURN_THROWS();
+    size_t text_bytes = 0;
+    zval *category;
+    ZEND_HASH_FOREACH_VAL(ht, category) {
+        if (fastchart_collection_text_add(
+                category, "FastChart\\PopulationPyramid::setCategories()",
+                &text_bytes) != 0) {
+            RETURN_THROWS();
+        }
+    } ZEND_HASH_FOREACH_END();
+
 
     if (self->categories) {
         for (int i = 0; i < self->cat_count; i++) {
@@ -11794,6 +11846,8 @@ ZEND_METHOD(FastChart_ViolinPlot, setGroups)
         ht, FASTCHART_MAX_VIOLIN_GROUPS,
         "FastChart\\ViolinPlot::setGroups()", "groups");
     if (n < 0) RETURN_THROWS();
+    size_t text_bytes = 0;
+
 
     /* Validate every group's value cap before dropping the prior
      * groups, so a caught over-cap ValueError leaves the chart intact. */
@@ -11815,16 +11869,10 @@ ZEND_METHOD(FastChart_ViolinPlot, setGroups)
         } ZEND_HASH_FOREACH_END();
     }
 
-    if (self->groups) {
-        for (int i = 0; i < self->group_count; i++) {
-            if (self->groups[i].label) efree(self->groups[i].label);
-            if (self->groups[i].values) efree(self->groups[i].values);
-        }
-        efree(self->groups);
-        self->groups = NULL;
+    if (n <= 0) {
+        fastchart_violin_release_extras(self);
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
     }
-    self->group_count = 0;
-    if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
     fastchart_violin_group *parsed = ecalloc(n, sizeof(*parsed));
     int kept = 0;
     zval *entry;
@@ -11833,8 +11881,8 @@ ZEND_METHOD(FastChart_ViolinPlot, setGroups)
         if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
-        const char *lbl = fastchart_label_or_null(
-            zend_hash_str_find(eht, "label", sizeof("label") - 1));
+        zval *label_zv = zend_hash_str_find(eht, "label", sizeof("label") - 1);
+        const char *lbl = fastchart_label_or_null(label_zv);
         parsed[kept].label = lbl ? estrdup(lbl) : NULL;
         parsed[kept].color_rgb = fastchart_extract_optional_rgb(eht, "color", sizeof("color") - 1);
         zval *zv = zend_hash_str_find(eht, "values", sizeof("values") - 1);
@@ -11875,12 +11923,23 @@ ZEND_METHOD(FastChart_ViolinPlot, setGroups)
         /* Drop a group with no finite values rather than reserving a
          * blank column for it. */
         if (parsed[kept].n > 0) {
+            if (fastchart_collection_text_add(
+                    label_zv, "FastChart\\ViolinPlot::setGroups()",
+                    &text_bytes) != 0) {
+                for (int i = 0; i <= kept; i++) {
+                    if (parsed[i].label) efree(parsed[i].label);
+                    if (parsed[i].values) efree(parsed[i].values);
+                }
+                efree(parsed);
+                RETURN_THROWS();
+            }
             kept++;
         } else if (parsed[kept].label) {
             efree(parsed[kept].label);
             parsed[kept].label = NULL;
         }
     } ZEND_HASH_FOREACH_END();
+    fastchart_violin_release_extras(self);
     self->groups = parsed;
     self->group_count = kept;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
@@ -12166,6 +12225,18 @@ ZEND_METHOD(FastChart_WordCloud, setWords)
         ht, FASTCHART_MAX_WORDS,
         "FastChart\\WordCloud::setWords()", "words");
     if (n < 0) RETURN_THROWS();
+    size_t text_bytes = 0;
+    zval *word;
+    ZEND_HASH_FOREACH_VAL(ht, word) {
+        if (word) ZVAL_DEREF(word);
+        if (Z_TYPE_P(word) != IS_ARRAY) continue;
+        if (fastchart_collection_text_add(
+                zend_hash_str_find(Z_ARRVAL_P(word), "text", sizeof("text") - 1),
+                "FastChart\\WordCloud::setWords()", &text_bytes) != 0) {
+            RETURN_THROWS();
+        }
+    } ZEND_HASH_FOREACH_END();
+
 
     if (self->words) {
         for (int i = 0; i < self->word_count; i++) {
@@ -12236,6 +12307,23 @@ ZEND_METHOD(FastChart_SerpentineTimeline, setEvents)
         ht, FASTCHART_MAX_TIMELINE_EVENTS,
         "FastChart\\SerpentineTimeline::setEvents()", "events");
     if (n < 0) RETURN_THROWS();
+    size_t text_bytes = 0;
+    zval *event;
+    ZEND_HASH_FOREACH_VAL(ht, event) {
+        if (event) ZVAL_DEREF(event);
+        if (Z_TYPE_P(event) != IS_ARRAY) continue;
+        zval *label = zend_hash_str_find(Z_ARRVAL_P(event), "label", sizeof("label") - 1);
+        zval *date = zend_hash_str_find(Z_ARRVAL_P(event), "date", sizeof("date") - 1);
+        if (fastchart_collection_text_add(
+                label, "FastChart\\SerpentineTimeline::setEvents()",
+                &text_bytes) != 0
+            || fastchart_collection_text_add(
+                date, "FastChart\\SerpentineTimeline::setEvents()",
+                &text_bytes) != 0) {
+            RETURN_THROWS();
+        }
+    } ZEND_HASH_FOREACH_END();
+
 
     if (self->events) {
         for (int i = 0; i < self->event_count; i++) {
@@ -12830,6 +12918,7 @@ PHP_MSHUTDOWN_FUNCTION(fastchart)
 {
     (void)type;
     UNREGISTER_INI_ENTRIES();
+    fastchart_pin_cache_shutdown();
     /* The default path is a static literal; per-thread FreeType cleanup
      * belongs to GSHUTDOWN. */
     fastchart_default_font_path = NULL;

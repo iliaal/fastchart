@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Source-image and font loading reject blocking built-in wrappers, enforce
+  `open_basedir` for custom wrappers, and bind descriptor ownership to
+  bailout-safe cleanup.
+
+### Fixed
+
+- Collection text budgets count only retained groups and preserve prior chart
+  state when a setter rejects oversized input.
+
 ## [1.7.4] - 2026-09-17
 
 ### Fixed

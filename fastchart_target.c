@@ -33,6 +33,11 @@
 #else
 #include <unistd.h>
 #endif
+#ifdef PHP_WIN32
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -50,6 +55,25 @@
 #define FC_IMAGE_MAX_BYTES   (8 * 1024 * 1024)
 #define FC_FONT_MAX_BYTES    (16 * 1024 * 1024)
 #define FC_FONT_CACHE_BYTES  FC_FONT_MAX_BYTES
+
+#define FC_PIN_CACHE_N 64
+typedef struct {
+    char *key;
+    char *canonical;
+    char *leaf;
+    int dir_fd;
+} fc_pinned_parent_entry;
+static fc_pinned_parent_entry fc_pin_cache[FC_PIN_CACHE_N];
+static unsigned fc_pin_next;
+#ifdef PHP_WIN32
+static SRWLOCK fc_pin_lock = SRWLOCK_INIT;
+#define FC_PIN_LOCK() AcquireSRWLockExclusive(&fc_pin_lock)
+#define FC_PIN_UNLOCK() ReleaseSRWLockExclusive(&fc_pin_lock)
+#else
+static pthread_mutex_t fc_pin_lock = PTHREAD_MUTEX_INITIALIZER;
+#define FC_PIN_LOCK() pthread_mutex_lock(&fc_pin_lock)
+#define FC_PIN_UNLOCK() pthread_mutex_unlock(&fc_pin_lock)
+#endif
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -446,12 +470,379 @@ static zend_string *fc_stream_copy_and_close(php_stream *stream, size_t max_len)
     return raw;
 }
 
-static unsigned char *fastchart_load_font_bytes(const char *font_path,
-                                                size_t *out_len)
+static void fc_close_descriptor(int fd)
 {
-    *out_len = 0;
-    if (php_check_open_basedir_ex(font_path, 0) != 0) return NULL;
+#ifdef PHP_WIN32
+    _close(fd);
+#else
+    close(fd);
+#endif
+}
 
+static php_stream *fc_stream_from_fd(int fd)
+{
+    php_stream * volatile stream = NULL;
+    volatile int live_fd = fd;
+    zend_try {
+        stream = php_stream_fopen_from_fd(live_fd, "rb", NULL);
+        if (stream) live_fd = -1;
+    } zend_catch {
+        if (live_fd >= 0) fc_close_descriptor(live_fd);
+        zend_bailout();
+    } zend_end_try();
+    if (!stream && live_fd >= 0) fc_close_descriptor(live_fd);
+    return stream;
+}
+
+
+/* Walk an already-resolved absolute path with descriptor-relative opens.
+ * Each directory and the leaf are opened with O_NOFOLLOW, so replacing a
+ * component with a symlink cannot redirect the final descriptor. */
+static int fc_open_nofollow_absolute(const char *path, int flags)
+{
+#ifdef PHP_WIN32
+    return VCWD_OPEN(path, flags);
+#elif defined(O_NOFOLLOW) && defined(O_DIRECTORY)
+    if (!path || path[0] != '/') return -1;
+
+    const char *leaf = strrchr(path, '/');
+    if (!leaf || !leaf[1]) return -1;
+    size_t leaf_len = strlen(leaf + 1);
+    if (leaf_len > NAME_MAX) return -1;
+
+#ifdef O_PATH
+    int dir_flags = O_PATH | O_DIRECTORY | O_NOFOLLOW;
+#elif defined(O_SEARCH)
+    int dir_flags = O_SEARCH | O_DIRECTORY | O_NOFOLLOW;
+#else
+    int dir_flags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW;
+#endif
+#ifdef O_CLOEXEC
+    dir_flags |= O_CLOEXEC;
+#endif
+    int dirfd = open("/", dir_flags);
+    if (dirfd < 0) return -1;
+
+    const char *cursor = path;
+    char component[NAME_MAX + 1];
+    while (cursor < leaf) {
+        while (*cursor == '/') cursor++;
+        const char *end = strchr(cursor, '/');
+        if (!end || end > leaf) end = leaf;
+        size_t len = (size_t)(end - cursor);
+        if (len == 0 || len > NAME_MAX) {
+            close(dirfd);
+            return -1;
+        }
+        memcpy(component, cursor, len);
+        component[len] = '\0';
+        int next = openat(dirfd, component, dir_flags);
+        close(dirfd);
+        if (next < 0) return -1;
+        dirfd = next;
+        cursor = end;
+    }
+    memcpy(component, leaf + 1, leaf_len + 1);
+
+    int leaf_flags = flags | O_NOFOLLOW;
+#ifdef O_CLOEXEC
+    leaf_flags |= O_CLOEXEC;
+#endif
+    int fd = openat(dirfd, component, leaf_flags);
+    close(dirfd);
+    return fd;
+#else
+    /* Without no-follow descriptor-relative opens, fail closed rather than
+     * reintroducing the check/open symlink race. */
+    (void)path;
+    (void)flags;
+    return -1;
+#endif
+}
+
+static int fc_pinned_parent_allowed(int dirfd, const char *leaf)
+{
+    if (!PG(open_basedir) || !*PG(open_basedir)) return 0;
+#if defined(__linux__)
+    char fd_path[64];
+    int fd_path_len = snprintf(fd_path, sizeof(fd_path),
+        "/proc/self/fd/%d", dirfd);
+    if (fd_path_len <= 0 || (size_t)fd_path_len >= sizeof(fd_path)) return -1;
+    char resolved[MAXPATHLEN];
+    ssize_t resolved_len = readlink(fd_path, resolved, sizeof(resolved) - 1);
+    if (resolved_len <= 0) return -1;
+    size_t length = (size_t)resolved_len;
+    resolved[length] = '\0';
+    size_t leaf_len = strlen(leaf);
+    if (length + leaf_len + 2 > sizeof(resolved)) return -1;
+    resolved[length++] = '/';
+    memcpy(resolved + length, leaf, leaf_len + 1);
+    return php_check_open_basedir_ex(resolved, 0) == 0 ? 0 : -1;
+#elif defined(__APPLE__)
+    char resolved[MAXPATHLEN];
+    if (fcntl(dirfd, F_GETPATH, resolved) == -1) return -1;
+    size_t length = strlen(resolved);
+    size_t leaf_len = strlen(leaf);
+    if (length + leaf_len + 2 > sizeof(resolved)) return -1;
+    resolved[length++] = '/';
+    memcpy(resolved + length, leaf, leaf_len + 1);
+    return php_check_open_basedir_ex(resolved, 0) == 0 ? 0 : -1;
+#else
+    (void)dirfd;
+    (void)leaf;
+    return -1;
+#endif
+}
+
+static int fc_dup_descriptor(int fd)
+{
+#ifdef PHP_WIN32
+    return _dup(fd);
+#else
+    return dup(fd);
+#endif
+}
+
+static void fc_pin_cache_remove(const char *key)
+{
+    FC_PIN_LOCK();
+    for (int i = 0; i < FC_PIN_CACHE_N; i++) {
+        if (fc_pin_cache[i].key && strcmp(fc_pin_cache[i].key, key) == 0) {
+            fc_close_descriptor(fc_pin_cache[i].dir_fd);
+            free(fc_pin_cache[i].key);
+            free(fc_pin_cache[i].canonical);
+            free(fc_pin_cache[i].leaf);
+            memset(&fc_pin_cache[i], 0, sizeof(fc_pin_cache[i]));
+            break;
+        }
+    }
+    FC_PIN_UNLOCK();
+}
+
+static int fc_pin_cache_store(const char *canonical, const char *leaf,
+                              int dir_fd)
+{
+    size_t canonical_len = strlen(canonical);
+    size_t leaf_len = strlen(leaf);
+    char *key_copy = malloc(canonical_len + 1);
+    char *canonical_copy = malloc(canonical_len + 1);
+    char *leaf_copy = malloc(leaf_len + 1);
+    if (!key_copy || !canonical_copy || !leaf_copy) {
+        free(key_copy);
+        free(canonical_copy);
+        free(leaf_copy);
+        fc_close_descriptor(dir_fd);
+        return -1;
+    }
+    memcpy(key_copy, canonical, canonical_len + 1);
+    memcpy(canonical_copy, canonical, canonical_len + 1);
+    memcpy(leaf_copy, leaf, leaf_len + 1);
+
+    FC_PIN_LOCK();
+    int slot = -1;
+    for (int i = 0; i < FC_PIN_CACHE_N; i++) {
+        if (fc_pin_cache[i].key && strcmp(fc_pin_cache[i].key, canonical) == 0) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) {
+        slot = (int)(fc_pin_next++ % FC_PIN_CACHE_N);
+        if (fc_pin_cache[slot].key) {
+            fc_close_descriptor(fc_pin_cache[slot].dir_fd);
+            free(fc_pin_cache[slot].key);
+            free(fc_pin_cache[slot].canonical);
+            free(fc_pin_cache[slot].leaf);
+        }
+    } else if (fc_pin_cache[slot].key) {
+        fc_close_descriptor(fc_pin_cache[slot].dir_fd);
+        free(fc_pin_cache[slot].key);
+        free(fc_pin_cache[slot].canonical);
+        free(fc_pin_cache[slot].leaf);
+    }
+    fc_pin_cache[slot].key = key_copy;
+    fc_pin_cache[slot].canonical = canonical_copy;
+    fc_pin_cache[slot].leaf = leaf_copy;
+    fc_pin_cache[slot].dir_fd = dir_fd;
+    FC_PIN_UNLOCK();
+    return 0;
+}
+
+/* The PHP internal stream-path predicate is not exported by all supported
+ * builds. Keep the same scheme grammar locally so the resource loader never
+ * treats a wrapper URL as a filesystem path. */
+static bool fc_path_is_stream_path(const char *filename)
+{
+    const unsigned char *p = (const unsigned char *)filename;
+    while ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z')
+        || (*p >= '0' && *p <= '9') || *p == '+' || *p == '-'
+        || *p == '.') {
+        p++;
+    }
+    return p != (const unsigned char *)filename
+        && p[0] == ':' && p[1] == '/' && p[2] == '/';
+}
+
+static int fc_pin_canonical_path(const char *path, char *canonical)
+{
+    if (VCWD_REALPATH(path, canonical) != NULL) return 1;
+    if (!fc_path_is_stream_path(path)) return 0;
+    const char *path_for_open = NULL;
+    int er = EG(error_reporting);
+    EG(error_reporting) = 0;
+    php_stream_wrapper *wrapper = php_stream_locate_url_wrapper(
+        path, &path_for_open, IGNORE_PATH);
+    EG(error_reporting) = er;
+    if (EG(exception)) {
+        zend_clear_exception();
+        return 0;
+    }
+    if (wrapper == &php_plain_files_wrapper && path_for_open) {
+        return VCWD_REALPATH(path_for_open, canonical) != NULL;
+    }
+    return 0;
+}
+
+int fastchart_pin_path(const char *path)
+{
+#ifdef PHP_WIN32
+    return 0;
+#endif
+    if (!path || !*path) return 0;
+    char canonical[MAXPATHLEN];
+    if (!fc_pin_canonical_path(path, canonical)) {
+        return 0;
+    }
+    if (PG(open_basedir) && *PG(open_basedir)
+        && php_check_open_basedir_ex(canonical, 0) != 0) {
+        fc_pin_cache_remove(canonical);
+        return -1;
+    }
+    const char *leaf = strrchr(canonical, '/');
+    if (!leaf || !leaf[1]) return 0;
+    char parent[MAXPATHLEN];
+    size_t parent_len = (size_t)(leaf - canonical);
+    if (parent_len == 0) {
+        parent[0] = '/';
+        parent[1] = '\0';
+    } else {
+        memcpy(parent, canonical, parent_len);
+        parent[parent_len] = '\0';
+    }
+    int dir_flags = O_RDONLY;
+#ifdef O_DIRECTORY
+    dir_flags |= O_DIRECTORY;
+#endif
+#ifdef O_PATH
+    dir_flags = O_PATH | O_DIRECTORY;
+#endif
+#ifdef O_NOFOLLOW
+    dir_flags |= O_NOFOLLOW;
+#endif
+#ifdef O_CLOEXEC
+    dir_flags |= O_CLOEXEC;
+#endif
+    int dir_fd;
+    if (parent[0] == '/' && parent[1] == '\0') {
+        dir_fd = open("/", dir_flags);
+    } else {
+        dir_fd = fc_open_nofollow_absolute(parent, dir_flags);
+    }
+    volatile int owned_fd = dir_fd;
+    int pin_result = -1;
+    zend_try {
+        if (fc_pinned_parent_allowed(dir_fd, leaf + 1) == 0) {
+            pin_result = fc_pin_cache_store(canonical, leaf + 1, owned_fd);
+            owned_fd = -1;
+        }
+    } zend_catch {
+        if (owned_fd >= 0) fc_close_descriptor(owned_fd);
+        zend_bailout();
+    } zend_end_try();
+    if (pin_result != 0) {
+        if (owned_fd >= 0) fc_close_descriptor(owned_fd);
+        return -1;
+    }
+    return 0;
+}
+
+int fastchart_open_pinned_fd(const char *path, int flags, int *out_fd)
+{
+#ifndef PHP_WIN32
+    *out_fd = -1;
+    if (!path || !*path) return 0;
+    char canonical[MAXPATHLEN];
+    if (!fc_pin_canonical_path(path, canonical)) return 0;
+    char leaf[NAME_MAX + 1];
+    int dir_fd = -1;
+    FC_PIN_LOCK();
+    for (int i = 0; i < FC_PIN_CACHE_N; i++) {
+        if (!fc_pin_cache[i].key || strcmp(fc_pin_cache[i].key, canonical) != 0) {
+            continue;
+        }
+        size_t leaf_len = strlen(fc_pin_cache[i].leaf);
+        if (leaf_len >= sizeof(leaf)) {
+            FC_PIN_UNLOCK();
+            return -1;
+        }
+        memcpy(leaf, fc_pin_cache[i].leaf, leaf_len + 1);
+        dir_fd = fc_dup_descriptor(fc_pin_cache[i].dir_fd);
+        break;
+    }
+    FC_PIN_UNLOCK();
+    if (dir_fd < 0) return 0;
+    volatile int fd = -1;
+    int open_result = -1;
+    zend_try {
+        if (fc_pinned_parent_allowed(dir_fd, leaf) == 0) {
+            int leaf_flags = flags | O_NOFOLLOW;
+#ifdef O_CLOEXEC
+            leaf_flags |= O_CLOEXEC;
+#endif
+            fd = openat(dir_fd, leaf, leaf_flags);
+            if (fd >= 0 && fc_pinned_parent_allowed(dir_fd, leaf) == 0) {
+                open_result = 1;
+            } else if (fd >= 0) {
+                fc_close_descriptor(fd);
+                fd = -1;
+            }
+        }
+    } zend_catch {
+        if (fd >= 0) fc_close_descriptor(fd);
+        fc_close_descriptor(dir_fd);
+        zend_bailout();
+    } zend_end_try();
+    fc_close_descriptor(dir_fd);
+    if (open_result != 1) return -1;
+    *out_fd = fd;
+    return 1;
+#else
+    *out_fd = -1;
+    return 0;
+#endif
+}
+
+
+void fastchart_pin_cache_shutdown(void)
+{
+    FC_PIN_LOCK();
+    for (int i = 0; i < FC_PIN_CACHE_N; i++) {
+        if (fc_pin_cache[i].key) {
+            fc_close_descriptor(fc_pin_cache[i].dir_fd);
+            free(fc_pin_cache[i].key);
+            free(fc_pin_cache[i].canonical);
+            free(fc_pin_cache[i].leaf);
+            memset(&fc_pin_cache[i], 0, sizeof(fc_pin_cache[i]));
+        }
+    }
+    FC_PIN_UNLOCK();
+}
+
+/* Enforce open_basedir, open without blocking on FIFOs, then bind the
+ * access-policy check and object-type validation to the descriptor that
+ * will actually be read. */
+static int fc_open_regular_path(const char *path, zend_stat_t *st)
+{
     int flags = O_RDONLY;
 #ifdef O_NONBLOCK
     flags |= O_NONBLOCK;
@@ -459,29 +850,172 @@ static unsigned char *fastchart_load_font_bytes(const char *font_path,
 #ifdef O_BINARY
     flags |= O_BINARY;
 #endif
-    int fd = VCWD_OPEN(font_path, flags);
-    if (fd < 0) return NULL;
-
-    zend_stat_t st;
-    if (zend_fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) ||
-        st.st_size <= 0 || (uintmax_t)st.st_size > FC_FONT_MAX_BYTES) {
+    int fd = -1;
+    int pinned = fastchart_open_pinned_fd(path, flags, &fd);
+    if (pinned < 0) return -1;
+    if (pinned == 0) {
 #ifdef PHP_WIN32
-        _close(fd);
+        if (php_check_open_basedir_ex(path, 0) != 0) return -1;
+        fd = fc_open_nofollow_absolute(path, flags);
 #else
-        close(fd);
+        if (PG(open_basedir) && *PG(open_basedir)) {
+            if (fastchart_pin_path(path) != 0) return -1;
+            pinned = fastchart_open_pinned_fd(path, flags, &fd);
+            if (pinned <= 0) return -1;
+        } else {
+            char resolved[MAXPATHLEN];
+            char *resolved_path = VCWD_REALPATH(path, resolved);
+            if (!resolved_path) return -1;
+            fd = fc_open_nofollow_absolute(resolved_path, flags);
+        }
 #endif
+    }
+    if (zend_fstat(fd, st) != 0 || !S_ISREG(st->st_mode)) {
+        fc_close_descriptor(fd);
+        return -1;
+    }
+    return fd;
+}
+
+
+static bool fc_path_has_nested_url(const char *path)
+{
+    const char *first = strstr(path, "://");
+    return first && strstr(first + 3, "://") != NULL;
+}
+static bool fc_path_is_php_filter(const char *path)
+{
+    static const char prefix[] = "php://filter";
+    for (size_t i = 0; i < sizeof(prefix) - 1; i++) {
+        unsigned char c = (unsigned char)path[i];
+        if (c >= 'A' && c <= 'Z') c = (unsigned char)(c + ('a' - 'A'));
+        if (c != (unsigned char)prefix[i]) return false;
+    }
+    return true;
+}
+static bool fc_path_starts_with_ci(const char *path, const char *prefix)
+{
+    for (size_t i = 0; prefix[i]; i++) {
+        unsigned char c = (unsigned char)path[i];
+        if (c >= 'A' && c <= 'Z') c = (unsigned char)(c + ('a' - 'A'));
+        if (c != (unsigned char)prefix[i]) return false;
+    }
+    return true;
+}
+static bool fc_path_is_blocked_file_wrapper(const char *path)
+{
+    return fc_path_starts_with_ci(path, "compress.zlib://")
+        || fc_path_starts_with_ci(path, "compress.bzip2://")
+        || fc_path_starts_with_ci(path, "zlib://")
+        || fc_path_starts_with_ci(path, "bzip2://")
+        || fc_path_starts_with_ci(path, "php://stdin")
+        || fc_path_starts_with_ci(path, "php://stdout")
+        || fc_path_starts_with_ci(path, "php://stderr")
+        || fc_path_starts_with_ci(path, "php://input")
+        || fc_path_starts_with_ci(path, "php://output")
+        || fc_path_starts_with_ci(path, "php://fd/");
+}
+
+
+
+/* Keep URI/custom-wrapper compatibility on the legacy stream path. Plain
+ * POSIX paths never enter this branch: they use the descriptor-first open
+ * below, which is the only path for which PHP exposes O_NONBLOCK. */
+static php_stream *fc_open_wrapped_source(const char *path, bool *handled)
+{
+    *handled = false;
+    if (!fc_path_is_stream_path(path)) return NULL;
+    *handled = true;
+    if (fc_path_has_nested_url(path)) return NULL;
+    if (fc_path_is_php_filter(path)) return NULL;
+    if (fc_path_is_blocked_file_wrapper(path)) return NULL;
+
+    const char *path_for_open = NULL;
+    int er = EG(error_reporting);
+    EG(error_reporting) = 0;
+    php_stream_wrapper *wrapper = php_stream_locate_url_wrapper(
+        path, &path_for_open, IGNORE_PATH);
+    EG(error_reporting) = er;
+    if (EG(exception)) {
+        zend_clear_exception();
         return NULL;
     }
+    if (!wrapper || wrapper->is_url) return NULL;
+    if (wrapper == &php_plain_files_wrapper) {
+        if (!path_for_open || !*path_for_open) return NULL;
+        zend_stat_t st;
+        int fd = -1;
+        int open_flags = O_RDONLY;
+#ifdef O_NONBLOCK
+        open_flags |= O_NONBLOCK;
+#endif
+        int pinned = fastchart_open_pinned_fd(path, open_flags, &fd);
+        if (pinned < 0) return NULL;
+        if (pinned == 0) {
+            if (PG(open_basedir) && *PG(open_basedir)) {
+                if (fastchart_pin_path(path) != 0) return NULL;
+                pinned = fastchart_open_pinned_fd(path, open_flags, &fd);
+                if (pinned < 0) return NULL;
+            }
+            if (pinned == 0) {
+                fd = fc_open_regular_path(path_for_open, &st);
+                if (fd < 0) {
+                    if (EG(exception)) zend_clear_exception();
+                    return NULL;
+                }
+            } else if (zend_fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
+                fc_close_descriptor(fd);
+                return NULL;
+            }
+        } else if (zend_fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
+            fc_close_descriptor(fd);
+            return NULL;
+        }
+        php_stream *stream = fc_stream_from_fd(fd);
+        if (!stream && EG(exception)) zend_clear_exception();
+        return stream;
+    }
 
-    php_stream *stream = php_stream_fopen_from_fd(fd, "rb", NULL);
+    if (PG(open_basedir) && *PG(open_basedir)) {
+        int check_er = EG(error_reporting);
+        EG(error_reporting) = 0;
+        int denied = php_check_open_basedir_ex(path, 0) != 0;
+        EG(error_reporting) = check_er;
+        if (EG(exception)) zend_clear_exception();
+        if (denied) return NULL;
+    }
+    er = EG(error_reporting);
+    EG(error_reporting) = 0;
+    php_stream *stream = php_stream_open_wrapper((char *)path, "rb",
+        IGNORE_PATH, NULL);
+    EG(error_reporting) = er;
     if (!stream) {
-#ifdef PHP_WIN32
-        _close(fd);
-#else
-        close(fd);
-#endif
+        if (EG(exception)) zend_clear_exception();
         return NULL;
     }
+
+    /* User wrappers may omit stream_stat; PHP emits a warning for that
+     * optional operation. Keep the historical MIME-sniff fallback and let
+     * the read itself validate the payload instead. */
+    return stream;
+}
+
+
+
+static unsigned char *fastchart_load_font_bytes(const char *font_path,
+                                                size_t *out_len)
+{
+    *out_len = 0;
+    zend_stat_t st;
+    int fd = fc_open_regular_path(font_path, &st);
+    if (fd < 0 || st.st_size <= 0 ||
+        (uintmax_t)st.st_size > FC_FONT_MAX_BYTES) {
+        if (fd >= 0) fc_close_descriptor(fd);
+        return NULL;
+    }
+
+    php_stream *stream = fc_stream_from_fd(fd);
+    if (!stream) return NULL;
 
     zend_string *raw = fc_stream_copy_and_close(stream, FC_FONT_MAX_BYTES + 1);
     if (!raw || ZSTR_LEN(raw) == 0 || ZSTR_LEN(raw) > FC_FONT_MAX_BYTES) {
@@ -515,6 +1049,8 @@ FT_Face fastchart_ft_face(const char *font_path)
 {
     if (!font_path) return NULL;
     FT_Library lib = fastchart_ft_library();
+    if (PG(open_basedir) && *PG(open_basedir)
+        && fastchart_pin_path(font_path) != 0) return NULL;
     if (!lib) return NULL;
 
     fc_ft_face_slot *cache = FASTCHART_G(ft_face_cache);
@@ -911,12 +1447,12 @@ static int fc_sniff_image_dims_mem(const unsigned char *b, size_t n,
     return -1;
 }
 
-/* Load `path` once through the PHP stream layer. The stream wrapper
- * enforces open_basedir natively, so there is no TOCTOU window
- * between an open_basedir check and the open. Reads up to
- * FC_IMAGE_MAX_BYTES + 1 so a file at exactly the cap passes while a
- * file one byte over gets rejected (php_stream_copy_to_mem with a
- * smaller cap would silently truncate). On success populates *out
+/* Load `path` through a descriptor opened with PHP's open_basedir policy
+ * and nonblocking flags. The descriptor is fstat-checked before the PHP
+ * stream layer reads it, so a pathname swapped to a FIFO cannot block the
+ * render. Reads up to FC_IMAGE_MAX_BYTES + 1 so a file at exactly the cap
+ * passes while a file one byte over gets rejected (php_stream_copy_to_mem
+ * with a smaller cap would silently truncate). On success populates *out
  * with the bytes, sniffed MIME type, and declared width/height, then
  * applies the dimension caps. Returns 0 / -1; on -1 the cache entry
  * retains only its path. */
@@ -925,49 +1461,38 @@ static int fastchart_load_source_image(const char *path,
 {
     if (!path || !*path || !out) return -1;
 
-    /* Stat BEFORE open: open(2) on a FIFO with no writer blocks
-     * indefinitely (the plain-files wrapper forced by IGNORE_URL
-     * passes no O_NONBLOCK), so the post-open non-regular-file check
-     * below would never be reached for exactly the FIFO case it
-     * names. A stat failure falls through; the open below reports
-     * it with proper warning suppression. The post-open fstat stays
-     * authoritative; it closes the swap race this pre-check alone
-     * would reintroduce. */
-    zend_stat_t pre_st;
-    if (VCWD_STAT(path, &pre_st) == 0 && !S_ISREG(pre_st.st_mode)) {
-        return -1;
-    }
-
-    /* Suppress the E_WARNING the stream wrapper would emit on
-     * open_basedir refusal / missing file. Background-image and
-     * icon callers fall back to their solid-color backup; the
-     * refusal isn't an error condition from their POV. */
-    int er = EG(error_reporting);
-    EG(error_reporting) = 0;
-    php_stream *stream = php_stream_open_wrapper((char *)path, "rb",
-        IGNORE_PATH | IGNORE_URL, NULL);
-    EG(error_reporting) = er;
-    if (!stream) {
-        if (EG(exception)) zend_clear_exception();
-        return -1;
-    }
-
-    /* Reject non-regular files (directories, FIFOs, sockets, char
-     * devices, /proc entries). The stream wrapper opens any readable
-     * inode; without this check a render fed /proc/self/maps would
-     * either trip the byte cap or return unbounded data before the
-     * MIME sniff rejects it. The stat uses the stream's own backend, so
-     * wrappers without a real stat (http, php://memory) fall through
-     * and the MIME sniff is the only gate, by design. */
-    php_stream_statbuf ssb;
-    if (php_stream_stat(stream, &ssb) == 0) {
-        if (!S_ISREG(ssb.sb.st_mode)) {
-            php_stream_close(stream);
+    /* Plain paths use O_NONBLOCK and fstat before any read. URI/custom
+     * wrappers retain the prior stream-wrapper behavior because PHP does
+     * not expose a descriptor-first nonblocking open for arbitrary
+     * wrappers. */
+    bool wrapped = false;
+    php_stream *stream = fc_open_wrapped_source(path, &wrapped);
+    if (!wrapped) {
+        zend_stat_t st;
+        int fd = fc_open_regular_path(path, &st);
+        if (fd < 0) {
+            if (EG(exception)) zend_clear_exception();
             return -1;
         }
+        stream = fc_stream_from_fd(fd);
+        if (!stream) {
+            if (EG(exception)) zend_clear_exception();
+            return -1;
+        }
+    } else if (!stream) {
+        return -1;
     }
 
-    zend_string *raw = fc_stream_copy_and_close(stream, FC_IMAGE_MAX_BYTES + 1);
+    zend_string *raw;
+    if (wrapped) {
+        int er = EG(error_reporting);
+        EG(error_reporting) = 0;
+        raw = fc_stream_copy_and_close(stream, FC_IMAGE_MAX_BYTES + 1);
+        EG(error_reporting) = er;
+        if (EG(exception)) zend_clear_exception();
+    } else {
+        raw = fc_stream_copy_and_close(stream, FC_IMAGE_MAX_BYTES + 1);
+    }
     if (!raw) return -1;
     size_t n = ZSTR_LEN(raw);
     if (n == 0 || n > FC_IMAGE_MAX_BYTES) {
