@@ -157,6 +157,13 @@ To enforce a lower per-render pixel ceiling process-wide, set the
 67108864). Renders above it throw `ValueError` before any frame buffer
 is allocated.
 
+Long renders honor `max_execution_time`: the rasterizer, the PNG row
+loop, and the JPEG scanline loop each poll the deadline. WebP is the
+exception, because libwebp's `WebPEncode()` is a single call with no
+progress callback and no way to abort. A WebP render checks the
+deadline before the encode starts, but an encode already in flight
+always runs to completion.
+
 A second ceiling, `fastchart.max_image_cache_bytes` (`PHP_INI_SYSTEM`,
 default 67108864), bounds the decoded source images
 (`setBackgroundImage()` / `addIconAt()`) one render keeps in memory so
