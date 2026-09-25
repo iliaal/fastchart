@@ -4698,7 +4698,17 @@ ZEND_METHOD(FastChart_Chart, svgToPng)
     }
 
     smart_str out = {0};
-    int rc = fastchart_encode_png(&out, &pix);
+    /* The encoders bail out on a timeout, and this frame plus the
+     * partial output belong to this scope; release both on the way out
+     * the way the render path does. */
+    volatile int rc = 0;
+    zend_try {
+        rc = fastchart_encode_png(&out, &pix);
+    } zend_catch {
+        fastchart_pixels_release(&pix);
+        smart_str_free(&out);
+        zend_bailout();
+    } zend_end_try();
     fastchart_pixels_release(&pix);
     if (rc != 0) {
         smart_str_free(&out);
@@ -4763,7 +4773,14 @@ ZEND_METHOD(FastChart_Chart, svgToJpeg)
     }
 
     smart_str out = {0};
-    int rc = fastchart_encode_jpeg(&out, &pix, (int)quality, -1);
+    volatile int rc = 0;
+    zend_try {
+        rc = fastchart_encode_jpeg(&out, &pix, (int)quality, -1);
+    } zend_catch {
+        fastchart_pixels_release(&pix);
+        smart_str_free(&out);
+        zend_bailout();
+    } zend_end_try();
     fastchart_pixels_release(&pix);
     if (rc != 0) {
         smart_str_free(&out);
@@ -4804,7 +4821,14 @@ ZEND_METHOD(FastChart_Chart, svgToWebp)
     }
 
     smart_str out = {0};
-    int rc = fastchart_encode_webp(&out, &pix, (int)quality, (int)mode);
+    volatile int rc = 0;
+    zend_try {
+        rc = fastchart_encode_webp(&out, &pix, (int)quality, (int)mode);
+    } zend_catch {
+        fastchart_pixels_release(&pix);
+        smart_str_free(&out);
+        zend_bailout();
+    } zend_end_try();
     fastchart_pixels_release(&pix);
     if (rc != 0) {
         smart_str_free(&out);
@@ -6541,6 +6565,11 @@ static int fastchart_chart_render_to_sink(fastchart_obj *self,
 			break;
 		}
 	} zend_catch {
+		/* The frame and whatever the encoder already streamed out
+		 * both belong to this scope; a buffer-API render would
+		 * otherwise strand its partial output for the rest of the
+		 * request. */
+		fastchart_sink_abort(sink);
 		fastchart_pixels_release(&pix);
 		zend_bailout();
 	} zend_end_try();
@@ -6906,16 +6935,50 @@ static int fastchart_path_ends_with_pdf(const char *path, size_t len)
     return zend_binary_strcasecmp(ext, ext_len, "pdf", 3) == 0;
 }
 
-/* A stream-wrapper URL carries a "scheme://" marker. Windows drive
- * paths ("C:\...") contain a ':' but never "://", so match the full
- * three-byte sequence. */
+/* A stream-wrapper URL carries a "scheme://" marker at the start of the
+ * path, and PHP routes such a path to a wrapper only when the scheme is
+ * registered: php_stream_locate_url_wrapper() falls back to plain-files
+ * access for an unknown scheme. A local POSIX path may legitimately
+ * carry a colon directory component ("x://out.png" is the plain path
+ * ./x:/out.png, exactly like "x:/out.png"), so scanning the whole
+ * destination for "://" rejected legal local paths. Windows drive
+ * paths ("C:\...") have no marker and stay local. */
 static bool fastchart_path_is_wrapper(const char *p, size_t len)
 {
-    if (len < 3) return false;
-    for (size_t i = 0; i + 3 <= len; i++) {
-        if (p[i] == ':' && p[i + 1] == '/' && p[i + 2] == '/') return true;
-    }
-	return false;
+	size_t n = 0;
+	while (n < len) {
+		unsigned char c = (unsigned char)p[n];
+		/* PHP's own scheme charset: [A-Za-z0-9+.-]. */
+		if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+				|| (c >= '0' && c <= '9') || c == '+' || c == '-'
+				|| c == '.')) {
+			break;
+		}
+		n++;
+	}
+	/* PHP requires at least two scheme characters and the "://" that
+	 * follows them; both bound checks keep a one-character prefix such
+	 * as the "C" of a Windows drive out of the wrapper path. */
+	if (n < 2 || n + 3 > len) return false;
+	if (p[n] != ':' || p[n + 1] != '/' || p[n + 2] != '/') return false;
+
+	/* php_stream_register_wrapper() stores keys lowercased, but the
+	 * comparison below is case-insensitive anyway so an
+	 * upper-case scheme spells the same wrapper. This accessor is the
+	 * request-aware table (falling back to the global one) that
+	 * php_stream_locate_url_wrapper() itself consults; the handful of
+	 * registered entries make a scan cheaper than a lowered key
+	 * allocation on a per-render path. */
+	HashTable *wrappers = php_stream_get_url_stream_wrappers_hash();
+	bool registered = false;
+	zend_string *key;
+	ZEND_HASH_FOREACH_STR_KEY(wrappers, key) {
+		if (ZSTR_LEN(key) == n && strncasecmp(ZSTR_VAL(key), p, n) == 0) {
+			registered = true;
+			break;
+		}
+	} ZEND_HASH_FOREACH_END();
+	return registered;
 }
 
 #ifndef PHP_WIN32

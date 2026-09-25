@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `renderToFile()` accepts a local path with a colon directory
+  component; only a leading, registered wrapper scheme is refused.
+- `GanttChart::setTimeRange()` keeps an explicit end that precedes every
+  task instead of resetting it to the first task plus a day.
+- PNG encoding now honors `max_execution_time`; WebP cannot be
+  interrupted inside `WebPEncode()`, so it stops at the codec boundary.
+
 ## [1.7.4] - 2026-09-17
 
 ### Fixed

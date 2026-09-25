@@ -215,6 +215,7 @@ static int fc_sink_write(fastchart_sink_t *sink, const uint8_t *data,
 void fastchart_sink_init_smart_str(fastchart_sink_t *sink, smart_str *out)
 {
 	sink->write = fc_smart_str_sink_write;
+	sink->smart_target = out;
 	sink->context = out;
 	sink->bytes_written = 0;
 	sink->failed = 0;
@@ -226,6 +227,15 @@ void fastchart_sink_init_stream(fastchart_sink_t *sink, php_stream *stream)
 	sink->context = stream;
 	sink->bytes_written = 0;
 	sink->failed = 0;
+	sink->smart_target = NULL;
+}
+
+void fastchart_sink_abort(fastchart_sink_t *sink)
+{
+	if (sink != NULL && sink->smart_target != NULL) {
+		smart_str_free(sink->smart_target);
+		sink->smart_target = NULL;
+	}
 }
 
 /* --------------------------- PNG ----------------------------------- */
@@ -320,6 +330,15 @@ int fastchart_encode_png_sink(fastchart_sink_t *sink,
 
 	const uint8_t *row = pix->rgba;
 	for (int y = 0; y < pix->h; y++) {
+		/* Honor max_execution_time on the same 64-row cadence as the
+		 * JPEG scanline loop and the un-premultiply pass. libpng
+		 * filters and deflates the whole row inside png_write_row, so
+		 * a canvas that outlives the deadline used to run to the last
+		 * row before the VM could raise the timeout Error. The
+		 * zend_try above destroys the libpng structs on the way out. */
+		if ((y & 63) == 0 && FC_TIMED_OUT()) {
+			zend_bailout();
+		}
 		png_write_row(png, (png_bytep)row);
 		row += pix->w * 4;
 	}
@@ -671,6 +690,16 @@ int fastchart_encode_webp_sink(fastchart_sink_t *sink,
 	}
 	config.thread_level = 1;
 
+	/* WebPEncode() is one opaque call: the advanced API exposes no
+	 * progress callback and no way to abort between macroblocks, so a
+	 * WebP encode cannot be interrupted once it starts. The timeout is
+	 * therefore honored at the two boundaries this function owns --
+	 * before the RGBA import and before the encode call -- and the
+	 * documented max_execution_time guarantee stops at the codec
+	 * boundary for WebP alone. */
+	if (FC_TIMED_OUT()) {
+		zend_bailout();
+	}
 	/* The picture lives on the heap because WebPEncode mutates it after
 	 * zend_try's setjmp. The pointer remains valid in the bailout handler
 	 * even when the callback aborts from inside the encoder. */
@@ -703,6 +732,9 @@ int fastchart_encode_webp_sink(fastchart_sink_t *sink,
 	picture->custom_ptr = sink;
 	volatile int enc_ok = 0;
 	zend_try {
+		if (FC_TIMED_OUT()) {
+			zend_bailout();
+		}
 		enc_ok = WebPEncode(&config, picture);
 	} zend_catch {
 		WebPPictureFree(picture);
