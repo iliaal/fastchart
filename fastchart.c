@@ -10314,17 +10314,13 @@ static void fastchart_scaled_sum_align_up(fastchart_scaled_sum *acc)
 static void fastchart_scaled_sum_rebase(fastchart_scaled_sum *acc)
 {
     double live = acc->sum + acc->correction;
-    if (live == 0.0 || !isfinite(live)) {
+    if (live == 0.0) {
+        /* A complete cancellation leaves a stale large scale. Reset it so
+         * the next, much smaller term is not flushed to zero. */
         acc->sum = 0.0;
         acc->correction = 0.0;
         acc->scale_exp = 0;
-        return;
     }
-    int live_exp;
-    double mantissa = frexp(live, &live_exp);
-    acc->sum = mantissa;
-    acc->correction = 0.0;
-    acc->scale_exp += live_exp;
 }
 
 static void fastchart_scaled_sum_add_term(
