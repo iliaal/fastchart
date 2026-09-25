@@ -10279,6 +10279,116 @@ ZEND_METHOD(FastChart_StockChart, addParabolicSAR)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+/* Power-of-two scaled Neumaier accumulator. The represented value is
+ * (sum + correction) * 2^scale_exp. Aligning to a larger term halves the
+ * stored components exactly; protecting an addition from overflow also
+ * halves them. Either way an opposite-sign cancellation exposes the
+ * compensation instead of losing the residual. */
+typedef struct {
+    double sum;
+    double correction;
+    int scale_exp;
+} fastchart_scaled_sum;
+
+static void fastchart_scaled_sum_init(fastchart_scaled_sum *acc)
+{
+    acc->sum = 0.0;
+    acc->correction = 0.0;
+    acc->scale_exp = 0;
+}
+
+static void fastchart_scaled_sum_halve(fastchart_scaled_sum *acc)
+{
+    acc->sum *= 0.5;
+    acc->correction *= 0.5;
+    acc->scale_exp--;
+}
+
+static void fastchart_scaled_sum_align_up(fastchart_scaled_sum *acc)
+{
+    acc->sum *= 0.5;
+    acc->correction *= 0.5;
+    acc->scale_exp++;
+}
+
+static void fastchart_scaled_sum_add_term(
+    fastchart_scaled_sum *acc, double term)
+{
+    if (term == 0.0) return;
+    if ((term > 0.0) == (acc->sum > 0.0)
+        && fabs(acc->sum) > DBL_MAX * 0.25) {
+        fastchart_scaled_sum_halve(acc);
+        term *= 0.5;
+    }
+    double next = acc->sum + term;
+    if (!isfinite(next)) {
+        fastchart_scaled_sum_halve(acc);
+        term *= 0.5;
+        next = acc->sum + term;
+    }
+    if (fabs(acc->sum) >= fabs(term)) {
+        acc->correction += (acc->sum - next) + term;
+    } else {
+        acc->correction += (term - next) + acc->sum;
+    }
+    acc->sum = next;
+}
+
+static void fastchart_scaled_sum_add_value(
+    fastchart_scaled_sum *acc, double value)
+{
+    if (value == 0.0) return;
+    int value_exp;
+    double mantissa = frexp(value, &value_exp);
+    while (value_exp > acc->scale_exp) {
+        fastchart_scaled_sum_align_up(acc);
+    }
+    fastchart_scaled_sum_add_term(
+        acc, ldexp(mantissa, value_exp - acc->scale_exp));
+}
+
+static void fastchart_scaled_sum_add_product(
+    fastchart_scaled_sum *acc, double left, double right)
+{
+    if (left == 0.0 || right == 0.0) return;
+    int left_exp, right_exp;
+    double mantissa = frexp(left, &left_exp) * frexp(right, &right_exp);
+    int product_exp = left_exp + right_exp;
+
+    /* Align the represented scale with the product before materializing
+     * it; the product itself is never formed as a double. */
+    while (product_exp > acc->scale_exp) {
+        fastchart_scaled_sum_align_up(acc);
+    }
+    fastchart_scaled_sum_add_term(
+        acc, ldexp(mantissa, product_exp - acc->scale_exp));
+}
+
+static double fastchart_scaled_sum_average(
+    const fastchart_scaled_sum *acc, double count)
+{
+    double normalized = acc->sum + acc->correction;
+    if (normalized == 0.0 || count <= 0.0) return 0.0;
+    int exponent;
+    double mantissa = frexp(normalized, &exponent);
+    return scalbn(mantissa / count, exponent + acc->scale_exp);
+}
+
+static double fastchart_scaled_sum_ratio(
+    const fastchart_scaled_sum *numerator,
+    const fastchart_scaled_sum *denominator)
+{
+    double num = numerator->sum + numerator->correction;
+    double den = denominator->sum + denominator->correction;
+    if (den == 0.0) return 0.0;
+    int num_exp, den_exp;
+    double num_mantissa = frexp(num, &num_exp);
+    double den_mantissa = frexp(den, &den_exp);
+    return scalbn(num_mantissa / den_mantissa,
+        (num_exp + numerator->scale_exp)
+        - (den_exp + denominator->scale_exp));
+}
+
 ZEND_METHOD(FastChart_StockChart, addVWAP)
 {
     zend_long color = -1;
@@ -10297,24 +10407,27 @@ ZEND_METHOD(FastChart_StockChart, addVWAP)
         "FastChart\\StockChart::addVWAP()", &n);
     if (!c) RETURN_THROWS();
 
-    /* Cumulative VWAP is a convex update: blend the prior mean with the
-     * current typical price using the new sample's volume fraction. This
-     * avoids price*volume and cumulative-volume overflow. Try the raw
-     * three-price sum first so close-price cancellation residuals survive;
-     * divide before summing only when that raw sum overflows. */
+    /* Accumulate the weighted price and weight sums separately, each as a
+     * power-of-two scaled Neumaier sum, then divide once per point. This
+     * avoids price*volume and cumulative-volume overflow while keeping
+     * uniform inputs exact. The raw three-price sum is tried first so
+     * close-price cancellation residuals survive; dividing before summing
+     * is only the overflow fallback. */
     int any_vol = 0;
-    double volume_scale = 0.0;
     for (int i = 0; i < n; i++) {
         if (c[i].has_volume && c[i].volume > 0.0) {
             any_vol = 1;
-            volume_scale = fmax(volume_scale, c[i].volume);
+            break;
         }
     }
     ZEND_ASSERT(n > 0);
     double *out = emalloc((size_t)n * sizeof(double));
-    double mean = 0.0;
-    double cum_v = 0.0;
-    bool have_weighted_sample = false;
+    fastchart_scaled_sum weighted;
+    fastchart_scaled_sum weights;
+    fastchart_scaled_sum prices;
+    fastchart_scaled_sum_init(&weighted);
+    fastchart_scaled_sum_init(&weights);
+    fastchart_scaled_sum_init(&prices);
     for (int i = 0; i < n; i++) {
         double pair = c[i].high + c[i].low;
         double sum = pair + c[i].close;
@@ -10322,27 +10435,20 @@ ZEND_METHOD(FastChart_StockChart, addVWAP)
             ? sum / 3.0
             : c[i].high / 3.0 + c[i].low / 3.0 + c[i].close / 3.0;
         if (any_vol) {
-            double v = (c[i].has_volume && c[i].volume > 0.0)
-                ? c[i].volume / volume_scale : 0.0;
-            if (v > 0.0) {
-                if (have_weighted_sample) {
-                    double new_weight = v / (cum_v + v);
-                    mean = mean * (1.0 - new_weight) + tp * new_weight;
-                } else {
-                    mean = tp;
-                    have_weighted_sample = true;
-                }
-                cum_v += v;
-            } else if (!have_weighted_sample) {
-                mean = tp;
+            double volume = (c[i].has_volume && c[i].volume > 0.0)
+                ? c[i].volume : 0.0;
+            if (volume > 0.0) {
+                fastchart_scaled_sum_add_product(&weighted, tp, volume);
+                fastchart_scaled_sum_add_value(&weights, volume);
+                double value = fastchart_scaled_sum_ratio(&weighted, &weights);
+                out[i] = isfinite(value) ? value : tp;
+            } else {
+                out[i] = tp;
             }
-        } else if (i == 0) {
-            mean = tp;
         } else {
-            double old_weight = (double)i / (double)(i + 1);
-            mean = mean * old_weight + tp / (double)(i + 1);
+            fastchart_scaled_sum_add_value(&prices, tp);
+            out[i] = fastchart_scaled_sum_average(&prices, (double)(i + 1));
         }
-        out[i] = mean;
     }
 
     if (push_price_overlay(self, FASTCHART_OVERLAY_VWAP, out, NULL, NULL, n, color_rgb) != 0) {
