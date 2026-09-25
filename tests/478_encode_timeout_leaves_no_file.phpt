@@ -7,29 +7,24 @@ fastchart
 if (!function_exists('exec') || getenv('TEST_PHP_ARGS') === false) {
     echo "skip needs exec() and the run-tests TEST_PHP_ARGS\n";
 }
-?>
+/* The file half of the same ownership rule that
+ * tests/477_encoder_bailout_releases_output.phpt covers for the buffer
+ * API: renderToFile()'s catch aborts the staging file, so a render
+ * stopped mid-encode leaves neither a destination nor a temp behind.
+ *
+ * Unlike a memory_limit trip, an execution-timeout bail-out does not
+ * run registered shutdown functions, so the render is checked from the
+ * parent instead: the child must die on the deadline. */
 --FILE--
 <?php
 
-/* The render paths own two things a bailout inside an encoder would
- * strand: the RGBA frame and the bytes already streamed into the sink.
- * Both catches release them -- the file path also aborts its staging
- * file. That last one is the part a user can see, so it is what this
- * pins: a render stopped mid-encode leaves neither a destination nor a
- * staging temp behind.
- *
- * The buffer-API half of the same catch (renderPng()'s smart_str) is not
- * observable from userland: the request ends on the bailout, and the
- * peak resident size was already reached before anything is released.
- * This test covers it as far as userland can -- the child must die on
- * the deadline, not return partial bytes. */
 
 $dir = sys_get_temp_dir() . '/fastchart-timeout-' . getmypid();
 @mkdir($dir, 0777, true);
 $child = $dir . '/child.php';
 file_put_contents($child, <<<'CHILD'
 <?php
-/* Child of tests/477: arm a budget that expires inside the encode, then
+/* Child of tests/478: arm a budget that expires inside the encode, then
  * render to a file and to a buffer. */
 $points = [];
 for ($i = 0; $i < 200; $i++) { $points[] = (($i * 7919) % 1000) / 1000; }
