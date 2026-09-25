@@ -10311,6 +10311,22 @@ static void fastchart_scaled_sum_align_up(fastchart_scaled_sum *acc)
     acc->scale_exp++;
 }
 
+static void fastchart_scaled_sum_rebase(fastchart_scaled_sum *acc)
+{
+    double live = acc->sum + acc->correction;
+    if (live == 0.0 || !isfinite(live)) {
+        acc->sum = 0.0;
+        acc->correction = 0.0;
+        acc->scale_exp = 0;
+        return;
+    }
+    int live_exp;
+    double mantissa = frexp(live, &live_exp);
+    acc->sum = mantissa;
+    acc->correction = 0.0;
+    acc->scale_exp += live_exp;
+}
+
 static void fastchart_scaled_sum_add_term(
     fastchart_scaled_sum *acc, double term)
 {
@@ -10340,6 +10356,7 @@ static void fastchart_scaled_sum_add_value(
     if (value == 0.0) return;
     int value_exp;
     double mantissa = frexp(value, &value_exp);
+    fastchart_scaled_sum_rebase(acc);
     while (value_exp > acc->scale_exp) {
         fastchart_scaled_sum_align_up(acc);
     }
@@ -10357,6 +10374,7 @@ static void fastchart_scaled_sum_add_product(
 
     /* Align the represented scale with the product before materializing
      * it; the product itself is never formed as a double. */
+    fastchart_scaled_sum_rebase(acc);
     while (product_exp > acc->scale_exp) {
         fastchart_scaled_sum_align_up(acc);
     }
@@ -10428,6 +10446,7 @@ ZEND_METHOD(FastChart_StockChart, addVWAP)
     fastchart_scaled_sum_init(&weighted);
     fastchart_scaled_sum_init(&weights);
     fastchart_scaled_sum_init(&prices);
+    bool have_weighted_sample = false;
     for (int i = 0; i < n; i++) {
         double pair = c[i].high + c[i].low;
         double sum = pair + c[i].close;
@@ -10442,6 +10461,9 @@ ZEND_METHOD(FastChart_StockChart, addVWAP)
                 fastchart_scaled_sum_add_value(&weights, volume);
                 double value = fastchart_scaled_sum_ratio(&weighted, &weights);
                 out[i] = isfinite(value) ? value : tp;
+                have_weighted_sample = true;
+            } else if (have_weighted_sample) {
+                out[i] = fastchart_scaled_sum_ratio(&weighted, &weights);
             } else {
                 out[i] = tp;
             }
