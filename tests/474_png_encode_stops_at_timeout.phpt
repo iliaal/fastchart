@@ -94,7 +94,6 @@ $full = (float) $m[4];
  * render $raster + $aim seconds of the $limit. */
 $deadline = $renderStart + $limit;
 
-
 /* The deadline stopped the child, and the render never returned. */
 var_dump(str_contains($text, 'Maximum execution time'));
 var_dump(!str_contains($text, 'not reached'));
