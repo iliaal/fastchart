@@ -38,13 +38,13 @@ $path = $argv[2];
 $format = pathinfo($path, PATHINFO_EXTENSION);
 $points = [];
 for ($i = 0; $i < 40; $i++) $points[] = (($i * 7919) % 1000) / 1000;
-$chart = (new FastChart\LineChart(2048, 2048))
+$chart = (new FastChart\LineChart(4096, 4096))
     ->setSeries([['name' => 's', 'data' => $points]])
     ->setWebpMode(FastChart\Chart::WEBP_LOSSLESS);
 $cheap = [];
 $full = [];
 for ($i = 0; $i < 2; $i++) {
-    $chart->setPngCompressionLevel(0);
+    $chart->setPngCompressionLevel(1);
     $start = fastchartTimeoutClock();
     $chart->renderToFile($path . '.png');
     $cheap[] = fastchartTimeoutClock() - $start;
@@ -56,9 +56,9 @@ for ($i = 0; $i < 2; $i++) {
     unlink($path);
 }
 
-/* File sinks avoid charging large uncompressed smart_str growth to the
- * rasterization estimate under the tracked allocator. Both measurements
- * use PHP's deadline clock, including on Windows. */
+/* File sinks avoid tracked-allocator smart_str growth. Compressing the
+ * cheap pass also avoids charging a large raw file write to its Windows
+ * wall-clock measurement. Both passes use PHP's deadline clock. */
 $base = max($cheap);
 $total = min($full);
 if ($total < $base * 1.3 + 0.08) {
