@@ -2,6 +2,8 @@
 JPEG rendering honors max_execution_time after a successful render
 --EXTENSIONS--
 fastchart
+--INI--
+hard_timeout=0
 --FILE--
 <?php
 require __DIR__ . '/_encoder_timeout.inc';

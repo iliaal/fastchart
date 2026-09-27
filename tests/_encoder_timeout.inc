@@ -61,10 +61,18 @@ $format = pathinfo($path, PATHINFO_EXTENSION);
 $points = [];
 for ($i = 0; $i < 40; $i++) $points[] = (($i * 7919) % 1000) / 1000;
 $measurements = [];
-foreach ([4096, 6144, 8000] as $size) {
+$sizes = $format === 'webp' ? [2048, 3072, 4096] : [4096, 6144, 8000];
+foreach ($sizes as $size) {
     $chart = (new FastChart\LineChart($size, $size))
         ->setSeries([['name' => 's', 'data' => $points]])
         ->setWebpMode(FastChart\Chart::WEBP_LOSSLESS);
+    if ($format === 'webp') {
+        /* Photographic pixels keep lossless encoding above timer delivery slack. */
+        $chart->setSeries($points)
+            ->setLegendPosition(FastChart\Chart::LEGEND_NONE)
+            ->setPlotRect(0, 0, $size - 1, $size - 1)
+            ->addIconAt(20, 0.5, dirname(__DIR__) . '/images/fastchart-hero.jpg', 512, 512);
+    }
     /* Cold render and codec setup must not be compared with a warm encode. */
     $chart->setPngCompressionLevel(1)->renderToFile($path . '.png');
     unlink($path . '.png');
