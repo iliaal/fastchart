@@ -60,44 +60,49 @@ $path = $argv[2];
 $format = pathinfo($path, PATHINFO_EXTENSION);
 $points = [];
 for ($i = 0; $i < 40; $i++) $points[] = (($i * 7919) % 1000) / 1000;
-$chart = (new FastChart\LineChart(4096, 4096))
-    ->setSeries([['name' => 's', 'data' => $points]])
-    ->setWebpMode(FastChart\Chart::WEBP_LOSSLESS);
-/* Cold render and codec setup must not be compared with a warm encode. */
-$chart->setPngCompressionLevel(1)->renderToFile($path . '.png');
-unlink($path . '.png');
-$chart->setPngCompressionLevel(9)->renderToFile($path);
-unlink($path);
-$cheap = [];
-$full = [];
-for ($i = 0; $i < 2; $i++) {
-    $chart->setPngCompressionLevel(1);
-    $start = fastchartTimeoutClock();
-    $chart->renderToFile($path . '.png');
-    $cheap[] = fastchartTimeoutClock() - $start;
+$measurements = [];
+foreach ([4096, 6144, 8000] as $size) {
+    $chart = (new FastChart\LineChart($size, $size))
+        ->setSeries([['name' => 's', 'data' => $points]])
+        ->setWebpMode(FastChart\Chart::WEBP_LOSSLESS);
+    /* Cold render and codec setup must not be compared with a warm encode. */
+    $chart->setPngCompressionLevel(1)->renderToFile($path . '.png');
     unlink($path . '.png');
-    $chart->setPngCompressionLevel(9);
-    $start = fastchartTimeoutClock();
-    $chart->renderToFile($path);
-    $full[] = fastchartTimeoutClock() - $start;
+    $chart->setPngCompressionLevel(9)->renderToFile($path);
     unlink($path);
+    $cheap = [];
+    $full = [];
+    for ($i = 0; $i < 2; $i++) {
+        $chart->setPngCompressionLevel(1);
+        $start = fastchartTimeoutClock();
+        $chart->renderToFile($path . '.png');
+        $cheap[] = fastchartTimeoutClock() - $start;
+        unlink($path . '.png');
+        $chart->setPngCompressionLevel(9);
+        $start = fastchartTimeoutClock();
+        $chart->renderToFile($path);
+        $full[] = fastchartTimeoutClock() - $start;
+        unlink($path);
+    }
+    $base = max($cheap);
+    $total = min($full);
+    $measurements[$size] = ['cheap' => $cheap, 'full' => $full];
+    /* Leave a useful cancellation window beyond platform timer coalescing. */
+    if ($total >= $base * 1.3 + 0.08 && $total - $base >= 0.5) break;
 }
 
 /* File sinks avoid tracked-allocator smart_str growth. Compressing the
  * cheap pass also avoids charging a large raw file write to its Windows
  * wall-clock measurement. Both passes use PHP's deadline clock. */
-$base = max($cheap);
-$total = min($full);
-if ($total < $base * 1.3 + 0.08) {
-    printf("insufficient encoder separation: cheap=%s full=%s\n",
-        json_encode($cheap), json_encode($full));
+if ($total < $base * 1.3 + 0.08 || $total - $base < 0.5) {
+    printf("insufficient encoder separation: %s\n", json_encode($measurements));
     exit(1);
 }
 $budget = $base + ($total - $base) * 0.4;
 $limit = (int) ceil($budget) + 1;
 if (($argv[3] ?? '') === 'replace') file_put_contents($path, 'prior destination');
-printf("armed %s cheap=%s full=%s budget=%.4f limit=%d\n",
-    $format, json_encode($cheap), json_encode($full), $budget, $limit);
+printf("armed %s size=%d cheap=%s full=%s budget=%.4f limit=%d\n",
+    $format, $size, json_encode($cheap), json_encode($full), $budget, $limit);
 register_shutdown_function(static function (): void {});
 ini_set('max_execution_time', (string) $limit);
 $stop = fastchartTimeoutClock() + $limit - $budget;
