@@ -9,7 +9,7 @@ if (!function_exists('proc_open')) die('skip proc_open unavailable');
 if (!is_readable('/proc/self/maps')) die('skip loaded module path unavailable');
 $probe = proc_open([
 	'strace', '-qq', '-e', 'trace=renameat2',
-	'-e', 'inject=renameat2:delay_enter=1ms:when=1',
+	'-e', 'inject=renameat2:delay_exit=1ms:when=1',
 	'--', 'true',
 ], [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], $pipes);
 if (!is_resource($probe)) die('skip strace unavailable');
@@ -52,7 +52,7 @@ try {
 PHP;
 $process = proc_open([
 	'strace', '-qq', '-e', 'trace=renameat2',
-	'-e', 'inject=renameat2:delay_enter=2s:when=1',
+	'-e', 'inject=renameat2:delay_exit=2s:when=1',
 	'--', 'env', 'ASAN_OPTIONS=detect_leaks=0',
 	PHP_BINARY, '-n', '-d', 'extension=' . $module,
 	'-d', 'open_basedir=' . $allowed,
@@ -60,18 +60,18 @@ $process = proc_open([
 ], [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], $pipes);
 fclose($pipes[0]);
 
-$commitSeen = false;
+$installed = false;
 $deadline = microtime(true) + 30.0;
 while (microtime(true) < $deadline) {
-	if (glob($inside . '/out.svg.fctmp-*.commit')) {
-		$commitSeen = true;
+	if (str_starts_with(file_get_contents($target), '<?xml version="1.0"')) {
+		$installed = true;
 		break;
 	}
 	$status = proc_get_status($process);
 	if (!$status['running']) break;
 	usleep(1000);
 }
-$relocated = $commitSeen && rename($inside, $moved);
+$relocated = $installed && rename($inside, $moved);
 $stdout = stream_get_contents($pipes[1]);
 $stderr = stream_get_contents($pipes[2]);
 fclose($pipes[1]);
