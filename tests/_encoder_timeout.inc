@@ -7,26 +7,31 @@ function fastchartTimeoutClock(): float
         + $r['ru_stime.tv_sec'] + $r['ru_stime.tv_usec'] / 1e6;
 }
 
-function fastchartEncoderTimeout(string $format): void
+function fastchartEncoderTimeout(string $format, bool $replace = false): void
 {
     $dir = sys_get_temp_dir() . '/fastchart-encoder-' . $format . '-' . getmypid();
     mkdir($dir);
     $path = $dir . '/output.' . $format;
     $command = escapeshellarg(PHP_BINARY) . ' ' . getenv('TEST_PHP_ARGS')
         . ' -d memory_limit=512M -d hard_timeout=0 '
-        . escapeshellarg(__FILE__) . ' --child ' . escapeshellarg($path);
+        . escapeshellarg(__FILE__) . ' --child ' . escapeshellarg($path)
+        . ($replace ? ' replace' : '');
     $output = [];
     exec($command . ' 2>&1', $output, $status);
     $text = implode("\n", $output);
     $files = array_values(array_diff(scandir($dir), ['.', '..']));
+    $expected = $replace ? ['output.' . $format] : [];
+    $preserved = !$replace || (is_file($path)
+        && file_get_contents($path) === 'prior destination');
     $ok = str_contains($text, 'armed ')
         && str_contains($text, 'Maximum execution time')
         && !str_contains($text, 'returned')
-        && $status === 255 && $files === [];
+        && $status === 255 && $files === $expected && $preserved;
     if ($ok) {
-        echo "timeout before file commit\n";
+        echo $replace ? "timeout preserves prior file\n" : "timeout before file commit\n";
     } else {
-        printf("status=%d files=%s\n%s\n", $status, json_encode($files), $text);
+        printf("status=%d files=%s preserved=%s\n%s\n", $status,
+            json_encode($files), $preserved ? 'yes' : 'no', $text);
     }
     foreach ($files as $file) unlink($dir . '/' . $file);
     rmdir($dir);
@@ -73,6 +78,7 @@ if ($total < $base * 1.3 + 0.08) {
 }
 $budget = $base + ($total - $base) * 0.4;
 $limit = (int) ceil($budget) + 1;
+if (($argv[3] ?? '') === 'replace') file_put_contents($path, 'prior destination');
 printf("armed %s cheap=%s full=%s budget=%.4f limit=%d\n",
     $format, json_encode($cheap), json_encode($full), $budget, $limit);
 register_shutdown_function(static function (): void {});
