@@ -49,8 +49,9 @@ try {
 	exit(3);
 }
 PHP;
+$trace = $dir . '/trace';
 $command = [
-	'strace', '-qq',
+	'strace', '-qq', '-o', $trace,
 	'-e', 'trace=rename,renameat2',
 	'-e', 'inject=rename:delay_enter=2s:when=1',
 	'-e', 'inject=renameat2:delay_enter=2s:when=1',
@@ -79,7 +80,14 @@ while (microtime(true) < $deadline) {
 			break;
 		}
 	}
-	if ($modeFinal) break;
+	if ($modeFinal) {
+		/* The staging file appears before its identity check. */
+		$traceOutput = (string) @file_get_contents($trace);
+		if (str_contains($traceOutput, 'renameat2(')
+			&& str_contains($traceOutput, '"' . basename($commit) . '"')
+			&& str_ends_with($traceOutput, ', RENAME_EXCHANGE')) break;
+		$modeFinal = false;
+	}
 	$status = proc_get_status($process);
 	if (!$status['running']) break;
 	usleep(100);
@@ -116,7 +124,7 @@ echo 'victim preserved: ',
 	&& file_get_contents($victim) === 'secret'
 		? "yes\n" : "NO\n";
 
-foreach ([$commit, $held, $target, $victim] as $path) {
+foreach ([$commit, $held, $target, $victim, $trace] as $path) {
 	if ($path !== null && (is_file($path) || is_link($path))) unlink($path);
 }
 rmdir($dir);
