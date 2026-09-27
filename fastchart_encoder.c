@@ -44,7 +44,7 @@
 #include <stdlib.h>
 
 /* EG(timed_out) became zend_atomic_bool in 8.2 (php/php-src#8327);
- * on 8.1 it is sig_atomic_t, so read it directly. */
+ * on 8.1 it is a plain bool, so read it directly. */
 #if PHP_VERSION_ID >= 80200
 #define FC_TIMED_OUT() zend_atomic_bool_load_ex(&EG(timed_out))
 #else
@@ -655,6 +655,15 @@ static int fc_webp_sink_write(const uint8_t *data, size_t data_size,
 	return fc_sink_write(sink, data, data_size) == 0;
 }
 
+static int fc_webp_progress(int percent, const WebPPicture *picture)
+{
+	(void)percent;
+	(void)picture;
+	/* libwebp reports client progress on the calling thread. Returning
+	 * false lets its worker joins and temporary allocations unwind. */
+	return !FC_TIMED_OUT();
+}
+
 int fastchart_encode_webp_sink(fastchart_sink_t *sink,
 	const fastchart_pixels_t *pix, int quality, int mode)
 {
@@ -690,13 +699,6 @@ int fastchart_encode_webp_sink(fastchart_sink_t *sink,
 	}
 	config.thread_level = 1;
 
-	/* WebPEncode() is one opaque call: the advanced API exposes no
-	 * progress callback and no way to abort between macroblocks, so a
-	 * WebP encode cannot be interrupted once it starts. The timeout is
-	 * therefore honored at the two boundaries this function owns --
-	 * before the RGBA import and before the encode call -- and the
-	 * documented max_execution_time guarantee stops at the codec
-	 * boundary for WebP alone. */
 	if (FC_TIMED_OUT()) {
 		zend_bailout();
 	}
@@ -730,6 +732,7 @@ int fastchart_encode_webp_sink(fastchart_sink_t *sink,
 
 	picture->writer = fc_webp_sink_write;
 	picture->custom_ptr = sink;
+	picture->progress_hook = fc_webp_progress;
 	volatile int enc_ok = 0;
 	zend_try {
 		if (FC_TIMED_OUT()) {
@@ -743,6 +746,9 @@ int fastchart_encode_webp_sink(fastchart_sink_t *sink,
 	} zend_end_try();
 	WebPPictureFree(picture);
 	efree(picture);
+	if (FC_TIMED_OUT()) {
+		zend_bailout();
+	}
 	return enc_ok && !sink->failed ? 0 : -1;
 }
 
