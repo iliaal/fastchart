@@ -24,6 +24,7 @@
 #include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
+#include "fastchart_numeric.h"
 
 #define MAX_POINTS 8192
 #define FASTCHART_MAX_SCATTER_SERIES 8
@@ -228,14 +229,14 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
         double x_half = 0.5 * x_max - 0.5 * x_min;
         if (x_half <= 0) x_half = 1.0;
         double y_scale = fmax(fabs(y_min), fabs(y_max));
-        if (y_scale == 0.0) y_scale = 1.0;
+        y_scale = fastchart_binary_scale(y_scale);
 
         double coeffs_scaled[4] = {0};
         double coeffs_residual[4] = {0};
         if (deg == 1) {
             double sx = 0.0, sxx = 0.0;
-            double sy_scaled = 0.0, sy_residual = 0.0;
-            double sxy_scaled = 0.0, sxy_residual = 0.0;
+            fastchart_sum sy_scaled = {0}, sy_residual = {0};
+            fastchart_sum sxy_scaled = {0}, sxy_residual = {0};
             for (int i = 0; i < n; i++) {
                 double xn = (points[i].x - x_mid) / x_half;
                 double ys, yr;
@@ -243,19 +244,20 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
                     points[i].y, y_scale, &ys, &yr);
                 sx += xn;
                 sxx += xn * xn;
-                sy_scaled += ys;
-                sy_residual += yr;
-                sxy_scaled += xn * ys;
-                sxy_residual += xn * yr;
+                fastchart_sum_add(&sy_scaled, ys);
+                fastchart_sum_add(&sy_residual, yr);
+                fastchart_sum_product(&sxy_scaled, xn, ys);
+                fastchart_sum_product(&sxy_residual, xn, yr);
             }
             double mean_x = sx / (double)n;
             double denom = sxx / (double)n - mean_x * mean_x;
             if (denom == 0.0 || !isfinite(denom)) goto no_fit;
 
-            double mean_y_scaled = sy_scaled / (double)n;
-            double mean_y_residual = sy_residual / (double)n;
-            double cov_scaled = sxy_scaled / (double)n - mean_x * mean_y_scaled;
-            double cov_residual = sxy_residual / (double)n
+            double mean_y_scaled = fastchart_sum_value(&sy_scaled) / n;
+            double mean_y_residual = fastchart_sum_value(&sy_residual) / n;
+            double cov_scaled = fastchart_sum_value(&sxy_scaled) / n
+                - mean_x * mean_y_scaled;
+            double cov_residual = fastchart_sum_value(&sxy_residual) / n
                 - mean_x * mean_y_residual;
             coeffs_scaled[1] = cov_scaled / denom;
             coeffs_scaled[0] = mean_y_scaled - coeffs_scaled[1] * mean_x;
@@ -265,8 +267,8 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
         } else {
             int m = deg + 1;
             double A[4][4] = {{0}};
-            double b_scaled[4] = {0};
-            double b_residual[4] = {0};
+            fastchart_sum b_scaled[4] = {{0}};
+            fastchart_sum b_residual[4] = {{0}};
             for (int i = 0; i < n; i++) {
                 double xn = (points[i].x - x_mid) / x_half;
                 double ys, yr;
@@ -281,21 +283,21 @@ int fastchart_scatter_render_to_target(fastchart_scatter_obj *self, fastchart_ta
                     for (int j = 0; j < m; j++) {
                         A[k][j] += xpow_row[j + k];
                     }
-                    b_scaled[k] += ys * xpow_row[k];
-                    b_residual[k] += yr * xpow_row[k];
+                    fastchart_sum_product(&b_scaled[k], ys, xpow_row[k]);
+                    fastchart_sum_product(&b_residual[k], yr, xpow_row[k]);
                 }
             }
 
             double aug[4][5] = {{0}};
             for (int k = 0; k < m; k++) {
                 for (int j = 0; j < m; j++) aug[k][j] = A[k][j];
-                aug[k][m] = b_scaled[k];
+                aug[k][m] = fastchart_sum_value(&b_scaled[k]);
             }
             if (!fastchart_scatter_solve_normal_equations(
                     aug, m, coeffs_scaled)) goto no_fit;
             for (int k = 0; k < m; k++) {
                 for (int j = 0; j < m; j++) aug[k][j] = A[k][j];
-                aug[k][m] = b_residual[k];
+                aug[k][m] = fastchart_sum_value(&b_residual[k]);
             }
             if (!fastchart_scatter_solve_normal_equations(
                     aug, m, coeffs_residual)) goto no_fit;
