@@ -132,7 +132,7 @@ jobs:
           # font every Windows runner ships.
           $env:FC_FONT = 'C:\Windows\Fonts\arial.ttf'
           & $php run-tests.php -q --offline --show-diff --set-timeout 120 `
-            -g FAIL,XFAIL,BORK,WARN,LEAK -j8 tests/ 2>&1 |
+            -g FAIL,XFAIL,BORK,WARN,LEAK,SKIP -j8 tests/ 2>&1 |
             Tee-Object -FilePath win-tests.txt
           if ($LASTEXITCODE -ne 0) {
             Write-Error "run-tests reported failures (exit $LASTEXITCODE)"
@@ -144,9 +144,25 @@ jobs:
             throw "run-tests summary did not report a skip count"
           }
           $skipped = [int]$skipLine.Matches[0].Groups[1].Value
-          Write-Host "Tests skipped: $skipped (expected 30 with gd+fonts loaded: 7 PDF + 15 POSIX/Linux atomic + env-gated)"
-          if ($skipped -gt 30) {
-            throw "Windows skip count $skipped exceeds ceiling 30"
+          $platformSkips = @(
+            '457_source_image_file_uri_fifo.phpt',
+            '462_source_image_php_filter_fifo.phpt',
+            '463_source_image_execute_only_parent.phpt',
+            '468_source_image_compress_wrapper_fifo.phpt',
+            '470_pinned_parent_fd_ownership.phpt'
+          )
+          $skipRows = @(Select-String -Path win-tests.txt -Pattern '^SKIP ')
+          foreach ($test in $platformSkips) {
+            $pattern = '\[[^\]]*[/\\]' + [regex]::Escape($test) + '\]'
+            $testSkips = @($skipRows | Where-Object { $_.Line -match $pattern })
+            if ($testSkips.Count -ne 1) {
+              throw "Expected exactly one Windows platform skip for $test; found $($testSkips.Count)"
+            }
+          }
+          $otherSkipped = $skipped - $platformSkips.Count
+          Write-Host "Tests skipped: $skipped ($($platformSkips.Count) audited FIFO/POSIX/procfs skips; remaining $otherSkipped, ceiling 30)"
+          if ($otherSkipped -lt 0 -or $otherSkipped -gt 30) {
+            throw "Windows skip count excluding audited platform tests is $otherSkipped; ceiling 30"
           }
 
   # Single representative lane that compiles and tests the MSVC PDF path

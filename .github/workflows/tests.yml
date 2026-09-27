@@ -901,6 +901,26 @@ jobs:
             echo "gd capabilities OK: " . implode(", ", $need) . "\n";
           '
 
+      - name: Select a usable macOS test font
+        run: |
+          php -r '
+            $fonts = [
+              getenv("FC_FONT") ?: "",
+              "/Library/Fonts/Arial.ttf",
+              "/System/Library/Fonts/Supplemental/Arial.ttf",
+              "/System/Library/Fonts/Helvetica.ttc",
+            ];
+            foreach ($fonts as $font) {
+              if (is_readable($font) && @imagettfbbox(12, 0, $font, "FastChart") !== false) {
+                file_put_contents(getenv("GITHUB_ENV"), "FC_FONT=$font\n", FILE_APPEND);
+                echo "Test font: $font\n";
+                exit(0);
+              }
+            }
+            fwrite(STDERR, "No usable macOS test font found\n");
+            exit(1);
+          '
+
       - name: Run tests
         run: |
           export TEST_PHP_EXECUTABLE=$(which php)
@@ -911,7 +931,7 @@ jobs:
           export TEST_PHP_ARGS="-d extension=$(pwd)/modules/fastchart.so"
           export NO_INTERACTION=1
           set +e
-          php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt
+          php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK,SKIP tests/ 2>&1 | tee /tmp/test-output.txt
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -ne 0 ]; then
@@ -925,11 +945,9 @@ jobs:
             exit 1
           fi
           # Skip ceiling. macOS loads gd and is built without pdfio.
-          # Legitimate skips mirror Linux (7 PDF + up to 12 font +
-          # locale), plus macOS-only environment skips: 14 atomic-output
-          # tests are gated to Linux or Windows, and the comma-decimal-
-          # locale test typically skips. Budget 36 matches that set plus
-          # tests/447, which needs a system font macOS runners lack.
+          # FC_FONT enables the shared font fixtures. Keep the existing
+          # ceiling for PDF, platform, and environment skips, including
+          # tests/467 (writable root) and tests/470 (Linux procfs).
           SKIPPED=$(grep -oE '^Tests skipped[[:space:]]*:[[:space:]]*[0-9]+' /tmp/test-output.txt | grep -oE '[0-9]+' | head -1)
           SKIPPED=${SKIPPED:-0}
           echo "Tests skipped: $SKIPPED (ceiling 36)"

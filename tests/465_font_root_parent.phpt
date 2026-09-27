@@ -11,9 +11,10 @@ if (fc_pick_font() === '') die("skip no system font present\n");
 <?php
 require __DIR__ . '/_font_candidates.inc';
 
-ini_set('open_basedir', '/');
 $font = fc_pick_font();
 if ($font === '') die("skip no system font present\n");
+$root = PHP_OS_FAMILY === 'Windows' ? substr($font, 0, 3) : '/';
+ini_set('open_basedir', $root);
 $chart = new FastChart\LineChart(120, 80);
 try {
     $chart->setFontPath($font)->setTitle('root-parent')->setSeries([1, 2, 3]);

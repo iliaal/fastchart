@@ -30,8 +30,8 @@ echo 'svg outline count stable: ',
 	$outlines > 0 && $outlines === substr_count($b, '<path')
 		? "yes\n" : "NO\n";
 
-/* PDF half: pdfio stamps two random file IDs per document, so normalize
- * those before comparing: replay parity then compares content, which
+/* PDF half: pdfio stamps random file IDs and document timestamps, so
+ * normalize those before comparing: replay parity then compares content, which
  * subsumes outline-count stability because pdfio's deflate is
  * deterministic for identical input. No --SKIPIF-- on pdfio (the lane
  * counts are tight): without the backend both calls must fail closed
@@ -42,7 +42,12 @@ for ($i = 0; $i < 2; $i++) {
 	try {
 		$raw = $c->renderPdf();
 		$snaps[] = 'pdf:'
-			. preg_replace('/<[0-9A-F]{32}>/', '<ID>', $raw);
+			. preg_replace([
+				'/<[0-9A-F]{32}>/',
+				'~/CreationDate\(D:[0-9]{14}Z\)~',
+				'~(<xmp:(?:CreateDate|MetadataDate)>)[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z~',
+			], ['<ID>', '/CreationDate(DATE)', '${1}DATE'], $raw);
+		if ($i === 0) sleep(1);
 	} catch (Error $e) {
 		$snaps[] = 'err:' . $e->getMessage();
 	}
