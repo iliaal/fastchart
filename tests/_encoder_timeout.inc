@@ -1,7 +1,24 @@
 <?php
+function fastchartTimeoutUsesWallClock(): bool
+{
+    static $wall = null;
+    if ($wall === null) {
+        ob_start();
+        phpinfo(INFO_GENERAL);
+        $info = ob_get_clean();
+        /* Apple Silicon's CPU accounting is unsuitable for PHP's timer;
+         * Zend's per-thread timers also measure elapsed time. */
+        $wall = PHP_OS_FAMILY === 'Windows'
+            || (PHP_OS_FAMILY === 'Darwin'
+                && in_array(php_uname('m'), ['arm64', 'aarch64'], true))
+            || str_contains($info, 'Zend Max Execution Timers => enabled');
+    }
+    return $wall;
+}
+
 function fastchartTimeoutClock(): float
 {
-    if (PHP_OS_FAMILY === 'Windows') return hrtime(true) / 1e9;
+    if (fastchartTimeoutUsesWallClock()) return hrtime(true) / 1e9;
     $r = getrusage();
     return $r['ru_utime.tv_sec'] + $r['ru_utime.tv_usec'] / 1e6
         + $r['ru_stime.tv_sec'] + $r['ru_stime.tv_usec'] / 1e6;

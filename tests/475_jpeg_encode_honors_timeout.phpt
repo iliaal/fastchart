@@ -22,11 +22,16 @@ for ($i = 0; $i < 2; $i++) {
 $budget = min($times) * 0.25;
 $limit = (int) ceil($budget) + 1;
 ini_set('max_execution_time', (string) $limit);
-$stop = fastchartTimeoutClock() + $limit - $budget;
+$started = fastchartTimeoutClock();
+$stop = $started + $limit - $budget;
 while (fastchartTimeoutClock() < $stop) {}
 echo "rendering\n";
+$renderStart = fastchartTimeoutClock();
 $chart->renderJpeg();
-echo "not reached\n";
+printf("not reached: clock=%s times=%s budget=%.4f elapsed=%.4f render=%.4f\n",
+    fastchartTimeoutUsesWallClock() ? 'wall' : 'cpu', json_encode($times),
+    $budget, fastchartTimeoutClock() - $started,
+    fastchartTimeoutClock() - $renderStart);
 ?>
 --EXPECTF--
 bool(true)
