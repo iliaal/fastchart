@@ -287,6 +287,9 @@ static int fastchart_symbol_render_to_sink(fastchart_symbol_obj *self,
 			break;
 		}
 	} zend_catch {
+		/* Same ownership as the Chart render path: the frame and the
+		 * bytes the encoder already wrote out. */
+		fastchart_sink_abort(sink);
 		fastchart_pixels_release(&pix);
 		zend_bailout();
 	} zend_end_try();

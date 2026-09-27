@@ -149,7 +149,8 @@ jobs:
             '462_source_image_php_filter_fifo.phpt',
             '463_source_image_execute_only_parent.phpt',
             '468_source_image_compress_wrapper_fifo.phpt',
-            '470_pinned_parent_fd_ownership.phpt'
+            '470_pinned_parent_fd_ownership.phpt',
+            '473_render_to_file_local_colon_path.phpt'
           )
           $skipRows = @(Select-String -Path win-tests.txt -Pattern '^SKIP ')
           foreach ($test in $platformSkips) {
