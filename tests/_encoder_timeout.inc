@@ -41,6 +41,11 @@ for ($i = 0; $i < 40; $i++) $points[] = (($i * 7919) % 1000) / 1000;
 $chart = (new FastChart\LineChart(4096, 4096))
     ->setSeries([['name' => 's', 'data' => $points]])
     ->setWebpMode(FastChart\Chart::WEBP_LOSSLESS);
+/* Cold render and codec setup must not be compared with a warm encode. */
+$chart->setPngCompressionLevel(1)->renderToFile($path . '.png');
+unlink($path . '.png');
+$chart->setPngCompressionLevel(9)->renderToFile($path);
+unlink($path);
 $cheap = [];
 $full = [];
 for ($i = 0; $i < 2; $i++) {
