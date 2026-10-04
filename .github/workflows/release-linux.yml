@@ -93,12 +93,12 @@ jobs:
       fail-fast: false
       matrix:
         # ubuntu-24.04 (x86_64), ubuntu-24.04-arm (arm64),
-        # macos-14 (Apple Silicon arm64). Pinned over `*-latest` to
+        # macos-15 (Apple Silicon arm64). Pinned over `*-latest` to
         # avoid silent runner shifts that would change the toolchain /
         # glibc baseline on published release assets without a repo diff.
         # Pull requests run only the representative x86_64/PHP 8.4 slot;
         # release and manual events retain the full 3x2 matrix.
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-14"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-15"]') }}
         php: ${{ fromJSON(github.event_name == 'pull_request' && '["8.4"]' || '["8.4","8.5"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -217,12 +217,26 @@ jobs:
 
       - name: Build prebuilt binary (macOS)
         if: startsWith(matrix.os, 'macos-')
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '14.0'
         run: |
           set -e
           phpize
           ./configure --enable-fastchart --enable-fastchart-dev
           make -j"$(sysctl -n hw.ncpu)"
           find modules -maxdepth 1 -type f -print
+
+      - name: Inspect macOS binary compatibility
+        if: runner.os == 'macOS'
+        run: |
+          lipo -verify_arch arm64 modules/fastchart.so
+          otool -l modules/fastchart.so
+          otool -L modules/fastchart.so
+          otool -L modules/fastchart.so | awk '$1 ~ /^\/opt\/homebrew\// {print $1}' |
+            while IFS= read -r dependency; do
+              printf '%s\n' "$dependency"
+              otool -l "$dependency" | awk '/LC_BUILD_VERSION/,/ntools/; /LC_VERSION_MIN_MACOSX/,/sdk/'
+            done
 
       - name: Verify codec libs are static (Linux)
         if: startsWith(matrix.os, 'ubuntu-')
@@ -309,7 +323,7 @@ jobs:
           case "$MATRIX_OS" in
             ubuntu-24.04) TARGET='x86_64-linux-glibc' ;;
             ubuntu-24.04-arm) TARGET='arm64-linux-glibc' ;;
-            macos-14) TARGET='arm64-darwin-bsdlibc' ;;
+            macos-15) TARGET='arm64-darwin-bsdlibc' ;;
             *) echo "::error::unsupported package target: $MATRIX_OS"; exit 1 ;;
           esac
           PACKAGE="php_fastchart-${TAG}_php${PHP_MM}-${TARGET}.zip"
