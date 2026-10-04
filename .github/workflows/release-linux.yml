@@ -229,7 +229,7 @@ jobs:
       - name: Inspect macOS binary compatibility
         if: runner.os == 'macOS'
         run: |
-          lipo -verify_arch arm64 modules/fastchart.so
+          lipo modules/fastchart.so -verify_arch arm64
           otool -l modules/fastchart.so
           otool -L modules/fastchart.so
           otool -L modules/fastchart.so | awk '$1 ~ /^\/opt\/homebrew\// {print $1}' |
