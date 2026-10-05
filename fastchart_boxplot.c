@@ -69,15 +69,6 @@ int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_ta
 		return -1;
 	}
 
-    fastchart_rect plot;
-    fastchart_palette pal;
-    fastchart_render_cartesian_setup((fastchart_obj *)self, t, 1, 1, NULL, 0,
-                                     &plot, &pal);
-    fastchart_draw_y_axis(t, (fastchart_obj *)self, &plot, &pal, &range);
-    fastchart_draw_plot_bands(t, (fastchart_obj *)self, &plot, &range, &pal);
-    fastchart_draw_v_plot_bands_categorical(t, (fastchart_obj *)self, &plot,
-                                            n, &pal);
-
     /* Use category labels if supplied, else fall back to per-box label
      * fields, else integer indices. */
     const char **labels = ecalloc(n, sizeof(const char *));
@@ -87,6 +78,28 @@ int fastchart_boxplot_render_to_target(fastchart_boxplot_obj *self, fastchart_ta
         }
         if (!labels[i] && boxes[i].label) labels[i] = boxes[i].label;
     }
+
+    /* Measure the same resolved labels that the axis will draw, including
+     * per-box fallbacks and only the entries with a corresponding box.
+     * Borrow the label array for layout only; the chart retains ownership
+     * of its original category labels. */
+    char **saved_cat = base->category_labels;
+    int saved_cat_n = base->n_category_labels;
+    base->category_labels = (char **)labels;
+    base->n_category_labels = n;
+    fastchart_rect plot;
+    fastchart_compute_layout(base, t, 1, 1, NULL, 0, &plot);
+    base->category_labels = saved_cat;
+    base->n_category_labels = saved_cat_n;
+
+    fastchart_palette pal;
+    fastchart_palette_init(t, (int)self->theme, &pal);
+    fastchart_palette_apply_overrides(t, base, &pal);
+    fastchart_draw_frame(t, base, &plot, &pal);
+    fastchart_draw_title(t, base, &plot, &pal);
+    fastchart_draw_y_axis(t, base, &plot, &pal, &range);
+    fastchart_draw_plot_bands(t, base, &plot, &range, &pal);
+    fastchart_draw_v_plot_bands_categorical(t, base, &plot, n, &pal);
     fastchart_draw_x_axis_categorical(t, (fastchart_obj *)self, &plot, &pal, n, labels);
     fastchart_draw_axis_titles(t, (fastchart_obj *)self, &plot, &pal);
     efree((void *)labels);
