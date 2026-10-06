@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `BoxPlot` reserves room for rotated x-axis labels taken from per-box
+  `label` fields, so long labels no longer clip at 45 or 90 degrees.
 - Collection text budgets count only retained groups and preserve prior chart
   state when a setter rejects oversized input.
 - Preserve finite precision in moving averages, VWAP, scatter trends, and
