@@ -120,8 +120,8 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
 
         /* STYLE_ROSE: each (angle, radius) becomes an angular wedge
          * extending from the centre out to `radius * r/rmax`. The
-         * angular width is the gap to the next point's angle (or
-         * 360/n if a single series is uniformly spaced). Wedges are
+         * angular width is the gap to the next point's angle, wrapping
+         * the final wedge back to the first point. Wedges are
          * filled with the series colour and outlined in the border
          * colour for visual separation. The line/area style is the
          * default branch below. */
@@ -131,7 +131,7 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
                 double a0 = series[s].angles[i];
                 double a1 = (i + 1 < upto)
                     ? series[s].angles[i + 1]
-                    : a0 + 360.0 / (double)upto;
+                    : series[s].angles[0];
                 double r = series[s].radii[i];
                 if (r <= 0) continue;
                 int rr_px = (int)polar_clamp_radius((double)radius * r / rmax,
