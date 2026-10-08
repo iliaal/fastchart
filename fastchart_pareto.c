@@ -118,7 +118,8 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
     const char *fmt = self->value_label_format
         ? ZSTR_VAL(self->value_label_format) : "%.0f";
     for (int k = 0; k <= 5; k++) {
-        double v = y_axis_max * k / 5.0;
+        /* Keep the intermediate bounded by the finite axis maximum. */
+        double v = y_axis_max * ((double)k / 5.0);
         int y = plot_y1 - (int)((double)k / 5.0 * (plot_y1 - plot_y0));
         fastchart_target_line(t, plot_x0, y, plot_x1, y,
                               pal.grid, 1, FASTCHART_DASH_SOLID);

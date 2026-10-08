@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ParetoChart` keeps left-axis labels finite for large finite automatic
+  and forced axis ranges instead of displaying `INF`.
 - `WordCloud` skips words too large for the plot before searching, preserving
   placement attempts for smaller words that can still fit.
 - `BoxPlot` reserves room for rotated x-axis labels taken from per-box
