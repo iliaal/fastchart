@@ -155,6 +155,9 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
         int vertical = (self->orientation == FASTCHART_WC_ORIENT_MIXED) && (wi % 3 == 1);
         double box_w = vertical ? th : tw;
         double box_h = vertical ? tw : th;
+        /* An impossible fit must not consume the shared search budget:
+         * smaller words later in the list may still fit. */
+        if (box_w > plot_x1 - plot_x0 || box_h > plot_y1 - plot_y0) continue;
         double hw = box_w / 2.0, hh = box_h / 2.0;
 
         double bx = cx, by = cy;
