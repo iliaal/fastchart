@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ParetoChart` keeps left-axis labels finite for large finite automatic
+  and forced axis ranges instead of displaying `INF`.
 - `BoxPlot` reserves room for rotated x-axis labels taken from per-box
   `label` fields, so long labels no longer clip at 45 or 90 degrees.
 - Collection text budgets count only retained groups and preserve prior chart
