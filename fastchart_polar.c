@@ -120,8 +120,8 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
 
         /* STYLE_ROSE: each (angle, radius) becomes an angular wedge
          * extending from the centre out to `radius * r/rmax`. The
-         * angular width is the gap to the next point's angle (or
-         * 360/n if a single series is uniformly spaced). Wedges are
+         * angular width is the gap to the next point's angle, wrapping
+         * the final wedge back to the first point. Wedges are
          * filled with the series colour and outlined in the border
          * colour for visual separation. The line/area style is the
          * default branch below. */
@@ -131,7 +131,7 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
                 double a0 = series[s].angles[i];
                 double a1 = (i + 1 < upto)
                     ? series[s].angles[i + 1]
-                    : a0 + 360.0 / (double)upto;
+                    : series[s].angles[0];
                 double r = series[s].radii[i];
                 if (r <= 0) continue;
                 int rr_px = (int)polar_clamp_radius((double)radius * r / rmax,
@@ -147,6 +147,15 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
                 int gd_b = (int)fmod(360.0 - a0, 360.0);
                 if (gd_a < 0) gd_a += 360;
                 if (gd_b < 0) gd_b += 360;
+                /* Equal truncated endpoints render as a full disc. That is
+                 * right for a singleton and for a sweep just short of 360,
+                 * but a bearing repeated modulo 360 (or a sub-degree sweep)
+                 * would cover every other wedge, so the true sweep decides. */
+                if (gd_a == gd_b && upto > 1) {
+                    double sweep = fmod(fmod(a1, 360.0) - fmod(a0, 360.0), 360.0);
+                    if (sweep < 0) sweep += 360.0;
+                    if (sweep < 180.0) continue;
+                }
                 if (gd_b <= gd_a) gd_b += 360;
                 fastchart_target_arc(t, cx, cy, rr_px, rr_px,
                                      (double)gd_a, (double)gd_b, color, 1, 0);

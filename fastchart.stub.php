@@ -1446,9 +1446,9 @@ final class PolarChart extends Chart
      * `['data' => [[deg, r], ...], 'label' => 'name', 'color' => int]`.
      *
      * In `STYLE_ROSE`, each entry's angle is the wedge START and
-     * the angular width runs to the NEXT entry's angle (or evenly
-     * spaced when the series is uniformly distributed). Radius
-     * controls wedge length.
+     * the angular width runs to the NEXT entry's angle; the last
+     * wedge wraps to the first entry's angle. A wedge whose width is
+     * zero modulo 360 is not drawn. Radius controls wedge length.
      */
     public function setSeries(array $series): static {}
 

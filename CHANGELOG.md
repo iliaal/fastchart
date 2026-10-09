@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `PolarChart::STYLE_ROSE` closes the final wedge at the series' first
+  bearing instead of assuming uniform spacing, so irregular bearings no
+  longer leave a gap or overlap the first wedge. A wedge whose bearings
+  repeat modulo 360 is skipped instead of painting a full disc over the
+  other wedges.
 - `Funnel::setStyle(STYLE_CONE)` renders short canvases whose proportional
   bands fall below 4px instead of throwing the flat funnel's stage-height
   `ValueError`.
