@@ -116,7 +116,7 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
      * bands would spill below y1 and clip. Reject rather than emit a
      * truncated chart (mirrors the STYLE_CONE too-short guard above).
      * PYRAMID/CONE position by cumulative value and stay in bounds. */
-    if (!pyramid && total_h < n * 4) {
+    if (!pyramid && !cone && total_h < n * 4) {
         zend_value_error(
             "FastChart\\Funnel::draw() canvas is too short for %d stages "
             "(each stage needs at least 4px of height)", n);
