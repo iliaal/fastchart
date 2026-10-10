@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `LinearMeter` throws `ValueError` when the default label margins collapse
+  or reverse the meter axis (horizontal canvases narrower than 121px,
+  vertical canvases shorter than 73px plus any title) instead of emitting
+  negative-size or degenerate rectangles. Explicit `setPlotRect()` bounds,
+  including one-pixel plots, still render.
 - `PolarChart::STYLE_ROSE` closes the final wedge at the series' first
   bearing instead of assuming uniform spacing, so irregular bearings no
   longer leave a gap or overlap the first wedge. A wedge whose bearings
