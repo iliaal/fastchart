@@ -77,8 +77,17 @@ int fastchart_linear_meter_render_to_target(fastchart_linear_meter_obj *self, fa
         bar_x0 = (W - margin_x) / 2 - 12;
         bar_x1 = bar_x0 + 24;
     }
-    fastchart_apply_plot_rect((fastchart_obj *)self,
+    bool forced_plot = fastchart_apply_plot_rect((fastchart_obj *)self,
                               &bar_x0, &bar_y0, &bar_x1, &bar_y1);
+
+    /* Default label margins can collapse or reverse the meter's axis on
+     * a small canvas. Check after setPlotRect has had a chance to replace
+     * those margins, before emitting invalid rectangles or reversed zones. */
+    if (!forced_plot && (bar_x1 <= bar_x0 || bar_y1 <= bar_y0)) {
+        zend_value_error(
+            "FastChart\\LinearMeter::draw() canvas is too small for meter margins");
+        return -1;
+    }
 
     fastchart_target_rect(t, bar_x0, bar_y0,
                           bar_x1 - bar_x0 + 1, bar_y1 - bar_y0 + 1,
