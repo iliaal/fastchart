@@ -253,11 +253,11 @@ int fastchart_funnel_render_to_target(fastchart_funnel_obj *self, fastchart_targ
             if (base->value_format && ZSTR_LEN(base->value_format) > 0) {
                 fmt = ZSTR_VAL(base->value_format);
             }
-            char buf[64];
-            snprintf(buf, sizeof(buf), fmt, v_top);
+            char *buf = fastchart_format_double_label(fmt, v_top);
             fastchart_text_draw(t, label_font, label_size, pal.text,
                                 x_right + 8, yc, FASTCHART_ALIGN_LEFT,
                                 buf, NULL, 0);
+            efree(buf);
         }
     }
 
