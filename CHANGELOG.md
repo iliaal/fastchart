@@ -53,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Funnel` value labels keep the complete text of accepted
   `setShowValues()` formats instead of truncating output longer than 63
   bytes, such as high-precision or wide-field formats.
+- `VectorChart` preserves relative arrow lengths and magnitude colors for
+  tiny finite vector components whose squares lose precision or underflow.
 
 ## [1.7.4] - 2026-09-17
 
