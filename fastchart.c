@@ -12914,7 +12914,9 @@ ZEND_METHOD(FastChart_VectorChart, setVectors)
             zend_long c = Z_LVAL_P(zc);
             if (c >= 0 && c <= 0xFFFFFF) parsed[kept].color_rgb = (int)c;
         }
-        double m = sqrt(m_sq);
+        /* Preserve relative magnitudes when squaring tiny components
+         * loses precision or underflows to zero. */
+        double m = hypot(dx, dy);
         if (first || m < mag_min) mag_min = m;
         if (first || m > mag_max) mag_max = m;
         first = false;

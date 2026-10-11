@@ -161,8 +161,7 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
     if (mag_range <= 0) mag_range = 1.0;
 
     for (int i = 0; i < self->vector_count; i++) {
-        double mag = sqrt(self->vectors[i].dx * self->vectors[i].dx
-                          + self->vectors[i].dy * self->vectors[i].dy);
+        double mag = hypot(self->vectors[i].dx, self->vectors[i].dy);
         double scale = mag_max > 0 ? mag / mag_max : 0.0;
         double len = scale * cap_px;
         if (len < 1.5) continue;
