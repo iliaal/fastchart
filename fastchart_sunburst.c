@@ -34,6 +34,8 @@
 typedef struct {
     double start_rad;
     double end_rad;
+    double child_total;
+    double child_cursor;
 } sunburst_wedge;
 
 static void fastchart_sunburst_compute_wedges(
@@ -43,36 +45,26 @@ static void fastchart_sunburst_compute_wedges(
     if (node_count <= 0) return;
     wedges[0].start_rad = -M_PI_2;
     wedges[0].end_rad   = -M_PI_2 + 2.0 * M_PI;
-    /* Partition each parent's wedge among its direct children,
-     * proportional to value. Children are found via the `parent`
-     * back-pointer, NOT a contiguous [child_first, +child_count) range:
-     * build_rec is depth-first, so a child's whole subtree is appended
-     * before the next sibling and direct children are interleaved with
-     * grandchildren. Scanning by parent in ascending index order
-     * preserves input order (each child is appended before its
-     * siblings). Walk parents in node order; since a parent is always
-     * appended before its descendants, wedges[i] is set before we
-     * partition it. */
-    for (int i = 0; i < node_count; i++) {
-        if (nodes[i].child_count <= 0) continue;
-        double sum = 0.0;
-        for (int j = 0; j < node_count; j++) {
-            if (nodes[j].parent == i) sum += nodes[j].value;
-        }
-        /* Skip non-positive or overflowed totals: a sum of extreme child
-         * values can reach +Inf, and value/Inf or Inf/Inf would feed NaN
-         * into the wedge-angle (int) cast in ring_polygon. ecalloc leaves
-         * the skipped children's wedges zero-width, which is safe. */
+    wedges[0].child_cursor = wedges[0].start_rad;
+    /* DFS storage interleaves siblings with their descendants. Accumulate
+     * by parent in input order, then visit each child once: its parent
+     * always precedes it, so the parent's wedge is already available.
+     * A separate cursor preserves sibling order across nested subtrees. */
+    for (int i = 1; i < node_count; i++) {
+        wedges[nodes[i].parent].child_total += nodes[i].value;
+    }
+    for (int i = 1; i < node_count; i++) {
+        sunburst_wedge *parent = &wedges[nodes[i].parent];
+        double sum = parent->child_total;
+        /* The setter rejects overflowed child totals. Keep zero-total
+         * branches at their zero-initialized, zero-width wedges. */
         if (!(sum > 0.0) || !isfinite(sum)) continue;
-        double parent_span = wedges[i].end_rad - wedges[i].start_rad;
-        double cur = wedges[i].start_rad;
-        for (int j = 0; j < node_count; j++) {
-            if (nodes[j].parent != i) continue;
-            double share = nodes[j].value / sum;
-            wedges[j].start_rad = cur;
-            wedges[j].end_rad   = cur + parent_span * share;
-            cur = wedges[j].end_rad;
-        }
+        double parent_span = parent->end_rad - parent->start_rad;
+        double share = nodes[i].value / sum;
+        wedges[i].start_rad = parent->child_cursor;
+        wedges[i].end_rad = parent->child_cursor + parent_span * share;
+        wedges[i].child_cursor = wedges[i].start_rad;
+        parent->child_cursor = wedges[i].end_rad;
     }
 }
 
