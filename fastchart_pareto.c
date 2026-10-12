@@ -27,6 +27,23 @@
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 
+/* Derive each slot from the full plot span instead of accumulating a
+ * truncated width. The caller guarantees at least one pixel per bar. */
+static void pareto_bar_bounds(int x0, int x1, int i, int count,
+                              int *left, int *right)
+{
+    int span = x1 - x0;
+    int b0 = x0 + (int)((double)span * i / count);
+    int b1 = x0 + (int)((double)span * (i + 1) / count);
+    int slot = b1 - b0;
+    int gap = slot / 8;
+    if (gap < 1) gap = 1;
+    /* Keep a positive bar inside even a one- or two-pixel slot. */
+    if (gap > (slot - 1) / 2) gap = (slot - 1) / 2;
+    *left = b0 + gap;
+    *right = b1 - gap;
+}
+
 /* Pareto chart: bar series (left Y axis, absolute values) + a
  * cumulative-percentage line overlay (right Y axis, 0..100%).
  * Caller controls bar order; the rendering does NOT re-sort. */
@@ -146,21 +163,16 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
                           plot_x1 - plot_x0 + 1, plot_y1 - plot_y0 + 1,
                           pal.border, 0, 1);
 
-    int slot_w = (plot_x1 - plot_x0) / self->bar_count;
-    /* Integer slot width collapses to 0 when the plot is narrower than
-     * the bar count, stacking every bar at the same x. Reject instead of
-     * emitting a misleading chart, matching the margin check above. */
-    if (slot_w < 1) {
+    /* Every category needs at least one pixel for a distinct bar. */
+    if (plot_x1 - plot_x0 < self->bar_count) {
         zend_value_error(
             "FastChart\\ParetoChart::draw() canvas is too narrow for the number of bars");
         return -1;
     }
-    int gap = slot_w / 8;
-    if (gap < 1) gap = 1;
-    int bar_w = slot_w - 2 * gap;
-    if (bar_w < 1) bar_w = 1;
     for (int i = 0; i < self->bar_count; i++) {
-        int bx = plot_x0 + i * slot_w + gap;
+        int bx, right;
+        pareto_bar_bounds(plot_x0, plot_x1, i, self->bar_count, &bx, &right);
+        int bar_w = right - bx;
         double frac = self->bars[i].value / y_axis_max;
         if (frac < 0) frac = 0;
         if (frac > 1) frac = 1;
@@ -187,9 +199,7 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
         }
     }
 
-    /* Cumulative line + markers, anchored at the right edge of each
-     * bar slot (so the first point sits at the first bar's right
-     * edge and 100% lands on the last bar's right edge). */
+    /* Cumulative line + markers, anchored at each bar's right edge. */
     int line_color = self->line_color >= 0
         ? fastchart_target_color_rgb(t, self->line_color)
         : pal.series[1 % FASTCHART_PALETTE_SERIES_N];
@@ -200,7 +210,8 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
         cum += self->bars[i].value;
         double pct = cum / total;
         if (pct > 1.0) pct = 1.0;
-        int px = plot_x0 + i * slot_w + slot_w - gap;
+        int left, px;
+        pareto_bar_bounds(plot_x0, plot_x1, i, self->bar_count, &left, &px);
         int py = plot_y1 - (int)(pct * (plot_y1 - plot_y0));
         if (have_prev) {
             fastchart_target_line(t, prev_x, prev_y, px, py,
