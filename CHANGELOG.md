@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `open_basedir` for custom wrappers, and bind descriptor ownership to
   bailout-safe cleanup.
 
+### Changed
+
+- `SunburstChart` computes wedge layout in linear time, avoiding repeated
+  whole-hierarchy scans while preserving sibling order and geometry.
+
 ### Fixed
 
 - `LinearMeter` throws `ValueError` when the default label margins collapse
