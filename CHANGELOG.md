@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ParetoChart` keeps complete left-axis and bar value labels for accepted
+  `setValueFormat()` formats instead of truncating them to 31 bytes.
 - `LinearMeter` throws `ValueError` when the default label margins collapse
   or reverse the meter axis (horizontal canvases narrower than 121px,
   vertical canvases shorter than 73px plus any title) instead of emitting

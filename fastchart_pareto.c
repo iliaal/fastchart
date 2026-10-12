@@ -141,11 +141,11 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
         fastchart_target_line(t, plot_x0, y, plot_x1, y,
                               pal.grid, 1, FASTCHART_DASH_SOLID);
         if (font) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), fmt, v);
+            char *buf = fastchart_format_double_label(fmt, v);
             fastchart_text_draw(t, font, size, pal.text,
                                 plot_x0 - 6, y + (int)(size * 0.4),
                                 FASTCHART_ALIGN_RIGHT, buf, NULL, 0);
+            efree(buf);
         }
     }
     for (int k = 0; k <= 4; k++) {
@@ -191,11 +191,11 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
                                 self->bars[i].label, NULL, 0);
         }
         if (font && ((fastchart_obj *)self)->show_values) {
-            char buf[32];
-            snprintf(buf, sizeof(buf), fmt, self->bars[i].value);
+            char *buf = fastchart_format_double_label(fmt, self->bars[i].value);
             fastchart_text_draw(t, font, size * 0.9, pal.text,
                                 bx + bar_w / 2, by - 4,
                                 FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+            efree(buf);
         }
     }
 
