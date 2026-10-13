@@ -63,6 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ParetoChart` distributes bars across the full plot width when category
   widths are fractional, keeping labels and cumulative markers aligned.
   One- and two-pixel category slots keep their bars within their bounds.
+- `LineChart`, `ScatterChart`, and vertical/horizontal `BarChart` keep
+  complete shown value labels for accepted `setShowValues()` formats
+  instead of truncating them to 31 bytes.
 
 ## [1.7.4] - 2026-09-17
 
