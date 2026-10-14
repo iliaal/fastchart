@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Funnel::setStyle(STYLE_CONE)` renders short canvases whose proportional
   bands fall below 4px instead of throwing the flat funnel's stage-height
   `ValueError`.
+- Shared numeric and time axes preserve complete custom tick labels, and
+  shared numeric axes preserve complete large fixed-decimal default labels.
 - `ParetoChart` keeps left-axis labels finite for large finite automatic
   and forced axis ranges instead of displaying `INF`.
 - `WordCloud` skips words too large for the plot before searching, preserving
