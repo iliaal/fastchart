@@ -120,8 +120,7 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
                 if (font) {
                     const char *fmt = self->surface_value_format
                         ? ZSTR_VAL(self->surface_value_format) : "%g";
-                    char buf[32];
-                    snprintf(buf, sizeof(buf), fmt, v);
+                    char *buf = fastchart_format_double_label(fmt, v);
                     double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
                     double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base * 0.8);
                     int tx = (x0 + x1) / 2;
@@ -132,6 +131,7 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
                     int tc = luma > 128000 ? label_dark : label_light;
                     fastchart_text_draw(t, font, size, tc, tx, ty,
                                         FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+                    efree(buf);
                 }
             }
         }
