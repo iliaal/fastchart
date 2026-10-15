@@ -20,8 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Linux dependency checks fail when `readelf` cannot inspect a binary and
-  consume complete dependency output before checking for shared codec libraries.
+- `ParetoChart` keeps complete left-axis and bar value labels for accepted
+  `setValueFormat()` formats instead of truncating them to 31 bytes.
 - `LinearMeter` throws `ValueError` when the default label margins collapse
   or reverse the meter axis (horizontal canvases narrower than 121px,
   vertical canvases shorter than 73px plus any title) instead of emitting
@@ -35,18 +35,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Funnel::setStyle(STYLE_CONE)` renders short canvases whose proportional
   bands fall below 4px instead of throwing the flat funnel's stage-height
   `ValueError`.
+- Shared numeric and time axes preserve complete custom tick labels, and
+  shared numeric axes preserve complete large fixed-decimal default labels.
 - `ParetoChart` keeps left-axis labels finite for large finite automatic
   and forced axis ranges instead of displaying `INF`.
 - `WordCloud` skips words too large for the plot before searching, preserving
   placement attempts for smaller words that can still fit.
 - `BoxPlot` reserves room for rotated x-axis labels taken from per-box
   `label` fields, so long labels no longer clip at 45 or 90 degrees.
+- `SurfaceChart` keeps complete cell labels for accepted
+  `setShowCellValues()` formats instead of truncating them to 31 bytes.
 - Collection text budgets count only retained groups and preserve prior chart
   state when a setter rejects oversized input.
 - Preserve finite precision in moving averages, VWAP, scatter trends, and
   calendar heatmap scaling when values approach floating-point limits.
   Moving averages retain small values after large observations leave the
   window, and scatter trend moments preserve cancelling contributions.
+- Render benchmarks average the middle two samples for even iteration counts
+  instead of reporting the upper middle sample as the median / p50.
 - `SunburstChart::setHierarchy()` now throws `ValueError` when a
   node's direct-child values have no finite aggregate, and preserves the
   previously committed hierarchy instead of replacing it.
@@ -54,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   component; only a leading, registered wrapper scheme is refused.
 - `GanttChart::setTimeRange()` keeps an explicit end that precedes every
   task instead of resetting it to the first task plus a day.
+- `Heatmap` measures complete `setShowValues()` labels instead of 31-byte
+  prefixes, drawing the full text only when it fits the cell width.
 - PNG encoding polls `max_execution_time` between rows. WebP encoding
   cancels through libwebp's progress callbacks and releases codec
   resources before propagating the timeout.
@@ -65,6 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ParetoChart` distributes bars across the full plot width when category
   widths are fractional, keeping labels and cumulative markers aligned.
   One- and two-pixel category slots keep their bars within their bounds.
+- `LineChart`, `ScatterChart`, and vertical/horizontal `BarChart` keep
+  complete shown value labels for accepted `setShowValues()` formats
+  instead of truncating them to 31 bytes.
 
 ## [1.7.4] - 2026-09-17
 

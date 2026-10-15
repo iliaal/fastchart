@@ -1223,7 +1223,7 @@ void fastchart_draw_title(fastchart_target_t *t, fastchart_obj *chart,
                                   plot->y0 - TITLE_PADDING_BELOW(chart, t));
 }
 
-static void format_tick_label(double value, double step, char *out, size_t out_n)
+static char *format_tick_label(double value, double step)
 {
     /* Find the step's decimal precision: 2.5 needs one digit and 0.25 needs
      * two. A magnitude-only rule mislabels fractional ticks. */
@@ -1236,19 +1236,10 @@ static void format_tick_label(double value, double step, char *out, size_t out_n
             decimals++;
         }
     }
-    snprintf(out, out_n, "%.*f", decimals, value);
-}
-
-void fastchart_format_tick_label_user(double value, const zend_string *fmt,
-                                      char *out, size_t out_n)
-{
-    /* The user's format string was validated at setter time by
-     * fastchart_validate_double_format(): it rejects dangerous
-     * conversions (%n, %s), length modifiers, multiple conversions, and
-     * excessive width/precision, and embedded NULs, leaving only a
-     * single safe floating-point conversion. Callers also pass a small
-     * fixed buffer, so a wide format truncates rather than overruns. */
-    snprintf(out, out_n, ZSTR_VAL(fmt), value);
+    static const char *const formats[] = {
+        "%.0f", "%.1f", "%.2f", "%.3f", "%.4f", "%.5f", "%.6f"
+    };
+    return fastchart_format_double_label(formats[decimals], value);
 }
 
 void fastchart_draw_y_axis(fastchart_target_t *t, fastchart_obj *chart,
@@ -1273,7 +1264,6 @@ void fastchart_draw_y_axis(fastchart_target_t *t, fastchart_obj *chart,
     bool draw_labels = (chart->tick_mode & FASTCHART_TICK_LABELS) != 0;
     if (chart->thumbnail_mode) draw_labels = false;
 
-    char buf[32];
     for (int i = 0; i < range->n_ticks; i++) {
         double v = range->ticks[i];
         int y = fastchart_y_to_pixel(v, range, plot);
@@ -1289,16 +1279,15 @@ void fastchart_draw_y_axis(fastchart_target_t *t, fastchart_obj *chart,
 
         if (!draw_labels) continue;
 
-        if (chart->y_axis_label_format) {
-            fastchart_format_tick_label_user(v, chart->y_axis_label_format, buf, sizeof(buf));
-        } else {
-            format_tick_label(v, range->tick_step, buf, sizeof(buf));
-        }
+        char *buf = chart->y_axis_label_format
+            ? fastchart_format_double_label(ZSTR_VAL(chart->y_axis_label_format), v)
+            : format_tick_label(v, range->tick_step);
         int label_x = plot->x0 - TICK_MARK_LEN(chart, t) - Y_LABEL_PADDING(chart, t) / 2;
         int label_y = y + (int)(size * 0.35 * chart_dpi_scale(chart, t));  /* baseline correction */
         fastchart_text_draw(t, font, size, label_color,
                             label_x, label_y, FASTCHART_ALIGN_RIGHT,
                             buf, NULL, 0);
+        efree(buf);
     }
 
     /* Zero shelf: when the data range crosses zero, draw a heavier
@@ -1332,7 +1321,6 @@ void fastchart_draw_y_axis_right(fastchart_target_t *t, fastchart_obj *chart,
     bool draw_labels = (chart->tick_mode & FASTCHART_TICK_LABELS) != 0;
     if (chart->thumbnail_mode) draw_labels = false;
 
-    char buf[32];
     for (int i = 0; i < range->n_ticks; i++) {
         double v = range->ticks[i];
         int y = fastchart_y_to_pixel(v, range, plot);
@@ -1344,16 +1332,15 @@ void fastchart_draw_y_axis_right(fastchart_target_t *t, fastchart_obj *chart,
         }
         if (!draw_labels) continue;
 
-        if (chart->y_axis_label_format) {
-            fastchart_format_tick_label_user(v, chart->y_axis_label_format, buf, sizeof(buf));
-        } else {
-            format_tick_label(v, range->tick_step, buf, sizeof(buf));
-        }
+        char *buf = chart->y_axis_label_format
+            ? fastchart_format_double_label(ZSTR_VAL(chart->y_axis_label_format), v)
+            : format_tick_label(v, range->tick_step);
         int label_x = plot->x1 + TICK_MARK_LEN(chart, t) + Y_LABEL_PADDING(chart, t) / 2;
         int label_y = y + (int)(size * 0.35 * chart_dpi_scale(chart, t));
         fastchart_text_draw(t, font, size, label_color,
                             label_x, label_y, FASTCHART_ALIGN_LEFT,
                             buf, NULL, 0);
+        efree(buf);
     }
 }
 
@@ -1459,7 +1446,6 @@ void fastchart_draw_x_axis_numeric(fastchart_target_t *t, fastchart_obj *chart,
     int label_y_base = plot->y1 + TICK_MARK_LEN(chart, t) + probe_h
                      + (int)(4 * chart_dpi_scale(chart, t));
 
-    char buf[32];
     for (int i = 0; i < range->n_ticks; i++) {
         double v = range->ticks[i];
         int x = fastchart_x_to_pixel(v, range, plot);
@@ -1474,15 +1460,14 @@ void fastchart_draw_x_axis_numeric(fastchart_target_t *t, fastchart_obj *chart,
         }
 
         if (!draw_labels) continue;
-        if (chart->x_axis_label_format) {
-            fastchart_format_tick_label_user(v, chart->x_axis_label_format, buf, sizeof(buf));
-        } else {
-            format_tick_label(v, range->tick_step, buf, sizeof(buf));
-        }
+        char *buf = chart->x_axis_label_format
+            ? fastchart_format_double_label(ZSTR_VAL(chart->x_axis_label_format), v)
+            : format_tick_label(v, range->tick_step);
         int label_y = label_y_base;
         fastchart_text_draw(t, font, size, label_color,
                             x, label_y, FASTCHART_ALIGN_CENTER,
                             buf, NULL, 0);
+        efree(buf);
     }
 
     /* Zero shelf: when the value range crosses zero, draw a heavier
@@ -1808,12 +1793,12 @@ void fastchart_draw_value_label(fastchart_target_t *t, fastchart_obj *chart,
     double size = fastchart_resolve_font_size(chart, FC_FONT_LABEL, base * 0.85);
 
     const char *fmt = chart->value_format ? ZSTR_VAL(chart->value_format) : "%g";
-    char buf[32];
-    snprintf(buf, sizeof(buf), fmt, value);
+    char *buf = fastchart_format_double_label(fmt, value);
 
     int label_y = y - 6;
     fastchart_text_draw(t, font, size, pal->text,
                         x, label_y, FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+    efree(buf);
 }
 
 /* Resolve an overlay's stroke color: an explicit color if the caller
@@ -2395,16 +2380,16 @@ void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
                                       pal->axis, 1, FASTCHART_DASH_SOLID);
             }
             if (draw_labels) {
-                char buf[64];
+                char fallback[64];
+                char *buf = fallback;
                 if (chart->x_axis_label_format) {
-                    fastchart_format_tick_label_user((double)cur, chart->x_axis_label_format,
-                                           buf, sizeof(buf));
+                    buf = fastchart_format_double_label(ZSTR_VAL(chart->x_axis_label_format), (double)cur);
                 } else {
                     struct tm tm_lbl;
                     if (!fc_gmtime(cur, &tm_lbl)) {
-                        snprintf(buf, sizeof(buf), "%lld", (long long)cur);
+                        snprintf(buf, sizeof(fallback), "%lld", (long long)cur);
                     } else if (chart->date_axis_unit == FASTCHART_DATE_QUARTER) {
-                        snprintf(buf, sizeof(buf), "%d-Q%d",
+                        snprintf(buf, sizeof(fallback), "%d-Q%d",
                                  tm_lbl.tm_year + 1900,
                                  (tm_lbl.tm_mon / 3) + 1);
                     } else {
@@ -2414,7 +2399,7 @@ void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
                             case FASTCHART_DATE_MONTH: fmt = "%Y-%m";    break;
                             default:                   fmt = "%Y-%m-%d"; break;
                         }
-                        strftime(buf, sizeof(buf), fmt, &tm_lbl);
+                        strftime(buf, sizeof(fallback), fmt, &tm_lbl);
                     }
                 }
                 if (angle == 0) {
@@ -2425,6 +2410,7 @@ void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
                                                 x, label_y, align, (double)angle,
                                                 buf, NULL, 0);
                 }
+                if (buf != fallback) efree(buf);
             }
             for (zend_long e = 0; e < every; e++) {
                 switch (chart->date_axis_unit) {
@@ -2461,17 +2447,17 @@ void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
         }
         if (!draw_labels) continue;
 
-        char buf[64];
+        char fallback[64];
+        char *buf = fallback;
         if (chart->x_axis_label_format) {
             /* Numeric format expects a double; pass the timestamp. */
-            fastchart_format_tick_label_user((double)ts, chart->x_axis_label_format,
-                                   buf, sizeof(buf));
+            buf = fastchart_format_double_label(ZSTR_VAL(chart->x_axis_label_format), (double)ts);
         } else {
             struct tm tm_buf;
             if (fc_gmtime((time_t)ts, &tm_buf)) {
-                strftime(buf, sizeof(buf), "%Y-%m-%d", &tm_buf);
+                strftime(buf, sizeof(fallback), "%Y-%m-%d", &tm_buf);
             } else {
-                snprintf(buf, sizeof(buf), "%lld", (long long)ts);
+                snprintf(buf, sizeof(fallback), "%lld", (long long)ts);
             }
         }
 
@@ -2483,5 +2469,6 @@ void fastchart_draw_x_axis_time(fastchart_target_t *t, fastchart_obj *chart,
                                         x, label_y, align, (double)angle,
                                         buf, NULL, 0);
         }
+        if (buf != fallback) efree(buf);
     }
 }
