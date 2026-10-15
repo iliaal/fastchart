@@ -755,9 +755,24 @@ int fastchart_value_range_compute_log(double dmin, double dmax,
     double hi = ceil(log10(dmax));
     if (hi <= lo) hi = lo + 1.0;
 
+    /* Past FASTCHART_MAX_TICKS decades, label every stride-th decade and
+     * pad the span to a whole number of strides so both end decades get
+     * ticks. Pad upward first, then downward; if neither fits in the
+     * double range, the top decade gets a final, shorter-gap tick. */
+    double stride = ceil((hi - lo) / (double)(FASTCHART_MAX_TICKS - 1));
+    if (stride < 1.0) stride = 1.0;
+    double pad = ceil((hi - lo) / stride) * stride - (hi - lo);
+    if (pad > 0.0) {
+        if (isfinite(pow(10.0, hi + pad))) {
+            hi += pad;
+        } else if (pow(10.0, lo - pad) > 0.0) {
+            lo -= pad;
+        }
+    }
+
     out->min = pow(10.0, lo);
     out->max = pow(10.0, hi);
-    out->tick_step = 1.0;        /* one decade per tick */
+    out->tick_step = 1.0;        /* ticks sit on whole decades */
     out->log_scale = 1;
     /* Cache the log-domain bounds so the per-point y/x_to_pixel doesn't
      * recompute log10(min)/log10(max) on every call. */
@@ -775,8 +790,12 @@ int fastchart_value_range_compute_log(double dmin, double dmax,
 
     for (double e = lo;
          e <= hi + 0.5 && out->n_ticks < FASTCHART_MAX_TICKS;
-         e += 1.0) {
+         e += stride) {
         out->ticks[out->n_ticks++] = pow(10.0, e);
+    }
+    if (out->n_ticks >= 2 && out->ticks[out->n_ticks - 1] < out->max) {
+        if (out->n_ticks < FASTCHART_MAX_TICKS) out->n_ticks++;
+        out->ticks[out->n_ticks - 1] = out->max;
     }
     if (out->n_ticks < 2) {
         out->ticks[0] = out->min;
