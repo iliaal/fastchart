@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   calendar heatmap scaling when values approach floating-point limits.
   Moving averages retain small values after large observations leave the
   window, and scatter trend moments preserve cancelling contributions.
+- Render benchmarks average the middle two samples for even iteration counts
+  instead of reporting the upper middle sample as the median / p50.
 - `SunburstChart::setHierarchy()` now throws `ValueError` when a
   node's direct-child values have no finite aggregate, and preserves the
   previously committed hierarchy instead of replacing it.

@@ -649,7 +649,10 @@ foreach ($builders as $name => $build) {
             $samples[] = (hrtime(true) - $t0) / 1e6;
         }
         sort($samples);
-        $medians[$fmt] = $samples[(int)floor(count($samples) * 0.5)];
+        $middle = intdiv(count($samples), 2);
+        $medians[$fmt] = count($samples) % 2
+            ? $samples[$middle]
+            : ($samples[$middle - 1] + $samples[$middle]) / 2;
     }
     printf("%-14s %10.2f %10.2f %10.2f %10.2f\n",
         $name,

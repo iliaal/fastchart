@@ -39,7 +39,8 @@ function bench(string $name, int $warmup, int $iters, callable $fn): array {
         'name'    => $name,
         'iters'   => $n,
         'min'     => $times[0],
-        'p50'     => $times[(int)($n * 0.5)],
+        'p50'     => $n % 2 ? $times[intdiv($n, 2)]
+            : ($times[intdiv($n, 2) - 1] + $times[intdiv($n, 2)]) / 2,
         'p90'     => $times[(int)($n * 0.9)],
         'max'     => $times[$n - 1],
         'mean'    => array_sum($times) / $n,
