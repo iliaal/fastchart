@@ -138,17 +138,14 @@ int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self, fastchart_ta
                 int cell_h = cell_y1 - cell_y0 + 1;
                 if (cell_w < (int)(label_size * 2.5) || cell_h < (int)(label_size * 1.6)) continue;
 
-                char buf[32];
-                if (base->value_format) {
-                    snprintf(buf, sizeof(buf),
-                             ZSTR_VAL(base->value_format), v);
-                } else {
-                    snprintf(buf, sizeof(buf), "%g", v);
-                }
+                const char *fmt = base->value_format ? ZSTR_VAL(base->value_format) : "%g";
+                char *buf = fastchart_format_double_label(fmt, v);
                 int tw = 0, th = 0;
                 if (fastchart_text_measure(t, label_font, label_size, buf,
-                                           &tw, &th, NULL, 0) != 0) continue;
-                if (tw > cell_w - 4) continue;
+                                           &tw, &th, NULL, 0) != 0 || tw > cell_w - 4) {
+                    efree(buf);
+                    continue;
+                }
 
                 int rr = (cell_rgb >> 16) & 0xFF;
                 int gg = (cell_rgb >>  8) & 0xFF;
@@ -160,6 +157,7 @@ int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self, fastchart_ta
                 int cy = (cell_y0 + cell_y1) / 2 + th / 2;
                 fastchart_text_draw(t, label_font, label_size, label_color,
                                     cx, cy, FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+                efree(buf);
             }
         }
     }
