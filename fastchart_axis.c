@@ -1808,12 +1808,12 @@ void fastchart_draw_value_label(fastchart_target_t *t, fastchart_obj *chart,
     double size = fastchart_resolve_font_size(chart, FC_FONT_LABEL, base * 0.85);
 
     const char *fmt = chart->value_format ? ZSTR_VAL(chart->value_format) : "%g";
-    char buf[32];
-    snprintf(buf, sizeof(buf), fmt, value);
+    char *buf = fastchart_format_double_label(fmt, value);
 
     int label_y = y - 6;
     fastchart_text_draw(t, font, size, pal->text,
                         x, label_y, FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+    efree(buf);
 }
 
 /* Resolve an overlay's stroke color: an explicit color if the caller
