@@ -245,9 +245,10 @@ jobs:
           test -f "$SO"
           echo "Inspecting $SO ($(stat -c '%s' "$SO") bytes)"
           echo "--- NEEDED entries ---"
-          readelf -d "$SO" | grep NEEDED || true
+          readelf -d "$SO" > "$RUNNER_TEMP/fastchart-dynamic.txt"
+          grep NEEDED "$RUNNER_TEMP/fastchart-dynamic.txt" || true
           echo "--- assertion ---"
-          if readelf -d "$SO" | grep NEEDED | grep -qiE "libjpeg|libpng|libwebp|libfreetype"; then
+          if grep NEEDED "$RUNNER_TEMP/fastchart-dynamic.txt" | grep -iE "libjpeg|libpng|libwebp|libfreetype" > /dev/null; then
             echo "FAIL: codec libs still appear in NEEDED; static link did not take"
             exit 1
           fi

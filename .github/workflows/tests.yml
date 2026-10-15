@@ -28,6 +28,8 @@ jobs:
           tools: composer
           coverage: none
       - run: composer validate --strict
+      - name: Check dependency inspection gates
+        run: php scripts/test-dependency-gates.php
 
   stub-drift:
     name: Stub / arginfo drift
@@ -148,8 +150,9 @@ jobs:
         run: |
           SO="$PWD/modules/fastchart.so"
           test -f "$SO"
-          if readelf -d "$SO" | grep NEEDED | \
-              grep -qiE 'libpng|libjpeg|libwebp'; then
+          readelf -d "$SO" > "$RUNNER_TEMP/fastchart-dynamic.txt"
+          if grep NEEDED "$RUNNER_TEMP/fastchart-dynamic.txt" | \
+              grep -iE 'libpng|libjpeg|libwebp' > /dev/null; then
             echo "::error::missing-codec build directly links an optional codec"
             exit 1
           fi
