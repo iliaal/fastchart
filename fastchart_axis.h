@@ -262,12 +262,6 @@ double fastchart_normalize_finite(double value, double start, double end);
 /* Interpolate between finite endpoints without forming end - start. */
 double fastchart_lerp_finite(double start, double end, double fraction);
 
-/* User-format tick label (printf-style format string already
- * validated by the setter). Caller-supplied buffer; truncates on
- * overrun rather than overflowing. */
-void fastchart_format_tick_label_user(double value, const zend_string *fmt,
-                                      char *out, size_t out_n);
-
 /* Borrow the typed category-label slots stored on the chart base into
  * a freshly ecalloc()'d const char ** of length `n`. Caller efree()s.
  * Returns NULL when no labels are set or n <= 0. */

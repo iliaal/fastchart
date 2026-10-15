@@ -13,9 +13,10 @@ fastchart
  * (the bug emitted the INT_MIN-derived value -2147483385). */
 
 /* The (int)NaN bug emitted the INT_MIN-derived coordinate -2147483385.
- * Legitimate coordinates sit inside the canvas; only hex colors are large
- * and those are always positive, so scan for an absurd negative token. */
+ * Inspect geometry, including native text anchors: fixed-decimal labels contain
+ * hundreds of digits and their glyphs can legitimately extend off canvas. */
 function min_coord(string $svg): int {
+    $svg = preg_replace('/(<text\b[^>]*>)[^<]*<\/text>/', '$1</text>', $svg);
     preg_match_all('/-\d+/', $svg, $m);
     $min = 0;
     foreach ($m[0] as $v) { if ((int)$v < $min) $min = (int)$v; }
@@ -25,7 +26,7 @@ function min_coord(string $svg): int {
 $c = new FastChart\LineChart(400, 300);
 $c->setSeries([['name' => 's', 'data' => [1.7e308, 1e307, 5e307]]]);
 $c->setYAxisRange(-1.7e308, 1.7e308);
-$svg = $c->renderSvg();
+$svg = $c->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE)->renderSvg();
 echo "renders: ", strlen($svg) > 100 ? "ok" : "BAD", "\n";
 echo "no garbage coords: ", min_coord($svg) > -1000 ? "ok" : "BAD", "\n";
 
