@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shared numeric and time axes preserve complete custom tick labels.
 - Default numeric tick labels use compact exponent form for ticks of 1e15
   or more and steps below 1e-6 instead of hundreds of digits or `0.000000`.
+- Log-scale default tick labels show fractional decades such as `0.01`
+  instead of `0`, switching to exponent form below `0.000001`.
 - `ParetoChart` keeps left-axis labels finite for large finite automatic
   and forced axis ranges instead of displaying `INF`.
 - `WordCloud` skips words too large for the plot before searching, preserving
