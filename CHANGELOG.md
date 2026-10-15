@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Log axes spanning more than 15 decades label every Nth decade through
+  both end decades instead of stopping after 16 ticks.
 - `ParetoChart` keeps complete left-axis and bar value labels for accepted
   `setValueFormat()` formats instead of truncating them to 31 bytes.
 - `LinearMeter` throws `ValueError` when the default label margins collapse
