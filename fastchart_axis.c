@@ -1223,8 +1223,63 @@ void fastchart_draw_title(fastchart_target_t *t, fastchart_obj *chart,
                                   plot->y0 - TITLE_PADDING_BELOW(chart, t));
 }
 
-static char *format_tick_label(double value, double step)
+static int decimal_exponent(double value)
 {
+    return (int)floor(log10(fabs(value)));
+}
+
+/* Significant digits needed for a nice step such as 2.5e300 or 2e-9. */
+static int step_significant_digits(double step)
+{
+    double mantissa = step / pow(10.0, decimal_exponent(step));
+    for (int digits = 1; digits < 17; digits++) {
+        double scaled = mantissa * pow(10.0, digits - 1);
+        if (fabs(scaled - round(scaled)) <= 1e-9 * (scaled + 1.0)) return digits;
+    }
+    return 17;
+}
+
+/* Fixed decimals stay exact below 1e15 (DBL_DIG), but at larger magnitudes
+ * %.0f prints hundreds of binary-expansion digits, and steps below 1e-6
+ * collapse under the six-decimal cap; both use %e for the whole axis. */
+static bool tick_labels_need_exponent(const fastchart_value_range *range)
+{
+    double step = range->tick_step;
+    if (!range->log_scale && isfinite(step) && step > 0.0 && step < 1e-6) return true;
+    for (int i = 0; i < range->n_ticks; i++) {
+        if (fabs(range->ticks[i]) >= 1e15) return true;
+    }
+    return false;
+}
+
+static char *format_tick_label_exponent(double value, double step)
+{
+    if (value == 0.0 || !isfinite(value) || !isfinite(step) || step <= 0.0) {
+        return fastchart_format_double_label("%g", value);
+    }
+    int digits = decimal_exponent(value) - decimal_exponent(step)
+               + step_significant_digits(step);
+    if (digits < 1) digits = 1;
+    if (digits > 17) digits = 17;
+
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%.*e", digits - 1, value);
+    char *mark = strchr(buf, 'e');
+    if (mark && memchr(buf, '.', (size_t)(mark - buf))) {
+        char *end = mark;
+        while (end > buf && end[-1] == '0') end--;
+        if (end > buf && end[-1] == '.') end--;
+        memmove(end, mark, strlen(mark) + 1);
+    }
+    return estrdup(buf);
+}
+
+static char *format_tick_label(double value, const fastchart_value_range *range)
+{
+    double step = range->tick_step;
+    if (tick_labels_need_exponent(range)) {
+        return format_tick_label_exponent(value, step);
+    }
     /* Find the step's decimal precision: 2.5 needs one digit and 0.25 needs
      * two. A magnitude-only rule mislabels fractional ticks. */
     int decimals = 0;
@@ -1281,7 +1336,7 @@ void fastchart_draw_y_axis(fastchart_target_t *t, fastchart_obj *chart,
 
         char *buf = chart->y_axis_label_format
             ? fastchart_format_double_label(ZSTR_VAL(chart->y_axis_label_format), v)
-            : format_tick_label(v, range->tick_step);
+            : format_tick_label(v, range);
         int label_x = plot->x0 - TICK_MARK_LEN(chart, t) - Y_LABEL_PADDING(chart, t) / 2;
         int label_y = y + (int)(size * 0.35 * chart_dpi_scale(chart, t));  /* baseline correction */
         fastchart_text_draw(t, font, size, label_color,
@@ -1334,7 +1389,7 @@ void fastchart_draw_y_axis_right(fastchart_target_t *t, fastchart_obj *chart,
 
         char *buf = chart->y_axis_label_format
             ? fastchart_format_double_label(ZSTR_VAL(chart->y_axis_label_format), v)
-            : format_tick_label(v, range->tick_step);
+            : format_tick_label(v, range);
         int label_x = plot->x1 + TICK_MARK_LEN(chart, t) + Y_LABEL_PADDING(chart, t) / 2;
         int label_y = y + (int)(size * 0.35 * chart_dpi_scale(chart, t));
         fastchart_text_draw(t, font, size, label_color,
@@ -1462,7 +1517,7 @@ void fastchart_draw_x_axis_numeric(fastchart_target_t *t, fastchart_obj *chart,
         if (!draw_labels) continue;
         char *buf = chart->x_axis_label_format
             ? fastchart_format_double_label(ZSTR_VAL(chart->x_axis_label_format), v)
-            : format_tick_label(v, range->tick_step);
+            : format_tick_label(v, range);
         int label_y = label_y_base;
         fastchart_text_draw(t, font, size, label_color,
                             x, label_y, FASTCHART_ALIGN_CENTER,
