@@ -13,8 +13,8 @@ fastchart
  * (the bug emitted the INT_MIN-derived value -2147483385). */
 
 /* The (int)NaN bug emitted the INT_MIN-derived coordinate -2147483385.
- * Inspect geometry, including native text anchors: fixed-decimal labels contain
- * hundreds of digits and their glyphs can legitimately extend off canvas. */
+ * Inspect geometry, including native text anchors, but not label text: tick
+ * labels carry negative values that are not coordinates. */
 function min_coord(string $svg): int {
     $svg = preg_replace('/(<text\b[^>]*>)[^<]*<\/text>/', '$1</text>', $svg);
     preg_match_all('/-\d+/', $svg, $m);

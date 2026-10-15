@@ -70,7 +70,7 @@ foreach ($cases as $name => [$c,$axis]) {
     }
     echo "$name: ", $ok ? 'complete and stable' : 'FAIL', "\n";
 }
-// Numeric defaults must agree with the same fixed format even for huge ticks.
+// Huge numeric defaults switch to compact exponent labels of the same ticks.
 $huge = [
     'primary' => (new FastChart\LineChart(600,400))->setSeries([1e100])->setYAxisRange(0,1e100)->setXAxisVisible(false),
     'secondary' => (new FastChart\LineChart(600,400))->setSeries([['data'=>[1e100]],['data'=>[1e100],'axis'=>'right']])->setSecondaryYAxis(true)->setXAxisVisible(false),
@@ -81,8 +81,15 @@ foreach ($huge as $name=>$c) {
     $setter = $name === 'numeric X' ? 'setXAxisLabelFormat' : 'setYAxisLabelFormat';
     $default = $c->renderSvg();
     $scientific = texts($c->$setter('%.17g')->renderSvg());
-    $expected = array_map(fn($v)=>is_numeric($v) ? sprintf('%.0f',(float)$v) : $v, $scientific);
-    echo "huge $name: ", texts($default) === $expected && max(array_map('strlen',$expected)) > 31 ? 'complete' : 'FAIL', "\n";
+    $actual = texts($default);
+    $ok = count($actual) === count($scientific) && count($actual) > 1;
+    foreach ($scientific as $i => $ref) {
+        $label = $actual[$i] ?? '';
+        if (!is_numeric($ref)) { $ok = $ok && $label === $ref; continue; }
+        $ok = $ok && preg_match('/^(0|-?[1-9](\.\d+)?e[+-]\d{1,3})$/', $label)
+            && abs((float)$label - (float)$ref) <= 1e-12 * abs((float)$ref);
+    }
+    echo "huge $name: ", $ok ? 'complete' : 'FAIL', "\n";
 }
 
 ?>
