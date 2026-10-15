@@ -35,13 +35,17 @@ function bench(string $name, int $warmup, int $iters, callable $fn): array {
     }
     sort($times);
     $n = count($times);
+    /* Linear interpolation between closest ranks, matching review_perf.php's percentile(). */
+    $p90_pos = ($n - 1) * 0.9;
+    $p90_lo = (int)floor($p90_pos);
+    $p90_hi = min($p90_lo + 1, $n - 1);
     return [
         'name'    => $name,
         'iters'   => $n,
         'min'     => $times[0],
         'p50'     => $n % 2 ? $times[intdiv($n, 2)]
             : ($times[intdiv($n, 2) - 1] + $times[intdiv($n, 2)]) / 2,
-        'p90'     => $times[(int)($n * 0.9)],
+        'p90'     => $times[$p90_lo] + ($times[$p90_hi] - $times[$p90_lo]) * ($p90_pos - $p90_lo),
         'max'     => $times[$n - 1],
         'mean'    => array_sum($times) / $n,
         'out_len' => $out_len,
