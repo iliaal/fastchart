@@ -1247,7 +1247,9 @@ static bool tick_labels_need_exponent(const fastchart_value_range *range)
     double step = range->tick_step;
     if (!range->log_scale && isfinite(step) && step > 0.0 && step < 1e-6) return true;
     for (int i = 0; i < range->n_ticks; i++) {
-        if (fabs(range->ticks[i]) >= 1e15) return true;
+        double magnitude = fabs(range->ticks[i]);
+        if (magnitude >= 1e15) return true;
+        if (range->log_scale && magnitude > 0.0 && magnitude < 1e-6) return true;
     }
     return false;
 }
@@ -1280,6 +1282,17 @@ static char *format_tick_label(double value, const fastchart_value_range *range)
     if (tick_labels_need_exponent(range)) {
         return format_tick_label_exponent(value, step);
     }
+    static const char *const formats[] = {
+        "%.0f", "%.1f", "%.2f", "%.3f", "%.4f", "%.5f", "%.6f"
+    };
+    if (range->log_scale) {
+        /* Log ticks are decades with a step of one decade, so each
+         * fractional tick needs as many decimals as its own exponent. */
+        int decimals = 0;
+        if (value > 0.0 && value < 1.0) decimals = -decimal_exponent(value * (1.0 + 1e-9));
+        if (decimals > 6) decimals = 6;
+        return fastchart_format_double_label(formats[decimals], value);
+    }
     /* Find the step's decimal precision: 2.5 needs one digit and 0.25 needs
      * two. A magnitude-only rule mislabels fractional ticks. */
     int decimals = 0;
@@ -1291,9 +1304,6 @@ static char *format_tick_label(double value, const fastchart_value_range *range)
             decimals++;
         }
     }
-    static const char *const formats[] = {
-        "%.0f", "%.1f", "%.2f", "%.3f", "%.4f", "%.5f", "%.6f"
-    };
     return fastchart_format_double_label(formats[decimals], value);
 }
 
