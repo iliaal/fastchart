@@ -1,5 +1,5 @@
 --TEST--
-Render benchmarks average the two middle samples for even iteration counts
+Render benchmarks average the two middle samples for even iteration counts and interpolate p90
 --FILE--
 <?php
 namespace FastChartBenchMedianTest;
@@ -50,13 +50,20 @@ foreach ($cases as $case => [$durations, $expected]) {
         $result = bench('fixture', $WARMUP, $N, $encode);
         $sorted = $durations;
         sort($sorted);
+        $pos = ($N - 1) * 0.9;
+        $lo = (int)floor($pos);
+        $expected90 = $sorted[$lo] + ($sorted[min($lo + 1, $N - 1)] - $sorted[$lo]) * ($pos - $lo);
         $want = ['name' => 'fixture', 'iters' => $N, 'min' => (float)min($durations),
-            'p50' => (float)$expected, 'p90' => (float)$sorted[(int)($N * 0.9)],
+            'p50' => (float)$expected, 'p90' => (float)$expected90,
             'max' => (float)max($durations), 'mean' => array_sum($durations) / $N, 'out_len' => 0];
         $perfOk = $result == $want && array_keys($result) === array_keys($want)
             && $renders === $N + $WARMUP && $clockCalls === 2 * $N;
         echo "$case warmup=$WARMUP: ", $docsOk && $perfOk ? "ok\n" : "FAIL\n";
     }
+}
+foreach ([[9, 1, 3, 7], range(1, 10)] as $durations) {
+    $clockCalls = 0;
+    printf("p90 of %d samples: %.1f\n", count($durations), bench('fixture', 0, count($durations), fn() => '')['p90']);
 }
 ?>
 --EXPECT--
@@ -78,3 +85,5 @@ default50 warmup=0: ok
 default50 warmup=3: ok
 default60 warmup=0: ok
 default60 warmup=3: ok
+p90 of 4 samples: 8.4
+p90 of 10 samples: 9.1
