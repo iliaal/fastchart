@@ -11,7 +11,8 @@ if (!extension_loaded('fastchart')) {
 }
 
 $ITERS  = (int)(getenv('FC_BENCH_ITERS') ?: 60);
-$WARMUP = (int)(getenv('FC_BENCH_WARMUP') ?: 5);
+$warmup_env = getenv('FC_BENCH_WARMUP');
+$WARMUP = ($warmup_env === false || $warmup_env === '') ? 5 : (int)$warmup_env;
 $LABEL  = getenv('FC_BENCH_LABEL') ?: 'unlabeled';
 
 function bench(string $name, int $warmup, int $iters, callable $fn): array {
@@ -21,15 +22,17 @@ function bench(string $name, int $warmup, int $iters, callable $fn): array {
         $sample_out = $fn();
     }
     $times = [];
-    $out_len = is_string($sample_out) ? strlen($sample_out) : 0;
+    $out_len = is_string($sample_out) ? strlen($sample_out) : null;
     for ($i = 0; $i < $iters; $i++) {
         $t0 = hrtime(true);
         $out = $fn();
         $t1 = hrtime(true);
         $times[] = ($t1 - $t0) / 1e6;  /* ns -> ms */
-        if (is_string($out) && strlen($out) !== $out_len) {
-            fwrite(STDERR, "warn: $name output size drifted at iter $i: "
-                . "$out_len -> " . strlen($out) . "\n");
+        if (is_string($out)) {
+            if ($out_len !== null && strlen($out) !== $out_len) {
+                fwrite(STDERR, "warn: $name output size drifted at iter $i: "
+                    . "$out_len -> " . strlen($out) . "\n");
+            }
             $out_len = strlen($out);
         }
     }
@@ -48,7 +51,7 @@ function bench(string $name, int $warmup, int $iters, callable $fn): array {
         'p90'     => $times[$p90_lo] + ($times[$p90_hi] - $times[$p90_lo]) * ($p90_pos - $p90_lo),
         'max'     => $times[$n - 1],
         'mean'    => array_sum($times) / $n,
-        'out_len' => $out_len,
+        'out_len' => $out_len ?? 0,
     ];
 }
 
