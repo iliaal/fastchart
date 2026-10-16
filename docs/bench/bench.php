@@ -22,6 +22,15 @@ $N = (int)(getenv('FC_BENCH_ITERS') ?: 50);
 $warmup_env = getenv('FC_BENCH_WARMUP');
 $WARMUP = $warmup_env === false ? 3 : (int)$warmup_env;
 
+if ($N < 1) {
+    fwrite(STDERR, "FC_BENCH_ITERS must be greater than zero\n");
+    exit(1);
+}
+if ($WARMUP < 0) {
+    fwrite(STDERR, "FC_BENCH_WARMUP must not be negative\n");
+    exit(1);
+}
+
 /* Deterministic data so runs are comparable. */
 mt_srand(42);
 
