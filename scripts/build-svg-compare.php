@@ -1,13 +1,13 @@
 <?php
-/* Build side-by-side SVG vs PNG comparison HTML covering every chart
- * family and symbology. Each row shows the PHP construction code
+/* Build side-by-side SVG vs PNG comparison HTML covering a selection of chart
+ * families and symbologies. Each row shows the PHP construction code
  * (PHP-highlighted), then SVG (inlined) and PNG (base64 data URI) for
  * the same chart. Output: compare-svg-png.html in the repo root.
  *
- * Run with the fastchart + gd extensions loaded (php -d extension=...). */
+ * Run with the fastchart extension loaded (php -d extension=...). */
 
 if (!class_exists('FastChart\\Chart')) {
-    fwrite(STDERR, "FastChart not loaded; load fastchart.so + gd.so on the CLI.\n");
+    fwrite(STDERR, "FastChart not loaded; load fastchart.so on the CLI.\n");
     exit(1);
 }
 
@@ -703,7 +703,7 @@ foreach ($cases as $idx => $case) {
       <div class="frame">{$svg}</div>
     </figure>
     <figure>
-      <figcaption>PNG (libgd) <span class="size">{$png_kb} KB</span></figcaption>
+      <figcaption>PNG <span class="size">{$png_kb} KB</span></figcaption>
       <div class="frame"><img src="{$png_b64}" alt="PNG render"></div>
     </figure>
   </div>
@@ -783,7 +783,7 @@ footer { max-width: 1200px; margin: 0 auto; padding: 16px 24px 40px;
 <body>
 <header>
   <h1>FastChart {$ver}: SVG vs PNG side-by-side</h1>
-  <p>Every chart family + symbology rendered through both backends.
+  <p>A selection of chart families and symbologies rendered through both backends.
      Each row shows the construction code, then SVG (inlined) and PNG
      (base64 data URI). Generated {$now}.
      SVG total: <code>{$total_svg_kb} KB</code> &middot;
