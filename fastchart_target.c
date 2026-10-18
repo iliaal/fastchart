@@ -1375,12 +1375,18 @@ static const char *fc_sniff_image_mime(const unsigned char *data, size_t n)
  * model treats resource validation as the caller's responsibility,
  * so the check lives here. Returns 0 on PNGs with self-consistent
  * chunk framing (or any non-PNG input), -1 if any chunk declares a
- * length that overruns the remaining buffer. */
+ * length that overruns the remaining buffer or the first chunk is not
+ * a 13-byte IHDR. stb skips a leading Apple CgBI chunk that libpng and
+ * browsers reject; refusing it keeps SVG and raster output in step. */
 static int fc_validate_png_chunks(const unsigned char *b, size_t n)
 {
     if (n < 16 || b[0] != 0x89 || b[1] != 'P'
         || b[2] != 'N' || b[3] != 'G') {
         return 0;
+    }
+    if (n < 33 || b[8] != 0 || b[9] != 0 || b[10] != 0 || b[11] != 13
+        || b[12] != 'I' || b[13] != 'H' || b[14] != 'D' || b[15] != 'R') {
+        return -1;
     }
     size_t off = 8; /* past PNG signature */
     /* Cap iterations only as a runaway guard: each pass advances off
@@ -1405,56 +1411,14 @@ static int fc_validate_png_chunks(const unsigned char *b, size_t n)
     return -1;
 }
 
-/* Sniff width/height for a PNG or JPEG buffer. Returns 0 on success,
- * -1 if the header layout doesn't yield dimensions. Mirrors the
- * fastchart_axis.c routine but operates on an in-memory buffer. */
-static int fc_sniff_image_dims_mem(const unsigned char *b, size_t n,
-                                    int *out_w, int *out_h)
-{
-    if (n < 24) return -1;
-    if (b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G') {
-        /* PNG IHDR width/height are big-endian uint32. b[i] integer-
-         * promotes to (signed) int before the shift; for b[16] >= 0x80,
-         * b[16] << 24 lands in the sign bit which is C11 UB. Parse via
-         * uint32_t, reject 0 or > INT_MAX, then narrow. */
-        uint32_t w = ((uint32_t)b[16] << 24) | ((uint32_t)b[17] << 16)
-                   | ((uint32_t)b[18] <<  8) |  (uint32_t)b[19];
-        uint32_t h = ((uint32_t)b[20] << 24) | ((uint32_t)b[21] << 16)
-                   | ((uint32_t)b[22] <<  8) |  (uint32_t)b[23];
-        if (w == 0 || h == 0 || w > INT_MAX || h > INT_MAX) return -1;
-        *out_w = (int)w;
-        *out_h = (int)h;
-        return 0;
-    }
-    if (b[0] == 0xFF && b[1] == 0xD8) {
-        size_t i = 2;
-        while (i + 9 < n) {
-            if (b[i] != 0xFF) return -1;
-            unsigned char marker = b[i + 1];
-            if (marker == 0x00 || marker == 0xFF) { i++; continue; }
-            if (marker == 0xD8 || marker == 0xD9) { i += 2; continue; }
-            if ((marker >= 0xC0 && marker <= 0xCF)
-                && marker != 0xC4 && marker != 0xC8 && marker != 0xCC) {
-                *out_h = (b[i + 5] << 8) | b[i + 6];
-                *out_w = (b[i + 7] << 8) | b[i + 8];
-                return 0;
-            }
-            unsigned int seg_len = (b[i + 2] << 8) | b[i + 3];
-            if (seg_len < 2) return -1;
-            i += 2 + seg_len;
-        }
-    }
-    return -1;
-}
-
 /* Load `path` through a descriptor opened with PHP's open_basedir policy
  * and nonblocking flags. The descriptor is fstat-checked before the PHP
  * stream layer reads it, so a pathname swapped to a FIFO cannot block the
  * render. Reads up to FC_IMAGE_MAX_BYTES + 1 so a file at exactly the cap
  * passes while a file one byte over gets rejected (php_stream_copy_to_mem
  * with a smaller cap would silently truncate). On success populates *out
- * with the bytes, sniffed MIME type, and declared width/height, then
- * applies the dimension caps. Returns 0 / -1; on -1 the cache entry
+ * with the bytes, sniffed MIME type, and decoder-reported width/height,
+ * then applies the dimension caps. Returns 0 / -1; on -1 the cache entry
  * retains only its path. */
 static int fastchart_load_source_image(const char *path,
                                        fastchart_target_image_cache_entry *out)
@@ -1507,10 +1471,18 @@ static int fastchart_load_source_image(const char *path,
         return -1;
     }
 
+    if (fc_validate_png_chunks(bytes, n) != 0) {
+        zend_string_release(raw);
+        return -1;
+    }
+
+    /* Dimensions come from the decoder's own header parser so the cap
+     * below and icon sizing see exactly what a later decode allocates;
+     * a fixed-offset sniff can be steered to a different header than
+     * the one the decoder honors. Refuse when the decoder can't parse
+     * the header: the cap can't be enforced on it. */
     int src_w = 0, src_h = 0;
-    if (fc_sniff_image_dims_mem(bytes, n, &src_w, &src_h) != 0) {
-        /* MIME passed but dimensions couldn't be recovered: refuse
-         * inputs the dim cap can't enforce. */
+    if (!plutovg_image_info_from_data(bytes, (int)n, &src_w, &src_h)) {
         zend_string_release(raw);
         return -1;
     }
@@ -1519,11 +1491,6 @@ static int fastchart_load_source_image(const char *path,
         || src_h > FC_IMAGE_MAX_DIM
         || (long long)src_w * (long long)src_h
             > (long long)FC_IMAGE_MAX_PIXELS) {
-        zend_string_release(raw);
-        return -1;
-    }
-
-    if (fc_validate_png_chunks(bytes, n) != 0) {
         zend_string_release(raw);
         return -1;
     }

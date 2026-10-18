@@ -1176,6 +1176,22 @@ PLUTOVG_API plutovg_surface_t* plutovg_surface_load_from_image_file(const char* 
 PLUTOVG_API plutovg_surface_t* plutovg_surface_load_from_image_data(const void* data, int length);
 
 /**
+ * @brief LOCAL-PATCH (fastchart): reads image dimensions with the decoder's
+ * own header parser.
+ *
+ * Applies the same format and dimension checks as
+ * plutovg_surface_load_from_image_data() without decoding pixels, so the
+ * reported size is the size a subsequent load would produce.
+ *
+ * @param data Pointer to the image data.
+ * @param length Length of the data in bytes.
+ * @param width Receives the image width; may be `NULL`.
+ * @param height Receives the image height; may be `NULL`.
+ * @return `true` if the header parsed, `false` otherwise.
+ */
+PLUTOVG_API bool plutovg_image_info_from_data(const void* data, int length, int* width, int* height);
+
+/**
  * @brief Loads an image surface from base64-encoded data.
  *
  * @param data Pointer to the base64-encoded image data.

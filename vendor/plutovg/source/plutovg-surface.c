@@ -23,6 +23,15 @@
  * accordingly. */
 #define STBI_ONLY_PNG
 #define STBI_ONLY_JPEG
+/* LOCAL-PATCH (fastchart): stb's default per-side ceiling is 1 << 24, so
+ * a small compressed file can drive a ~1 GiB malloc'd decode outside PHP's
+ * memory_limit. Enforce the ceiling inside the decoder's own header parse
+ * so it holds for every caller and cannot diverge from a caller-side
+ * sniff. 4096 matches FC_IMAGE_MAX_DIM (fastchart_rasterize.h); 4096^2 is
+ * also FC_IMAGE_MAX_PIXELS. */
+#ifndef STBI_MAX_DIMENSIONS
+#define STBI_MAX_DIMENSIONS 4096
+#endif
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #include "plutovg-stb-image.h"
@@ -92,6 +101,20 @@ plutovg_surface_t* plutovg_surface_load_from_image_data(const void* data, int le
     if(image == NULL)
         return NULL;
     return plutovg_surface_load_from_image(image, width, height);
+}
+
+/* LOCAL-PATCH (fastchart): expose stb's header parser so an embedder can
+ * size and cap an image from the dimensions the decoder will use. */
+bool plutovg_image_info_from_data(const void* data, int length, int* width, int* height)
+{
+    int w, h, channels;
+    if(data == NULL || length <= 0)
+        return false;
+    if(!stbi_info_from_memory(data, length, &w, &h, &channels))
+        return false;
+    if(width) *width = w;
+    if(height) *height = h;
+    return true;
 }
 
 static const uint8_t base64_table[128] = {
