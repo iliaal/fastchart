@@ -55,9 +55,14 @@ echo 'large circle edge: ', same_pixels(
     '<circle cx="1e7" cy="32" r="9999968" fill="red"/>',
     '<rect x="32" width="32" height="64" fill="red"/>'), "\n";
 
-$nan = render('<path d="M0 0 L64 0 L64 1e39 Z"/>');
-echo 'infinite path dropped: ',
-    ((imagecolorat($nan, 60, 10) >> 24) & 0x7F) === 0x7F ? "yes\n" : "NO\n";
+/* A transform that overflows float yields +inf device coordinates, which
+ * are treated as FLT_MAX: the closing edge runs from (64, FLT_MAX) back to
+ * the origin, so the wedge covers the canvas. (A literal 1e39 in path
+ * data never gets this far: the path parser rejects it.) */
+$inf = render('<path d="M0 0 L64 0 L64 1e30 Z" transform="scale(1 1e10)"/>');
+echo 'infinite wedge drawn: ',
+    (((imagecolorat($inf, 60, 10) >> 24) & 0x7F) === 0
+     && ((imagecolorat($inf, 2, 60) >> 24) & 0x7F) === 0) ? "yes\n" : "NO\n";
 
 ?>
 --EXPECT--
@@ -67,4 +72,4 @@ corner past the edge: same
 even-odd hole: same
 huge circle covers canvas: same
 large circle edge: same
-infinite path dropped: yes
+infinite wedge drawn: yes

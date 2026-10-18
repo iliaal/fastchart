@@ -262,11 +262,12 @@ static void ft_outline_end(PVG_FT_Outline* ft)
  * range check: undefined above ~1.4e17 px, INT64_MIN on x86-64, and the
  * fixed-point code needs far smaller values than that. The CORDIC helpers
  * in plutovg-ft-math.c take the MSB of a 32-bit truncation, so 26.6
- * deltas must stay below 2^31 (2^25 px), and gray_line_to() clips through
- * PVG_FT_MulDiv(), whose product of two 24.8 deltas must stay below 2^63
- * (deltas below ~2^23.5 px). Out-of-range input overflowed signed
- * arithmetic in all three files and made the stroker and rasterizer
- * subdivide garbage for seconds and gigabytes.
+ * deltas must stay below 2^31 (2^25 px), and the rasterizer multiplies
+ * pairs of 24.8 deltas in signed long: gray_line_to() clips through
+ * PVG_FT_MulDiv(), and gray_render_cubic()'s acute-angle test sums two
+ * such products, which is the tightest bound. Out-of-range input
+ * overflowed signed arithmetic in all three files and made the stroker
+ * and rasterizer subdivide garbage for seconds and gigabytes.
  *
  * A path whose mapped points all lie within +-PLUTOVG_FT_COORD_LIMIT
  * (2^21 px) converts exactly as before. Any other path is first clipped
@@ -274,14 +275,19 @@ static void ft_outline_end(PVG_FT_Outline* ft)
  * y = +-L and the pieces outside are projected onto the box edge. The
  * projection is continuous and keeps the winding number of every point
  * inside the box, so fills are unchanged there. Cubics that leave the box
- * are halved until each piece is inside, outside or smaller than L/2
- * (at most PLUTOVG_FT_CLIP_DEPTH times); a piece still straddling an edge
- * is replaced by its chord, which only moves geometry outside +-L/2.
- * Strokes add at most PLUTOVG_FT_STROKE_LIMIT (2^20 px, see
+ * are halved until each piece is inside, outside or smaller than L/2,
+ * at most PLUTOVG_FT_CLIP_DEPTH times; a piece still straddling an edge
+ * is replaced by its chord. A piece that got below L/2 lies wholly
+ * outside +-L/2, so its chord moves nothing inside that square; a piece
+ * cut off by the depth limit (curves spanning more than ~2^44 px) can
+ * still be larger, and its chord may then shift geometry nearer the
+ * canvas. Strokes add at most PLUTOVG_FT_STROKE_LIMIT (2^20 px, see
  * ft_outline_convert_stroke()), so everything the stroker and rasterizer
- * see stays within 3 * 2^20 px per axis: 26.6 deltas below 2^28.6 and
- * MulDiv products below 2^61.2. A path with a NaN or infinite point has
- * no defined geometry and renders nothing.
+ * see stays within 3 * 2^20 px per axis: 26.6 deltas below 2^28.6, single
+ * 24.8 products (MulDiv) below 2^61.2, and the acute-angle sum
+ * 2 * (6 * 2^28)^2 ~= 2^62.2, under 2^63 by 0.8 bit. Infinite coordinates
+ * are treated as +-FLT_MAX; a path with a NaN point has no defined
+ * geometry and renders nothing.
  */
 #define PLUTOVG_FT_COORD_LIMIT 2097152.0
 #define PLUTOVG_FT_CLIP_DEPTH 24
@@ -448,11 +454,15 @@ static bool ft_points_in_range(const plutovg_point_t* points, int count)
     return true;
 }
 
-static bool ft_points_finite(const plutovg_point_t* points, int count)
+static bool ft_points_sanitize(plutovg_point_t* points, int count)
 {
     for(int i = 0; i < count; i++) {
-        if(!isfinite(points[i].x) || !isfinite(points[i].y)) {
+        if(isnan(points[i].x) || isnan(points[i].y))
             return false;
+        if(isinf(points[i].x))
+            points[i].x = copysignf(FLT_MAX, points[i].x);
+        if(isinf(points[i].y)) {
+            points[i].y = copysignf(FLT_MAX, points[i].y);
         }
     }
 
@@ -478,7 +488,7 @@ static plutovg_path_t* ft_path_clip(const plutovg_path_t* path, const plutovg_ma
         switch(plutovg_path_iterator_next(&it, points)) {
         case PLUTOVG_PATH_COMMAND_MOVE_TO:
             plutovg_matrix_map_points(matrix, points, points, 1);
-            if(!ft_points_finite(points, 1))
+            if(!ft_points_sanitize(points, 1))
                 goto invalid;
             if(fill && clipper.path->elements.size > 0)
                 ft_clip_line_to(&clipper, clipper.start_x, clipper.start_y);
@@ -491,13 +501,13 @@ static plutovg_path_t* ft_path_clip(const plutovg_path_t* path, const plutovg_ma
             break;
         case PLUTOVG_PATH_COMMAND_LINE_TO:
             plutovg_matrix_map_points(matrix, points, points, 1);
-            if(!ft_points_finite(points, 1))
+            if(!ft_points_sanitize(points, 1))
                 goto invalid;
             ft_clip_line_to(&clipper, points[0].x, points[0].y);
             break;
         case PLUTOVG_PATH_COMMAND_CUBIC_TO:
             plutovg_matrix_map_points(matrix, points, points, 3);
-            if(!ft_points_finite(points, 3))
+            if(!ft_points_sanitize(points, 3))
                 goto invalid;
             ft_clip_cubic_to(&clipper, points[0].x, points[0].y, points[1].x, points[1].y, points[2].x, points[2].y, PLUTOVG_FT_CLIP_DEPTH);
             break;
@@ -598,7 +608,11 @@ static PVG_FT_Outline* ft_outline_convert_stroke(const plutovg_path_t* path, con
      * past the path (see PLUTOVG_FT_COORD_LIMIT). Caps and round joins
      * reach 1.42 * radius, miters radius * miter_limit; the miter limit
      * also feeds PVG_FT_Vector_From_Polar() as 16.16, so keep it below
-     * 2^14. Ordinary strokes are far inside both bounds. */
+     * 2^14. Ordinary strokes are far inside both bounds. A stroke wider
+     * than 2^20 px renders narrower than specified, which is visible when
+     * only its far edge reaches the canvas: a round-capped 1 px segment
+     * at x = 10^6 with stroke-width 2.1 * 10^6 should cover a 64 px
+     * canvas at the origin but now misses it. */
     double radius = width * 0.5;
     if(!(fabs(radius) <= PLUTOVG_FT_STROKE_LIMIT / 2))
         radius = isnan(radius) ? 0.0 : copysign(PLUTOVG_FT_STROKE_LIMIT / 2, radius);
