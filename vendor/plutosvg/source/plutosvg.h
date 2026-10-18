@@ -188,6 +188,24 @@ PLUTOSVG_API size_t plutosvg_document_element_count(const plutosvg_document_t* d
 PLUTOSVG_API void plutosvg_document_set_image_cache_limit(plutosvg_document_t* document, size_t limit);
 
 /**
+ * @brief LOCAL-PATCH (fastchart): content flags of the parsed tree.
+ *
+ * Reports what the parser kept, so an embedder's content policy inspects
+ * exactly the elements the renderer can reach rather than re-scanning the
+ * source bytes with a second, divergent grammar.
+ */
+#define PLUTOSVG_CONTENT_USE        (1u << 0) /**< a parsed `<use>` element */
+#define PLUTOSVG_CONTENT_DATA_IMAGE (1u << 1) /**< an `<image>` whose href contains `data:image/` (ASCII case-insensitive) */
+
+/**
+ * @brief LOCAL-PATCH (fastchart): returns PLUTOSVG_CONTENT_* flags.
+ *
+ * @param document Pointer to the SVG document.
+ * @return Bitwise OR of the PLUTOSVG_CONTENT_* flags present in the document.
+ */
+PLUTOSVG_API unsigned int plutosvg_document_content_flags(const plutosvg_document_t* document);
+
+/**
  * @brief Retrieves the bounding box of a specific element or the entire SVG document.
  *
  * Calculates and retrieves the extents of an element identified by `id`, or the whole document if `id` is `NULL`.

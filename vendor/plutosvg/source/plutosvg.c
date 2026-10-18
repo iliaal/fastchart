@@ -2953,6 +2953,63 @@ size_t plutosvg_document_element_count(const plutosvg_document_t* document)
     return document->element_count;
 }
 
+/* LOCAL-PATCH (fastchart): every ATTR_HREF is checked, not only the one
+ * find_attribute() would return, and the match is a case-insensitive
+ * substring, a superset of the data:image/png|jpg|jpeg prefixes that
+ * load_image() decodes. */
+static bool href_has_data_image(const element_t* element)
+{
+    static const char needle[] = "data:image/";
+    const size_t needle_length = sizeof(needle) - 1;
+    for(const attribute_t* attribute = element->attributes; attribute; attribute = attribute->next) {
+        if(attribute->id != ATTR_HREF || attribute->value.length < needle_length)
+            continue;
+        const char* data = attribute->value.data;
+        size_t last = attribute->value.length - needle_length;
+        for(size_t i = 0; i <= last; ++i) {
+            size_t j = 0;
+            while(j < needle_length) {
+                char c = data[i + j];
+                if(c >= 'A' && c <= 'Z')
+                    c = (char)(c - 'A' + 'a');
+                if(c != needle[j])
+                    break;
+                ++j;
+            }
+
+            if(j == needle_length) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+unsigned int plutosvg_document_content_flags(const plutosvg_document_t* document)
+{
+    unsigned int flags = 0;
+    const element_t* element = document->root_element;
+    while(element) {
+        if(element->id == TAG_USE)
+            flags |= PLUTOSVG_CONTENT_USE;
+        else if(element->id == TAG_IMAGE && href_has_data_image(element))
+            flags |= PLUTOSVG_CONTENT_DATA_IMAGE;
+        if(element->first_child) {
+            element = element->first_child;
+            continue;
+        }
+
+        while(element && element->next_sibling == NULL)
+            element = element->parent;
+        if(element) {
+            element = element->next_sibling;
+        }
+    }
+
+    return flags;
+}
+
 bool plutosvg_document_extents(const plutosvg_document_t* document, const char* id, plutovg_rect_t* extents)
 {
     render_state_t state;
