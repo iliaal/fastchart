@@ -1230,6 +1230,19 @@ static bool add_attribute(element_t* element, plutosvg_document_t* document, int
     if(document->attribute_count >= MAX_DOCUMENT_ATTRIBUTES)
         return false;
     document->attribute_count += 1;
+    /* LOCAL-PATCH (fastchart): keep one record per attribute id. Lookups
+     * return the first match on a prepended list, so the last parsed
+     * value already won; overwriting in place keeps that, while repeated
+     * attributes (x="" x="" ...) can no longer grow the list that every
+     * lookup, including inherited ones, walks on each render visit. */
+    for(attribute_t* existing = element->attributes; existing; existing = existing->next) {
+        if(existing->id == id) {
+            existing->value.data = data;
+            existing->value.length = length;
+            return true;
+        }
+    }
+
     attribute_t* attribute = heap_alloc(document->heap, sizeof(attribute_t));
     attribute->id = id;
     attribute->value.data = data;
