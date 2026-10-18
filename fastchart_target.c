@@ -799,6 +799,31 @@ int fastchart_pin_path(const char *path)
     return 0;
 }
 
+#ifndef PHP_WIN32
+/* The pin keeps the directory object authorized at setter time. When
+ * the path's parent now names a different directory (renamed, swapped
+ * or deleted), the pin no longer describes the path; callers re-pin. */
+static bool fc_pinned_dir_is_current(int dir_fd, const char *canonical)
+{
+    const char *leaf = strrchr(canonical, '/');
+    if (!leaf) return false;
+    char parent[MAXPATHLEN];
+    size_t parent_len = (size_t)(leaf - canonical);
+    if (parent_len == 0) {
+        parent[0] = '/';
+        parent[1] = '\0';
+    } else {
+        memcpy(parent, canonical, parent_len);
+        parent[parent_len] = '\0';
+    }
+    struct stat pinned, current;
+    if (fstat(dir_fd, &pinned) != 0 || stat(parent, &current) != 0) {
+        return false;
+    }
+    return pinned.st_dev == current.st_dev && pinned.st_ino == current.st_ino;
+}
+#endif
+
 int fastchart_open_pinned_fd(const char *path, int flags, int *out_fd)
 {
 #ifndef PHP_WIN32
@@ -828,9 +853,9 @@ int fastchart_open_pinned_fd(const char *path, int flags, int *out_fd)
     if (dir_fd < 0) return 0;
     volatile int fd = -1;
     int open_result = -1;
-    bool stale = false;
+    bool stale = !fc_pinned_dir_is_current(dir_fd, canonical);
     zend_try {
-        if (fc_pinned_parent_allowed(dir_fd, leaf) != 0) {
+        if (stale || fc_pinned_parent_allowed(dir_fd, leaf) != 0) {
             stale = true;
         } else {
             int leaf_flags = flags | O_NOFOLLOW;
@@ -852,10 +877,11 @@ int fastchart_open_pinned_fd(const char *path, int flags, int *out_fd)
     } zend_end_try();
     fc_close_descriptor(dir_fd);
     if (stale) {
-        /* The pinned directory no longer resolves inside open_basedir
-         * (moved, deleted, or the policy narrowed). Drop it so callers
-         * re-pin through a fresh check instead of failing forever on a
-         * path that may now name a different, allowed directory. */
+        /* The pinned directory is no longer the path's parent, or no
+         * longer resolves inside open_basedir (moved, deleted, or the
+         * policy narrowed). Drop it so callers reopen through a fresh
+         * check instead of reading a stale directory or failing until
+         * the next setter call. */
         fc_pin_cache_remove(canonical);
         return 0;
     }
@@ -1124,31 +1150,57 @@ static bool fc_face_identity_matches(const fc_ft_face_slot *slot,
     return true;
 }
 
-/* Record that `font_path` resolved to this slot in the current epoch.
- * On allocation failure the memo is simply skipped. */
-static void fc_face_slot_remember_path(fc_ft_face_slot *slot,
-                                       const char *font_path)
+static void fc_face_memo_drop_face(FT_Face face)
 {
-    if (slot->path && strcmp(slot->path, font_path) == 0) {
-        slot->path_epoch = FASTCHART_G(font_epoch);
-        return;
+    fc_ft_face_memo *memo = FASTCHART_G(ft_face_memo);
+    for (int i = 0; i < FC_FT_FACE_MEMO_N; i++) {
+        if (memo[i].face == face) {
+            free(memo[i].path);
+            memset(&memo[i], 0, sizeof(memo[i]));
+        }
     }
+}
+
+/* Record that `font_path` resolved to `face` in the current epoch. On
+ * allocation failure the memo is simply skipped. */
+static void fc_face_memo_remember(const char *font_path, FT_Face face)
+{
+    fc_ft_face_memo *memo = FASTCHART_G(ft_face_memo);
+    uint64_t epoch = FASTCHART_G(font_epoch);
+    int slot = -1;
+    for (int i = 0; i < FC_FT_FACE_MEMO_N; i++) {
+        if (memo[i].path && strcmp(memo[i].path, font_path) == 0) {
+            memo[i].epoch = epoch;
+            memo[i].face = face;
+            return;
+        }
+        if (slot < 0 && (!memo[i].path || memo[i].epoch != epoch)) slot = i;
+    }
+    if (slot < 0) slot = (int)(epoch % FC_FT_FACE_MEMO_N);
     size_t path_len = strlen(font_path);
     char *path_copy = malloc(path_len + 1);
-    if (!path_copy) {
-        slot->path_epoch = 0;
-        return;
-    }
+    if (!path_copy) return;
     memcpy(path_copy, font_path, path_len + 1);
-    free(slot->path);
-    slot->path = path_copy;
-    slot->path_epoch = FASTCHART_G(font_epoch);
+    free(memo[slot].path);
+    memo[slot].path = path_copy;
+    memo[slot].epoch = epoch;
+    memo[slot].face = face;
+}
+
+static void fastchart_ft_face_memo_shutdown(void)
+{
+    fc_ft_face_memo *memo = FASTCHART_G(ft_face_memo);
+    for (int i = 0; i < FC_FT_FACE_MEMO_N; i++) {
+        free(memo[i].path);
+        memset(&memo[i], 0, sizeof(memo[i]));
+    }
 }
 
 static void fastchart_ft_face_slot_release(fc_ft_face_slot *slot)
 {
 	if (slot->face) {
         fastchart_glyph_cache_drop_face(slot->face);
+        fc_face_memo_drop_face(slot->face);
         FT_Done_Face(slot->face);
 	}
 	free(slot->path);
@@ -1178,10 +1230,16 @@ FT_Face fastchart_ft_face(const char *font_path)
     /* Within one render the same path string was already opened and
      * authorized; skip the per-glyph-run reopen. */
     if (epoch != 0) {
-        for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
-            if (cache[i].face && cache[i].path_epoch == epoch
-                && strcmp(cache[i].path, font_path) == 0) {
-                return fc_face_cache_promote(cache, i);
+        fc_ft_face_memo *memo = FASTCHART_G(ft_face_memo);
+        for (int m = 0; m < FC_FT_FACE_MEMO_N; m++) {
+            if (!memo[m].path || memo[m].epoch != epoch
+                || strcmp(memo[m].path, font_path) != 0) {
+                continue;
+            }
+            for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
+                if (cache[i].face == memo[m].face) {
+                    return fc_face_cache_promote(cache, i);
+                }
             }
         }
     }
@@ -1201,7 +1259,7 @@ FT_Face fastchart_ft_face(const char *font_path)
         if (cache[i].face && fc_face_identity_matches(&cache[i], &id,
                                                       font_path)) {
             fc_close_descriptor(fd);
-            fc_face_slot_remember_path(&cache[i], font_path);
+            if (epoch != 0) fc_face_memo_remember(font_path, cache[i].face);
             return fc_face_cache_promote(cache, i);
         }
     }
@@ -1256,10 +1314,10 @@ FT_Face fastchart_ft_face(const char *font_path)
     }
     cache[0] = id;
     cache[0].path = path_copy;
-    cache[0].path_epoch = epoch;
     cache[0].data = data;
     cache[0].data_len = data_len;
     cache[0].face = face;
+    if (epoch != 0) fc_face_memo_remember(font_path, face);
     return face;
 }
 
@@ -1274,6 +1332,8 @@ void fastchart_ft_library_shutdown(void)
     }
     memset(FASTCHART_G(measure_cache), 0,
            sizeof(fc_measure_cache_entry) * FC_MEASURE_CACHE_N);
+
+    fastchart_ft_face_memo_shutdown();
 
     /* Free cached faces explicitly (FT_Done_FreeType would too) so the
      * cache state and path-string ownership stay deterministic. Called

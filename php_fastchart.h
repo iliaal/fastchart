@@ -42,14 +42,23 @@ typedef struct {
     int64_t        mtime_ns;
     int64_t        ctime_s;
     int64_t        ctime_ns;
-    /* Last path string validated for this face, and the render epoch
-     * in which it was validated (see font_epoch). */
+    /* Path the face was loaded through; only consulted when the
+     * platform reports no inode. */
     char          *path;   /* malloc'd */
-    uint64_t       path_epoch;
     unsigned char *data;   /* malloc'd backing for FT_New_Memory_Face */
     size_t         data_len;
     FT_Face        face;   /* NULL = empty slot */
 } fc_ft_face_slot;
+
+/* Path strings already opened and authorized in the current render
+ * (font_epoch), mapped to their cached face. Entries from an older
+ * epoch are dead; eviction of a face clears entries pointing at it. */
+#define FC_FT_FACE_MEMO_N 8
+typedef struct {
+    char     *path;        /* malloc'd; NULL = empty */
+    uint64_t  epoch;
+    FT_Face   face;
+} fc_ft_face_memo;
 
 /* Glyph outline cache. Decomposed (face, pix_size, codepoint) ->
  * advance + path command stream at pen_x=0. The path stream is replayed
@@ -98,11 +107,11 @@ ZEND_BEGIN_MODULE_GLOBALS(fastchart)
     FT_Library             ft_lib;
     int                    ft_lib_init_failed;
     fc_ft_face_slot        ft_face_cache[FC_FT_FACE_CACHE_N];
-    /* Advanced at every render target init and release. A face slot
-     * validated in the current epoch serves the same path string
-     * without reopening it; any other lookup reopens and re-authorizes
-     * the file. Never 0 while a target is live. */
+    /* Advanced at every render target init and release. A path in
+     * ft_face_memo for the current epoch is served without reopening
+     * it; any other lookup reopens and re-authorizes the file. */
     uint64_t               font_epoch;
+    fc_ft_face_memo        ft_face_memo[FC_FT_FACE_MEMO_N];
     fc_glyph_cache_entry   glyph_cache[FC_GLYPH_CACHE_N];
     fc_measure_cache_entry measure_cache[FC_MEASURE_CACHE_N];
 #if defined(__linux__)
