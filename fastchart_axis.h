@@ -83,6 +83,18 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
                               int n_cat_y_labels,
                               fastchart_rect *out_plot);
 
+/* Same as fastchart_compute_layout, but the rotated x-axis margin is
+ * measured from `cat_x_labels` instead of the chart's category labels.
+ * For renderers whose x labels come from their own data (Waterfall bars,
+ * BoxPlot per-box fallbacks); the arrays are only read. */
+void fastchart_compute_layout_ex(fastchart_obj *chart, fastchart_target_t *t,
+                                 int has_y_axis, int has_x_axis,
+                                 const char *const *cat_y_labels,
+                                 int n_cat_y_labels,
+                                 const char *const *cat_x_labels,
+                                 int n_cat_x_labels,
+                                 fastchart_rect *out_plot);
+
 /* Common setup for all standard cartesian families (Line, Area, Bar,
  * Scatter, Bubble, Gantt, Heatmap, etc.). Performs the layout,
  * palette resolution, frame, title, common band drawing, X axis and

@@ -383,6 +383,20 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
                               int n_cat_y_labels,
                               fastchart_rect *out_plot)
 {
+    fastchart_compute_layout_ex(chart, t, has_y_axis, has_x_axis,
+                                cat_y_labels, n_cat_y_labels,
+                                (const char *const *)chart->category_labels,
+                                chart->n_category_labels, out_plot);
+}
+
+void fastchart_compute_layout_ex(fastchart_obj *chart, fastchart_target_t *t,
+                                 int has_y_axis, int has_x_axis,
+                                 const char *const *cat_y_labels,
+                                 int n_cat_y_labels,
+                                 const char *const *cat_x_labels,
+                                 int n_cat_x_labels,
+                                 fastchart_rect *out_plot)
+{
     int W, H;
     fastchart_target_get_dims(t, &W, &H);
 
@@ -510,15 +524,15 @@ void fastchart_compute_layout(fastchart_obj *chart, fastchart_target_t *t,
          * times the user stride) so only labels that will actually be
          * drawn are measured; a strided-out label can't clip. */
         if (chart->x_axis_label_angle != 0
-            && chart->category_labels && chart->n_category_labels > 0
+            && cat_x_labels && n_cat_x_labels > 0
             && axis_font) {
-            int n = chart->n_category_labels;
+            int n = n_cat_x_labels;
             int stride = 1;
             if (n > 30 + 2) stride = (n + 30 - 1) / 30;
             if (chart->x_label_stride > 1) stride *= (int)chart->x_label_stride;
             int widest = 0;
             for (int i = 0; i < n; i += stride) {
-                const char *lbl = chart->category_labels[i];
+                const char *lbl = cat_x_labels[i];
                 if (!lbl) continue;
                 int w = 0;
                 if (fastchart_text_measure(t, axis_font, axis_size, lbl,
