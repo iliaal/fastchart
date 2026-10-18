@@ -53,6 +53,13 @@
 /* Source-image bytes cap. FC_IMAGE_MAX_DIM / FC_IMAGE_MAX_PIXELS
  * are shared with the SVG rasterizer via fastchart_rasterize.h. */
 #define FC_IMAGE_MAX_BYTES   (8 * 1024 * 1024)
+
+/* The vendored decoder refuses images past PLUTOVG_IMAGE_MAX_DIMENSION on
+ * its own; a mismatch would either drop in-cap images or loosen the cap. */
+#if PLUTOVG_IMAGE_MAX_DIMENSION != FC_IMAGE_MAX_DIM
+#error "PLUTOVG_IMAGE_MAX_DIMENSION (plutovg.h) must equal FC_IMAGE_MAX_DIM"
+#endif
+
 #define FC_FONT_MAX_BYTES    (16 * 1024 * 1024)
 #define FC_FONT_CACHE_BYTES  FC_FONT_MAX_BYTES
 

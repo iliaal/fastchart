@@ -1176,6 +1176,16 @@ PLUTOVG_API plutovg_surface_t* plutovg_surface_load_from_image_file(const char* 
 PLUTOVG_API plutovg_surface_t* plutovg_surface_load_from_image_data(const void* data, int length);
 
 /**
+ * @brief LOCAL-PATCH (fastchart): per-side ceiling for decoded images.
+ *
+ * stb_image's default ceiling is 1 << 24, so a small compressed file can
+ * drive a ~1 GiB malloc'd decode outside PHP's memory_limit. The decoder
+ * enforces this value in its own header parse, for every caller. fastchart
+ * fails the build unless it equals FC_IMAGE_MAX_DIM.
+ */
+#define PLUTOVG_IMAGE_MAX_DIMENSION 4096
+
+/**
  * @brief LOCAL-PATCH (fastchart): reads image dimensions with the decoder's
  * own header parser.
  *

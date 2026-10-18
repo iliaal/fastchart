@@ -23,15 +23,8 @@
  * accordingly. */
 #define STBI_ONLY_PNG
 #define STBI_ONLY_JPEG
-/* LOCAL-PATCH (fastchart): stb's default per-side ceiling is 1 << 24, so
- * a small compressed file can drive a ~1 GiB malloc'd decode outside PHP's
- * memory_limit. Enforce the ceiling inside the decoder's own header parse
- * so it holds for every caller and cannot diverge from a caller-side
- * sniff. 4096 matches FC_IMAGE_MAX_DIM (fastchart_rasterize.h); 4096^2 is
- * also FC_IMAGE_MAX_PIXELS. */
-#ifndef STBI_MAX_DIMENSIONS
-#define STBI_MAX_DIMENSIONS 4096
-#endif
+/* LOCAL-PATCH (fastchart): see PLUTOVG_IMAGE_MAX_DIMENSION in plutovg.h. */
+#define STBI_MAX_DIMENSIONS PLUTOVG_IMAGE_MAX_DIMENSION
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #include "plutovg-stb-image.h"
