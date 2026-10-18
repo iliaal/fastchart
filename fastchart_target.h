@@ -180,6 +180,12 @@ typedef struct fastchart_target {
         image_cache[FASTCHART_TARGET_IMAGE_CACHE];
 	int image_cache_n;
 
+	/* Bytes of per-element label text (value labels, per-category
+	 * labels drawn once per data point) emitted so far; see
+	 * fastchart_charge_element_label(). */
+	size_t element_label_bytes;
+	bool element_labels_exhausted;
+
     /* Shared color table. handle = index. Grown on demand (ramp-heavy
      * charts such as heatmap / treemap / word cloud can allocate many more
      * than a small fixed cap) and freed in fastchart_target_release(). */

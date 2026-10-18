@@ -1865,6 +1865,40 @@ void fastchart_draw_series_legend(fastchart_target_t *t, fastchart_obj *chart,
     }
 }
 
+bool fastchart_charge_element_label(fastchart_target_t *t,
+                                    const fastchart_obj *chart, size_t len)
+{
+    if (t->element_labels_exhausted) return false;
+    ZEND_ASSERT(t->element_label_bytes <= FASTCHART_MAX_RENDER_TEXT_BYTES);
+    if (len > FASTCHART_MAX_RENDER_TEXT_BYTES - t->element_label_bytes) {
+        /* Stop at the first label that does not fit so the kept set is
+         * a draw-order prefix rather than whichever later labels are
+         * short enough to squeeze in. */
+        t->element_labels_exhausted = true;
+        if (chart->strict && !EG(exception)) {
+            zend_value_error("FastChart: per-element labels exceed the %d-byte "
+                             "per-render text limit",
+                             (int)FASTCHART_MAX_RENDER_TEXT_BYTES);
+        }
+        return false;
+    }
+    t->element_label_bytes += len;
+    return true;
+}
+
+char *fastchart_format_value_label(fastchart_target_t *t,
+                                   const fastchart_obj *chart,
+                                   const char *fmt, double value)
+{
+    if (t->element_labels_exhausted) return NULL;
+    int need = snprintf(NULL, 0, fmt, value);
+    if (need < 0) need = 0;
+    if (!fastchart_charge_element_label(t, chart, (size_t)need)) return NULL;
+    char *buf = emalloc((size_t)need + 1);
+    snprintf(buf, (size_t)need + 1, fmt, value);
+    return buf;
+}
+
 void fastchart_draw_value_label(fastchart_target_t *t, fastchart_obj *chart,
                                 const fastchart_palette *pal,
                                 int x, int y, double value)
@@ -1877,7 +1911,8 @@ void fastchart_draw_value_label(fastchart_target_t *t, fastchart_obj *chart,
     double size = fastchart_resolve_font_size(chart, FC_FONT_LABEL, base * 0.85);
 
     const char *fmt = chart->value_format ? ZSTR_VAL(chart->value_format) : "%g";
-    char *buf = fastchart_format_double_label(fmt, value);
+    char *buf = fastchart_format_value_label(t, chart, fmt, value);
+    if (!buf) return;
 
     int label_y = y - 6;
     fastchart_text_draw(t, font, size, pal->text,

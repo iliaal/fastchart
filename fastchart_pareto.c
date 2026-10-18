@@ -191,11 +191,14 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
                                 self->bars[i].label, NULL, 0);
         }
         if (font && ((fastchart_obj *)self)->show_values) {
-            char *buf = fastchart_format_double_label(fmt, self->bars[i].value);
-            fastchart_text_draw(t, font, size * 0.9, pal.text,
-                                bx + bar_w / 2, by - 4,
-                                FASTCHART_ALIGN_CENTER, buf, NULL, 0);
-            efree(buf);
+            char *buf = fastchart_format_value_label(
+                t, (fastchart_obj *)self, fmt, self->bars[i].value);
+            if (buf) {
+                fastchart_text_draw(t, font, size * 0.9, pal.text,
+                                    bx + bar_w / 2, by - 4,
+                                    FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+                efree(buf);
+            }
         }
     }
 

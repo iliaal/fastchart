@@ -144,6 +144,7 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
             const char *label = (i < chart_base->n_category_labels)
                 ? chart_base->category_labels[i] : NULL;
             if (!label) continue;
+            if (!fastchart_charge_element_label(t, chart_base, strlen(label))) break;
             int lx = cx + (int)((radius + 16) * cos_a[i]);
             int ly = cy + (int)((radius + 16) * sin_a[i]);
             fastchart_align align;

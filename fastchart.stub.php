@@ -229,8 +229,13 @@ abstract class Chart
      * applies to every rendered-text setter (axis titles, annotation
      * and band/line labels); oversized array-element labels are
      * dropped rather than throwing. Graph node labels, hierarchy
-     * labels, and text annotations each have a 65536-byte aggregate
-     * budget. A chart accepts at most 128 text annotations.
+     * labels, text annotations, reference-line labels, category
+     * labels, and the rendered label collections of Gantt, BoxPlot,
+     * Treemap, Funnel, Waterfall, Pareto, Sankey, Marimekko,
+     * PopulationPyramid, ViolinPlot, WordCloud, and SerpentineTimeline
+     * each have a 65536-byte aggregate budget; an over-budget setter
+     * throws ValueError and keeps its prior state. A chart accepts at
+     * most 128 text annotations and 128 reference lines.
      */
     public function setTitle(string $title): static {}
     public function setTheme(int $theme): static {}
@@ -314,7 +319,9 @@ abstract class Chart
      * Draw a straight reference line across the plot: addHorizontalLine
      * at a constant Y value, addVerticalLine at a constant X position.
      * `$label` is an optional annotation drawn at the line; `$color`
-     * is a 24-bit RGB int (null = theme default).
+     * is a 24-bit RGB int (null = theme default). Horizontal and
+     * vertical lines share a 128-line cap and a 65536-byte aggregate
+     * label budget; either limit throws ValueError.
      *
      * Supported by AreaChart, BarChart, BoxPlot, BubbleChart,
      * LineChart, ScatterChart, StockChart, Waterfall, and ParetoChart;
@@ -420,6 +427,12 @@ abstract class Chart
      * format set earlier. `''` resets to the built-in default ("%g"). A non-empty
      * string sets the format (validated for exactly one numeric
      * conversion).
+     *
+     * Formatted value labels (this method, cell values, Pareto and
+     * Funnel values, and pie slice percentages) share a 65536-byte
+     * budget per render. Once a label would exceed it, that label and
+     * every later value label in the render are omitted; in strict
+     * mode the render throws ValueError instead.
      */
     public function setShowValues(bool $show, ?string $format = null): static {}
 

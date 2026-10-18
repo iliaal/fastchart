@@ -120,7 +120,9 @@ int fastchart_surface_render_to_target(fastchart_surface_obj *self, fastchart_ta
                 if (font) {
                     const char *fmt = self->surface_value_format
                         ? ZSTR_VAL(self->surface_value_format) : "%g";
-                    char *buf = fastchart_format_double_label(fmt, v);
+                    char *buf = fastchart_format_value_label(
+                        t, (fastchart_obj *)self, fmt, v);
+                    if (!buf) continue;
                     double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
                     double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base * 0.8);
                     int tx = (x0 + x1) / 2;

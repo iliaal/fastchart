@@ -370,6 +370,21 @@ void fastchart_draw_value_label(fastchart_target_t *t, fastchart_obj *chart,
                                 const fastchart_palette *pal,
                                 int x, int y, double value);
 
+/* Charge `len` bytes of a per-element label (one drawn per data point,
+ * cell, slice, or category) against the render's shared
+ * FASTCHART_MAX_RENDER_TEXT_BYTES budget. Returns false once the budget
+ * is exhausted: every later per-element label in the same render is
+ * then skipped, and strict mode throws ValueError once. */
+bool fastchart_charge_element_label(fastchart_target_t *t,
+                                    const fastchart_obj *chart, size_t len);
+
+/* Format one value label (setShowValues() points, cell values, slice
+ * percentages) and charge it via fastchart_charge_element_label().
+ * Returns an emalloc'd string, or NULL when the label must be skipped. */
+char *fastchart_format_value_label(fastchart_target_t *t,
+                                   const fastchart_obj *chart,
+                                   const char *fmt, double value);
+
 /* Walk overlay series stored on chart->combo_overlays and
  * draw each as a line or area on top of the existing plot, using
  * the supplied yrange for left-axis overlays and yrange_right (may

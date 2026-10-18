@@ -368,8 +368,9 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
             double mid_rad = (start_deg + sweep / 2.0) * M_PI / 180.0;
             double cos_mid = cos(mid_rad);
             double sin_mid = sin(mid_rad);
-            char *buf = fastchart_format_double_label(
-                fmt, 100.0 * slices[i].value / total);
+            char *buf = fastchart_format_value_label(
+                t, (fastchart_obj *)self, fmt, 100.0 * slices[i].value / total);
+            if (!buf) break;
 
             if (self->slice_label_position == FASTCHART_LABEL_LEFT ||
                 self->slice_label_position == FASTCHART_LABEL_RIGHT) {

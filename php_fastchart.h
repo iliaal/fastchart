@@ -750,6 +750,7 @@ typedef struct {
  * many individually valid labels can still amplify into a huge SVG. */
 #define FASTCHART_MAX_RENDER_TEXT_BYTES (64 * 1024)
 #define FASTCHART_MAX_TEXT_ANNOTATIONS  128
+#define FASTCHART_MAX_REFERENCE_LINES   128
 
 #define FASTCHART_MAX_MARIMEKKO_COLS   128       /* per chart */
 #define FASTCHART_MAX_MARIMEKKO_SEGS   64        /* per column */
