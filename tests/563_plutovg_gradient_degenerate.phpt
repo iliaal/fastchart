@@ -37,6 +37,16 @@ $flat = paint('<linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" '
     . '</linearGradient>');
 echo 'near-zero linear vector: ', $flat ? "painted\n" : "NO\n";
 
+/* A near-zero vector puts every pixel past the last stop: pad spread
+ * paints the final color. The unchecked cast turned the overflowing
+ * position into INT_MIN and painted the first stop instead. */
+$pad = paint('<linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" '
+    . 'y1="0" x2="1e-5" y2="0">' . $stops . '</linearGradient>');
+$blue = static fn($c) => ($c & 0xFF) > 200 && (($c >> 16) & 0xFF) < 40;
+echo 'pad past the end: ',
+    ($blue(imagecolorat($pad, 30, 32)) && $blue(imagecolorat($pad, 62, 32)))
+        ? "last stop\n" : "NO\n";
+
 $normal = paint('<linearGradient id="g" x1="0" y1="0" x2="1" y2="0">'
     . $stops . '</linearGradient>');
 $left = imagecolorat($normal, 1, 32);
@@ -49,4 +59,5 @@ echo 'ordinary gradient: ',
 far focal point: painted
 focal radius past FLT_MAX: painted
 near-zero linear vector: painted
+pad past the end: last stop
 ordinary gradient: red to blue
