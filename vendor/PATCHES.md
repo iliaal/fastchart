@@ -273,14 +273,16 @@ Pinned tag `v0.0.8`. Changed files: `plutosvg.c`, `plutosvg.h`.
 Pinned `993ccbb`. `c/qrcodegen.c` and `c/qrcodegen.h` at that commit are
 byte-identical to the previous pin `2c9044de6b049ca25cb3cd1649ed7e27aa055138`.
 Changed file: `qrcodegen.c`. `qrcodegen.h` is upstream-verbatim.
+`LICENSE` and `README.md` are fastchart-authored and have no upstream
+counterpart.
 
 ### QR-1: GF(2^8) log/antilog tables
 
 - **File:function**: `qrcodegen.c`: `gf_log`, `gf_antilog`,
   `reedSolomonMultiply`.
 - **What / why**: replaces upstream's per-call Russian-peasant multiply
-  with 256- and 512-byte log/antilog lookups; the multiply runs about 60k
-  times for a version 25-H symbol. The tables were first built lazily
+  with 256- and 512-byte log/antilog lookups; the multiply runs about 17k
+  times for a version 25-H symbol (39k at 40-H). The tables were first built lazily
   behind an unsynchronized `gf_tables_ready` flag, which ZTS threads could
   race on (fch-dqj). They are now `static const` precomputed data, with no
   init path. All 65536 operand pairs match the upstream multiply.
