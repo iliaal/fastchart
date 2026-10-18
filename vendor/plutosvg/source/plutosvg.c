@@ -1693,21 +1693,27 @@ typedef struct {
     plutosvg_palette_func_t palette_func;
     void* closure;
     int depth;
-    /* LOCAL-PATCH (fastchart): <use> nesting and the element visits made
-     * under it during this render call. */
+    /* LOCAL-PATCH (fastchart): <use> nesting, and the element visits and
+     * attribute bytes rendered under it during this render call. */
     int use_depth;
     size_t use_visits;
+    size_t use_bytes;
 } render_context_t;
 
 /* LOCAL-PATCH (fastchart): <use> re-renders the referenced subtree, so
  * a chain of uses recurses once per link and nested fan-out multiplies
  * per level. MAX_RENDER_DEPTH now also counts <use> hops (a 30,000-link
- * chain otherwise overflows the stack), and MAX_USE_VISITS caps the
- * element visits made under any <use> (24 levels of 2-way fan-out are
- * 2^24 visits). Elements outside a <use> are not charged, so documents
+ * chain otherwise overflows the stack). Under any <use>, MAX_USE_VISITS
+ * caps element visits (24 levels of 2-way fan-out are 2^24 visits) and
+ * MAX_USE_BYTES caps the attribute bytes those visits re-render, since
+ * per-element cost tracks its geometry data (one 20,000-segment path
+ * behind 12 fan-out levels is 4,096 full path renders). href is not
+ * charged: it names a referenced element or an image that is decoded
+ * separately. Elements outside a <use> are not charged, so documents
  * without <use> are unaffected whatever their size. */
 #define MAX_RENDER_DEPTH 256
 #define MAX_USE_VISITS ((size_t)1 << 20)
+#define MAX_USE_BYTES ((size_t)1 << 23)
 
 static float resolve_length(const render_state_t* state, const length_t* length, char mode)
 {
@@ -2825,12 +2831,20 @@ static void render_image(const element_t* element, render_context_t* context, re
 static void render_element(const element_t* element, render_context_t* context, render_state_t* state)
 {
     if(context->use_depth > 0) {
-        if(context->use_visits >= MAX_USE_VISITS) {
+        size_t bytes = 0;
+        for(const attribute_t* attribute = element->attributes; attribute; attribute = attribute->next) {
+            if(attribute->id != ATTR_HREF) {
+                bytes += attribute->value.length;
+            }
+        }
+
+        if(context->use_visits >= MAX_USE_VISITS || bytes > MAX_USE_BYTES - context->use_bytes) {
             context->use_visits = SIZE_MAX;
             return;
         }
 
         context->use_visits++;
+        context->use_bytes += bytes;
     }
 
     switch(element->id) {
@@ -2901,7 +2915,7 @@ bool plutosvg_document_render(const plutosvg_document_t* document, const char* i
         state.element = element;
     }
 
-    render_context_t context = {document, canvas, current_color, palette_func, closure, 0, 0, 0};
+    render_context_t context = {document, canvas, current_color, palette_func, closure, 0, 0, 0, 0};
     render_element(state.element, &context, &state);
     return context.use_visits != SIZE_MAX;
 }
@@ -3033,7 +3047,7 @@ bool plutosvg_document_extents(const plutosvg_document_t* document, const char* 
         state.element = element;
     }
 
-    render_context_t context = {document, NULL, NULL, NULL, NULL, 0, 0, 0};
+    render_context_t context = {document, NULL, NULL, NULL, NULL, 0, 0, 0, 0};
     render_element(state.element, &context, &state);
     if(context.use_visits == SIZE_MAX || IS_INVALID_RECT(state.extents)) {
         *extents = EMPTY_RECT;
