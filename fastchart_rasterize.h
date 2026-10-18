@@ -65,11 +65,13 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
                             int target_w, int target_h,
                             fastchart_pixels_t *pix);
 
-/* Single-pass: parse the SVG once, read intrinsic dims, validate
- * against (max_dim, max_pixels), rasterize. Used by the
- * Chart::svgToPng/Jpeg/Webp() static methods where the caller has
- * no a-priori knowledge of the input dimensions and would otherwise
- * parse twice (once for dims, once for render).
+/* Single-pass: parse the SVG once, apply the public-SVG content
+ * policy, read intrinsic dims, validate against (max_dim, max_pixels),
+ * rasterize. Used by the Chart::svgToPng/Jpeg/Webp() static methods
+ * where the caller has no a-priori knowledge of the input dimensions
+ * and would otherwise parse twice (once for dims, once for render).
+ * Internal chart renders go through fastchart_rasterize_svg(), which
+ * applies no content policy: they embed <use> and data-URI images.
  *
  * Return codes:
  *    0: success. pix filled; *out_w / *out_h reflect actual dims.
@@ -79,7 +81,9 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
  *       so the caller can build a meaningful error message).
  *   -4: rasterize failed after a successful parse + dim check.
  *   -5: element_count x output pixels exceeds the render-work budget.
- *   -6: stroke dashes exceed FC_MAX_DASH_COMMANDS for the document.
+ *   -6: the parsed tree holds an <image> with a data:image/ href.
+ *   -7: the parsed tree holds a <use> element.
+ *   -8: stroke dashes exceed FC_MAX_DASH_COMMANDS for the document.
  */
 int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
                                        int max_dim, long long max_pixels,

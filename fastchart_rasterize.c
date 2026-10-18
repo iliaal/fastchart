@@ -427,6 +427,20 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 	plutosvg_document_t *doc = fastchart_load_svg(svg, svg_len);
 	if (!doc) return -1;
 
+	/* Content policy runs on the parsed tree, the exact set of elements
+	 * the renderer can reach. A byte-level pre-scan has its own notion
+	 * of comments, CDATA, PIs and quoting; wherever that grammar diverges
+	 * from plutosvg's, gated content slips through. */
+	unsigned int content = plutosvg_document_content_flags(doc);
+	if (content & PLUTOSVG_CONTENT_DATA_IMAGE) {
+		plutosvg_document_destroy(doc);
+		return -6;
+	}
+	if (content & PLUTOSVG_CONTENT_USE) {
+		plutosvg_document_destroy(doc);
+		return -7;
+	}
+
 	float w = plutosvg_document_get_width(doc);
 	float h = plutosvg_document_get_height(doc);
 	/* >= : (float)INT_MAX rounds up to 2^31, which `>` would admit
@@ -491,7 +505,7 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 		pix->rgba = NULL;
 	}
 	if (rc == -2) {
-		return -6;
+		return -8;
 	}
 	return (rc == 0) ? 0 : -4;
 }

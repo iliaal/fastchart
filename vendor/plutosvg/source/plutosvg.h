@@ -123,6 +123,9 @@ PLUTOSVG_API plutosvg_document_t* plutosvg_document_load_from_file(const char* f
  * @param palette_func Callback function for resolving CSS color variables.
  * @param closure User-defined data passed to the `palette_func` callback.
  * @return `true` if rendering was successful; `false` otherwise.
+ *
+ * @note LOCAL-PATCH (fastchart): also returns `false` when `<use>` expansion
+ * exceeds the render budget; the canvas then holds a partial rendering.
  */
 PLUTOSVG_API bool plutosvg_document_render(const plutosvg_document_t* document, const char* id, plutovg_canvas_t* canvas,
     const plutovg_color_t* current_color, plutosvg_palette_func_t palette_func, void* closure);
@@ -138,6 +141,9 @@ PLUTOSVG_API bool plutosvg_document_render(const plutosvg_document_t* document, 
  * @param palette_func Callback function for resolving CSS color variables.
  * @param closure User-defined data passed to the `palette_func` callback.
  * @return Pointer to the rendered `plutovg_surface_t` object, or `NULL` if rendering fails.
+ *
+ * @note LOCAL-PATCH (fastchart): returns `NULL` when `<use>` expansion
+ * exceeds the render budget.
  */
 PLUTOSVG_API plutovg_surface_t* plutosvg_document_render_to_surface(const plutosvg_document_t* document, const char* id, int width, int height,
     const plutovg_color_t* current_color, plutosvg_palette_func_t palette_func, void* closure);
@@ -188,6 +194,24 @@ PLUTOSVG_API size_t plutosvg_document_element_count(const plutosvg_document_t* d
 PLUTOSVG_API void plutosvg_document_set_image_cache_limit(plutosvg_document_t* document, size_t limit);
 
 /**
+ * @brief LOCAL-PATCH (fastchart): content flags of the parsed tree.
+ *
+ * Reports what the parser kept, so an embedder's content policy inspects
+ * exactly the elements the renderer can reach rather than re-scanning the
+ * source bytes with a second, divergent grammar.
+ */
+#define PLUTOSVG_CONTENT_USE        (1u << 0) /**< a parsed `<use>` element */
+#define PLUTOSVG_CONTENT_DATA_IMAGE (1u << 1) /**< an `<image>` whose href contains `data:image/` (ASCII case-insensitive) */
+
+/**
+ * @brief LOCAL-PATCH (fastchart): returns PLUTOSVG_CONTENT_* flags.
+ *
+ * @param document Pointer to the SVG document.
+ * @return Bitwise OR of the PLUTOSVG_CONTENT_* flags present in the document.
+ */
+PLUTOSVG_API unsigned int plutosvg_document_content_flags(const plutosvg_document_t* document);
+
+/**
  * @brief Retrieves the bounding box of a specific element or the entire SVG document.
  *
  * Calculates and retrieves the extents of an element identified by `id`, or the whole document if `id` is `NULL`.
@@ -196,6 +220,9 @@ PLUTOSVG_API void plutosvg_document_set_image_cache_limit(plutosvg_document_t* d
  * @param id ID of the element whose extents to retrieve, or `NULL` to retrieve the extents of the entire document.
  * @param extents Pointer to a `plutovg_rect_t` object where the extents will be stored.
  * @return `true` if the extents were successfully retrieved; `false` otherwise.
+ *
+ * @note LOCAL-PATCH (fastchart): also returns `false`, with empty extents,
+ * when `<use>` expansion exceeds the render budget.
  */
 PLUTOSVG_API bool plutosvg_document_extents(const plutosvg_document_t* document, const char* id, plutovg_rect_t* extents);
 

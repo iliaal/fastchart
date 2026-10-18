@@ -1230,6 +1230,19 @@ static bool add_attribute(element_t* element, plutosvg_document_t* document, int
     if(document->attribute_count >= MAX_DOCUMENT_ATTRIBUTES)
         return false;
     document->attribute_count += 1;
+    /* LOCAL-PATCH (fastchart): keep one record per attribute id. Lookups
+     * return the first match on a prepended list, so the last parsed
+     * value already won; overwriting in place keeps that, while repeated
+     * attributes (x="" x="" ...) can no longer grow the list that every
+     * lookup, including inherited ones, walks on each render visit. */
+    for(attribute_t* existing = element->attributes; existing; existing = existing->next) {
+        if(existing->id == id) {
+            existing->value.data = data;
+            existing->value.length = length;
+            return true;
+        }
+    }
+
     attribute_t* attribute = heap_alloc(document->heap, sizeof(attribute_t));
     attribute->id = id;
     attribute->value.data = data;
@@ -1693,7 +1706,27 @@ typedef struct {
     plutosvg_palette_func_t palette_func;
     void* closure;
     int depth;
+    /* LOCAL-PATCH (fastchart): <use> nesting, and the element visits and
+     * attribute bytes rendered under it during this render call. */
+    int use_depth;
+    size_t use_visits;
+    size_t use_bytes;
 } render_context_t;
+
+/* LOCAL-PATCH (fastchart): <use> re-renders the referenced subtree, so
+ * a chain of uses recurses once per link and nested fan-out multiplies
+ * per level. MAX_RENDER_DEPTH now also counts <use> hops (a 30,000-link
+ * chain otherwise overflows the stack). Under any <use>, MAX_USE_VISITS
+ * caps element visits (24 levels of 2-way fan-out are 2^24 visits) and
+ * MAX_USE_BYTES caps the attribute bytes those visits re-render, since
+ * per-element cost tracks its geometry data (one 20,000-segment path
+ * behind 12 fan-out levels is 4,096 full path renders). href is not
+ * charged: it names a referenced element or an image that is decoded
+ * separately. Elements outside a <use> are not charged, so documents
+ * without <use> are unaffected whatever their size. */
+#define MAX_RENDER_DEPTH 256
+#define MAX_USE_VISITS ((size_t)1 << 20)
+#define MAX_USE_BYTES ((size_t)1 << 23)
 
 static float resolve_length(const render_state_t* state, const length_t* length, char mode)
 {
@@ -2222,11 +2255,23 @@ static void render_svg(const element_t* element, render_context_t* context, rend
 
 static void render_use(const element_t* element, render_context_t* context, render_state_t* state)
 {
+    if(context->depth >= MAX_RENDER_DEPTH)
+        return;
     if(is_display_none(element) || has_cycle_reference(state, element))
         return;
     element_t* ref = resolve_href(context->document, element);
     if(ref == NULL)
         return;
+    /* LOCAL-PATCH (fastchart): ref->parent is redirected to this <use>
+     * below. If ref is an ancestor of the <use>, that closes a parent
+     * cycle, and inherited-attribute lookups (find_attribute walking
+     * ->parent) of ref's children never terminate. */
+    for(const element_t* ancestor = element; ancestor; ancestor = ancestor->parent) {
+        if(ancestor == ref) {
+            return;
+        }
+    }
+
     length_t x = {0, length_type_fixed};
     length_t y = {0, length_type_fixed};
 
@@ -2242,12 +2287,16 @@ static void render_use(const element_t* element, render_context_t* context, rend
 
     const element_t* parent = ref->parent;
     ref->parent = (element_t*)(element);
+    context->depth++;
+    context->use_depth++;
     if(ref->id == TAG_SVG || ref->id == TAG_SYMBOL) {
         render_svg(ref, context, &new_state);
     } else {
         render_element(ref, context, &new_state);
     }
 
+    context->use_depth--;
+    context->depth--;
     ref->parent = (element_t*)(parent);
     render_state_end(&new_state);
 }
@@ -2794,6 +2843,23 @@ static void render_image(const element_t* element, render_context_t* context, re
 
 static void render_element(const element_t* element, render_context_t* context, render_state_t* state)
 {
+    if(context->use_depth > 0) {
+        size_t bytes = 0;
+        for(const attribute_t* attribute = element->attributes; attribute; attribute = attribute->next) {
+            if(attribute->id != ATTR_HREF) {
+                bytes += attribute->value.length;
+            }
+        }
+
+        if(context->use_visits >= MAX_USE_VISITS || bytes > MAX_USE_BYTES - context->use_bytes) {
+            context->use_visits = SIZE_MAX;
+            return;
+        }
+
+        context->use_visits++;
+        context->use_bytes += bytes;
+    }
+
     switch(element->id) {
     case TAG_SVG:
         render_svg(element, context, state);
@@ -2829,8 +2895,6 @@ static void render_element(const element_t* element, render_context_t* context, 
     }
 }
 
-#define MAX_RENDER_DEPTH 256
-
 static void render_children(const element_t* element, render_context_t* context, render_state_t* state)
 {
     if(context->depth < MAX_RENDER_DEPTH) {
@@ -2864,9 +2928,9 @@ bool plutosvg_document_render(const plutosvg_document_t* document, const char* i
         state.element = element;
     }
 
-    render_context_t context = {document, canvas, current_color, palette_func, closure, 0};
+    render_context_t context = {document, canvas, current_color, palette_func, closure, 0, 0, 0, 0};
     render_element(state.element, &context, &state);
-    return true;
+    return context.use_visits != SIZE_MAX;
 }
 
 plutovg_surface_t* plutosvg_document_render_to_surface(const plutosvg_document_t* document, const char* id, int width, int height, const plutovg_color_t* current_color, plutosvg_palette_func_t palette_func, void* closure)
@@ -2916,6 +2980,63 @@ size_t plutosvg_document_element_count(const plutosvg_document_t* document)
     return document->element_count;
 }
 
+/* LOCAL-PATCH (fastchart): add_attribute() keeps one record per id, so this
+ * checks the single surviving href that load_image() reads. The match is a
+ * case-insensitive substring, a superset of the data:image/png|jpg|jpeg
+ * prefixes that load_image() decodes. */
+static bool href_has_data_image(const element_t* element)
+{
+    static const char needle[] = "data:image/";
+    const size_t needle_length = sizeof(needle) - 1;
+    for(const attribute_t* attribute = element->attributes; attribute; attribute = attribute->next) {
+        if(attribute->id != ATTR_HREF || attribute->value.length < needle_length)
+            continue;
+        const char* data = attribute->value.data;
+        size_t last = attribute->value.length - needle_length;
+        for(size_t i = 0; i <= last; ++i) {
+            size_t j = 0;
+            while(j < needle_length) {
+                char c = data[i + j];
+                if(c >= 'A' && c <= 'Z')
+                    c = (char)(c - 'A' + 'a');
+                if(c != needle[j])
+                    break;
+                ++j;
+            }
+
+            if(j == needle_length) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+unsigned int plutosvg_document_content_flags(const plutosvg_document_t* document)
+{
+    unsigned int flags = 0;
+    const element_t* element = document->root_element;
+    while(element) {
+        if(element->id == TAG_USE)
+            flags |= PLUTOSVG_CONTENT_USE;
+        else if(element->id == TAG_IMAGE && href_has_data_image(element))
+            flags |= PLUTOSVG_CONTENT_DATA_IMAGE;
+        if(element->first_child) {
+            element = element->first_child;
+            continue;
+        }
+
+        while(element && element->next_sibling == NULL)
+            element = element->parent;
+        if(element) {
+            element = element->next_sibling;
+        }
+    }
+
+    return flags;
+}
+
 bool plutosvg_document_extents(const plutosvg_document_t* document, const char* id, plutovg_rect_t* extents)
 {
     render_state_t state;
@@ -2939,15 +3060,15 @@ bool plutosvg_document_extents(const plutosvg_document_t* document, const char* 
         state.element = element;
     }
 
-    render_context_t context = {document, NULL, NULL, NULL, NULL, 0};
+    render_context_t context = {document, NULL, NULL, NULL, NULL, 0, 0, 0, 0};
     render_element(state.element, &context, &state);
-    if(IS_INVALID_RECT(state.extents)) {
+    if(context.use_visits == SIZE_MAX || IS_INVALID_RECT(state.extents)) {
         *extents = EMPTY_RECT;
     } else {
         *extents = state.extents;
     }
 
-    return true;
+    return context.use_visits != SIZE_MAX;
 }
 
 #ifdef PLUTOSVG_HAS_FREETYPE

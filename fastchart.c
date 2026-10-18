@@ -4583,13 +4583,18 @@ ZEND_METHOD(FastChart_Chart, setWebpMode)
 
 /* --- Chart::svgToPng/Jpeg/Webp() ---------------------------------- */
 
-/* Advance *pos past an XML comment, CDATA section, or processing
- * instruction opening at s[*pos] == '<'. Shared by both svgTo
- * scanners: markup-looking bytes inside these regions (a commented
- * <use>, a "data:image/" example in a comment) never reach the XML
- * parser as markup, so scanning them only over-blocks legitimate
- * input. Only skips when the terminator is present; an unterminated
- * opener falls through and keeps scanning (fail closed). */
+/* The byte scanners below only add rejections: they catch spellings
+ * plutosvg drops as unknown elements (<USE>, <svg:use>) before parsing.
+ * They are not the gate. Their idea of comments, CDATA, PIs and quoting
+ * differs from plutosvg's (an opener inside an attribute value, DOCTYPE
+ * subset or XML declaration), so the authoritative check runs on the
+ * parsed tree in fastchart_rasterize_svg_with_dims().
+ *
+ * Advance *pos past an XML comment, CDATA section, or processing
+ * instruction opening at s[*pos] == '<', so a commented <use> or a
+ * "data:image/" example in a comment is not over-blocked. Only skips
+ * when the terminator is present; an unterminated opener falls through
+ * and keeps scanning. */
 static bool fastchart_svg_skip_ignored(const char *s, size_t n, size_t *pos)
 {
     size_t p = *pos + 1;
@@ -4677,6 +4682,25 @@ static int fastchart_svg_has_use_element(const char *s, size_t n)
     return 0;
 }
 
+static void fastchart_svg_reject_data_image(const char *method_name)
+{
+    zend_value_error(
+        "%s() SVG must not contain data:image/ URIs "
+        "(embedded raster bypasses output dimension caps; "
+        "decode embedded images separately)",
+        method_name);
+}
+
+static void fastchart_svg_reject_use(const char *method_name)
+{
+    zend_value_error(
+        "%s() SVG must not contain <use> elements "
+        "(<use href> reference expansion in plutosvg is a "
+        "billion-laughs vector — use <g transform=\"...\"> "
+        "to position content inline instead)",
+        method_name);
+}
+
 /* Shared front-half for the three static SVG-to-raster methods.
  * Validates input bytes, extracts intrinsic dimensions, enforces
  * dim caps, rasterizes via plutosvg + plutovg. On success the
@@ -4699,22 +4723,13 @@ static int fastchart_svg_to_pixels(
     /* Embedded data URI images bypass fastchart's dim caps via the
      * plutosvg side door (see fastchart_svg_has_data_image comment). */
     if (fastchart_svg_has_data_image(ZSTR_VAL(svg), ZSTR_LEN(svg))) {
-        zend_value_error(
-            "%s() SVG must not contain data:image/ URIs "
-            "(embedded raster bypasses output dimension caps; "
-            "decode embedded images separately)",
-            method_name);
+        fastchart_svg_reject_data_image(method_name);
         return -1;
     }
 
     /* Public <use> graphs bypass source-count bounds through exponential fan-out. */
     if (fastchart_svg_has_use_element(ZSTR_VAL(svg), ZSTR_LEN(svg))) {
-        zend_value_error(
-            "%s() SVG must not contain <use> elements "
-            "(<use href> reference expansion in plutosvg is a "
-            "billion-laughs vector — use <g transform=\"...\"> "
-            "to position content inline instead)",
-            method_name);
+        fastchart_svg_reject_use(method_name);
         return -1;
     }
 
@@ -4757,6 +4772,14 @@ static int fastchart_svg_to_pixels(
                 ? ", lowered by fastchart.max_render_pixels" : "");
         return -1;
     }
+    if (rc == -6) {
+        fastchart_svg_reject_data_image(method_name);
+        return -1;
+    }
+    if (rc == -7) {
+        fastchart_svg_reject_use(method_name);
+        return -1;
+    }
     if (rc == -5) {
         zend_value_error(
             "%s() SVG render work exceeds cap "
@@ -4764,7 +4787,7 @@ static int fastchart_svg_to_pixels(
             method_name);
         return -1;
     }
-    if (rc == -6) {
+    if (rc == -8) {
         zend_value_error(
             "%s() SVG render work exceeds cap "
             "(stroke dash expansion too large)",
