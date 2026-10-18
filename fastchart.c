@@ -729,6 +729,77 @@ static int fastchart_validate_pie_total(HashTable *ht, const char *method)
     return 0;
 }
 
+static int fastchart_collection_text_charge(size_t len, const char *method,
+                                            size_t *total)
+{
+    ZEND_ASSERT(*total <= FASTCHART_MAX_RENDER_TEXT_BYTES);
+    if (len > FASTCHART_MAX_RENDER_TEXT_BYTES - *total) {
+        zend_value_error("%s aggregate text exceeds the %d-byte limit",
+                         method, (int)FASTCHART_MAX_RENDER_TEXT_BYTES);
+        return -1;
+    }
+    *total += len;
+    return 0;
+}
+
+/* Charge one array-element label toward a collection setter's
+ * FASTCHART_MAX_RENDER_TEXT_BYTES aggregate. Only strings the setter
+ * would keep (fastchart_label_or_null) count. */
+static int fastchart_collection_text_add(zval *zv, const char *method,
+                                         size_t *total)
+{
+    const char *text = fastchart_label_or_null(zv);
+    if (!text) return 0;
+    return fastchart_collection_text_charge(strlen(text), method, total);
+}
+
+/* Entry predicate shared by a setter's parse loop and its budget
+ * preflight, so the budget counts exactly the entries the setter keeps. */
+typedef bool (*fastchart_entry_keep_fn)(HashTable *eht);
+
+/* Preflight a list of dict entries, charging the `key` label of each
+ * entry `keep` retains (NULL keeps every dict), so a setter can reject
+ * before it releases its prior state. */
+static int fastchart_collection_key_preflight(HashTable *ht, const char *key,
+                                              size_t key_len,
+                                              fastchart_entry_keep_fn keep,
+                                              const char *method,
+                                              size_t *total)
+{
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(ht, entry) {
+        ZVAL_DEREF(entry);
+        if (Z_TYPE_P(entry) != IS_ARRAY) continue;
+        if (keep && !keep(Z_ARRVAL_P(entry))) continue;
+        if (fastchart_collection_text_add(
+                zend_hash_str_find(Z_ARRVAL_P(entry), key, key_len),
+                method, total) != 0) {
+            return -1;
+        }
+    } ZEND_HASH_FOREACH_END();
+    return 0;
+}
+
+/* Treemap and Funnel keep entries whose 'value' is finite, positive,
+ * and within FASTCHART_MAX_DATA_MAG. */
+static bool fastchart_entry_positive_value(HashTable *eht, double *out)
+{
+    zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
+    double v;
+    if (!zv || fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v)
+        || v <= 0 || v > FASTCHART_MAX_DATA_MAG) {
+        return false;
+    }
+    *out = v;
+    return true;
+}
+
+static bool fastchart_entry_keep_positive_value(HashTable *eht)
+{
+    double v;
+    return fastchart_entry_positive_value(eht, &v);
+}
+
 char *fastchart_format_double_label(const char *fmt, double value)
 {
     int need = snprintf(NULL, 0, fmt, value);
@@ -3027,14 +3098,38 @@ static int fastchart_reject_non_finite(double v, const char *where)
 }
 
 /* Shared annotation pusher. `kind` is "h" or "v"; storage shape on
- * config is a list of dicts {kind, value, label?, color?}. */
-static void push_annotation(fastchart_obj *self, const char *kind,
-                            double value, zend_string *label,
-                            zend_long has_color, zend_long color)
+ * config is a list of dicts {kind, value, label?, color?}. Horizontal
+ * and vertical lines share one count cap and one label-text budget.
+ * Returns -1 with a ValueError pending, leaving the list unchanged. */
+static int push_annotation(fastchart_obj *self, const char *kind,
+                           double value, zend_string *label,
+                           zend_long has_color, zend_long color,
+                           const char *where)
 {
     zval *list_zv = zend_hash_str_find(Z_ARRVAL(self->config),
                                        "annotations", sizeof("annotations") - 1);
-    if (!list_zv || Z_TYPE_P(list_zv) != IS_ARRAY) {
+    if (list_zv && Z_TYPE_P(list_zv) == IS_ARRAY) {
+        HashTable *list = Z_ARRVAL_P(list_zv);
+        if (zend_hash_num_elements(list) >= FASTCHART_MAX_REFERENCE_LINES) {
+            zend_value_error("%s accepts at most %d reference lines",
+                             where, FASTCHART_MAX_REFERENCE_LINES);
+            return -1;
+        }
+        size_t used = 0;
+        zval *e;
+        ZEND_HASH_FOREACH_VAL(list, e) {
+            zval *l = Z_TYPE_P(e) == IS_ARRAY
+                ? zend_hash_str_find(Z_ARRVAL_P(e), "label", sizeof("label") - 1)
+                : NULL;
+            if (l && Z_TYPE_P(l) == IS_STRING) used += Z_STRLEN_P(l);
+        } ZEND_HASH_FOREACH_END();
+        ZEND_ASSERT(used <= FASTCHART_MAX_RENDER_TEXT_BYTES);
+        if (label && ZSTR_LEN(label) > FASTCHART_MAX_RENDER_TEXT_BYTES - used) {
+            zend_value_error("%s aggregate text exceeds the %d-byte limit",
+                             where, FASTCHART_MAX_RENDER_TEXT_BYTES);
+            return -1;
+        }
+    } else {
         zval list;
         array_init(&list);
         list_zv = zend_hash_str_update(Z_ARRVAL(self->config),
@@ -3052,6 +3147,7 @@ static void push_annotation(fastchart_obj *self, const char *kind,
         add_assoc_long(&entry, "color", color);
     }
     add_next_index_zval(list_zv, &entry);
+    return 0;
 }
 
 ZEND_METHOD(FastChart_Chart, addHorizontalLine)
@@ -3086,7 +3182,10 @@ ZEND_METHOD(FastChart_Chart, addHorizontalLine)
     }
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    push_annotation(self, "h", value, label, !color_is_null, color);
+    if (push_annotation(self, "h", value, label, !color_is_null, color,
+                        "FastChart\\Chart::addHorizontalLine()") != 0) {
+        RETURN_THROWS();
+    }
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -3351,7 +3450,10 @@ ZEND_METHOD(FastChart_Chart, addVerticalLine)
     }
 
     fastchart_obj *self = Z_FASTCHART_OBJ_P(ZEND_THIS);
-    push_annotation(self, "v", position, label, !color_is_null, color);
+    if (push_annotation(self, "v", position, label, !color_is_null, color,
+                        "FastChart\\Chart::addVerticalLine()") != 0) {
+        RETURN_THROWS();
+    }
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
@@ -8696,6 +8798,20 @@ ZEND_METHOD(FastChart_SurfaceChart, setGrid)
 
 FASTCHART_GRID_SETTER(FastChart_ContourChart, fastchart_contour_obj, Z_FASTCHART_CONTOUR_OBJ_P)
 
+static bool fastchart_gantt_task_span(HashTable *th, zend_long *s, zend_long *e)
+{
+    zval *zs = zend_hash_str_find(th, "start", 5);
+    zval *ze = zend_hash_str_find(th, "end",   3);
+    return zs && ze && fastchart_zval_to_long(zs, s) == 0
+        && fastchart_zval_to_long(ze, e) == 0;
+}
+
+static bool fastchart_gantt_keep_task(HashTable *th)
+{
+    zend_long s, e;
+    return fastchart_gantt_task_span(th, &s, &e);
+}
+
 ZEND_METHOD(FastChart_GanttChart, setTasks)
 {
     FASTCHART_GUARD_NOT_RENDERING();
@@ -8732,6 +8848,11 @@ ZEND_METHOD(FastChart_GanttChart, setTasks)
             }
         } ZEND_HASH_FOREACH_END();
     }
+    size_t text_bytes = 0;
+    if (fastchart_collection_key_preflight(ht, "name", sizeof("name") - 1,
+            fastchart_gantt_keep_task, "FastChart\\GanttChart::setTasks()", &text_bytes) != 0) {
+        RETURN_THROWS();
+    }
 
     if (self->tasks) {
         for (int i = 0; i < self->task_count; i++) {
@@ -8752,12 +8873,8 @@ ZEND_METHOD(FastChart_GanttChart, setTasks)
         if (t) ZVAL_DEREF(t);
         if (Z_TYPE_P(t) != IS_ARRAY) continue;
         HashTable *th = Z_ARRVAL_P(t);
-        zval *zs = zend_hash_str_find(th, "start", 5);
-        zval *ze = zend_hash_str_find(th, "end",   3);
-        if (!zs || !ze) continue;
         zend_long s, e;
-        if (fastchart_zval_to_long(zs, &s) != 0) continue;
-        if (fastchart_zval_to_long(ze, &e) != 0) continue;
+        if (!fastchart_gantt_task_span(th, &s, &e)) continue;
         if (e < s) { zend_long tmp = s; s = e; e = tmp; }
 
         fastchart_gantt_task *out = &self->tasks[slot];
@@ -9083,6 +9200,35 @@ ZEND_METHOD(FastChart_PolarChart, setSeries)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+/* Read one box's five-number summary. Two accepted shapes:
+ *   ['min'=>, 'q1'=>, 'median'=>, 'q3'=>, 'max'=>, 'label'?, 'outliers'?]
+ *   [min, q1, median, q3, max]  positional
+ * Any 'min' string key selects the dict shape; only it carries a label.
+ * Returns false for missing, non-numeric, or non-monotonic summaries,
+ * which setBoxes() drops. */
+static bool fastchart_boxplot_summary(HashTable *eh, double v[5],
+                                      bool *dict_shape)
+{
+    static const char *const keys[5] = { "min", "q1", "median", "q3", "max" };
+    *dict_shape = zend_hash_str_find(eh, "min", 3) != NULL;
+    for (int i = 0; i < 5; i++) {
+        zval *z = *dict_shape
+            ? zend_hash_str_find(eh, keys[i], strlen(keys[i]))
+            : zend_hash_index_find(eh, i);
+        if (!z || fastchart_zval_to_double(z, &v[i]) != 0) return false;
+    }
+    /* Five-number summaries are monotonic by definition. Unordered
+     * input would render as negative-height SVG rects downstream. */
+    return v[0] <= v[1] && v[1] <= v[2] && v[2] <= v[3] && v[3] <= v[4];
+}
+
+static bool fastchart_boxplot_keep_labeled(HashTable *eh)
+{
+    double v[5];
+    bool dict_shape;
+    return fastchart_boxplot_summary(eh, v, &dict_shape) && dict_shape;
+}
+
 ZEND_METHOD(FastChart_BoxPlot, setBoxes)
 {
     FASTCHART_GUARD_NOT_RENDERING();
@@ -9118,6 +9264,11 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxes)
             }
         } ZEND_HASH_FOREACH_END();
     }
+    size_t text_bytes = 0;
+    if (fastchart_collection_key_preflight(ht, "label", sizeof("label") - 1,
+            fastchart_boxplot_keep_labeled, "FastChart\\BoxPlot::setBoxes()", &text_bytes) != 0) {
+        RETURN_THROWS();
+    }
 
     if (self->entries) {
         for (int i = 0; i < self->entry_count; i++) {
@@ -9143,23 +9294,15 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxes)
         out->outliers = NULL;
         out->outlier_count = 0;
 
-        /* Two accepted shapes:
-         *   ['min'=>, 'q1'=>, 'median'=>, 'q3'=>, 'max'=>, 'label'?, 'outliers'?]
-         *   [min, q1, median, q3, max]  positional
-         * Detection: any 'min' string key triggers the dict shape. */
-        bool dict_shape = (zend_hash_str_find(eh, "min", 3) != NULL);
+        double sv[5];
+        bool dict_shape;
+        if (!fastchart_boxplot_summary(eh, sv, &dict_shape)) continue;
+        out->min = sv[0];
+        out->q1 = sv[1];
+        out->median = sv[2];
+        out->q3 = sv[3];
+        out->max = sv[4];
         if (dict_shape) {
-            zval *zmin = zend_hash_str_find(eh, "min", 3);
-            zval *zq1  = zend_hash_str_find(eh, "q1",  2);
-            zval *zmed = zend_hash_str_find(eh, "median", 6);
-            zval *zq3  = zend_hash_str_find(eh, "q3",  2);
-            zval *zmax = zend_hash_str_find(eh, "max", 3);
-            if (!zmin || !zq1 || !zmed || !zq3 || !zmax) continue;
-            if (fastchart_zval_to_double(zmin, &out->min) != 0) continue;
-            if (fastchart_zval_to_double(zq1,  &out->q1) != 0) continue;
-            if (fastchart_zval_to_double(zmed, &out->median) != 0) continue;
-            if (fastchart_zval_to_double(zq3,  &out->q3) != 0) continue;
-            if (fastchart_zval_to_double(zmax, &out->max) != 0) continue;
             zval *zlabel = zend_hash_str_find(eh, "label", 5);
             out->label = fc_strdup_opt(fastchart_label_or_null(zlabel));
             zval *zout = zend_hash_str_find(eh, "outliers", 8);
@@ -9192,26 +9335,6 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxes)
                     if (k == 0) { efree(out->outliers); out->outliers = NULL; }
                 }
             }
-        } else {
-            zval *z;
-            z = zend_hash_index_find(eh, 0); if (!z || fastchart_zval_to_double(z, &out->min) != 0) continue;
-            z = zend_hash_index_find(eh, 1); if (!z || fastchart_zval_to_double(z, &out->q1) != 0) continue;
-            z = zend_hash_index_find(eh, 2); if (!z || fastchart_zval_to_double(z, &out->median) != 0) continue;
-            z = zend_hash_index_find(eh, 3); if (!z || fastchart_zval_to_double(z, &out->q3) != 0) continue;
-            z = zend_hash_index_find(eh, 4); if (!z || fastchart_zval_to_double(z, &out->max) != 0) continue;
-        }
-        /* Five-number summaries are monotonic by definition. Unordered
-         * input would render as negative-height SVG rects downstream.
-         * Drop the malformed entry, like other setters do (e.g.
-         * setVectors with NaN). */
-        if (!(out->min <= out->q1 && out->q1 <= out->median
-              && out->median <= out->q3 && out->q3 <= out->max)) {
-            fc_efree_opt(out->label);
-            fc_efree_opt(out->outliers);
-            out->label = NULL;
-            out->outliers = NULL;
-            out->outlier_count = 0;
-            continue;
         }
         slot++;
     } ZEND_HASH_FOREACH_END();
@@ -11117,6 +11240,11 @@ ZEND_METHOD(FastChart_Treemap, setItems)
         ht, FASTCHART_MAX_TREEMAP_ITEMS,
         "FastChart\\Treemap::setItems()", "items");
     if (n < 0) RETURN_THROWS();
+    size_t text_bytes = 0;
+    if (fastchart_collection_key_preflight(ht, "label", sizeof("label") - 1,
+            fastchart_entry_keep_positive_value, "FastChart\\Treemap::setItems()", &text_bytes) != 0) {
+        RETURN_THROWS();
+    }
 
     if (self->items) {
         for (int i = 0; i < self->item_count; i++) {
@@ -11142,13 +11270,8 @@ ZEND_METHOD(FastChart_Treemap, setItems)
 
         /* Required: numeric `value` > 0. Non-positive items drop
          * silently, like the Pie and Scatter parsers. */
-        zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
-        if (!zv) continue;
         double v;
-        if (fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) || v <= 0 ||
-            v > FASTCHART_MAX_DATA_MAG) {
-            continue;
-        }
+        if (!fastchart_entry_positive_value(eht, &v)) continue;
         parsed[idx].value = v;
 
         /* Optional `label`: clone into emalloc'd storage. NUL-bearing
@@ -11211,6 +11334,11 @@ ZEND_METHOD(FastChart_Funnel, setStages)
         ht, FASTCHART_MAX_FUNNEL_STAGES,
         "FastChart\\Funnel::setStages()", "stages");
     if (n < 0) RETURN_THROWS();
+    size_t text_bytes = 0;
+    if (fastchart_collection_key_preflight(ht, "label", sizeof("label") - 1,
+            fastchart_entry_keep_positive_value, "FastChart\\Funnel::setStages()", &text_bytes) != 0) {
+        RETURN_THROWS();
+    }
 
     if (n == 0) {
         if (self->stages) {
@@ -11239,14 +11367,12 @@ ZEND_METHOD(FastChart_Funnel, setStages)
         }
         HashTable *eht = Z_ARRVAL_P(entry);
 
-        zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
-        if (!zv) {
+        if (!zend_hash_str_find(eht, "value", sizeof("value") - 1)) {
             if (strict) { strict_err = "each stage requires a 'value'"; goto strict_fail; }
             continue;
         }
         double v;
-        if (fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) || v <= 0 ||
-            v > FASTCHART_MAX_DATA_MAG) {
+        if (!fastchart_entry_positive_value(eht, &v)) {
             if (strict) {
                 strict_err = "each stage 'value' must be a finite number in (0, max]";
                 goto strict_fail;
@@ -11327,6 +11453,24 @@ ZEND_METHOD(FastChart_Funnel, setStyle)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
+static bool fastchart_waterfall_bar_value(HashTable *eht, double *out)
+{
+    zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
+    double v;
+    if (!zv || fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) ||
+        fabs(v) > FASTCHART_MAX_DATA_MAG) {
+        return false;
+    }
+    *out = v;
+    return true;
+}
+
+static bool fastchart_waterfall_keep_bar(HashTable *eht)
+{
+    double v;
+    return fastchart_waterfall_bar_value(eht, &v);
+}
+
 ZEND_METHOD(FastChart_Waterfall, setBars)
 {
     FASTCHART_GUARD_NOT_RENDERING();
@@ -11341,6 +11485,11 @@ ZEND_METHOD(FastChart_Waterfall, setBars)
         ht, FASTCHART_MAX_WATERFALL_BARS,
         "FastChart\\Waterfall::setBars()", "bars");
     if (n < 0) RETURN_THROWS();
+    size_t text_bytes = 0;
+    if (fastchart_collection_key_preflight(ht, "label", sizeof("label") - 1,
+            fastchart_waterfall_keep_bar, "FastChart\\Waterfall::setBars()", &text_bytes) != 0) {
+        RETURN_THROWS();
+    }
 
     if (self->bars) {
         for (int i = 0; i < self->bar_count; i++) {
@@ -11361,11 +11510,8 @@ ZEND_METHOD(FastChart_Waterfall, setBars)
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
 
-        zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
-        if (!zv) continue;
         double v;
-        if (fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) ||
-            fabs(v) > FASTCHART_MAX_DATA_MAG) continue;
+        if (!fastchart_waterfall_bar_value(eht, &v)) continue;
         parsed[idx].value = v;
 
         parsed[idx].kind = FASTCHART_WF_DELTA;
@@ -11547,6 +11693,23 @@ FASTCHART_VALUE_FORMAT_SETTER(FastChart_BulletChart, fastchart_bullet_obj, Z_FAS
 
 /* --- ParetoChart ---------------------------------------------------- */
 
+static bool fastchart_pareto_bar_value(HashTable *eht, double *out)
+{
+    zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
+    double v;
+    if (!zv || fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) || v < 0) {
+        return false;
+    }
+    *out = v;
+    return true;
+}
+
+static bool fastchart_pareto_keep_bar(HashTable *eht)
+{
+    double v;
+    return fastchart_pareto_bar_value(eht, &v);
+}
+
 ZEND_METHOD(FastChart_ParetoChart, setBars)
 {
     FASTCHART_GUARD_NOT_RENDERING();
@@ -11561,6 +11724,11 @@ ZEND_METHOD(FastChart_ParetoChart, setBars)
         ht, FASTCHART_MAX_PARETO_BARS,
         "FastChart\\ParetoChart::setBars()", "bars");
     if (n < 0) RETURN_THROWS();
+    size_t text_bytes = 0;
+    if (fastchart_collection_key_preflight(ht, "label", sizeof("label") - 1,
+            fastchart_pareto_keep_bar, "FastChart\\ParetoChart::setBars()", &text_bytes) != 0) {
+        RETURN_THROWS();
+    }
     if (self->bars) {
         for (int i = 0; i < self->bar_count; i++) {
             if (self->bars[i].label) efree(self->bars[i].label);
@@ -11579,11 +11747,8 @@ ZEND_METHOD(FastChart_ParetoChart, setBars)
         if (entry) ZVAL_DEREF(entry);
         if (Z_TYPE_P(entry) != IS_ARRAY) continue;
         HashTable *eht = Z_ARRVAL_P(entry);
-        zval *zv = zend_hash_str_find(eht, "value", sizeof("value") - 1);
         double val;
-        if (!zv || fastchart_zval_to_double(zv, &val) != 0 || !isfinite(val) || val < 0) {
-            continue;
-        }
+        if (!fastchart_pareto_bar_value(eht, &val)) continue;
         parsed[kept].value = val;
         parsed[kept].color_rgb = -1;
         const char *lbl = fastchart_label_or_null(
@@ -11852,6 +12017,11 @@ ZEND_METHOD(FastChart_SankeyChart, setNodes)
         ht, FASTCHART_MAX_SANKEY_NODES,
         "FastChart\\SankeyChart::setNodes()", "nodes");
     if (n < 0) RETURN_THROWS();
+    size_t text_bytes = 0;
+    if (fastchart_collection_key_preflight(ht, "label", sizeof("label") - 1,
+            NULL, "FastChart\\SankeyChart::setNodes()", &text_bytes) != 0) {
+        RETURN_THROWS();
+    }
 
     if (self->nodes) {
         for (int i = 0; i < self->node_count; i++) {
@@ -12152,23 +12322,6 @@ ZEND_METHOD(FastChart_NetworkChart, setIterations)
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }
 
-
-static int fastchart_collection_text_add(zval *zv, const char *method,
-                                         size_t *total)
-{
-    ZEND_ASSERT(*total <= FASTCHART_MAX_RENDER_TEXT_BYTES);
-    const char *text = fastchart_label_or_null(zv);
-    if (!text) return 0;
-
-    size_t len = (size_t)strlen(text);
-    if (len > FASTCHART_MAX_RENDER_TEXT_BYTES - *total) {
-        zend_value_error("%s aggregate text exceeds the %d-byte limit",
-                         method, (int)FASTCHART_MAX_RENDER_TEXT_BYTES);
-        return -1;
-    }
-    *total += len;
-    return 0;
-}
 
 /* --- PopulationPyramid ---------------------------------------------- */
 
@@ -12980,6 +13133,36 @@ ZEND_METHOD(FastChart_Partition, setOrientation)
 
 /* --- MarimekkoChart ------------------------------------------------- */
 
+/* setColumns() keeps a segment whose 'value' is finite and positive. */
+static bool fastchart_marimekko_segment_value(zval *se, double *out)
+{
+    ZVAL_DEREF(se);
+    if (Z_TYPE_P(se) != IS_ARRAY) return false;
+    zval *zv = zend_hash_str_find(Z_ARRVAL_P(se), "value", sizeof("value") - 1);
+    double v;
+    if (!zv || fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) || v <= 0) {
+        return false;
+    }
+    *out = v;
+    return true;
+}
+
+static void fastchart_marimekko_columns_free(fastchart_marimekko_column *cols,
+                                             int count)
+{
+    if (!cols) return;
+    for (int i = 0; i < count; i++) {
+        if (cols[i].label) efree(cols[i].label);
+        if (cols[i].segments) {
+            for (int j = 0; j < cols[i].n_segments; j++) {
+                if (cols[i].segments[j].label) efree(cols[i].segments[j].label);
+            }
+            efree(cols[i].segments);
+        }
+    }
+    efree(cols);
+}
+
 ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
 {
     FASTCHART_GUARD_NOT_RENDERING();
@@ -13015,27 +13198,18 @@ ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
         } ZEND_HASH_FOREACH_END();
     }
 
-    if (self->columns) {
-        for (int i = 0; i < self->column_count; i++) {
-            if (self->columns[i].label) efree(self->columns[i].label);
-            if (self->columns[i].segments) {
-                for (int j = 0; j < self->columns[i].n_segments; j++) {
-                    if (self->columns[i].segments[j].label) {
-                        efree(self->columns[i].segments[j].label);
-                    }
-                }
-                efree(self->columns[i].segments);
-            }
-        }
-        efree(self->columns);
+    if (n <= 0) {
+        fastchart_marimekko_columns_free(self->columns, self->column_count);
         self->columns = NULL;
+        self->column_count = 0;
+        self->total_width = 0.0;
+        RETURN_ZVAL(ZEND_THIS, 1, 0);
     }
-    self->column_count = 0;
-    self->total_width = 0.0;
-    if (n <= 0) RETURN_ZVAL(ZEND_THIS, 1, 0);
+    /* Parse into a temp so a rejected call keeps the prior columns. */
     fastchart_marimekko_column *parsed = ecalloc(n, sizeof(*parsed));
     int kept = 0;
     double total_w = 0.0;
+    size_t text_bytes = 0;
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (kept >= n) break;
@@ -13050,63 +13224,65 @@ ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
             sht, FASTCHART_MAX_MARIMEKKO_SEGS,
             "FastChart\\MarimekkoChart::setColumns()", "segments");
         if (sn < 0) {
-            for (int i = 0; i < kept; i++) {
-                if (parsed[i].label) efree(parsed[i].label);
-                if (parsed[i].segments) {
-                    for (int j = 0; j < parsed[i].n_segments; j++) {
-                        if (parsed[i].segments[j].label) efree(parsed[i].segments[j].label);
-                    }
-                    efree(parsed[i].segments);
-                }
-            }
-            efree(parsed);
+            fastchart_marimekko_columns_free(parsed, kept);
             RETURN_THROWS();
         }
         if (sn <= 0) continue;
-        fastchart_marimekko_segment *segs = ecalloc(sn, sizeof(*segs));
+        /* Decide the column's fate from segment values alone, then copy
+         * labels while charging them, so an over-budget input fails
+         * before any label past the limit is copied. */
         int skept = 0;
         double col_total = 0.0;
+        double val;
         zval *se;
         ZEND_HASH_FOREACH_VAL(sht, se) {
-            if (skept >= sn) break;
-            if (se) ZVAL_DEREF(se);
-            if (Z_TYPE_P(se) != IS_ARRAY) continue;
-            HashTable *seh = Z_ARRVAL_P(se);
-            zval *zv = zend_hash_str_find(seh, "value", sizeof("value") - 1);
-            double val;
-            if (!zv || fastchart_zval_to_double(zv, &val) != 0
-                || !isfinite(val) || val <= 0) {
-                continue;
+            if (fastchart_marimekko_segment_value(se, &val)) {
+                col_total += val;
+                skept++;
             }
-            segs[skept].value = val;
-            segs[skept].color_rgb = -1;
-            const char *lbl = fastchart_label_or_null(
-                zend_hash_str_find(seh, "label", sizeof("label") - 1));
-            segs[skept].label = lbl ? estrdup(lbl) : NULL;
-            segs[skept].color_rgb = fastchart_extract_optional_rgb(seh, "color", sizeof("color") - 1);
-            col_total += val;
-            skept++;
         } ZEND_HASH_FOREACH_END();
-        if (skept == 0) { efree(segs); continue; }
+        if (skept == 0) continue;
         /* Finite segment values can sum to Inf; reject before normalization
          * produces NaN and reaches an int cast. */
-        if (!isfinite(col_total) || !isfinite(total_w + col_total)) {
-            for (int j = 0; j < skept; j++) {
-                if (segs[j].label) efree(segs[j].label);
-            }
-            efree(segs);
-            continue;
-        }
-        const char *lbl = fastchart_label_or_null(
+        if (!isfinite(col_total) || !isfinite(total_w + col_total)) continue;
+
+        const char *clbl = fastchart_label_or_null(
             zend_hash_str_find(eht, "label", sizeof("label") - 1));
-        parsed[kept].label = lbl ? estrdup(lbl) : NULL;
-        parsed[kept].segments = segs;
-        parsed[kept].n_segments = skept;
-        parsed[kept].total = col_total;
+        if (clbl && fastchart_collection_text_charge(strlen(clbl),
+                "FastChart\\MarimekkoChart::setColumns()", &text_bytes) != 0) {
+            fastchart_marimekko_columns_free(parsed, kept);
+            RETURN_THROWS();
+        }
+        fastchart_marimekko_column *col = &parsed[kept];
+        col->label = clbl ? estrdup(clbl) : NULL;
+        col->segments = ecalloc(skept, sizeof(*col->segments));
+        col->total = col_total;
+        ZEND_HASH_FOREACH_VAL(sht, se) {
+            if (!fastchart_marimekko_segment_value(se, &val)) continue;
+            ZVAL_DEREF(se);
+            HashTable *seh = Z_ARRVAL_P(se);
+            fastchart_marimekko_segment *seg = &col->segments[col->n_segments];
+            const char *lbl = fastchart_label_or_null(
+                zend_hash_str_find(seh, "label", sizeof("label") - 1));
+            if (lbl && fastchart_collection_text_charge(strlen(lbl),
+                    "FastChart\\MarimekkoChart::setColumns()", &text_bytes) != 0) {
+                fastchart_marimekko_columns_free(parsed, kept + 1);
+                RETURN_THROWS();
+            }
+            seg->value = val;
+            seg->label = lbl ? estrdup(lbl) : NULL;
+            seg->color_rgb = fastchart_extract_optional_rgb(seh, "color", sizeof("color") - 1);
+            col->n_segments++;
+        } ZEND_HASH_FOREACH_END();
         total_w += col_total;
         kept++;
     } ZEND_HASH_FOREACH_END();
-    if (kept == 0) { efree(parsed); RETURN_ZVAL(ZEND_THIS, 1, 0); }
+    fastchart_marimekko_columns_free(self->columns, self->column_count);
+    if (kept == 0) {
+        efree(parsed);
+        parsed = NULL;
+        total_w = 0.0;
+    }
     self->columns = parsed;
     self->column_count = kept;
     self->total_width = total_w;

@@ -364,12 +364,19 @@ int fastchart_pie_render_to_target(fastchart_pie_obj *self, fastchart_target_t *
         for (int i = 0; i < n_slices; i++) {
             double sweep = pie_span * (slices[i].value / total);
             if (sweep < 4.0) { start_deg += sweep; continue; }
+            /* INSIDE draws only slices of at least 8 degrees (below);
+             * skip the rest before charging their label. */
+            bool inside = self->slice_label_position != FASTCHART_LABEL_LEFT
+                && self->slice_label_position != FASTCHART_LABEL_RIGHT
+                && self->slice_label_position != FASTCHART_LABEL_OUTSIDE;
+            if (inside && sweep < 8.0) { start_deg += sweep; continue; }
 
             double mid_rad = (start_deg + sweep / 2.0) * M_PI / 180.0;
             double cos_mid = cos(mid_rad);
             double sin_mid = sin(mid_rad);
-            char *buf = fastchart_format_double_label(
-                fmt, 100.0 * slices[i].value / total);
+            char *buf = fastchart_format_value_label(
+                t, (fastchart_obj *)self, fmt, 100.0 * slices[i].value / total);
+            if (!buf) break;
 
             if (self->slice_label_position == FASTCHART_LABEL_LEFT ||
                 self->slice_label_position == FASTCHART_LABEL_RIGHT) {

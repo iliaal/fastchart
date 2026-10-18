@@ -885,6 +885,7 @@ static int fastchart_bar_render_radial(fastchart_bar_obj *self,
             const char *label = (c < base->n_category_labels)
                 ? base->category_labels[c] : NULL;
             if (!label) continue;
+            if (!fastchart_charge_element_label(t, base, strlen(label))) break;
             double cat_center = (double)max_r - ((double)c + 0.5) * bandw;
             int lx = cx - 6;
             int ly = cy - (int)cat_center + (int)(fsize * 0.35);

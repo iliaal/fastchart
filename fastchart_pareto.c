@@ -140,8 +140,9 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
         int y = plot_y1 - (int)((double)k / 5.0 * (plot_y1 - plot_y0));
         fastchart_target_line(t, plot_x0, y, plot_x1, y,
                               pal.grid, 1, FASTCHART_DASH_SOLID);
-        if (font) {
-            char *buf = fastchart_format_double_label(fmt, v);
+        char *buf = font ? fastchart_format_tick_label(
+            t, (fastchart_obj *)self, fmt, v) : NULL;
+        if (buf) {
             fastchart_text_draw(t, font, size, pal.text,
                                 plot_x0 - 6, y + (int)(size * 0.4),
                                 FASTCHART_ALIGN_RIGHT, buf, NULL, 0);
@@ -191,11 +192,14 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
                                 self->bars[i].label, NULL, 0);
         }
         if (font && ((fastchart_obj *)self)->show_values) {
-            char *buf = fastchart_format_double_label(fmt, self->bars[i].value);
-            fastchart_text_draw(t, font, size * 0.9, pal.text,
-                                bx + bar_w / 2, by - 4,
-                                FASTCHART_ALIGN_CENTER, buf, NULL, 0);
-            efree(buf);
+            char *buf = fastchart_format_value_label(
+                t, (fastchart_obj *)self, fmt, self->bars[i].value);
+            if (buf) {
+                fastchart_text_draw(t, font, size * 0.9, pal.text,
+                                    bx + bar_w / 2, by - 4,
+                                    FASTCHART_ALIGN_CENTER, buf, NULL, 0);
+                efree(buf);
+            }
         }
     }
 

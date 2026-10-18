@@ -140,6 +140,13 @@ typedef struct {
 	int loaded;
 } fastchart_target_image_cache_entry;
 
+/* Bytes charged to one per-render label channel. Once a label does
+ * not fit, the channel stays exhausted for the rest of the render. */
+typedef struct {
+	size_t used;
+	bool exhausted;
+} fastchart_label_budget;
+
 typedef struct fastchart_target {
     int kind;
     /* SVG backend state. */
@@ -179,6 +186,10 @@ typedef struct fastchart_target {
 	fastchart_target_image_cache_entry
         image_cache[FASTCHART_TARGET_IMAGE_CACHE];
 	int image_cache_n;
+
+	/* Per-render label text channels; see fastchart_charge_label(). */
+	fastchart_label_budget element_labels;
+	fastchart_label_budget tick_labels;
 
     /* Shared color table. handle = index. Grown on demand (ramp-heavy
      * charts such as heatmap / treemap / word cloud can allocate many more
