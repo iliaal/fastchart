@@ -25,7 +25,10 @@ try {
     echo $e->getMessage(), "\n";
 }
 echo "state: ", $c->renderSvg() === $before ? "preserved" : "CHANGED", "\n";
-if (getenv('USE_ZEND_ALLOC') !== '0') {
+// PHP 8.1 cannot reset the peak, and its first font load already
+// allocates the 16 MiB stream cap up front.
+if (getenv('USE_ZEND_ALLOC') !== '0'
+    && function_exists('memory_reset_peak_usage')) {
     $peak = memory_get_peak_usage() - $base;
     echo "peak: ", $peak < 4 * 1024 * 1024 ? "bounded" : "$peak bytes", "\n";
 } else {
