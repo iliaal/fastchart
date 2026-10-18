@@ -326,6 +326,8 @@ void fc_pdf_emit_arc(fc_pdf_state *s, double cx, double cy,
 {
 	if (fc_pdf_transparent(rgba)) return;
 	double sweep = end_deg - start_deg;
+	/* (int)ceil() of a NaN or out-of-range sweep below is undefined. */
+	if (!isfinite(sweep)) return;
 	if (sweep < 0) sweep += 360.0;
 	if (sweep >= 359.999) {
 		fc_pdf_emit_ellipse(s, cx, cy, rx, ry, rgba, fill, thickness);
@@ -334,7 +336,7 @@ void fc_pdf_emit_arc(fc_pdf_state *s, double cx, double cy,
 
 	double a0 = start_deg * M_PI / 180.0;
 	double total = sweep * M_PI / 180.0;
-	int segs = (int)ceil(sweep / 90.0);
+	int segs = sweep > 0 ? (int)ceil(sweep / 90.0) : 1;
 	if (segs < 1) segs = 1;
 	double seg = total / segs;
 

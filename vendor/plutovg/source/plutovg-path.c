@@ -44,6 +44,7 @@ plutovg_path_t* plutovg_path_create(void)
     path->num_curves = 0;
     path->start_point = PLUTOVG_EMPTY_POINT;
     plutovg_array_init(path->elements);
+    path->dash_budget = NULL; /* LOCAL-PATCH (fastchart) */
     return path;
 }
 
@@ -73,10 +74,21 @@ int plutovg_path_get_elements(const plutovg_path_t* path, const plutovg_path_ele
     return path->elements.size;
 }
 
+/* LOCAL-PATCH (fastchart): on allocation failure the element buffer is
+ * gone, so reset the counters that index into it. */
+static bool plutovg_path_ensure(plutovg_path_t* path, int count)
+{
+    if(plutovg_array_ensure(path->elements, count))
+        return true;
+    plutovg_path_reset(path);
+    return false;
+}
+
 static plutovg_path_element_t* plutovg_path_add_command(plutovg_path_t* path, plutovg_path_command_t command, int npoints)
 {
     const int length = npoints + 1;
-    plutovg_array_ensure(path->elements, length);
+    if(!plutovg_path_ensure(path, length))
+        return NULL;
     plutovg_path_element_t* elements = path->elements.data + path->elements.size;
     elements->header.command = command;
     elements->header.length = length;
@@ -88,6 +100,8 @@ static plutovg_path_element_t* plutovg_path_add_command(plutovg_path_t* path, pl
 void plutovg_path_move_to(plutovg_path_t* path, float x, float y)
 {
     plutovg_path_element_t* elements = plutovg_path_add_command(path, PLUTOVG_PATH_COMMAND_MOVE_TO, 1);
+    if(elements == NULL)
+        return;
     elements[0].point = PLUTOVG_MAKE_POINT(x, y);
     path->start_point = PLUTOVG_MAKE_POINT(x, y);
     path->num_contours += 1;
@@ -98,6 +112,8 @@ void plutovg_path_line_to(plutovg_path_t* path, float x, float y)
     if(path->elements.size == 0)
         plutovg_path_move_to(path, 0, 0);
     plutovg_path_element_t* elements = plutovg_path_add_command(path, PLUTOVG_PATH_COMMAND_LINE_TO, 1);
+    if(elements == NULL)
+        return;
     elements[0].point = PLUTOVG_MAKE_POINT(x, y);
 }
 
@@ -117,6 +133,8 @@ void plutovg_path_cubic_to(plutovg_path_t* path, float x1, float y1, float x2, f
     if(path->elements.size == 0)
         plutovg_path_move_to(path, 0, 0);
     plutovg_path_element_t* elements = plutovg_path_add_command(path, PLUTOVG_PATH_COMMAND_CUBIC_TO, 3);
+    if(elements == NULL)
+        return;
     elements[0].point = PLUTOVG_MAKE_POINT(x1, y1);
     elements[1].point = PLUTOVG_MAKE_POINT(x2, y2);
     elements[2].point = PLUTOVG_MAKE_POINT(x3, y3);
@@ -181,6 +199,16 @@ void plutovg_path_arc_to(plutovg_path_t* path, float rx, float ry, float angle, 
         th_arc += PLUTOVG_TWO_PI;
     else if(th_arc > 0.f && !sweep_flag)
         th_arc -= PLUTOVG_TWO_PI;
+    /* LOCAL-PATCH (fastchart): radii that overflow or underflow float
+     * (e.g. rx=3e38, ry=1e-38) collapse the centre computation to NaN, and
+     * the (int) cast of a NaN segment count is undefined; optimized builds
+     * then emit cubics until memory runs out. Treat the arc as degenerate
+     * and draw a straight line, as SVG does for zero radii. */
+    if(!isfinite(th_arc)) {
+        plutovg_path_line_to(path, x, y);
+        return;
+    }
+
     plutovg_matrix_init_rotate(&matrix, angle);
     plutovg_matrix_scale(&matrix, rx, ry);
     int segments = (int)(ceilf(fabsf(th_arc / (PLUTOVG_HALF_PI + 0.001f))));
@@ -214,6 +242,8 @@ void plutovg_path_close(plutovg_path_t* path)
     if(path->elements.size == 0)
         return;
     plutovg_path_element_t* elements = plutovg_path_add_command(path, PLUTOVG_PATH_COMMAND_CLOSE, 1);
+    if(elements == NULL)
+        return;
     elements[0].point = path->start_point;
 }
 
@@ -232,7 +262,7 @@ void plutovg_path_get_current_point(const plutovg_path_t* path, float* x, float*
 
 void plutovg_path_reserve(plutovg_path_t* path, int count)
 {
-    plutovg_array_ensure(path->elements, count);
+    plutovg_path_ensure(path, count);
 }
 
 void plutovg_path_reset(plutovg_path_t* path)
@@ -316,6 +346,8 @@ void plutovg_path_add_arc(plutovg_path_t* path, float cx, float cy, float r, flo
         da += PLUTOVG_TWO_PI * (ccw ? -1 : 1);
     }
 
+    if(isnan(da)) /* LOCAL-PATCH (fastchart): (int)NaN below is undefined */
+        return;
     int seg_n = (int)(ceilf(fabsf(da) / PLUTOVG_HALF_PI));
     if(seg_n == 0)
         return;
@@ -375,6 +407,8 @@ void plutovg_path_transform(plutovg_path_t* path, const plutovg_matrix_t* matrix
 void plutovg_path_add_path(plutovg_path_t* path, const plutovg_path_t* source, const plutovg_matrix_t* matrix)
 {
     if(matrix == NULL) {
+        if(!plutovg_path_ensure(path, source->elements.size))
+            return;
         plutovg_array_append(path->elements, source->elements);
         path->start_point = source->start_point;
         path->num_points += source->num_points;
@@ -387,7 +421,7 @@ void plutovg_path_add_path(plutovg_path_t* path, const plutovg_path_t* source, c
     plutovg_path_iterator_init(&it, source);
 
     plutovg_point_t points[3];
-    plutovg_array_ensure(path->elements, source->elements.size);
+    plutovg_path_ensure(path, source->elements.size);
     while(plutovg_path_iterator_has_next(&it)) {
         switch(plutovg_path_iterator_next(&it, points)) {
         case PLUTOVG_PATH_COMMAND_MOVE_TO:
@@ -554,7 +588,20 @@ typedef struct {
     plutovg_path_traverse_func_t traverse_func;
     void* closure;
     int budget; /* LOCAL-PATCH (fastchart): cap on emitted dash commands */
+    bool exhausted; /* LOCAL-PATCH (fastchart): budget cut emission short */
 } dasher_t;
+
+/* LOCAL-PATCH (fastchart): spend one unit of the dash budget. */
+static bool dash_take(dasher_t* dasher)
+{
+    if(dasher->budget > 0) {
+        dasher->budget--;
+        return true;
+    }
+
+    dasher->exhausted = true;
+    return false;
+}
 
 static void dash_traverse_func(void* closure, plutovg_path_command_t command, const plutovg_point_t* points, int npoints)
 {
@@ -563,8 +610,7 @@ static void dash_traverse_func(void* closure, plutovg_path_command_t command, co
         /* Budget the subpath-start MOVE_TO too, so the total emitted
          * command count stays <= the initial budget across any number of
          * subpaths. */
-        if(dasher->start_toggle && dasher->budget > 0) {
-            dasher->budget--;
+        if(dasher->start_toggle && dash_take(dasher)) {
             dasher->traverse_func(dasher->closure, PLUTOVG_PATH_COMMAND_MOVE_TO, points, npoints);
         }
         dasher->current_point = points[0];
@@ -597,10 +643,15 @@ static void dash_traverse_func(void* closure, plutovg_path_command_t command, co
         if(dasher->dashes[i] > 0.f && dasher->dashes[i] < min_inc)
             min_inc = dasher->dashes[i];
     }
+    if(dasher->budget <= 0) {
+        dasher->exhausted = true;
+        dasher->current_point = p1;
+        return;
+    }
+
     if(!isfinite(dist0) || min_inc == FLT_MAX
-            || dist0 >= 8388608.f * min_inc || dasher->budget <= 0) {
-        if(dasher->toggle && dasher->budget > 0) {
-            dasher->budget--;
+            || dist0 >= 8388608.f * min_inc) {
+        if(dasher->toggle && dash_take(dasher)) {
             dasher->traverse_func(dasher->closure,
                                   PLUTOVG_PATH_COMMAND_LINE_TO, &p1, 1);
         }
@@ -613,9 +664,8 @@ static void dash_traverse_func(void* closure, plutovg_path_command_t command, co
      * segments feed this function. It is only ever decremented while
      * strictly positive, so it never wraps below zero. */
     while(dist0 - dist1 > dasher->dashes[dasher->index % dasher->ndashes] - dasher->phase) {
-        if(dasher->budget <= 0)
+        if(!dash_take(dasher))
             break;
-        dasher->budget--;
         dist1 += dasher->dashes[dasher->index % dasher->ndashes] - dasher->phase;
         float a = dist1 / dist0;
         plutovg_point_t p = { p0.x + a * dx, p0.y + a * dy };
@@ -630,8 +680,7 @@ static void dash_traverse_func(void* closure, plutovg_path_command_t command, co
         dasher->index++;
     }
 
-    if(dasher->toggle && dasher->budget > 0) {
-        dasher->budget--;
+    if(dasher->toggle && dash_take(dasher)) {
         dasher->traverse_func(dasher->closure, PLUTOVG_PATH_COMMAND_LINE_TO, &p1, 1);
     }
 
@@ -672,12 +721,35 @@ void plutovg_path_traverse_dashed(const plutovg_path_t* path, float offset, cons
     dasher.traverse_func = traverse_func;
     dasher.closure = closure;
     dasher.budget = 1 << 20; /* LOCAL-PATCH (fastchart): aggregate cap */
+    dasher.exhausted = false;
+    /* LOCAL-PATCH (fastchart): the per-path cap alone lets dash work grow
+     * with the number of dashed paths in a document. A canvas-owned path
+     * also draws from a budget shared by every stroke on that canvas.
+     * Only a path that the shared budget cuts below the per-path cap
+     * reports exhaustion; one that merely reaches the per-path cap is
+     * truncated as before. */
+    plutovg_dash_budget_t* shared = path->dash_budget;
+    bool shared_limited = false;
+    if(shared && shared->remaining >= 0 && shared->remaining < dasher.budget) {
+        dasher.budget = (int)shared->remaining;
+        shared_limited = true;
+    }
+
+    const int initial_budget = dasher.budget;
     plutovg_path_traverse_flatten(path, dash_traverse_func, &dasher);
+    if(shared && shared->remaining >= 0) {
+        shared->remaining -= initial_budget - dasher.budget;
+        if(shared_limited && dasher.exhausted) {
+            shared->exceeded = true;
+        }
+    }
 }
 
 plutovg_path_t* plutovg_path_clone(const plutovg_path_t* path)
 {
     plutovg_path_t* clone = plutovg_path_create();
+    if(!plutovg_path_ensure(clone, path->elements.size))
+        return clone;
     plutovg_array_append(clone->elements, path->elements);
     clone->start_point = path->start_point;
     clone->num_points = path->num_points;

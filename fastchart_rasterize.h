@@ -49,6 +49,14 @@
  * fails closed: over-counting only over-blocks. */
 #define FC_MAX_RENDER_OPS    (1LL << 32)
 
+/* Stroke-dash expansion budget for caller-supplied SVG, shared by every
+ * dashed path in one document. plutovg caps each path at 2^20 dash
+ * commands, but the element budget above counts a dashed path once no
+ * matter how many dashes it expands into, so without a shared cap dash
+ * work grows with the number of dashed paths. 2^22 lets four paths
+ * each expand to the per-path cap; a document that needs more fails. */
+#define FC_MAX_DASH_COMMANDS (1L << 22)
+
 /* Rasterize the given SVG bytes at the requested target dimensions.
  * On success: pix->rgba is emalloc'd, pix->w/h match the requested
  * dims, return 0.
@@ -71,6 +79,7 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
  *       so the caller can build a meaningful error message).
  *   -4: rasterize failed after a successful parse + dim check.
  *   -5: element_count x output pixels exceeds the render-work budget.
+ *   -6: stroke dashes exceed FC_MAX_DASH_COMMANDS for the document.
  */
 int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
                                        int max_dim, long long max_pixels,

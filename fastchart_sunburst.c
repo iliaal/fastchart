@@ -77,8 +77,13 @@ static int fastchart_sunburst_ring_polygon(
     double a0, double a1,
     fastchart_point_t *out, int max_pts)
 {
-    int seg = (int)ceil((a1 - a0) / (M_PI / 30.0));
-    if (seg < 1) seg = 1;
+    /* Range-check before the cast: (int) of a NaN or huge span is
+     * undefined. */
+    double span_seg = ceil((a1 - a0) / (M_PI / 30.0));
+    int seg = 1;
+    if (span_seg > 1.0) {
+        seg = span_seg < (double)max_pts ? (int)span_seg : max_pts;
+    }
     /* Need 2*(seg+1) points: outer arc forward + inner arc backward. */
     int needed = 2 * (seg + 1);
     if (needed > max_pts) {

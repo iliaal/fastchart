@@ -1974,6 +1974,30 @@ PLUTOVG_API void plutovg_canvas_set_dash_array(plutovg_canvas_t* canvas, const f
 PLUTOVG_API int plutovg_canvas_get_dash_array(const plutovg_canvas_t* canvas, const float** dashes);
 
 /**
+ * @brief LOCAL-PATCH (fastchart): caps stroke-dash expansion per canvas.
+ *
+ * Each dashed stroke is already capped per path, but a document can hold
+ * many dashed paths, so dash work scales with the path count. The budget
+ * is shared by every path this canvas strokes; once it runs out, further
+ * dashes are dropped and plutovg_canvas_dash_budget_exceeded() reports
+ * true. The default is no shared limit.
+ *
+ * @param canvas A pointer to a `plutovg_canvas_t` object.
+ * @param budget Maximum dash commands across all strokes, or a negative
+ * value for no shared limit. Clears the exceeded flag.
+ */
+PLUTOVG_API void plutovg_canvas_set_dash_budget(plutovg_canvas_t* canvas, long budget);
+
+/**
+ * @brief LOCAL-PATCH (fastchart): whether a stroke ran out of the shared
+ * dash budget set by plutovg_canvas_set_dash_budget().
+ *
+ * @param canvas A pointer to a `plutovg_canvas_t` object.
+ * @return `true` if dashes were dropped for lack of shared budget.
+ */
+PLUTOVG_API bool plutovg_canvas_dash_budget_exceeded(const plutovg_canvas_t* canvas);
+
+/**
  * @brief Translates the current transformation matrix by offsets `tx` and `ty`.
  * @param canvas A pointer to a `plutovg_canvas_t` object.
  * @param tx The translation offset in the x-direction.
