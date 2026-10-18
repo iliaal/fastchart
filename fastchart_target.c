@@ -690,20 +690,37 @@ static bool fc_path_is_stream_path(const char *filename)
         && p[0] == ':' && p[1] == '/' && p[2] == '/';
 }
 
+/* Image and font loads are best-effort and silent: an exception raised
+ * by user code while a resource is probed, opened, or read (an error
+ * handler converting a suppressed warning, or a stream wrapper) is
+ * discarded and the resource treated as unavailable. exit() travels as an
+ * unwind exception through the same slot and must reach the engine, so
+ * unwind and graceful exits stay pending; returns true when one does. */
+static bool fc_resource_load_aborted(void)
+{
+    if (!EG(exception)) return false;
+    if (zend_is_unwind_exit(EG(exception))
+        || zend_is_graceful_exit(EG(exception))) {
+        return true;
+    }
+    zend_clear_exception();
+    return false;
+}
+
+/* Returns 1 with `canonical` filled, 0 when the path has no local
+ * canonical form, or -1 when an exit() is unwinding. */
 static int fc_pin_canonical_path(const char *path, char *canonical)
 {
     if (VCWD_REALPATH(path, canonical) != NULL) return 1;
     if (!fc_path_is_stream_path(path)) return 0;
+    if (EG(exception)) return -1;
     const char *path_for_open = NULL;
     int er = EG(error_reporting);
     EG(error_reporting) = 0;
     php_stream_wrapper *wrapper = php_stream_locate_url_wrapper(
         path, &path_for_open, IGNORE_PATH);
     EG(error_reporting) = er;
-    if (EG(exception)) {
-        zend_clear_exception();
-        return 0;
-    }
+    if (EG(exception)) return fc_resource_load_aborted() ? -1 : 0;
     if (wrapper == &php_plain_files_wrapper && path_for_open) {
         return VCWD_REALPATH(path_for_open, canonical) != NULL;
     }
@@ -717,9 +734,9 @@ int fastchart_pin_path(const char *path)
 #endif
     if (!path || !*path) return 0;
     char canonical[MAXPATHLEN];
-    if (!fc_pin_canonical_path(path, canonical)) {
-        return 0;
-    }
+    int canonical_rc = fc_pin_canonical_path(path, canonical);
+    if (canonical_rc < 0) return -1;
+    if (canonical_rc == 0) return 0;
     if (PG(open_basedir) && *PG(open_basedir)
         && php_check_open_basedir_ex(canonical, 0) != 0) {
         fc_pin_cache_remove(canonical);
@@ -779,7 +796,9 @@ int fastchart_open_pinned_fd(const char *path, int flags, int *out_fd)
     *out_fd = -1;
     if (!path || !*path) return 0;
     char canonical[MAXPATHLEN];
-    if (!fc_pin_canonical_path(path, canonical)) return 0;
+    int canonical_rc = fc_pin_canonical_path(path, canonical);
+    if (canonical_rc < 0) return -1;
+    if (canonical_rc == 0) return 0;
     char leaf[NAME_MAX + 1];
     int dir_fd = -1;
     FC_PIN_LOCK();
@@ -936,6 +955,9 @@ static php_stream *fc_open_wrapped_source(const char *path, bool *handled)
     if (fc_path_has_nested_url(path)) return NULL;
     if (fc_path_is_php_filter(path)) return NULL;
     if (fc_path_is_blocked_file_wrapper(path)) return NULL;
+    /* A pending exception here is an exit() still unwinding or an earlier
+     * render failure; run no more user code. */
+    if (EG(exception)) return NULL;
 
     const char *path_for_open = NULL;
     int er = EG(error_reporting);
@@ -944,7 +966,7 @@ static php_stream *fc_open_wrapped_source(const char *path, bool *handled)
         path, &path_for_open, IGNORE_PATH);
     EG(error_reporting) = er;
     if (EG(exception)) {
-        zend_clear_exception();
+        (void)fc_resource_load_aborted();
         return NULL;
     }
     if (!wrapper || wrapper->is_url) return NULL;
@@ -967,7 +989,7 @@ static php_stream *fc_open_wrapped_source(const char *path, bool *handled)
             if (pinned == 0) {
                 fd = fc_open_regular_path(path_for_open, &st);
                 if (fd < 0) {
-                    if (EG(exception)) zend_clear_exception();
+                    (void)fc_resource_load_aborted();
                     return NULL;
                 }
             } else if (zend_fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
@@ -979,7 +1001,7 @@ static php_stream *fc_open_wrapped_source(const char *path, bool *handled)
             return NULL;
         }
         php_stream *stream = fc_stream_from_fd(fd);
-        if (!stream && EG(exception)) zend_clear_exception();
+        if (!stream) (void)fc_resource_load_aborted();
         return stream;
     }
 
@@ -988,18 +1010,18 @@ static php_stream *fc_open_wrapped_source(const char *path, bool *handled)
         EG(error_reporting) = 0;
         int denied = php_check_open_basedir_ex(path, 0) != 0;
         EG(error_reporting) = check_er;
-        if (EG(exception)) zend_clear_exception();
-        if (denied) return NULL;
+        if (fc_resource_load_aborted() || denied) return NULL;
     }
     er = EG(error_reporting);
     EG(error_reporting) = 0;
     php_stream *stream = php_stream_open_wrapper((char *)path, "rb",
         IGNORE_PATH, NULL);
     EG(error_reporting) = er;
-    if (!stream) {
-        if (EG(exception)) zend_clear_exception();
+    if (fc_resource_load_aborted()) {
+        if (stream) php_stream_close(stream);
         return NULL;
     }
+    if (!stream) return NULL;
 
     /* User wrappers may omit stream_stat; PHP emits a warning for that
      * optional operation. Keep the historical MIME-sniff fallback and let
@@ -1442,12 +1464,12 @@ static int fastchart_load_source_image(const char *path,
         zend_stat_t st;
         int fd = fc_open_regular_path(path, &st);
         if (fd < 0) {
-            if (EG(exception)) zend_clear_exception();
+            (void)fc_resource_load_aborted();
             return -1;
         }
         stream = fc_stream_from_fd(fd);
         if (!stream) {
-            if (EG(exception)) zend_clear_exception();
+            (void)fc_resource_load_aborted();
             return -1;
         }
     } else if (!stream) {
@@ -1460,7 +1482,10 @@ static int fastchart_load_source_image(const char *path,
         EG(error_reporting) = 0;
         raw = fc_stream_copy_and_close(stream, FC_IMAGE_MAX_BYTES + 1);
         EG(error_reporting) = er;
-        if (EG(exception)) zend_clear_exception();
+        if (fc_resource_load_aborted()) {
+            if (raw) zend_string_release(raw);
+            return -1;
+        }
     } else {
         raw = fc_stream_copy_and_close(stream, FC_IMAGE_MAX_BYTES + 1);
     }
@@ -1523,7 +1548,8 @@ static fastchart_target_image_cache_entry *fastchart_target_image_cache_get(
         &t->image_cache[t->image_cache_n++];
 	memset(entry, 0, sizeof(*entry));
 	entry->path = estrdup(path);
-	entry->loaded = fastchart_load_source_image(path, entry) == 0 ? 1 : -1;
+	entry->loaded = fastchart_load_source_image(entry->path, entry) == 0
+		? 1 : -1;
 	return entry;
 }
 
