@@ -410,6 +410,8 @@ zend_object *fastchart_chart_abstract_create_object(zend_class_entry *ce)
         ZSTR_VAL(ce->name));
     /* A NULL constructor lets ZEND_NEW unwind the pending exception. */
     zend_object *obj = zend_objects_new(ce);
+    /* free_obj destroys every declared property slot of the subclass. */
+    object_properties_init(obj, ce);
     obj->handlers = &fastchart_abstract_object_handlers;
     return obj;
 }

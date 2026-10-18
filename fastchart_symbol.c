@@ -136,6 +136,8 @@ zend_object *fastchart_symbol_abstract_create_object(zend_class_entry *ce)
     /* Suppress userland constructors on the prefix-less sentinel object. */
     extern zend_object_handlers fastchart_abstract_object_handlers;
     zend_object *obj = zend_objects_new(ce);
+    /* free_obj destroys every declared property slot of the subclass. */
+    object_properties_init(obj, ce);
     obj->handlers = &fastchart_abstract_object_handlers;
     return obj;
 }
