@@ -90,11 +90,19 @@ static pthread_mutex_t fc_pin_lock = PTHREAD_MUTEX_INITIALIZER;
  * Init                                                          *
  * ============================================================ */
 
+/* Bounds the face-cache path memo to one render: cwd, open_basedir and
+ * the filesystem may all change between renders. */
+static void fastchart_font_epoch_advance(void)
+{
+    if (++FASTCHART_G(font_epoch) == 0) FASTCHART_G(font_epoch) = 1;
+}
+
 void fastchart_target_from_svg(fastchart_target_t *t, smart_str *buf,
                                 int width, int height, int dpi,
                                 int text_mode)
 {
     memset(t, 0, sizeof(*t));
+    fastchart_font_epoch_advance();
     t->kind = FASTCHART_TARGET_SVG;
     t->u.svg.buf = buf;
     t->u.svg.width = width;
@@ -115,6 +123,7 @@ void fastchart_target_from_pdf(fastchart_target_t *t, smart_str *out,
                                 int width, int height, int dpi)
 {
     memset(t, 0, sizeof(*t));
+    fastchart_font_epoch_advance();
     t->kind = FASTCHART_TARGET_PDF;
 #ifdef HAVE_FASTCHART_PDF
     t->u.pdf.state = fc_pdf_doc_open(out, width, height);
@@ -819,8 +828,11 @@ int fastchart_open_pinned_fd(const char *path, int flags, int *out_fd)
     if (dir_fd < 0) return 0;
     volatile int fd = -1;
     int open_result = -1;
+    bool stale = false;
     zend_try {
-        if (fc_pinned_parent_allowed(dir_fd, leaf) == 0) {
+        if (fc_pinned_parent_allowed(dir_fd, leaf) != 0) {
+            stale = true;
+        } else {
             int leaf_flags = flags | O_NOFOLLOW;
 #ifdef O_CLOEXEC
             leaf_flags |= O_CLOEXEC;
@@ -839,6 +851,14 @@ int fastchart_open_pinned_fd(const char *path, int flags, int *out_fd)
         zend_bailout();
     } zend_end_try();
     fc_close_descriptor(dir_fd);
+    if (stale) {
+        /* The pinned directory no longer resolves inside open_basedir
+         * (moved, deleted, or the policy narrowed). Drop it so callers
+         * re-pin through a fresh check instead of failing forever on a
+         * path that may now name a different, allowed directory. */
+        fc_pin_cache_remove(canonical);
+        return 0;
+    }
     if (open_result != 1) return -1;
     *out_fd = fd;
     return 1;
@@ -1031,15 +1051,15 @@ static php_stream *fc_open_wrapped_source(const char *path, bool *handled)
 
 
 
-static unsigned char *fastchart_load_font_bytes(const char *font_path,
-                                                size_t *out_len)
+/* Read the font from the descriptor that passed authorization, so the
+ * bytes FreeType parses come from the same object the open_basedir
+ * check approved. Takes ownership of fd. */
+static unsigned char *fastchart_load_font_fd(int fd, const zend_stat_t *st,
+                                             size_t *out_len)
 {
     *out_len = 0;
-    zend_stat_t st;
-    int fd = fc_open_regular_path(font_path, &st);
-    if (fd < 0 || st.st_size <= 0 ||
-        (uintmax_t)st.st_size > FC_FONT_MAX_BYTES) {
-        if (fd >= 0) fc_close_descriptor(fd);
+    if (st->st_size <= 0 || (uintmax_t)st->st_size > FC_FONT_MAX_BYTES) {
+        fc_close_descriptor(fd);
         return NULL;
     }
 
@@ -1063,6 +1083,68 @@ static unsigned char *fastchart_load_font_bytes(const char *font_path,
     return data;
 }
 
+#if defined(__APPLE__)
+# define FC_ST_MTIME_NSEC(st) ((int64_t)(st)->st_mtimespec.tv_nsec)
+# define FC_ST_CTIME_NSEC(st) ((int64_t)(st)->st_ctimespec.tv_nsec)
+#elif defined(__linux__) || defined(__FreeBSD__)
+# define FC_ST_MTIME_NSEC(st) ((int64_t)(st)->st_mtim.tv_nsec)
+# define FC_ST_CTIME_NSEC(st) ((int64_t)(st)->st_ctim.tv_nsec)
+#else
+# define FC_ST_MTIME_NSEC(st) ((int64_t)0)
+# define FC_ST_CTIME_NSEC(st) ((int64_t)0)
+#endif
+
+static void fc_face_identity_from_stat(fc_ft_face_slot *id,
+                                       const zend_stat_t *st)
+{
+    id->dev = (uint64_t)st->st_dev;
+    id->ino = (uint64_t)st->st_ino;
+    id->size = (int64_t)st->st_size;
+    id->mtime_s = (int64_t)st->st_mtime;
+    id->mtime_ns = FC_ST_MTIME_NSEC(st);
+    id->ctime_s = (int64_t)st->st_ctime;
+    id->ctime_ns = FC_ST_CTIME_NSEC(st);
+}
+
+/* A zero inode means the platform reported no file identity; require
+ * the path string too rather than letting equal-sized files collide. */
+static bool fc_face_identity_matches(const fc_ft_face_slot *slot,
+                                     const fc_ft_face_slot *id,
+                                     const char *font_path)
+{
+    if (slot->dev != id->dev || slot->ino != id->ino
+        || slot->size != id->size
+        || slot->mtime_s != id->mtime_s || slot->mtime_ns != id->mtime_ns
+        || slot->ctime_s != id->ctime_s || slot->ctime_ns != id->ctime_ns) {
+        return false;
+    }
+    if (id->ino == 0) {
+        return slot->path && strcmp(slot->path, font_path) == 0;
+    }
+    return true;
+}
+
+/* Record that `font_path` resolved to this slot in the current epoch.
+ * On allocation failure the memo is simply skipped. */
+static void fc_face_slot_remember_path(fc_ft_face_slot *slot,
+                                       const char *font_path)
+{
+    if (slot->path && strcmp(slot->path, font_path) == 0) {
+        slot->path_epoch = FASTCHART_G(font_epoch);
+        return;
+    }
+    size_t path_len = strlen(font_path);
+    char *path_copy = malloc(path_len + 1);
+    if (!path_copy) {
+        slot->path_epoch = 0;
+        return;
+    }
+    memcpy(path_copy, font_path, path_len + 1);
+    free(slot->path);
+    slot->path = path_copy;
+    slot->path_epoch = FASTCHART_G(font_epoch);
+}
+
 static void fastchart_ft_face_slot_release(fc_ft_face_slot *slot)
 {
 	if (slot->face) {
@@ -1074,24 +1156,53 @@ static void fastchart_ft_face_slot_release(fc_ft_face_slot *slot)
 	memset(slot, 0, sizeof(*slot));
 }
 
+static FT_Face fc_face_cache_promote(fc_ft_face_slot *cache, int i)
+{
+    if (i != 0) {
+        fc_ft_face_slot tmp = cache[0];
+        cache[0] = cache[i];
+        cache[i] = tmp;
+    }
+    return cache[0].face;
+}
+
 FT_Face fastchart_ft_face(const char *font_path)
 {
-    if (!font_path) return NULL;
+    if (!font_path || !*font_path) return NULL;
     FT_Library lib = fastchart_ft_library();
-    if (PG(open_basedir) && *PG(open_basedir)
-        && fastchart_pin_path(font_path) != 0) return NULL;
     if (!lib) return NULL;
 
     fc_ft_face_slot *cache = FASTCHART_G(ft_face_cache);
+    uint64_t epoch = FASTCHART_G(font_epoch);
+
+    /* Within one render the same path string was already opened and
+     * authorized; skip the per-glyph-run reopen. */
+    if (epoch != 0) {
+        for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
+            if (cache[i].face && cache[i].path_epoch == epoch
+                && strcmp(cache[i].path, font_path) == 0) {
+                return fc_face_cache_promote(cache, i);
+            }
+        }
+    }
+
+    /* Every other lookup reopens the path under the current cwd and
+     * open_basedir. The cache key is the identity of that descriptor,
+     * and on a miss the bytes are read from it, so authorization, key
+     * and content all refer to one object. */
+    zend_stat_t st;
+    int fd = fc_open_regular_path(font_path, &st);
+    if (fd < 0) return NULL;
+    fc_ft_face_slot id;
+    memset(&id, 0, sizeof(id));
+    fc_face_identity_from_stat(&id, &st);
 
     for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
-        if (cache[i].path && strcmp(cache[i].path, font_path) == 0) {
-            if (i != 0) {
-                fc_ft_face_slot tmp = cache[0];
-                cache[0] = cache[i];
-                cache[i] = tmp;
-            }
-            return cache[0].face;
+        if (cache[i].face && fc_face_identity_matches(&cache[i], &id,
+                                                      font_path)) {
+            fc_close_descriptor(fd);
+            fc_face_slot_remember_path(&cache[i], font_path);
+            return fc_face_cache_promote(cache, i);
         }
     }
 
@@ -1105,7 +1216,7 @@ FT_Face fastchart_ft_face(const char *font_path)
      * evicting anything so a failure mid-build leaves the cache
      * untouched. */
     size_t data_len;
-    unsigned char *data = fastchart_load_font_bytes(font_path, &data_len);
+    unsigned char *data = fastchart_load_font_fd(fd, &st, &data_len);
     if (!data) return NULL;
 
     size_t path_len = strlen(font_path);
@@ -1129,7 +1240,7 @@ FT_Face fastchart_ft_face(const char *font_path)
 	size_t cached_bytes = 0;
 	int used = 0;
 	for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
-		if (!cache[i].path) break;
+		if (!cache[i].face) break;
 		cached_bytes += cache[i].data_len;
 		used++;
 	}
@@ -1143,7 +1254,9 @@ FT_Face fastchart_ft_face(const char *font_path)
 	for (int i = used; i > 0; i--) {
         cache[i] = cache[i - 1];
     }
+    cache[0] = id;
     cache[0].path = path_copy;
+    cache[0].path_epoch = epoch;
     cache[0].data = data;
     cache[0].data_len = data_len;
     cache[0].face = face;
@@ -1277,12 +1390,11 @@ void fastchart_target_resolve_font_family(fastchart_target_t *t,
         return;
     }
 
-    /* Cache lookup. Pointer-equality first (palette helpers reuse
-     * the same const char *); fall back to strcmp. */
+    /* Entries own a copy of the path: the caller's string may be
+     * released before the target is. */
     for (int i = 0; i < t->font_cache_n; i++) {
         fastchart_target_font_cache_entry *e = &t->font_cache[i];
-        if (e->path == font_path
-            || (e->path && strcmp(e->path, font_path) == 0)) {
+        if (e->path && strcmp(e->path, font_path) == 0) {
             snprintf(out, out_n, "%s", e->family);
             return;
         }
@@ -1305,7 +1417,7 @@ void fastchart_target_resolve_font_family(fastchart_target_t *t,
     if (t->font_cache_n < FASTCHART_TARGET_FONT_CACHE) {
         fastchart_target_font_cache_entry *e =
             &t->font_cache[t->font_cache_n++];
-        e->path = font_path;
+        e->path = estrdup(font_path);
         snprintf(e->family, sizeof(e->family), "%s", out);
     }
 }
@@ -1316,6 +1428,12 @@ void fastchart_target_resolve_font_family(fastchart_target_t *t,
 
 void fastchart_target_release(fastchart_target_t *t)
 {
+	fastchart_font_epoch_advance();
+	for (int i = 0; i < t->font_cache_n; i++) {
+		if (t->font_cache[i].path) efree(t->font_cache[i].path);
+		t->font_cache[i].path = NULL;
+	}
+	t->font_cache_n = 0;
 	for (int i = 0; i < t->image_cache_n; i++) {
 		fastchart_target_image_cache_entry *entry = &t->image_cache[i];
 		if (entry->path) efree(entry->path);

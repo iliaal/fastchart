@@ -117,7 +117,7 @@ typedef struct fastchart_point {
     } while (0)
 
 typedef struct {
-    const char *path;
+    char *path;   /* emalloc'd copy */
     char family[64];
 } fastchart_target_font_cache_entry;
 

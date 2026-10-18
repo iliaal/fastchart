@@ -1,5 +1,5 @@
 --TEST--
-FreeType face cache enforces an aggregate backing-byte budget
+FreeType face cache evicts large faces and never serves a deleted font file
 --EXTENSIONS--
 fastchart
 --SKIPIF--
@@ -41,18 +41,25 @@ try {
     }
 
     // Setter fail-fast rejects paths that do not exist, so bind each
-    // font while its fixture is still present; the unlinks below then
-    // exercise the render-time fallback path (evicted vs retained).
+    // font while its fixture is still present. Four 5 MiB faces exceed
+    // the 16 MiB backing budget, so the loads above evicted cold slots.
+    // A face is served only after its file reopens, whether its slot
+    // was evicted (oldest) or is still resident (newest).
     $oldest_chart = cache_chart($paths[0]);
-    $retained_chart = cache_chart($paths[1]);
+    $newest_chart = cache_chart($paths[3]);
     unlink($paths[0]);
     $oldest = $oldest_chart->renderSvg();
-    echo $oldest !== $expected[0] ? "evicted oldest\n" : "OLDEST RETAINED\n";
+    echo $oldest !== $expected[0] ? "deleted oldest not served\n" : "OLDEST SERVED\n";
 
-    unlink($paths[1]);
-    $retained = $retained_chart->renderSvg();
-    echo $retained === $expected[1]
-        ? "retained within budget\n" : "RETAINED FACE LOST\n";
+    unlink($paths[3]);
+    $newest = $newest_chart->renderSvg();
+    echo $newest !== $expected[3]
+        ? "deleted newest not served\n" : "NEWEST SERVED\n";
+
+    // The evicted and reloaded faces still render their own glyphs.
+    echo cache_chart($paths[1])->renderSvg() === $expected[1]
+        && cache_chart($paths[2])->renderSvg() === $expected[2]
+        ? "present fonts reload\n" : "PRESENT FONT LOST\n";
 } finally {
     foreach ($paths as $path) {
         if (is_file($path)) unlink($path);
@@ -60,5 +67,6 @@ try {
 }
 ?>
 --EXPECT--
-evicted oldest
-retained within budget
+deleted oldest not served
+deleted newest not served
+present fonts reload
