@@ -228,14 +228,24 @@ abstract class Chart
      * unbounded title balloons the document. The same 8192-byte cap
      * applies to every rendered-text setter (axis titles, annotation
      * and band/line labels); oversized array-element labels are
-     * dropped rather than throwing. Graph node labels, hierarchy
-     * labels, text annotations, reference-line labels, category
-     * labels, and the rendered label collections of Gantt, BoxPlot,
-     * Treemap, Funnel, Waterfall, Pareto, Sankey, Marimekko,
-     * PopulationPyramid, ViolinPlot, WordCloud, and SerpentineTimeline
-     * each have a 65536-byte aggregate budget; an over-budget setter
-     * throws ValueError and keeps its prior state. A chart accepts at
-     * most 128 text annotations and 128 reference lines.
+     * dropped rather than throwing.
+     *
+     * Each of these setter channels has its own 65536-byte aggregate
+     * budget; an over-budget call throws ValueError and keeps the prior
+     * state: text annotations, reference-line labels, Arc/Chord/Network
+     * node labels, CirclePacking/Dendrogram/Partition hierarchy labels,
+     * and the label collections of Gantt, BoxPlot, Treemap, Funnel,
+     * Waterfall, Pareto, Sankey, Marimekko, PopulationPyramid,
+     * ViolinPlot, WordCloud, and SerpentineTimeline. A chart accepts at
+     * most 128 text annotations and 128 reference lines. Category
+     * labels have no aggregate setter budget; categorical axes draw at
+     * most about 32 of them.
+     *
+     * Two render-time channels also hold 65536 bytes each per render:
+     * per-element labels (see setShowValues()) and axis tick labels
+     * produced by setXAxisLabelFormat() / setYAxisLabelFormat() /
+     * ParetoChart::setValueFormat(). Labels past a channel's budget are
+     * omitted; in strict mode the render throws ValueError.
      */
     public function setTitle(string $title): static {}
     public function setTheme(int $theme): static {}
@@ -428,11 +438,12 @@ abstract class Chart
      * string sets the format (validated for exactly one numeric
      * conversion).
      *
-     * Formatted value labels (this method, cell values, Pareto and
-     * Funnel values, and pie slice percentages) share a 65536-byte
-     * budget per render. Once a label would exceed it, that label and
-     * every later value label in the render are omitted; in strict
-     * mode the render throws ValueError instead.
+     * Per-element labels (this method, cell values, Pareto and Funnel
+     * values, pie slice percentages, and radial-bar and radar category
+     * labels) share a 65536-byte budget per render, charged only for
+     * labels actually drawn. Once a label would exceed it, that label
+     * and every later per-element label in the render are omitted; in
+     * strict mode the render throws ValueError instead.
      */
     public function setShowValues(bool $show, ?string $format = null): static {}
 

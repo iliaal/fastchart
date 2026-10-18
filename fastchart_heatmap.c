@@ -139,11 +139,12 @@ int fastchart_heatmap_render_to_target(fastchart_heatmap_obj *self, fastchart_ta
                 if (cell_w < (int)(label_size * 2.5) || cell_h < (int)(label_size * 1.6)) continue;
 
                 const char *fmt = base->value_format ? ZSTR_VAL(base->value_format) : "%g";
-                char *buf = fastchart_format_value_label(t, base, fmt, v);
-                if (!buf) continue;
+                if (t->element_labels.exhausted) continue;
+                char *buf = fastchart_format_double_label(fmt, v);
                 int tw = 0, th = 0;
                 if (fastchart_text_measure(t, label_font, label_size, buf,
-                                           &tw, &th, NULL, 0) != 0 || tw > cell_w - 4) {
+                                           &tw, &th, NULL, 0) != 0 || tw > cell_w - 4
+                    || !fastchart_charge_element_label(t, base, strlen(buf))) {
                     efree(buf);
                     continue;
                 }

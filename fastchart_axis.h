@@ -370,20 +370,37 @@ void fastchart_draw_value_label(fastchart_target_t *t, fastchart_obj *chart,
                                 const fastchart_palette *pal,
                                 int x, int y, double value);
 
-/* Charge `len` bytes of a per-element label (one drawn per data point,
- * cell, slice, or category) against the render's shared
- * FASTCHART_MAX_RENDER_TEXT_BYTES budget. Returns false once the budget
- * is exhausted: every later per-element label in the same render is
- * then skipped, and strict mode throws ValueError once. */
-bool fastchart_charge_element_label(fastchart_target_t *t,
-                                    const fastchart_obj *chart, size_t len);
+/* Per-render label channels, each holding FASTCHART_MAX_RENDER_TEXT_BYTES:
+ * ELEMENT for labels drawn once per data point, cell, slice, or category;
+ * TICK for axis tick labels produced by an application-supplied format.
+ * Separate channels keep a long tick format from starving value labels. */
+typedef enum {
+    FC_LABEL_CHANNEL_ELEMENT,
+    FC_LABEL_CHANNEL_TICK
+} fastchart_label_channel;
 
-/* Format one value label (setShowValues() points, cell values, slice
- * percentages) and charge it via fastchart_charge_element_label().
- * Returns an emalloc'd string, or NULL when the label must be skipped. */
-char *fastchart_format_value_label(fastchart_target_t *t,
-                                   const fastchart_obj *chart,
-                                   const char *fmt, double value);
+/* Charge `len` drawn bytes to a channel. Returns false once the channel
+ * is exhausted: every later label on it in the same render is skipped,
+ * and strict mode throws ValueError once. Charge only text that will be
+ * drawn. */
+bool fastchart_charge_label(fastchart_target_t *t, const fastchart_obj *chart,
+                            fastchart_label_channel channel, size_t len);
+
+/* Format one label with `fmt` and charge it to `channel`. Returns an
+ * emalloc'd string, or NULL when the label must be skipped. */
+char *fastchart_format_budget_label(fastchart_target_t *t,
+                                    const fastchart_obj *chart,
+                                    fastchart_label_channel channel,
+                                    const char *fmt, double value);
+
+#define fastchart_charge_element_label(t_, chart_, len_) \
+    fastchart_charge_label((t_), (chart_), FC_LABEL_CHANNEL_ELEMENT, (len_))
+#define fastchart_format_value_label(t_, chart_, fmt_, value_) \
+    fastchart_format_budget_label((t_), (chart_), FC_LABEL_CHANNEL_ELEMENT, \
+                                  (fmt_), (value_))
+#define fastchart_format_tick_label(t_, chart_, fmt_, value_) \
+    fastchart_format_budget_label((t_), (chart_), FC_LABEL_CHANNEL_TICK, \
+                                  (fmt_), (value_))
 
 /* Walk overlay series stored on chart->combo_overlays and
  * draw each as a line or area on top of the existing plot, using
