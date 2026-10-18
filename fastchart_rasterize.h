@@ -53,9 +53,8 @@
  * dashed path in one document. plutovg caps each path at 2^20 dash
  * commands, but the element budget above counts a dashed path once no
  * matter how many dashes it expands into, so without a shared cap dash
- * work grows with the number of dashed paths. 2^22 keeps four
- * per-path-cap paths' worth of headroom; the document fails once it is
- * spent. */
+ * work grows with the number of dashed paths. 2^22 lets four paths
+ * each expand to the per-path cap; a document that needs more fails. */
 #define FC_MAX_DASH_COMMANDS (1L << 22)
 
 /* Rasterize the given SVG bytes at the requested target dimensions.

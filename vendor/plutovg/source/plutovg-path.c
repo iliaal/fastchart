@@ -724,10 +724,13 @@ void plutovg_path_traverse_dashed(const plutovg_path_t* path, float offset, cons
     dasher.exhausted = false;
     /* LOCAL-PATCH (fastchart): the per-path cap alone lets dash work grow
      * with the number of dashed paths in a document. A canvas-owned path
-     * also draws from a budget shared by every stroke on that canvas. */
+     * also draws from a budget shared by every stroke on that canvas.
+     * Only a path that the shared budget cuts below the per-path cap
+     * reports exhaustion; one that merely reaches the per-path cap is
+     * truncated as before. */
     plutovg_dash_budget_t* shared = path->dash_budget;
     bool shared_limited = false;
-    if(shared && shared->remaining >= 0 && shared->remaining <= dasher.budget) {
+    if(shared && shared->remaining >= 0 && shared->remaining < dasher.budget) {
         dasher.budget = (int)shared->remaining;
         shared_limited = true;
     }
