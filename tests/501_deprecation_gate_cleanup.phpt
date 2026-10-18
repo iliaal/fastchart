@@ -33,6 +33,7 @@ class Chart {
 foreach (['LineChart', 'AreaChart', 'BarChart', 'PieChart', 'ScatterChart', 'StockChart', 'QrCode'] as $name) {
     class_alias(Chart::class, __NAMESPACE__ . '\\' . $name);
 }
+require $argv[1];
 STUB
 );
 $gate = dirname(__DIR__) . '/scripts/deprecation-gate.php';
@@ -41,7 +42,7 @@ try {
         $env = getenv();
         $env['TMPDIR'] = $env['TMP'] = $env['TEMP'] = $dir;
         $env['FC_GATE_TEST'] = $scenario;
-        $process = proc_open([PHP_BINARY, '-n', '-d', 'auto_prepend_file=' . $stub, $gate],
+        $process = proc_open([PHP_BINARY, '-n', $stub, $gate],
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
         if (!is_resource($process)) throw new RuntimeException('cannot start PHP');
         fclose($pipes[0]);
@@ -53,6 +54,9 @@ try {
             'error' => $stdout === '' && $stderr === "deprecation-gate ERROR: RuntimeException: test render failure\n",
             'deprecated' => $stdout === '' && str_contains($stderr, 'deprecation-gate DEPRECATED: test deprecation'),
         };
+        if ($status !== $expected || !$diagnostic) {
+            echo json_encode(['status' => $status, 'stdout' => $stdout, 'stderr' => $stderr]), "\n";
+        }
         echo "$scenario status: ", $status === $expected ? 'OK' : 'FAIL', "\n";
         echo "$scenario diagnostic: ", $diagnostic ? 'OK' : 'FAIL', "\n";
         echo "$scenario cleanup: ", !file_exists($dir . '/fc-deprecation-gate.svg') ? 'OK' : 'FAIL', "\n";
