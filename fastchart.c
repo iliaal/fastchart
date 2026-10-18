@@ -12875,6 +12875,20 @@ ZEND_METHOD(FastChart_Partition, setOrientation)
 
 /* --- MarimekkoChart ------------------------------------------------- */
 
+/* setColumns() keeps a segment whose 'value' is finite and positive. */
+static bool fastchart_marimekko_segment_value(zval *se, double *out)
+{
+    ZVAL_DEREF(se);
+    if (Z_TYPE_P(se) != IS_ARRAY) return false;
+    zval *zv = zend_hash_str_find(Z_ARRVAL_P(se), "value", sizeof("value") - 1);
+    double v;
+    if (!zv || fastchart_zval_to_double(zv, &v) != 0 || !isfinite(v) || v <= 0) {
+        return false;
+    }
+    *out = v;
+    return true;
+}
+
 static void fastchart_marimekko_columns_free(fastchart_marimekko_column *cols,
                                              int count)
 {
@@ -12932,11 +12946,11 @@ ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
         self->total_width = 0.0;
         RETURN_ZVAL(ZEND_THIS, 1, 0);
     }
-    /* Parse into a temp first: kept columns depend on a running width
-     * total, so the label budget is charged on what was retained. */
+    /* Parse into a temp so a rejected call keeps the prior columns. */
     fastchart_marimekko_column *parsed = ecalloc(n, sizeof(*parsed));
     int kept = 0;
     double total_w = 0.0;
+    size_t text_bytes = 0;
     zval *entry;
     ZEND_HASH_FOREACH_VAL(ht, entry) {
         if (kept >= n) break;
@@ -12955,64 +12969,55 @@ ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
             RETURN_THROWS();
         }
         if (sn <= 0) continue;
-        fastchart_marimekko_segment *segs = ecalloc(sn, sizeof(*segs));
+        /* Decide the column's fate from segment values alone, then copy
+         * labels while charging them, so an over-budget input fails
+         * before any label past the limit is copied. */
         int skept = 0;
         double col_total = 0.0;
+        double val;
         zval *se;
         ZEND_HASH_FOREACH_VAL(sht, se) {
-            if (skept >= sn) break;
-            if (se) ZVAL_DEREF(se);
-            if (Z_TYPE_P(se) != IS_ARRAY) continue;
-            HashTable *seh = Z_ARRVAL_P(se);
-            zval *zv = zend_hash_str_find(seh, "value", sizeof("value") - 1);
-            double val;
-            if (!zv || fastchart_zval_to_double(zv, &val) != 0
-                || !isfinite(val) || val <= 0) {
-                continue;
+            if (fastchart_marimekko_segment_value(se, &val)) {
+                col_total += val;
+                skept++;
             }
-            segs[skept].value = val;
-            segs[skept].color_rgb = -1;
-            const char *lbl = fastchart_label_or_null(
-                zend_hash_str_find(seh, "label", sizeof("label") - 1));
-            segs[skept].label = lbl ? estrdup(lbl) : NULL;
-            segs[skept].color_rgb = fastchart_extract_optional_rgb(seh, "color", sizeof("color") - 1);
-            col_total += val;
-            skept++;
         } ZEND_HASH_FOREACH_END();
-        if (skept == 0) { efree(segs); continue; }
+        if (skept == 0) continue;
         /* Finite segment values can sum to Inf; reject before normalization
          * produces NaN and reaches an int cast. */
-        if (!isfinite(col_total) || !isfinite(total_w + col_total)) {
-            for (int j = 0; j < skept; j++) {
-                if (segs[j].label) efree(segs[j].label);
-            }
-            efree(segs);
-            continue;
-        }
-        const char *lbl = fastchart_label_or_null(
+        if (!isfinite(col_total) || !isfinite(total_w + col_total)) continue;
+
+        const char *clbl = fastchart_label_or_null(
             zend_hash_str_find(eht, "label", sizeof("label") - 1));
-        parsed[kept].label = lbl ? estrdup(lbl) : NULL;
-        parsed[kept].segments = segs;
-        parsed[kept].n_segments = skept;
-        parsed[kept].total = col_total;
-        total_w += col_total;
-        kept++;
-    } ZEND_HASH_FOREACH_END();
-    size_t text_bytes = 0;
-    for (int i = 0; i < kept; i++) {
-        bool over = parsed[i].label && fastchart_collection_text_charge(
-            strlen(parsed[i].label),
-            "FastChart\\MarimekkoChart::setColumns()", &text_bytes) != 0;
-        for (int j = 0; !over && j < parsed[i].n_segments; j++) {
-            over = parsed[i].segments[j].label && fastchart_collection_text_charge(
-                strlen(parsed[i].segments[j].label),
-                "FastChart\\MarimekkoChart::setColumns()", &text_bytes) != 0;
-        }
-        if (over) {
+        if (clbl && fastchart_collection_text_charge(strlen(clbl),
+                "FastChart\\MarimekkoChart::setColumns()", &text_bytes) != 0) {
             fastchart_marimekko_columns_free(parsed, kept);
             RETURN_THROWS();
         }
-    }
+        fastchart_marimekko_column *col = &parsed[kept];
+        col->label = clbl ? estrdup(clbl) : NULL;
+        col->segments = ecalloc(skept, sizeof(*col->segments));
+        col->total = col_total;
+        ZEND_HASH_FOREACH_VAL(sht, se) {
+            if (!fastchart_marimekko_segment_value(se, &val)) continue;
+            ZVAL_DEREF(se);
+            HashTable *seh = Z_ARRVAL_P(se);
+            fastchart_marimekko_segment *seg = &col->segments[col->n_segments];
+            const char *lbl = fastchart_label_or_null(
+                zend_hash_str_find(seh, "label", sizeof("label") - 1));
+            if (lbl && fastchart_collection_text_charge(strlen(lbl),
+                    "FastChart\\MarimekkoChart::setColumns()", &text_bytes) != 0) {
+                fastchart_marimekko_columns_free(parsed, kept + 1);
+                RETURN_THROWS();
+            }
+            seg->value = val;
+            seg->label = lbl ? estrdup(lbl) : NULL;
+            seg->color_rgb = fastchart_extract_optional_rgb(seh, "color", sizeof("color") - 1);
+            col->n_segments++;
+        } ZEND_HASH_FOREACH_END();
+        total_w += col_total;
+        kept++;
+    } ZEND_HASH_FOREACH_END();
     fastchart_marimekko_columns_free(self->columns, self->column_count);
     if (kept == 0) {
         efree(parsed);
