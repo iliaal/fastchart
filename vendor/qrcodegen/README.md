@@ -2,7 +2,9 @@
 
 - **Upstream**: https://github.com/nayuki/QR-Code-generator
 - **Files vendored**: `qrcodegen.c`, `qrcodegen.h` (C variant only)
-- **Vendored at SHA**: `2c9044de6b049ca25cb3cd1649ed7e27aa055138`
+- **Vendored at SHA**: `993ccbb6765327f5c49939ba77736098c04ab81d` (`c/` files
+  byte-identical to the original import at
+  `2c9044de6b049ca25cb3cd1649ed7e27aa055138`)
 - **License**: MIT (see `LICENSE`; full text also retained verbatim in each
   source file's header)
 
