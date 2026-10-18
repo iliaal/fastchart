@@ -27,7 +27,9 @@ extension; `renderPng()` / `renderJpeg()` / `renderWebp()` /
 
 ## Status
 
-v1.7.1 (current): 38 chart classes plus a 2-class Symbol family,
+See the [latest release](https://github.com/iliaal/fastchart/releases/latest)
+for the current version. Features include 38 chart classes plus a
+2-class Symbol family,
 vector PDF output (`renderPdf`, opt-in `--with-pdfio`), operator
 memory ceilings (`fastchart.max_render_pixels`,
 `fastchart.max_image_cache_bytes`), atomic `renderToFile()`
