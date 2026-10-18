@@ -236,14 +236,20 @@ static void fc_unpremul_row_scalar(const unsigned char *src,
  * here: gcc's -Wclobbered covers every non-volatile local in a function
  * that calls setjmp, and the temporaries inlined NEON intrinsics declare
  * trip it on aarch64. Keeping the setjmp in its own function leaves the
- * SIMD loop in a scope the diagnostic never inspects. */
+ * SIMD loop in a scope the diagnostic never inspects.
+ *
+ * dash_budget < 0 leaves dash expansion capped only per path; otherwise
+ * it caps dash commands across the whole document and running out
+ * returns -2. */
 static int fastchart_render_doc_to_frame(plutosvg_document_t *doc,
                                           int target_w, int target_h,
-                                          unsigned char *frame)
+                                          unsigned char *frame,
+                                          long dash_budget)
 {
 	plutovg_surface_t * volatile surf = NULL;
 	plutovg_canvas_t * volatile canvas = NULL;
 	volatile int rendered = 0;
+	volatile int dash_exceeded = 0;
 	float doc_w = plutosvg_document_get_width(doc);
 	float doc_h = plutosvg_document_get_height(doc);
 
@@ -261,9 +267,15 @@ static int fastchart_render_doc_to_frame(plutosvg_document_t *doc,
 		if (canvas) {
 			plutovg_canvas_scale((plutovg_canvas_t *)canvas,
 			                     target_w / doc_w, target_h / doc_h);
+			plutovg_canvas_set_dash_budget((plutovg_canvas_t *)canvas,
+			                               dash_budget);
 			if (plutosvg_document_render(doc, NULL,
 			        (plutovg_canvas_t *)canvas, NULL, NULL, NULL)) {
 				rendered = 1;
+			}
+			if (plutovg_canvas_dash_budget_exceeded(
+			        (plutovg_canvas_t *)canvas)) {
+				dash_exceeded = 1;
 			}
 		}
 		if (canvas) {
@@ -279,6 +291,9 @@ static int fastchart_render_doc_to_frame(plutosvg_document_t *doc,
 		if (surf) plutovg_surface_destroy((plutovg_surface_t *)surf);
 		zend_bailout();
 	} zend_end_try();
+	if (dash_exceeded) {
+		return -2;
+	}
 	return rendered ? 0 : -1;
 }
 
@@ -291,7 +306,8 @@ static int fastchart_render_doc_to_frame(plutosvg_document_t *doc,
 #endif
 /* Render an already-loaded plutosvg document into pix and convert the
  * frame from plutovg's pre-multiplied BGRA to straight RGBA in place.
- * Returns 0 on success, -1 on rasterize failure. See
+ * Returns 0 on success, -1 on rasterize failure, -2 when dash_budget
+ * (see fastchart_render_doc_to_frame) runs out. See
  * fastchart_render_doc_to_frame for the pix->rgba pre-allocation
  * contract. */
 /* NOTE: fastchart_render_doc_to_frame is the vendored single-shot
@@ -300,11 +316,13 @@ static int fastchart_render_doc_to_frame(plutosvg_document_t *doc,
  * rests on the dim/pixel caps (resolve_canvas_dims / with_dims). */
 static int fastchart_rasterize_doc(plutosvg_document_t *doc,
                                     int target_w, int target_h,
-                                    fastchart_pixels_t *pix)
+                                    fastchart_pixels_t *pix,
+                                    long dash_budget)
 {
-	if (fastchart_render_doc_to_frame(doc, target_w, target_h,
-			pix->rgba) != 0) {
-		return -1;
+	int rc = fastchart_render_doc_to_frame(doc, target_w, target_h,
+			pix->rgba, dash_budget);
+	if (rc != 0) {
+		return rc;
 	}
 
 	pix->w = target_w;
@@ -372,7 +390,7 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
 
 	int rc;
 	zend_try {
-		rc = fastchart_rasterize_doc(doc, target_w, target_h, pix);
+		rc = fastchart_rasterize_doc(doc, target_w, target_h, pix, -1);
 	} zend_catch {
 		plutosvg_document_destroy(doc);
 		if (pix->rgba) {
@@ -457,7 +475,8 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 	int rc;
 	zend_try {
 		pix->rgba = safe_emalloc((size_t)iw * (size_t)ih, 4, 0);
-		rc = fastchart_rasterize_doc(doc, iw, ih, pix);
+		rc = fastchart_rasterize_doc(doc, iw, ih, pix,
+		                             FC_MAX_DASH_COMMANDS);
 	} zend_catch {
 		plutosvg_document_destroy(doc);
 		if (pix->rgba) {
@@ -470,6 +489,9 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 	if (rc != 0) {
 		efree(pix->rgba);
 		pix->rgba = NULL;
+	}
+	if (rc == -2) {
+		return -6;
 	}
 	return (rc == 0) ? 0 : -4;
 }

@@ -4677,6 +4677,13 @@ static int fastchart_svg_to_pixels(
             method_name);
         return -1;
     }
+    if (rc == -6) {
+        zend_value_error(
+            "%s() SVG render work exceeds cap "
+            "(stroke dash expansion too large)",
+            method_name);
+        return -1;
+    }
     if (rc == -4) {
         zend_value_error(
             "%s() SVG rasterization failed after parsing "

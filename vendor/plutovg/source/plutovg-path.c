@@ -44,6 +44,7 @@ plutovg_path_t* plutovg_path_create(void)
     path->num_curves = 0;
     path->start_point = PLUTOVG_EMPTY_POINT;
     plutovg_array_init(path->elements);
+    path->dash_budget = NULL; /* LOCAL-PATCH (fastchart) */
     return path;
 }
 
@@ -587,7 +588,20 @@ typedef struct {
     plutovg_path_traverse_func_t traverse_func;
     void* closure;
     int budget; /* LOCAL-PATCH (fastchart): cap on emitted dash commands */
+    bool exhausted; /* LOCAL-PATCH (fastchart): budget cut emission short */
 } dasher_t;
+
+/* LOCAL-PATCH (fastchart): spend one unit of the dash budget. */
+static bool dash_take(dasher_t* dasher)
+{
+    if(dasher->budget > 0) {
+        dasher->budget--;
+        return true;
+    }
+
+    dasher->exhausted = true;
+    return false;
+}
 
 static void dash_traverse_func(void* closure, plutovg_path_command_t command, const plutovg_point_t* points, int npoints)
 {
@@ -596,8 +610,7 @@ static void dash_traverse_func(void* closure, plutovg_path_command_t command, co
         /* Budget the subpath-start MOVE_TO too, so the total emitted
          * command count stays <= the initial budget across any number of
          * subpaths. */
-        if(dasher->start_toggle && dasher->budget > 0) {
-            dasher->budget--;
+        if(dasher->start_toggle && dash_take(dasher)) {
             dasher->traverse_func(dasher->closure, PLUTOVG_PATH_COMMAND_MOVE_TO, points, npoints);
         }
         dasher->current_point = points[0];
@@ -630,10 +643,15 @@ static void dash_traverse_func(void* closure, plutovg_path_command_t command, co
         if(dasher->dashes[i] > 0.f && dasher->dashes[i] < min_inc)
             min_inc = dasher->dashes[i];
     }
+    if(dasher->budget <= 0) {
+        dasher->exhausted = true;
+        dasher->current_point = p1;
+        return;
+    }
+
     if(!isfinite(dist0) || min_inc == FLT_MAX
-            || dist0 >= 8388608.f * min_inc || dasher->budget <= 0) {
-        if(dasher->toggle && dasher->budget > 0) {
-            dasher->budget--;
+            || dist0 >= 8388608.f * min_inc) {
+        if(dasher->toggle && dash_take(dasher)) {
             dasher->traverse_func(dasher->closure,
                                   PLUTOVG_PATH_COMMAND_LINE_TO, &p1, 1);
         }
@@ -646,9 +664,8 @@ static void dash_traverse_func(void* closure, plutovg_path_command_t command, co
      * segments feed this function. It is only ever decremented while
      * strictly positive, so it never wraps below zero. */
     while(dist0 - dist1 > dasher->dashes[dasher->index % dasher->ndashes] - dasher->phase) {
-        if(dasher->budget <= 0)
+        if(!dash_take(dasher))
             break;
-        dasher->budget--;
         dist1 += dasher->dashes[dasher->index % dasher->ndashes] - dasher->phase;
         float a = dist1 / dist0;
         plutovg_point_t p = { p0.x + a * dx, p0.y + a * dy };
@@ -663,8 +680,7 @@ static void dash_traverse_func(void* closure, plutovg_path_command_t command, co
         dasher->index++;
     }
 
-    if(dasher->toggle && dasher->budget > 0) {
-        dasher->budget--;
+    if(dasher->toggle && dash_take(dasher)) {
         dasher->traverse_func(dasher->closure, PLUTOVG_PATH_COMMAND_LINE_TO, &p1, 1);
     }
 
@@ -705,7 +721,25 @@ void plutovg_path_traverse_dashed(const plutovg_path_t* path, float offset, cons
     dasher.traverse_func = traverse_func;
     dasher.closure = closure;
     dasher.budget = 1 << 20; /* LOCAL-PATCH (fastchart): aggregate cap */
+    dasher.exhausted = false;
+    /* LOCAL-PATCH (fastchart): the per-path cap alone lets dash work grow
+     * with the number of dashed paths in a document. A canvas-owned path
+     * also draws from a budget shared by every stroke on that canvas. */
+    plutovg_dash_budget_t* shared = path->dash_budget;
+    bool shared_limited = false;
+    if(shared && shared->remaining >= 0 && shared->remaining <= dasher.budget) {
+        dasher.budget = (int)shared->remaining;
+        shared_limited = true;
+    }
+
+    const int initial_budget = dasher.budget;
     plutovg_path_traverse_flatten(path, dash_traverse_func, &dasher);
+    if(shared && shared->remaining >= 0) {
+        shared->remaining -= initial_budget - dasher.budget;
+        if(shared_limited && dasher.exhausted) {
+            shared->exceeded = true;
+        }
+    }
 }
 
 plutovg_path_t* plutovg_path_clone(const plutovg_path_t* path)
