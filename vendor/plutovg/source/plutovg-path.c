@@ -73,10 +73,21 @@ int plutovg_path_get_elements(const plutovg_path_t* path, const plutovg_path_ele
     return path->elements.size;
 }
 
+/* LOCAL-PATCH (fastchart): on allocation failure the element buffer is
+ * gone, so reset the counters that index into it. */
+static bool plutovg_path_ensure(plutovg_path_t* path, int count)
+{
+    if(plutovg_array_ensure(path->elements, count))
+        return true;
+    plutovg_path_reset(path);
+    return false;
+}
+
 static plutovg_path_element_t* plutovg_path_add_command(plutovg_path_t* path, plutovg_path_command_t command, int npoints)
 {
     const int length = npoints + 1;
-    plutovg_array_ensure(path->elements, length);
+    if(!plutovg_path_ensure(path, length))
+        return NULL;
     plutovg_path_element_t* elements = path->elements.data + path->elements.size;
     elements->header.command = command;
     elements->header.length = length;
@@ -88,6 +99,8 @@ static plutovg_path_element_t* plutovg_path_add_command(plutovg_path_t* path, pl
 void plutovg_path_move_to(plutovg_path_t* path, float x, float y)
 {
     plutovg_path_element_t* elements = plutovg_path_add_command(path, PLUTOVG_PATH_COMMAND_MOVE_TO, 1);
+    if(elements == NULL)
+        return;
     elements[0].point = PLUTOVG_MAKE_POINT(x, y);
     path->start_point = PLUTOVG_MAKE_POINT(x, y);
     path->num_contours += 1;
@@ -98,6 +111,8 @@ void plutovg_path_line_to(plutovg_path_t* path, float x, float y)
     if(path->elements.size == 0)
         plutovg_path_move_to(path, 0, 0);
     plutovg_path_element_t* elements = plutovg_path_add_command(path, PLUTOVG_PATH_COMMAND_LINE_TO, 1);
+    if(elements == NULL)
+        return;
     elements[0].point = PLUTOVG_MAKE_POINT(x, y);
 }
 
@@ -117,6 +132,8 @@ void plutovg_path_cubic_to(plutovg_path_t* path, float x1, float y1, float x2, f
     if(path->elements.size == 0)
         plutovg_path_move_to(path, 0, 0);
     plutovg_path_element_t* elements = plutovg_path_add_command(path, PLUTOVG_PATH_COMMAND_CUBIC_TO, 3);
+    if(elements == NULL)
+        return;
     elements[0].point = PLUTOVG_MAKE_POINT(x1, y1);
     elements[1].point = PLUTOVG_MAKE_POINT(x2, y2);
     elements[2].point = PLUTOVG_MAKE_POINT(x3, y3);
@@ -181,6 +198,16 @@ void plutovg_path_arc_to(plutovg_path_t* path, float rx, float ry, float angle, 
         th_arc += PLUTOVG_TWO_PI;
     else if(th_arc > 0.f && !sweep_flag)
         th_arc -= PLUTOVG_TWO_PI;
+    /* LOCAL-PATCH (fastchart): radii that overflow or underflow float
+     * (e.g. rx=3e38, ry=1e-38) collapse the centre computation to NaN, and
+     * the (int) cast of a NaN segment count is undefined; optimized builds
+     * then emit cubics until memory runs out. Treat the arc as degenerate
+     * and draw a straight line, as SVG does for zero radii. */
+    if(!isfinite(th_arc)) {
+        plutovg_path_line_to(path, x, y);
+        return;
+    }
+
     plutovg_matrix_init_rotate(&matrix, angle);
     plutovg_matrix_scale(&matrix, rx, ry);
     int segments = (int)(ceilf(fabsf(th_arc / (PLUTOVG_HALF_PI + 0.001f))));
@@ -214,6 +241,8 @@ void plutovg_path_close(plutovg_path_t* path)
     if(path->elements.size == 0)
         return;
     plutovg_path_element_t* elements = plutovg_path_add_command(path, PLUTOVG_PATH_COMMAND_CLOSE, 1);
+    if(elements == NULL)
+        return;
     elements[0].point = path->start_point;
 }
 
@@ -232,7 +261,7 @@ void plutovg_path_get_current_point(const plutovg_path_t* path, float* x, float*
 
 void plutovg_path_reserve(plutovg_path_t* path, int count)
 {
-    plutovg_array_ensure(path->elements, count);
+    plutovg_path_ensure(path, count);
 }
 
 void plutovg_path_reset(plutovg_path_t* path)
@@ -316,6 +345,8 @@ void plutovg_path_add_arc(plutovg_path_t* path, float cx, float cy, float r, flo
         da += PLUTOVG_TWO_PI * (ccw ? -1 : 1);
     }
 
+    if(isnan(da)) /* LOCAL-PATCH (fastchart): (int)NaN below is undefined */
+        return;
     int seg_n = (int)(ceilf(fabsf(da) / PLUTOVG_HALF_PI));
     if(seg_n == 0)
         return;
@@ -375,6 +406,8 @@ void plutovg_path_transform(plutovg_path_t* path, const plutovg_matrix_t* matrix
 void plutovg_path_add_path(plutovg_path_t* path, const plutovg_path_t* source, const plutovg_matrix_t* matrix)
 {
     if(matrix == NULL) {
+        if(!plutovg_path_ensure(path, source->elements.size))
+            return;
         plutovg_array_append(path->elements, source->elements);
         path->start_point = source->start_point;
         path->num_points += source->num_points;
@@ -387,7 +420,7 @@ void plutovg_path_add_path(plutovg_path_t* path, const plutovg_path_t* source, c
     plutovg_path_iterator_init(&it, source);
 
     plutovg_point_t points[3];
-    plutovg_array_ensure(path->elements, source->elements.size);
+    plutovg_path_ensure(path, source->elements.size);
     while(plutovg_path_iterator_has_next(&it)) {
         switch(plutovg_path_iterator_next(&it, points)) {
         case PLUTOVG_PATH_COMMAND_MOVE_TO:
@@ -678,6 +711,8 @@ void plutovg_path_traverse_dashed(const plutovg_path_t* path, float offset, cons
 plutovg_path_t* plutovg_path_clone(const plutovg_path_t* path)
 {
     plutovg_path_t* clone = plutovg_path_create();
+    if(!plutovg_path_ensure(clone, path->elements.size))
+        return clone;
     plutovg_array_append(clone->elements, path->elements);
     clone->start_point = path->start_point;
     clone->num_points = path->num_points;

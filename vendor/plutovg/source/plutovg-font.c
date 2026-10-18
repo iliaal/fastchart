@@ -243,6 +243,9 @@ static plutovg_glyph_t* plutovg_glyph_cache_get(plutovg_glyph_cache_t* cache, pl
         if(cache->size > (cache->capacity * 3 / 4)) {
             size_t newcapacity = cache->capacity << 1;
             plutovg_glyph_t** newglyphs = calloc(newcapacity, sizeof(plutovg_glyph_t*));
+            /* LOCAL-PATCH (fastchart): keep the current table on failure */
+            if(newglyphs == NULL)
+                goto unlock;
 
             for(size_t i = 0; i < cache->capacity; ++i) {
                 plutovg_glyph_t* entry = cache->glyphs[i];
@@ -261,6 +264,7 @@ static plutovg_glyph_t* plutovg_glyph_cache_get(plutovg_glyph_cache_t* cache, pl
         }
     }
 
+unlock:
     plutovg_mutex_unlock(&face->mutex);
     return glyph;
 }
@@ -593,8 +597,23 @@ static void plutovg_font_face_cache_add_entry(plutovg_font_face_cache_t* cache, 
     }
 
     if(cache->size >= cache->capacity) {
-        cache->capacity = cache->capacity == 0 ? 8 : cache->capacity << 2;
-        cache->entries = realloc(cache->entries, cache->capacity * sizeof(plutovg_font_face_entry_t*));
+        /* LOCAL-PATCH (fastchart): overflow-checked, NULL-checked growth;
+         * on failure the entry is dropped and the table left intact. */
+        plutovg_font_face_entry_t** newentries = NULL;
+        if(cache->capacity <= INT_MAX / 4) {
+            int newcapacity = cache->capacity == 0 ? 8 : cache->capacity << 2;
+            newentries = realloc(cache->entries, (size_t)newcapacity * sizeof(plutovg_font_face_entry_t*));
+            if(newentries) {
+                cache->entries = newentries;
+                cache->capacity = newcapacity;
+            }
+        }
+
+        if(newentries == NULL) {
+            plutovg_font_face_destroy(entry->face);
+            free(entry);
+            goto unlock;
+        }
     }
 
     entry->next = NULL;
