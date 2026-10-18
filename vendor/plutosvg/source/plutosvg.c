@@ -2980,10 +2980,10 @@ size_t plutosvg_document_element_count(const plutosvg_document_t* document)
     return document->element_count;
 }
 
-/* LOCAL-PATCH (fastchart): every ATTR_HREF is checked, not only the one
- * find_attribute() would return, and the match is a case-insensitive
- * substring, a superset of the data:image/png|jpg|jpeg prefixes that
- * load_image() decodes. */
+/* LOCAL-PATCH (fastchart): add_attribute() keeps one record per id, so this
+ * checks the single surviving href that load_image() reads. The match is a
+ * case-insensitive substring, a superset of the data:image/png|jpg|jpeg
+ * prefixes that load_image() decodes. */
 static bool href_has_data_image(const element_t* element)
 {
     static const char needle[] = "data:image/";
