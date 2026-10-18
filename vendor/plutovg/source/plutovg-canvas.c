@@ -94,6 +94,9 @@ plutovg_canvas_t* plutovg_canvas_create(plutovg_surface_t* surface)
     canvas->dash_budget.remaining = -1;
     canvas->dash_budget.exceeded = false;
     canvas->path->dash_budget = &canvas->dash_budget;
+    canvas->stroke_budget.remaining = -1;
+    canvas->stroke_budget.exceeded = false;
+    canvas->path->stroke_budget = &canvas->stroke_budget;
     return canvas;
 }
 
@@ -125,6 +128,7 @@ void plutovg_canvas_destroy(plutovg_canvas_t* canvas)
         /* LOCAL-PATCH (fastchart): the path can outlive the canvas via
          * plutovg_canvas_get_path() plus a reference. */
         canvas->path->dash_budget = NULL;
+        canvas->path->stroke_budget = NULL;
         plutovg_path_destroy(canvas->path);
         free(canvas);
     }
@@ -381,6 +385,18 @@ void plutovg_canvas_set_dash_budget(plutovg_canvas_t* canvas, long budget)
 bool plutovg_canvas_dash_budget_exceeded(const plutovg_canvas_t* canvas)
 {
     return canvas->dash_budget.exceeded;
+}
+
+/* LOCAL-PATCH (fastchart): shared stroke budget, see plutovg.h */
+void plutovg_canvas_set_stroke_budget(plutovg_canvas_t* canvas, long budget)
+{
+    canvas->stroke_budget.remaining = budget < 0 ? -1 : budget;
+    canvas->stroke_budget.exceeded = false;
+}
+
+bool plutovg_canvas_stroke_budget_exceeded(const plutovg_canvas_t* canvas)
+{
+    return canvas->stroke_budget.exceeded;
 }
 
 int plutovg_canvas_get_dash_array(const plutovg_canvas_t* canvas, const float** dashes)

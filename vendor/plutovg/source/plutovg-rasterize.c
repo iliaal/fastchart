@@ -643,15 +643,35 @@ static PVG_FT_Outline* ft_outline_convert_stroke(const plutovg_path_t* path, con
     PVG_FT_Stroker_New(&stroker);
     PVG_FT_Stroker_Set(stroker, ftWidth, ftCap, ftJoin, ftMiterLimit);
 
+    /* LOCAL-PATCH (fastchart): shared stroke budget, see
+     * plutovg_canvas_set_stroke_budget(). The stroker stops soon after
+     * passing what is left, and an over-budget stroke is not drawn. */
+    plutovg_stroke_budget_t* budget = path->stroke_budget;
+    bool budgeted = budget && budget->remaining >= 0;
+    if(budgeted)
+        PVG_FT_Stroker_SetMaxPoints(stroker, (PVG_FT_UInt)plutovg_clamp(budget->remaining, 1, (long)UINT_MAX));
+
     PVG_FT_Outline* outline = ft_outline_convert_dash(path, matrix, &stroke_data->dash);
-    PVG_FT_Stroker_ParseOutline(stroker, outline);
+    PVG_FT_Error error = PVG_FT_Stroker_ParseOutline(stroker, outline);
 
     PVG_FT_UInt points;
     PVG_FT_UInt contours;
     PVG_FT_Stroker_GetCounts(stroker, &points, &contours);
 
-    PVG_FT_Outline* stroke_outline = ft_outline_create(points, contours);
-    PVG_FT_Stroker_Export(stroker, stroke_outline);
+    bool over_budget = false;
+    if(budgeted) {
+        if(error == PVG_FT_STROKER_ERR_TOO_MANY_POINTS || points > (unsigned long)budget->remaining) {
+            budget->remaining = 0;
+            budget->exceeded = true;
+            over_budget = true;
+        } else {
+            budget->remaining -= points;
+        }
+    }
+
+    PVG_FT_Outline* stroke_outline = over_budget ? ft_outline_create(0, 0) : ft_outline_create(points, contours);
+    if(!over_budget)
+        PVG_FT_Stroker_Export(stroker, stroke_outline);
 
     PVG_FT_Stroker_Done(stroker);
     ft_outline_destroy(outline);

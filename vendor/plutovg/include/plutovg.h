@@ -1998,6 +1998,31 @@ PLUTOVG_API void plutovg_canvas_set_dash_budget(plutovg_canvas_t* canvas, long b
 PLUTOVG_API bool plutovg_canvas_dash_budget_exceeded(const plutovg_canvas_t* canvas);
 
 /**
+ * @brief LOCAL-PATCH (fastchart): caps stroke outline size per canvas.
+ *
+ * Stroking turns each path segment into outline points that live in
+ * native memory, so a document of many in-range curves can make the
+ * stroker allocate gigabytes. The budget counts outline points across
+ * every path this canvas strokes; a stroke that would exceed what is
+ * left is not drawn and plutovg_canvas_stroke_budget_exceeded() reports
+ * true. The default is no limit.
+ *
+ * @param canvas A pointer to a `plutovg_canvas_t` object.
+ * @param budget Maximum stroke outline points across all strokes, or a
+ * negative value for no limit. Clears the exceeded flag.
+ */
+PLUTOVG_API void plutovg_canvas_set_stroke_budget(plutovg_canvas_t* canvas, long budget);
+
+/**
+ * @brief LOCAL-PATCH (fastchart): whether a stroke was dropped for lack
+ * of the budget set by plutovg_canvas_set_stroke_budget().
+ *
+ * @param canvas A pointer to a `plutovg_canvas_t` object.
+ * @return `true` if a stroke exceeded the remaining budget.
+ */
+PLUTOVG_API bool plutovg_canvas_stroke_budget_exceeded(const plutovg_canvas_t* canvas);
+
+/**
  * @brief Translates the current transformation matrix by offsets `tx` and `ty`.
  * @param canvas A pointer to a `plutovg_canvas_t` object.
  * @param tx The translation offset in the x-direction.

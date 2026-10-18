@@ -643,6 +643,7 @@ typedef struct PVG_FT_StrokerRec_ {
     PVG_FT_Fixed            radius;
 
     PVG_FT_StrokeBorderRec borders[2];
+    PVG_FT_UInt            max_points; /* LOCAL-PATCH (fastchart) */
 } PVG_FT_StrokerRec;
 
 /* documentation is in ftstroke.h */
@@ -691,6 +692,12 @@ void PVG_FT_Stroker_Set(PVG_FT_Stroker stroker, PVG_FT_Fixed radius,
     stroker->line_join_saved = line_join;
 
     PVG_FT_Stroker_Rewind(stroker);
+}
+
+/* LOCAL-PATCH (fastchart): documentation is in plutovg-ft-stroker.h */
+void PVG_FT_Stroker_SetMaxPoints(PVG_FT_Stroker stroker, PVG_FT_UInt max_points)
+{
+    stroker->max_points = max_points;
 }
 
 /* documentation is in ftstroke.h */
@@ -1778,6 +1785,14 @@ PVG_FT_Error PVG_FT_Stroker_ParseOutline(PVG_FT_Stroker        stroker,
         if (error) goto Exit;
 
         while (point < limit) {
+            /* LOCAL-PATCH (fastchart): one segment adds a bounded number
+             * of points, so checking before each keeps the overshoot
+             * small. */
+            if (stroker->max_points &&
+                stroker->borders[0].num_points + stroker->borders[1].num_points
+                    > stroker->max_points)
+                return PVG_FT_STROKER_ERR_TOO_MANY_POINTS;
+
             point++;
             tags++;
 

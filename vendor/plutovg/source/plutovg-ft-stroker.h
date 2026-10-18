@@ -248,6 +248,25 @@ PVG_FT_Stroker_ParseOutline( PVG_FT_Stroker   stroker,
 /**************************************************************
  *
  * @function:
+ *   PVG_FT_Stroker_SetMaxPoints
+ *
+ * @description:
+ *   LOCAL-PATCH (fastchart): make @PVG_FT_Stroker_ParseOutline stop
+ *   with PVG_FT_STROKER_ERR_TOO_MANY_POINTS once both borders together
+ *   hold more than `max_points` points.  The check runs before each
+ *   segment, so the borders may end slightly above the limit.  Zero,
+ *   the default, means no limit.
+ */
+#define PVG_FT_STROKER_ERR_TOO_MANY_POINTS  (-4)
+
+void
+PVG_FT_Stroker_SetMaxPoints( PVG_FT_Stroker  stroker,
+    PVG_FT_UInt  max_points );
+
+
+/**************************************************************
+ *
+ * @function:
  *   PVG_FT_Stroker_GetCounts
  *
  * @description:

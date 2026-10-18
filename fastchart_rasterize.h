@@ -57,6 +57,18 @@
  * each expand to the per-path cap; a document that needs more fails. */
 #define FC_MAX_DASH_COMMANDS (1L << 22)
 
+/* Stroke outline budget for caller-supplied SVG, in FreeType stroker
+ * output points across every stroke in one document. The element budget
+ * above counts a path once however many curves it holds, and the stroker
+ * turns each curve into ~180 outline points held in native memory that
+ * memory_limit never sees (~45 bytes per point for curves between the
+ * stroker borders, the exported outline and the rasterizer cells). The
+ * document dash budget alone can produce ~10.5M points (four paths at
+ * the per-path dash cap), so 3 * 2^22 keeps that working with ~20%
+ * headroom; at the cap a curve-heavy document peaks near 550 MB, and a
+ * document that needs more fails. */
+#define FC_MAX_STROKE_POINTS (3L << 22)
+
 /* Rasterize the given SVG bytes at the requested target dimensions.
  * On success: pix->rgba is emalloc'd, pix->w/h match the requested
  * dims, return 0.
@@ -84,6 +96,7 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
  *   -6: the parsed tree holds an <image> with a data:image/ href.
  *   -7: the parsed tree holds a <use> element.
  *   -8: stroke dashes exceed FC_MAX_DASH_COMMANDS for the document.
+ *   -9: stroke outlines exceed FC_MAX_STROKE_POINTS for the document.
  */
 int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
                                        int max_dim, long long max_pixels,

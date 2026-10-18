@@ -51,6 +51,13 @@ typedef struct {
     bool exceeded;
 } plutovg_dash_budget_t;
 
+/* LOCAL-PATCH (fastchart): stroke outline points still available to every
+ * path a canvas strokes; remaining < 0 means no shared limit. */
+typedef struct {
+    long remaining;
+    bool exceeded;
+} plutovg_stroke_budget_t;
+
 struct plutovg_path {
     plutovg_ref_count_t ref_count;
     int num_points;
@@ -63,6 +70,7 @@ struct plutovg_path {
         int capacity;
     } elements;
     plutovg_dash_budget_t* dash_budget; /* LOCAL-PATCH (fastchart) */
+    plutovg_stroke_budget_t* stroke_budget; /* LOCAL-PATCH (fastchart) */
 };
 
 typedef enum {
@@ -171,6 +179,7 @@ struct plutovg_canvas {
     plutovg_span_buffer_t clip_spans;
     plutovg_span_buffer_t fill_spans;
     plutovg_dash_budget_t dash_budget; /* LOCAL-PATCH (fastchart) */
+    plutovg_stroke_budget_t stroke_budget; /* LOCAL-PATCH (fastchart) */
 };
 
 void plutovg_span_buffer_init(plutovg_span_buffer_t* span_buffer);
