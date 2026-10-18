@@ -2697,9 +2697,11 @@ ZEND_METHOD(FastChart_Chart, setFontPath)
         RETURN_THROWS();
     }
     if (fastchart_pin_path(ZSTR_VAL(path)) != 0
-        && PG(open_basedir) && *PG(open_basedir)) {
-        zend_throw_error(NULL,
-            "FastChart\\Chart::setFontPath() could not pin the font parent directory");
+        && (EG(exception) || (PG(open_basedir) && *PG(open_basedir)))) {
+        if (!EG(exception)) {
+            zend_throw_error(NULL,
+                "FastChart\\Chart::setFontPath() could not pin the font parent directory");
+        }
         RETURN_THROWS();
     }
 
@@ -3275,9 +3277,11 @@ ZEND_METHOD(FastChart_Chart, addIconAt)
         RETURN_THROWS();
     }
     if (fastchart_pin_path(ZSTR_VAL(path)) != 0
-        && PG(open_basedir) && *PG(open_basedir)) {
-        zend_throw_error(NULL,
-            "FastChart\\Chart::addIconAt() could not pin the icon parent directory");
+        && (EG(exception) || (PG(open_basedir) && *PG(open_basedir)))) {
+        if (!EG(exception)) {
+            zend_throw_error(NULL,
+                "FastChart\\Chart::addIconAt() could not pin the icon parent directory");
+        }
         RETURN_THROWS();
     }
 
@@ -3599,9 +3603,11 @@ ZEND_METHOD(FastChart_Chart, setBackgroundImage)
         }
     }
         if (fastchart_pin_path(ZSTR_VAL(path)) != 0
-            && PG(open_basedir) && *PG(open_basedir)) {
-            zend_throw_error(NULL,
-                "FastChart\\Chart::setBackgroundImage() could not pin the image parent directory");
+            && (EG(exception) || (PG(open_basedir) && *PG(open_basedir)))) {
+            if (!EG(exception)) {
+                zend_throw_error(NULL,
+                    "FastChart\\Chart::setBackgroundImage() could not pin the image parent directory");
+            }
             RETURN_THROWS();
         }
 
