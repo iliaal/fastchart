@@ -1549,7 +1549,8 @@ static fastchart_target_image_cache_entry *fastchart_target_image_cache_get(
         &t->image_cache[t->image_cache_n++];
 	memset(entry, 0, sizeof(*entry));
 	entry->path = estrdup(path);
-	entry->loaded = fastchart_load_source_image(path, entry) == 0 ? 1 : -1;
+	entry->loaded = fastchart_load_source_image(entry->path, entry) == 0
+		? 1 : -1;
 	return entry;
 }
 

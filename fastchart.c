@@ -334,6 +334,7 @@ static void fastchart_base_init_defaults(fastchart_obj *b)
     b->font_cache_valid = false;
     b->shadow_color_handle = -1;
     b->shadow_color_valid = false;
+    b->rendering = false;
 
     array_init(&b->config);
 }
@@ -641,6 +642,7 @@ static void fastchart_base_addref_owned(fastchart_obj *b)
 	b->font_cache_valid = false;
 	b->shadow_color_valid = false;
 	for (int i = 0; i < 4; i++) b->font_cache_path[i] = NULL;
+	b->rendering = false;
     /* The lifecycle memcpy aliases config; recursively separate mutable arrays. */
     if (Z_TYPE(b->config) == IS_ARRAY) {
         zend_array *dup = fc_zend_array_deep_dup(Z_ARRVAL(b->config));
@@ -2505,8 +2507,25 @@ static const char *fastchart_probe_default_font(void)
     return NULL;
 }
 
+static ZEND_COLD void fastchart_throw_rendering(zval *this_zv)
+{
+	zend_throw_error(NULL,
+		"%s::%s() cannot modify a chart while it is rendering",
+		ZSTR_VAL(Z_OBJCE_P(this_zv)->name), get_active_function_name());
+}
+
+/* First statement of every mutating Chart method; see the rendering
+ * field in FASTCHART_BASE_FIELDS. */
+#define FASTCHART_GUARD_NOT_RENDERING() do { \
+		if (UNEXPECTED(Z_FASTCHART_OBJ_P(ZEND_THIS)->rendering)) { \
+			fastchart_throw_rendering(ZEND_THIS); \
+			RETURN_THROWS(); \
+		} \
+	} while (0)
+
 ZEND_METHOD(FastChart_Chart, __construct)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long width = 0, height = 0;
     bool width_is_null = true, height_is_null = true;
 
@@ -2546,6 +2565,7 @@ ZEND_METHOD(FastChart_Chart, version)
 
 ZEND_METHOD(FastChart_Chart, setSize)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long width, height;
 
     ZEND_PARSE_PARAMETERS_START(2, 2)
@@ -2571,6 +2591,7 @@ ZEND_METHOD(FastChart_Chart, setSize)
 
 ZEND_METHOD(FastChart_Chart, setTitle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_string *title;
 
     ZEND_PARSE_PARAMETERS_START(1, 1)
@@ -2600,6 +2621,7 @@ ZEND_METHOD(FastChart_Chart, setTitle)
 
 ZEND_METHOD(FastChart_Chart, setTheme)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long theme;
 
     ZEND_PARSE_PARAMETERS_START(1, 1)
@@ -2645,6 +2667,7 @@ static int fastchart_validate_font_path(zend_string *path,
 
 ZEND_METHOD(FastChart_Chart, setFontPath)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_string *path;
 
     ZEND_PARSE_PARAMETERS_START(1, 1)
@@ -2692,6 +2715,7 @@ ZEND_METHOD(FastChart_Chart, setFontPath)
 
 ZEND_METHOD(FastChart_Chart, setFontSize)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double size;
 
     ZEND_PARSE_PARAMETERS_START(1, 1)
@@ -2711,6 +2735,7 @@ ZEND_METHOD(FastChart_Chart, setFontSize)
 
 ZEND_METHOD(FastChart_Chart, setCategoryLabels)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *labels;
 
     ZEND_PARSE_PARAMETERS_START(1, 1)
@@ -2794,6 +2819,7 @@ ZEND_METHOD(FastChart_Chart, setCategoryLabels)
 #define FASTCHART_COLOR_RAMP_SETTER(class_, obj_type_, obj_cast_) \
 ZEND_METHOD(class_, setColorRamp) \
 { \
+    FASTCHART_GUARD_NOT_RENDERING(); \
     zend_long lo, hi; \
     ZEND_PARSE_PARAMETERS_START(2, 2) \
         Z_PARAM_LONG(lo) \
@@ -2810,6 +2836,7 @@ ZEND_METHOD(class_, setColorRamp) \
 #define FASTCHART_GRID_SETTER(class_, obj_type_, obj_cast_) \
 ZEND_METHOD(class_, setGrid) \
 { \
+    FASTCHART_GUARD_NOT_RENDERING(); \
     zval *arr; \
     ZEND_PARSE_PARAMETERS_START(1, 1) \
         Z_PARAM_ARRAY(arr) \
@@ -2827,6 +2854,7 @@ ZEND_METHOD(class_, setGrid) \
 #define FASTCHART_RANGE_SETTER(class_, obj_type_, obj_cast_, min_field_, max_field_) \
 ZEND_METHOD(class_, setRange) \
 { \
+    FASTCHART_GUARD_NOT_RENDERING(); \
     double mn, mx; \
     ZEND_PARSE_PARAMETERS_START(2, 2) \
         Z_PARAM_DOUBLE(mn) \
@@ -2847,6 +2875,7 @@ ZEND_METHOD(class_, setRange) \
 #define FASTCHART_VALUE_FORMAT_SETTER(class_, obj_type_, obj_cast_, field_) \
 ZEND_METHOD(class_, setValueFormat) \
 { \
+    FASTCHART_GUARD_NOT_RENDERING(); \
     zend_string *fmt; \
     ZEND_PARSE_PARAMETERS_START(1, 1) \
         Z_PARAM_STR(fmt) \
@@ -2862,6 +2891,7 @@ ZEND_METHOD(class_, setValueFormat) \
 
 ZEND_METHOD(FastChart_Chart, setBackgroundColor)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long rgb;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(rgb)
@@ -2874,6 +2904,7 @@ ZEND_METHOD(FastChart_Chart, setBackgroundColor)
 
 ZEND_METHOD(FastChart_Chart, setPlotBackgroundColor)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long rgb;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(rgb)
@@ -2886,6 +2917,7 @@ ZEND_METHOD(FastChart_Chart, setPlotBackgroundColor)
 
 ZEND_METHOD(FastChart_Chart, setSeriesColors)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *colors;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(colors)
@@ -2917,6 +2949,7 @@ ZEND_METHOD(FastChart_Chart, setSeriesColors)
 
 ZEND_METHOD(FastChart_Chart, setLegendPosition)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long pos;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(pos)
@@ -2933,6 +2966,7 @@ ZEND_METHOD(FastChart_Chart, setLegendPosition)
 
 ZEND_METHOD(FastChart_Chart, setYAxisScale)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long scale;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(scale)
@@ -2950,6 +2984,7 @@ ZEND_METHOD(FastChart_Chart, setYAxisScale)
 #define FASTCHART_BOOL_SETTER(class_, name_, field_) \
     ZEND_METHOD(class_, name_) \
     { \
+        FASTCHART_GUARD_NOT_RENDERING(); \
         bool v; \
         ZEND_PARSE_PARAMETERS_START(1, 1) \
             Z_PARAM_BOOL(v) \
@@ -2965,6 +3000,7 @@ ZEND_METHOD(FastChart_Chart, setYAxisScale)
 #define FASTCHART_BOOL_SETTER_AS(class_, name_, accessor_, field_) \
     ZEND_METHOD(class_, name_) \
     { \
+        FASTCHART_GUARD_NOT_RENDERING(); \
         bool v; \
         ZEND_PARSE_PARAMETERS_START(1, 1) \
             Z_PARAM_BOOL(v) \
@@ -3016,6 +3052,7 @@ static void push_annotation(fastchart_obj *self, const char *kind,
 
 ZEND_METHOD(FastChart_Chart, addHorizontalLine)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double value;
     zend_string *label = NULL;
     zend_long color = 0;
@@ -3112,6 +3149,7 @@ static int fastchart_parse_gauge_zones(
 
 ZEND_METHOD(FastChart_Chart, addHorizontalBand)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double low, high;
     zend_long color;
     zend_long alpha = 64;
@@ -3158,6 +3196,7 @@ ZEND_METHOD(FastChart_Chart, addHorizontalBand)
 
 ZEND_METHOD(FastChart_Chart, addVerticalBand)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double low, high;
     zend_long color;
     zend_long alpha = 64;
@@ -3204,6 +3243,7 @@ ZEND_METHOD(FastChart_Chart, addVerticalBand)
 
 ZEND_METHOD(FastChart_Chart, addIconAt)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double x, y;
     zend_string *path;
     zend_long max_w = -1, max_h = -1;
@@ -3275,6 +3315,7 @@ ZEND_METHOD(FastChart_Chart, addIconAt)
 
 ZEND_METHOD(FastChart_Chart, addVerticalLine)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double position;
     zend_string *label = NULL;
     zend_long color = 0;
@@ -3311,6 +3352,7 @@ ZEND_METHOD(FastChart_Chart, addVerticalLine)
 #define FASTCHART_MARKER_SETTERS(class_) \
     ZEND_METHOD(class_, setMarkerStyle) \
     { \
+        FASTCHART_GUARD_NOT_RENDERING(); \
         zend_long style; \
         ZEND_PARSE_PARAMETERS_START(1, 1) \
             Z_PARAM_LONG(style) \
@@ -3325,6 +3367,7 @@ ZEND_METHOD(FastChart_Chart, addVerticalLine)
     } \
     ZEND_METHOD(class_, setMarkerSize) \
     { \
+        FASTCHART_GUARD_NOT_RENDERING(); \
         zend_long size; \
         ZEND_PARSE_PARAMETERS_START(1, 1) \
             Z_PARAM_LONG(size) \
@@ -3344,6 +3387,7 @@ FASTCHART_MARKER_SETTERS(FastChart_ScatterChart)
 #define FASTCHART_COLOR_OVERRIDE_SETTER(name_, field_) \
     ZEND_METHOD(FastChart_Chart, name_) \
     { \
+        FASTCHART_GUARD_NOT_RENDERING(); \
         zend_long rgb; \
         ZEND_PARSE_PARAMETERS_START(1, 1) \
             Z_PARAM_LONG(rgb) \
@@ -3362,6 +3406,7 @@ FASTCHART_COLOR_OVERRIDE_SETTER(setTextColor,   text_color_override)
 #define FASTCHART_FONT_OVERRIDE_SETTER(name_, path_field_, size_field_) \
     ZEND_METHOD(FastChart_Chart, name_) \
     { \
+        FASTCHART_GUARD_NOT_RENDERING(); \
         zend_string *path = NULL; \
         double size = 0.0; \
         bool size_is_null = true; \
@@ -3500,6 +3545,7 @@ static int fastchart_validate_double_format(const zend_string *fmt, const char *
 
 ZEND_METHOD(FastChart_Chart, setShowValues)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     bool show;
     zend_string *fmt = NULL;
     ZEND_PARSE_PARAMETERS_START(1, 2)
@@ -3529,6 +3575,7 @@ FASTCHART_BOOL_SETTER(FastChart_Chart, setTransparentBackground, transparent_bg)
 
 ZEND_METHOD(FastChart_Chart, setBackgroundImage)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_string *path;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_STR(path)
@@ -3566,6 +3613,7 @@ ZEND_METHOD(FastChart_Chart, setBackgroundImage)
 
 ZEND_METHOD(FastChart_Chart, setLineInterpolation)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long mode;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(mode)
@@ -3582,6 +3630,7 @@ ZEND_METHOD(FastChart_Chart, setLineInterpolation)
 
 ZEND_METHOD(FastChart_Chart, setPlotRect)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long x0, y0, x1, y1;
     ZEND_PARSE_PARAMETERS_START(4, 4)
         Z_PARAM_LONG(x0)
@@ -3613,6 +3662,7 @@ ZEND_METHOD(FastChart_Chart, setPlotRect)
 
 ZEND_METHOD(FastChart_Chart, setBorderSides)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long sides;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(sides)
@@ -3632,6 +3682,7 @@ FASTCHART_BOOL_SETTER(FastChart_Chart, setYAxisVisible, y_axis_visible)
 #define FASTCHART_LABEL_FORMAT_SETTER(name_, field_) \
     ZEND_METHOD(FastChart_Chart, name_) \
     { \
+        FASTCHART_GUARD_NOT_RENDERING(); \
         zend_string *fmt; \
         ZEND_PARSE_PARAMETERS_START(1, 1) \
             Z_PARAM_STR(fmt) \
@@ -3651,6 +3702,7 @@ FASTCHART_LABEL_FORMAT_SETTER(setXAxisLabelFormat, x_axis_label_format)
 
 ZEND_METHOD(FastChart_Chart, setTickMode)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long m;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(m)
@@ -3666,6 +3718,7 @@ ZEND_METHOD(FastChart_Chart, setTickMode)
 
 ZEND_METHOD(FastChart_Chart, setBarWidth)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long pct;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(pct)
@@ -3681,6 +3734,7 @@ ZEND_METHOD(FastChart_Chart, setBarWidth)
 
 ZEND_METHOD(FastChart_Chart, setEdgeColor)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long rgb;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(rgb)
@@ -3695,6 +3749,7 @@ FASTCHART_BOOL_SETTER(FastChart_Chart, setZeroShelf, zero_shelf)
 
 ZEND_METHOD(FastChart_Chart, setXLabelStride)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long n;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(n)
@@ -3710,6 +3765,7 @@ ZEND_METHOD(FastChart_Chart, setXLabelStride)
 
 ZEND_METHOD(FastChart_Chart, setSecondaryYAxisTitle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_string *t;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_STR(t)
@@ -3741,6 +3797,7 @@ FASTCHART_COLOR_OVERRIDE_SETTER(setAxisTitleColor, axis_title_color)
  * actually read it; setting it on a LineChart is a harmless no-op. */
 ZEND_METHOD(FastChart_Chart, setColorRamp)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long lo, hi;
     ZEND_PARSE_PARAMETERS_START(2, 2)
         Z_PARAM_LONG(lo)
@@ -3756,6 +3813,7 @@ ZEND_METHOD(FastChart_Chart, setColorRamp)
 
 ZEND_METHOD(FastChart_Chart, addTextAnnotation)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_string *text;
     zend_long x, y;
     zend_long color = -1;
@@ -3824,6 +3882,7 @@ ZEND_METHOD(FastChart_Chart, addTextAnnotation)
 
 ZEND_METHOD(FastChart_BarChart, setStackMode)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long m;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(m)
@@ -3839,6 +3898,7 @@ ZEND_METHOD(FastChart_BarChart, setStackMode)
 
 ZEND_METHOD(FastChart_BarChart, setFloating)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_bool enable;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_BOOL(enable)
@@ -3860,6 +3920,7 @@ ZEND_METHOD(FastChart_BarChart, setFloating)
 
 ZEND_METHOD(FastChart_Chart, setLineStyle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long s;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(s)
@@ -3875,6 +3936,7 @@ ZEND_METHOD(FastChart_Chart, setLineStyle)
 
 ZEND_METHOD(FastChart_Chart, setGradientFill)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long from, to = -1, dir = FASTCHART_GRADIENT_VERTICAL;
     ZEND_PARSE_PARAMETERS_START(1, 3)
         Z_PARAM_LONG(from)
@@ -3897,6 +3959,7 @@ ZEND_METHOD(FastChart_Chart, setGradientFill)
 
 ZEND_METHOD(FastChart_Chart, setDropShadow)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long dx, dy;
     zend_long color = 0x000000;
     bool color_is_null = true;
@@ -3926,6 +3989,7 @@ ZEND_METHOD(FastChart_Chart, setDropShadow)
 
 ZEND_METHOD(FastChart_Chart, setShadowAlpha)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long alpha;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(alpha)
@@ -3941,6 +4005,7 @@ ZEND_METHOD(FastChart_Chart, setShadowAlpha)
 
 ZEND_METHOD(FastChart_ScatterChart, setTrendLine)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     bool en;
     zend_long color = -1;
     zend_long degree = 1;
@@ -4026,6 +4091,7 @@ static int fastchart_parse_error_bars(zval *errs, uint32_t cap,
 
 ZEND_METHOD(FastChart_LineChart, setErrorBars)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *errs;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(errs)
@@ -4049,6 +4115,7 @@ ZEND_METHOD(FastChart_LineChart, setErrorBars)
 
 ZEND_METHOD(FastChart_ScatterChart, setErrorBars)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *errs;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(errs)
@@ -4131,6 +4198,7 @@ static int fastchart_validate_scatter_map_strings(zval *pair)
 
 ZEND_METHOD(FastChart_ScatterChart, setPoints)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *data_zv;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(data_zv)
@@ -4286,6 +4354,7 @@ ZEND_METHOD(FastChart_ScatterChart, setPoints)
 
 ZEND_METHOD(FastChart_RadarChart, setMaxValue)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double m;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_DOUBLE(m)
@@ -4306,6 +4375,7 @@ FASTCHART_BOOL_SETTER_AS(FastChart_RadarChart, setFilled, Z_FASTCHART_RADAR_OBJ_
 
 ZEND_METHOD(FastChart_SurfaceChart, setShowCellValues)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     bool show;
     zend_string *fmt = NULL;
     ZEND_PARSE_PARAMETERS_START(1, 2)
@@ -4327,6 +4397,7 @@ ZEND_METHOD(FastChart_SurfaceChart, setShowCellValues)
 
 ZEND_METHOD(FastChart_GaugeChart, setValue)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double v;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_DOUBLE(v)
@@ -4343,6 +4414,7 @@ FASTCHART_RANGE_SETTER(FastChart_GaugeChart, fastchart_gauge_obj, Z_FASTCHART_GA
 
 ZEND_METHOD(FastChart_GaugeChart, setZones)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *zones;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(zones)
@@ -4378,6 +4450,7 @@ FASTCHART_VALUE_FORMAT_SETTER(FastChart_GaugeChart, fastchart_gauge_obj, Z_FASTC
 
 ZEND_METHOD(FastChart_GaugeChart, setStyle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long style;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(style)
@@ -4393,6 +4466,7 @@ ZEND_METHOD(FastChart_GaugeChart, setStyle)
 
 ZEND_METHOD(FastChart_Chart, setDateAxisStride)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long unit, every = 1;
     ZEND_PARSE_PARAMETERS_START(1, 2)
         Z_PARAM_LONG(unit)
@@ -4415,6 +4489,7 @@ ZEND_METHOD(FastChart_Chart, setDateAxisStride)
 
 ZEND_METHOD(FastChart_Chart, setDpi)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long dpi;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(dpi)
@@ -4430,6 +4505,7 @@ ZEND_METHOD(FastChart_Chart, setDpi)
 
 ZEND_METHOD(FastChart_Chart, setSvgTextMode)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long mode;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(mode)
@@ -4446,6 +4522,7 @@ ZEND_METHOD(FastChart_Chart, setSvgTextMode)
 
 ZEND_METHOD(FastChart_Chart, setJpegQuality)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long q;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(q)
@@ -4461,6 +4538,7 @@ ZEND_METHOD(FastChart_Chart, setJpegQuality)
 
 ZEND_METHOD(FastChart_Chart, setPngCompressionLevel)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long level;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(level)
@@ -4476,6 +4554,7 @@ ZEND_METHOD(FastChart_Chart, setPngCompressionLevel)
 
 ZEND_METHOD(FastChart_Chart, setWebpMode)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long mode;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(mode)
@@ -5105,6 +5184,7 @@ ZEND_METHOD(FastChart_Chart, getImageMapAreas)
 
 ZEND_METHOD(FastChart_GanttChart, setTimeRange)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long start = 0, end = 0;
     bool start_is_null = true, end_is_null = true;
     ZEND_PARSE_PARAMETERS_START(0, 2)
@@ -5133,6 +5213,7 @@ FASTCHART_BOOL_SETTER_AS(FastChart_GanttChart, setShowTaskLabels, Z_FASTCHART_GA
 
 ZEND_METHOD(FastChart_BoxPlot, setBoxWidth)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long pct;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(pct)
@@ -5148,6 +5229,7 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxWidth)
 
 ZEND_METHOD(FastChart_PolarChart, setMaxRadius)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double m;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_DOUBLE(m)
@@ -5168,6 +5250,7 @@ FASTCHART_BOOL_SETTER_AS(FastChart_PolarChart, setFilled, Z_FASTCHART_POLAR_OBJ_
 
 ZEND_METHOD(FastChart_PolarChart, setStyle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long style;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(style)
@@ -5184,6 +5267,7 @@ ZEND_METHOD(FastChart_PolarChart, setStyle)
 
 ZEND_METHOD(FastChart_PolarChart, setInterpolation)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long mode;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(mode)
@@ -5201,6 +5285,7 @@ ZEND_METHOD(FastChart_PolarChart, setInterpolation)
 
 ZEND_METHOD(FastChart_PolarChart, addVectors)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *list;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(list)
@@ -5294,6 +5379,7 @@ ZEND_METHOD(FastChart_PolarChart, addVectors)
 
 ZEND_METHOD(FastChart_ContourChart, setLevels)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *levels;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(levels)
@@ -5329,6 +5415,7 @@ FASTCHART_BOOL_SETTER_AS(FastChart_ContourChart, setFilled, Z_FASTCHART_CONTOUR_
 
 ZEND_METHOD(FastChart_Chart, addOverlaySeries)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_string *type;
     zval *values;
     HashTable *opts = NULL;
@@ -5425,6 +5512,7 @@ ZEND_METHOD(FastChart_Chart, addOverlaySeries)
 
 ZEND_METHOD(FastChart_PieChart, setOtherThreshold)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double percent;
     zend_string *label = NULL;
 
@@ -5538,6 +5626,7 @@ static void fastchart_sort_candles_by_timestamp(fastchart_candle *candles, int n
 
 ZEND_METHOD(FastChart_StockChart, setOhlcv)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *rows;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(rows)
@@ -5652,6 +5741,7 @@ ZEND_METHOD(FastChart_StockChart, setOhlcv)
 
 ZEND_METHOD(FastChart_StockChart, setVolumeColors)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *colors;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(colors)
@@ -5713,6 +5803,7 @@ ZEND_METHOD(FastChart_StockChart, setVolumeColors)
 
 ZEND_METHOD(FastChart_Chart, setXAxisTitle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_string *txt;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_STR(txt)
@@ -5734,6 +5825,7 @@ ZEND_METHOD(FastChart_Chart, setXAxisTitle)
 
 ZEND_METHOD(FastChart_Chart, setYAxisTitle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_string *txt;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_STR(txt)
@@ -5755,6 +5847,7 @@ ZEND_METHOD(FastChart_Chart, setYAxisTitle)
 
 ZEND_METHOD(FastChart_Chart, setXAxisLabelAngle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long deg;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(deg)
@@ -5771,6 +5864,7 @@ ZEND_METHOD(FastChart_Chart, setXAxisLabelAngle)
 
 ZEND_METHOD(FastChart_Chart, setYAxisRange)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double y_min = 0, y_max = 0, y_int = 0;
     bool y_min_is_null = true, y_max_is_null = true, y_int_is_null = true;
 
@@ -5925,6 +6019,7 @@ static void fastchart_parse_pie_slices(HashTable *ht,
 
 ZEND_METHOD(FastChart_PieChart, setRings)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *data_zv;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(data_zv)
@@ -5994,6 +6089,7 @@ ZEND_METHOD(FastChart_PieChart, setRings)
 
 ZEND_METHOD(FastChart_PieChart, setStartAngle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double deg;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_DOUBLE(deg)
@@ -6009,6 +6105,7 @@ ZEND_METHOD(FastChart_PieChart, setStartAngle)
 
 ZEND_METHOD(FastChart_PieChart, setEndAngle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double deg;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_DOUBLE(deg)
@@ -6024,6 +6121,7 @@ ZEND_METHOD(FastChart_PieChart, setEndAngle)
 
 ZEND_METHOD(FastChart_PieChart, setExplode)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *offsets;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(offsets)
@@ -6069,6 +6167,7 @@ ZEND_METHOD(FastChart_PieChart, setExplode)
 
 ZEND_METHOD(FastChart_PieChart, setSlices)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *data_zv;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(data_zv)
@@ -6124,6 +6223,7 @@ ZEND_METHOD(FastChart_PieChart, setSlices)
 
 ZEND_METHOD(FastChart_PieChart, setSliceLabelPosition)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long pos;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(pos)
@@ -6139,6 +6239,7 @@ ZEND_METHOD(FastChart_PieChart, setSliceLabelPosition)
 
 ZEND_METHOD(FastChart_PieChart, setSliceLabelFormat)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_string *fmt;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_STR(fmt)
@@ -6155,6 +6256,7 @@ ZEND_METHOD(FastChart_PieChart, setSliceLabelFormat)
 
 ZEND_METHOD(FastChart_StockChart, setCandleStyle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long style;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(style)
@@ -6170,6 +6272,7 @@ ZEND_METHOD(FastChart_StockChart, setCandleStyle)
 
 ZEND_METHOD(FastChart_LineChart, setSeries)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *arr;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(arr)
@@ -6203,6 +6306,7 @@ ZEND_METHOD(FastChart_LineChart, setSeries)
 
 ZEND_METHOD(FastChart_AreaChart, setSeries)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *arr;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(arr)
@@ -6230,6 +6334,7 @@ ZEND_METHOD(FastChart_AreaChart, setSeries)
 
 ZEND_METHOD(FastChart_BarChart, setSeries)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *arr;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(arr)
@@ -6258,6 +6363,7 @@ ZEND_METHOD(FastChart_BarChart, setSeries)
 
 ZEND_METHOD(FastChart_AreaChart, setStacked)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     bool stacked;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_BOOL(stacked)
@@ -6269,6 +6375,7 @@ ZEND_METHOD(FastChart_AreaChart, setStacked)
 
 ZEND_METHOD(FastChart_AreaChart, setBandMode)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     bool band;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_BOOL(band)
@@ -6280,6 +6387,7 @@ ZEND_METHOD(FastChart_AreaChart, setBandMode)
 
 ZEND_METHOD(FastChart_AreaChart, setStreamMode)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     bool on;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_BOOL(on)
@@ -6291,6 +6399,7 @@ ZEND_METHOD(FastChart_AreaChart, setStreamMode)
 
 ZEND_METHOD(FastChart_AreaChart, setFillOpacity)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long alpha;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(alpha)
@@ -6306,11 +6415,9 @@ ZEND_METHOD(FastChart_AreaChart, setFillOpacity)
 
 /* Z_FASTCHART_OBJ_P resolves the per-class offset, so self points at the
  * native struct prefix required by each renderer. */
-static int dispatch_svg_render(void *object, zend_class_entry *ce,
-		struct fastchart_target *target)
+static int dispatch_chart_render(fastchart_obj *self, zend_class_entry *ce,
+		fastchart_target_t *t)
 {
-	fastchart_obj *self = object;
-	fastchart_target_t *t = target;
 	fastchart_begin_render(self, t);
 
     if (ce == fastchart_line_chart_ce)
@@ -6393,6 +6500,36 @@ static int dispatch_svg_render(void *object, zend_class_entry *ce,
     zend_throw_error(NULL,
         "FastChart: SVG dispatch found unknown class entry");
     return -1;
+}
+
+/* Every chart render format (SVG, fragment, raster, PDF, renderToFile)
+ * dispatches through here, so this is the one place the rendering flag
+ * is raised and lowered. A nested render of the same chart would rebuild
+ * the image-map areas and font cache the outer render still holds. */
+static int dispatch_svg_render(void *object, zend_class_entry *ce,
+		struct fastchart_target *target)
+{
+	fastchart_obj *self = object;
+	if (self->rendering) {
+		zend_throw_error(NULL,
+			"%s cannot render a chart that is already rendering",
+			ZSTR_VAL(ce->name));
+		return -1;
+	}
+	self->rendering = true;
+	volatile int rc = -1;
+	zend_try {
+		rc = dispatch_chart_render(self, ce, target);
+	} zend_catch {
+		self->rendering = false;
+		self->font_cache_valid = false;
+		zend_bailout();
+	} zend_end_try();
+	self->rendering = false;
+	/* The font cache borrows the chart's font-path strings, which may
+	 * change once the render is over. */
+	self->font_cache_valid = false;
+	return rc;
 }
 
 int fastchart_build_svg(smart_str *out, int width, int height, int dpi,
@@ -6829,6 +6966,7 @@ ZEND_METHOD(FastChart_Chart, renderPdf)
 
 ZEND_METHOD(FastChart_Chart, setImageMap)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *list;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(list)
@@ -8503,6 +8641,7 @@ static int fastchart_parse_grid(zval *arr, fastchart_grid *out, const char *wher
 
 ZEND_METHOD(FastChart_SurfaceChart, setGrid)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *arr;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(arr)
@@ -8521,6 +8660,7 @@ FASTCHART_GRID_SETTER(FastChart_ContourChart, fastchart_contour_obj, Z_FASTCHART
 
 ZEND_METHOD(FastChart_GanttChart, setTasks)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *arr;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(arr)
@@ -8648,6 +8788,7 @@ ZEND_METHOD(FastChart_GanttChart, setTasks)
 
 ZEND_METHOD(FastChart_RadarChart, setSeries)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *arr;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(arr)
@@ -8771,6 +8912,7 @@ ZEND_METHOD(FastChart_RadarChart, setSeries)
 
 ZEND_METHOD(FastChart_PolarChart, setSeries)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *arr;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(arr)
@@ -8905,6 +9047,7 @@ ZEND_METHOD(FastChart_PolarChart, setSeries)
 
 ZEND_METHOD(FastChart_BoxPlot, setBoxes)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *arr;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(arr)
@@ -9044,6 +9187,7 @@ ZEND_METHOD(FastChart_BoxPlot, setBoxes)
 
 ZEND_METHOD(FastChart_BubbleChart, setPoints)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *arr;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(arr)
@@ -9112,6 +9256,7 @@ ZEND_METHOD(FastChart_BubbleChart, setPoints)
 
 ZEND_METHOD(FastChart_BarChart, setStacked)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     bool stacked;
 
     ZEND_PARSE_PARAMETERS_START(1, 1)
@@ -9126,6 +9271,7 @@ ZEND_METHOD(FastChart_BarChart, setStacked)
 
 ZEND_METHOD(FastChart_BarChart, setOrientation)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long orientation;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(orientation)
@@ -9143,6 +9289,7 @@ ZEND_METHOD(FastChart_BarChart, setOrientation)
 
 ZEND_METHOD(FastChart_BarChart, setBarStyle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long style;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(style)
@@ -9158,6 +9305,7 @@ ZEND_METHOD(FastChart_BarChart, setBarStyle)
 
 ZEND_METHOD(FastChart_PieChart, setDonutHoleRatio)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double ratio;
 
     ZEND_PARSE_PARAMETERS_START(1, 1)
@@ -9180,6 +9328,7 @@ ZEND_METHOD(FastChart_PieChart, setDonutHoleRatio)
 
 ZEND_METHOD(FastChart_StockChart, addMovingAverage)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long period;
     zend_long type = FASTCHART_MA_SMA;
     ZEND_PARSE_PARAMETERS_START(1, 2)
@@ -9211,6 +9360,7 @@ ZEND_METHOD(FastChart_StockChart, addMovingAverage)
 
 ZEND_METHOD(FastChart_StockChart, setMovingAverages)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *periods;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(periods)
@@ -9240,6 +9390,7 @@ FASTCHART_BOOL_SETTER_AS(FastChart_StockChart, setVolumePane, Z_FASTCHART_STOCK_
 
 ZEND_METHOD(FastChart_StockChart, addIndicatorPane)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_string *name;
     zval *values;
     HashTable *opts = NULL;
@@ -9769,6 +9920,7 @@ static void stock_rolling_close_stats(const fastchart_stock_obj *self,
 
 ZEND_METHOD(FastChart_StockChart, addRSI)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long period = 14;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
@@ -9839,6 +9991,7 @@ ZEND_METHOD(FastChart_StockChart, addRSI)
 
 ZEND_METHOD(FastChart_StockChart, addMomentum)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long period = 10;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
@@ -9887,6 +10040,7 @@ ZEND_METHOD(FastChart_StockChart, addMomentum)
 
 ZEND_METHOD(FastChart_StockChart, addROC)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long period = 10;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
@@ -9937,6 +10091,7 @@ ZEND_METHOD(FastChart_StockChart, addROC)
 
 ZEND_METHOD(FastChart_StockChart, addOBV)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     ZEND_PARSE_PARAMETERS_NONE();
 
     fastchart_stock_obj *self = Z_FASTCHART_STOCK_OBJ_P(ZEND_THIS);
@@ -9993,6 +10148,7 @@ static void compute_ema(const double *src, int n, int period, double *out)
 
 ZEND_METHOD(FastChart_StockChart, addMACD)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long fast = 12, slow = 26, signal_p = 9;
     ZEND_PARSE_PARAMETERS_START(0, 3)
         Z_PARAM_OPTIONAL
@@ -10090,6 +10246,7 @@ ZEND_METHOD(FastChart_StockChart, addMACD)
 
 ZEND_METHOD(FastChart_StockChart, addStochastic)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long period = 14, smooth = 3;
     ZEND_PARSE_PARAMETERS_START(0, 2)
         Z_PARAM_OPTIONAL
@@ -10213,6 +10370,7 @@ static int push_price_overlay(fastchart_stock_obj *self, int kind,
 
 ZEND_METHOD(FastChart_StockChart, addBollingerBands)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long period = 20;
     double n_stddev = 2.0;
     ZEND_PARSE_PARAMETERS_START(0, 2)
@@ -10275,6 +10433,7 @@ ZEND_METHOD(FastChart_StockChart, addBollingerBands)
 
 ZEND_METHOD(FastChart_StockChart, addParabolicSAR)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double af_init = 0.02;
     double af_max  = 0.2;
     ZEND_PARSE_PARAMETERS_START(0, 2)
@@ -10492,6 +10651,7 @@ static double fastchart_scaled_sum_ratio(
 
 ZEND_METHOD(FastChart_StockChart, addVWAP)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long color = -1;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
@@ -10567,6 +10727,7 @@ ZEND_METHOD(FastChart_StockChart, addVWAP)
 
 ZEND_METHOD(FastChart_StockChart, addZigZag)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double threshold = 5.0;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
@@ -10646,6 +10807,7 @@ static int stock_pane_period(zend_long period, int n, const char *method)
 
 ZEND_METHOD(FastChart_StockChart, addATR)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long period = 14;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
@@ -10696,6 +10858,7 @@ ZEND_METHOD(FastChart_StockChart, addATR)
 
 ZEND_METHOD(FastChart_StockChart, addCCI)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long period = 20;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
@@ -10739,6 +10902,7 @@ ZEND_METHOD(FastChart_StockChart, addCCI)
 
 ZEND_METHOD(FastChart_StockChart, addWilliamsR)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long period = 14;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
@@ -10798,6 +10962,7 @@ ZEND_METHOD(FastChart_StockChart, addWilliamsR)
 
 ZEND_METHOD(FastChart_StockChart, addStdDev)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long period = 20;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
@@ -10835,6 +11000,7 @@ ZEND_METHOD(FastChart_StockChart, addStdDev)
 
 ZEND_METHOD(FastChart_StockChart, addAroon)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long period = 25;
     ZEND_PARSE_PARAMETERS_START(0, 1)
         Z_PARAM_OPTIONAL
@@ -10901,6 +11067,7 @@ ZEND_METHOD(FastChart_StockChart, addAroon)
 
 ZEND_METHOD(FastChart_Treemap, setItems)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *items;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(items)
@@ -10980,6 +11147,7 @@ ZEND_METHOD(FastChart_Treemap, setItems)
 
 ZEND_METHOD(FastChart_Treemap, setShowLabels)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     bool flag;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_BOOL(flag)
@@ -10992,6 +11160,7 @@ ZEND_METHOD(FastChart_Treemap, setShowLabels)
 
 ZEND_METHOD(FastChart_Funnel, setStages)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *stages;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(stages)
@@ -11102,6 +11271,7 @@ strict_fail:
 
 ZEND_METHOD(FastChart_Funnel, setStyle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long style;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(style)
@@ -11121,6 +11291,7 @@ ZEND_METHOD(FastChart_Funnel, setStyle)
 
 ZEND_METHOD(FastChart_Waterfall, setBars)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *bars;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(bars)
@@ -11201,6 +11372,7 @@ ZEND_METHOD(FastChart_Waterfall, setBars)
 
 ZEND_METHOD(FastChart_Waterfall, setRiseColor)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long rgb;
     ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_LONG(rgb) ZEND_PARSE_PARAMETERS_END();
     FASTCHART_VALIDATE_RGB_OR_DEFAULT(rgb, "FastChart\\Waterfall::setRiseColor");
@@ -11210,6 +11382,7 @@ ZEND_METHOD(FastChart_Waterfall, setRiseColor)
 }
 ZEND_METHOD(FastChart_Waterfall, setFallColor)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long rgb;
     ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_LONG(rgb) ZEND_PARSE_PARAMETERS_END();
     FASTCHART_VALIDATE_RGB_OR_DEFAULT(rgb, "FastChart\\Waterfall::setFallColor");
@@ -11219,6 +11392,7 @@ ZEND_METHOD(FastChart_Waterfall, setFallColor)
 }
 ZEND_METHOD(FastChart_Waterfall, setTotalColor)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long rgb;
     ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_LONG(rgb) ZEND_PARSE_PARAMETERS_END();
     FASTCHART_VALIDATE_RGB_OR_DEFAULT(rgb, "FastChart\\Waterfall::setTotalColor");
@@ -11235,6 +11409,7 @@ FASTCHART_RANGE_SETTER(FastChart_LinearMeter, fastchart_linear_meter_obj, Z_FAST
 
 ZEND_METHOD(FastChart_LinearMeter, setValue)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double v;
     ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_DOUBLE(v) ZEND_PARSE_PARAMETERS_END();
     if (!isfinite(v)) {
@@ -11248,6 +11423,7 @@ ZEND_METHOD(FastChart_LinearMeter, setValue)
 
 ZEND_METHOD(FastChart_LinearMeter, setOrientation)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long o;
     ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_LONG(o) ZEND_PARSE_PARAMETERS_END();
     if (o != FASTCHART_METER_HORIZONTAL && o != FASTCHART_METER_VERTICAL) {
@@ -11261,6 +11437,7 @@ ZEND_METHOD(FastChart_LinearMeter, setOrientation)
 
 ZEND_METHOD(FastChart_LinearMeter, setZones)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *zones;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(zones)
@@ -11282,6 +11459,7 @@ FASTCHART_RANGE_SETTER(FastChart_BulletChart, fastchart_bullet_obj, Z_FASTCHART_
 
 ZEND_METHOD(FastChart_BulletChart, setValue)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double v;
     ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_DOUBLE(v) ZEND_PARSE_PARAMETERS_END();
     if (!isfinite(v)) {
@@ -11295,6 +11473,7 @@ ZEND_METHOD(FastChart_BulletChart, setValue)
 
 ZEND_METHOD(FastChart_BulletChart, setTarget)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double v;
     ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_DOUBLE(v) ZEND_PARSE_PARAMETERS_END();
     /* NaN is the documented "clear target" sentinel; infinities are
@@ -11312,6 +11491,7 @@ ZEND_METHOD(FastChart_BulletChart, setTarget)
 
 ZEND_METHOD(FastChart_BulletChart, setBands)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *bands;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(bands)
@@ -11331,6 +11511,7 @@ FASTCHART_VALUE_FORMAT_SETTER(FastChart_BulletChart, fastchart_bullet_obj, Z_FAS
 
 ZEND_METHOD(FastChart_ParetoChart, setBars)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *bars;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(bars)
@@ -11382,6 +11563,7 @@ ZEND_METHOD(FastChart_ParetoChart, setBars)
 
 ZEND_METHOD(FastChart_ParetoChart, setLineColor)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long rgb;
     ZEND_PARSE_PARAMETERS_START(1, 1) Z_PARAM_LONG(rgb) ZEND_PARSE_PARAMETERS_END();
     FASTCHART_VALIDATE_RGB_OR_DEFAULT(rgb, "FastChart\\ParetoChart::setLineColor");
@@ -11444,6 +11626,7 @@ static int fastchart_calendar_day_cmp(const void *a, const void *b)
 
 ZEND_METHOD(FastChart_CalendarHeatmap, setData)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *data;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(data)
@@ -11570,6 +11753,7 @@ static int fastchart_sunburst_build_rec(
 
 ZEND_METHOD(FastChart_SunburstChart, setHierarchy)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *root;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(root)
@@ -11618,6 +11802,7 @@ ZEND_METHOD(FastChart_SunburstChart, setHierarchy)
 
 ZEND_METHOD(FastChart_SankeyChart, setNodes)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *nodes;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(nodes)
@@ -11672,6 +11857,7 @@ ZEND_METHOD(FastChart_SankeyChart, setNodes)
 
 ZEND_METHOD(FastChart_SankeyChart, setLinks)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *links;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(links)
@@ -11727,6 +11913,7 @@ ZEND_METHOD(FastChart_SankeyChart, setLinks)
 
 ZEND_METHOD(FastChart_ArcDiagram, setNodes)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *nodes;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(nodes)
@@ -11747,6 +11934,7 @@ ZEND_METHOD(FastChart_ArcDiagram, setNodes)
 
 ZEND_METHOD(FastChart_ArcDiagram, setLinks)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *links;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(links)
@@ -11765,6 +11953,7 @@ ZEND_METHOD(FastChart_ArcDiagram, setLinks)
 
 ZEND_METHOD(FastChart_ArcDiagram, setOrientation)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long mode;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(mode)
@@ -11782,6 +11971,7 @@ ZEND_METHOD(FastChart_ArcDiagram, setOrientation)
 
 ZEND_METHOD(FastChart_ChordDiagram, setNodes)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *nodes;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(nodes)
@@ -11802,6 +11992,7 @@ ZEND_METHOD(FastChart_ChordDiagram, setNodes)
 
 ZEND_METHOD(FastChart_ChordDiagram, setLinks)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *links;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(links)
@@ -11820,6 +12011,7 @@ ZEND_METHOD(FastChart_ChordDiagram, setLinks)
 
 ZEND_METHOD(FastChart_ChordDiagram, setPadAngle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double deg;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_DOUBLE(deg)
@@ -11834,6 +12026,7 @@ ZEND_METHOD(FastChart_ChordDiagram, setPadAngle)
 
 ZEND_METHOD(FastChart_ChordDiagram, setStyle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long style;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(style)
@@ -11851,6 +12044,7 @@ ZEND_METHOD(FastChart_ChordDiagram, setStyle)
 
 ZEND_METHOD(FastChart_NetworkChart, setNodes)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *nodes;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(nodes)
@@ -11872,6 +12066,7 @@ ZEND_METHOD(FastChart_NetworkChart, setNodes)
 
 ZEND_METHOD(FastChart_NetworkChart, setLinks)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *links;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(links)
@@ -11891,6 +12086,7 @@ ZEND_METHOD(FastChart_NetworkChart, setLinks)
 
 ZEND_METHOD(FastChart_NetworkChart, setSeed)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long seed;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(seed)
@@ -11904,6 +12100,7 @@ ZEND_METHOD(FastChart_NetworkChart, setSeed)
 
 ZEND_METHOD(FastChart_NetworkChart, setIterations)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long iters;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(iters)
@@ -11983,6 +12180,7 @@ static void fastchart_pyramid_parse_side(zval *arr, fastchart_pyramid_side *side
 
 ZEND_METHOD(FastChart_PopulationPyramid, setCategories)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *cats;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(cats)
@@ -12029,6 +12227,7 @@ ZEND_METHOD(FastChart_PopulationPyramid, setCategories)
 
 ZEND_METHOD(FastChart_PopulationPyramid, setLeftSeries)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *side;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(side)
@@ -12042,6 +12241,7 @@ ZEND_METHOD(FastChart_PopulationPyramid, setLeftSeries)
 
 ZEND_METHOD(FastChart_PopulationPyramid, setRightSeries)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *side;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(side)
@@ -12060,6 +12260,7 @@ ZEND_METHOD(FastChart_PopulationPyramid, setRightSeries)
 
 ZEND_METHOD(FastChart_ViolinPlot, setGroups)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *groups;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(groups)
@@ -12174,6 +12375,7 @@ ZEND_METHOD(FastChart_ViolinPlot, setGroups)
 
 ZEND_METHOD(FastChart_CirclePacking, setHierarchy)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *root;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(root)
@@ -12216,6 +12418,7 @@ ZEND_METHOD(FastChart_CirclePacking, setHierarchy)
 
 ZEND_METHOD(FastChart_Pictogram, setValue)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double v;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_DOUBLE(v)
@@ -12231,6 +12434,7 @@ ZEND_METHOD(FastChart_Pictogram, setValue)
 
 ZEND_METHOD(FastChart_Pictogram, setTotal)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     double v;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_DOUBLE(v)
@@ -12246,6 +12450,7 @@ ZEND_METHOD(FastChart_Pictogram, setTotal)
 
 ZEND_METHOD(FastChart_Pictogram, setIconCount)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long n;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(n)
@@ -12259,6 +12464,7 @@ ZEND_METHOD(FastChart_Pictogram, setIconCount)
 
 ZEND_METHOD(FastChart_Pictogram, setColumns)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long n;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(n)
@@ -12274,6 +12480,7 @@ ZEND_METHOD(FastChart_Pictogram, setColumns)
 
 ZEND_METHOD(FastChart_Pictogram, setShape)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long s;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(s)
@@ -12289,6 +12496,7 @@ ZEND_METHOD(FastChart_Pictogram, setShape)
 
 ZEND_METHOD(FastChart_Pictogram, setFillColor)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long rgb;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(rgb)
@@ -12304,6 +12512,7 @@ ZEND_METHOD(FastChart_Pictogram, setFillColor)
 
 ZEND_METHOD(FastChart_Pictogram, setEmptyColor)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long rgb;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(rgb)
@@ -12321,6 +12530,7 @@ ZEND_METHOD(FastChart_Pictogram, setEmptyColor)
 
 ZEND_METHOD(FastChart_VennDiagram, setSets)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *sets;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(sets)
@@ -12366,6 +12576,7 @@ ZEND_METHOD(FastChart_VennDiagram, setSets)
 
 ZEND_METHOD(FastChart_VennDiagram, setIntersections)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *inters;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(inters)
@@ -12439,6 +12650,7 @@ ZEND_METHOD(FastChart_VennDiagram, setIntersections)
 
 ZEND_METHOD(FastChart_WordCloud, setWords)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *words;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(words)
@@ -12502,6 +12714,7 @@ ZEND_METHOD(FastChart_WordCloud, setWords)
 
 ZEND_METHOD(FastChart_WordCloud, setOrientation)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long mode;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(mode)
@@ -12521,6 +12734,7 @@ ZEND_METHOD(FastChart_WordCloud, setOrientation)
 
 ZEND_METHOD(FastChart_SerpentineTimeline, setEvents)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *events;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(events)
@@ -12584,6 +12798,7 @@ ZEND_METHOD(FastChart_SerpentineTimeline, setEvents)
 
 ZEND_METHOD(FastChart_SerpentineTimeline, setColumns)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long n;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(n)
@@ -12599,6 +12814,7 @@ ZEND_METHOD(FastChart_SerpentineTimeline, setColumns)
 
 ZEND_METHOD(FastChart_Dendrogram, setHierarchy)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *root;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(root)
@@ -12638,6 +12854,7 @@ ZEND_METHOD(FastChart_Dendrogram, setHierarchy)
 
 ZEND_METHOD(FastChart_Dendrogram, setStyle)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long s;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(s)
@@ -12652,6 +12869,7 @@ ZEND_METHOD(FastChart_Dendrogram, setStyle)
 
 ZEND_METHOD(FastChart_Dendrogram, setOrientation)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long m;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(m)
@@ -12668,6 +12886,7 @@ ZEND_METHOD(FastChart_Dendrogram, setOrientation)
 
 ZEND_METHOD(FastChart_Partition, setHierarchy)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *root;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(root)
@@ -12707,6 +12926,7 @@ ZEND_METHOD(FastChart_Partition, setHierarchy)
 
 ZEND_METHOD(FastChart_Partition, setOrientation)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zend_long m;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_LONG(m)
@@ -12724,6 +12944,7 @@ ZEND_METHOD(FastChart_Partition, setOrientation)
 
 ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *cols;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(cols)
@@ -12858,6 +13079,7 @@ ZEND_METHOD(FastChart_MarimekkoChart, setColumns)
 
 ZEND_METHOD(FastChart_VectorChart, setVectors)
 {
+    FASTCHART_GUARD_NOT_RENDERING();
     zval *vecs;
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_ARRAY(vecs)

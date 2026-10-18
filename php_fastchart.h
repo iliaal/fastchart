@@ -295,6 +295,11 @@ extern zend_class_entry *fastchart_qrcode_ce;
     bool font_cache_valid; \
     int shadow_color_handle; \
     bool shadow_color_valid; \
+    /* Set for the duration of a dispatch. Renderers hold pointers into \
+     * the chart's arrays and strings across lazy image and font loads, \
+     * which can run user stream wrappers and error handlers; mutating \
+     * methods refuse while it is set. */ \
+    bool rendering; \
     /* SVG text-rendering mode: 0 = NATIVE (raw <text> elements, smaller \
      * files, requires consumer SVG renderer with text support); 1 = \
      * PATHS (every <text> flattened to <g><path/></g> via FreeType \
