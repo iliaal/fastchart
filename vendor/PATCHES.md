@@ -346,8 +346,9 @@ upstream-verbatim.
   over-budget stroke is not drawn. fastchart's `svgTo*()` sets 2^22
   points per document (about 190 MB at worst) and pairs it with a 2^18
   dash-command budget (PV-18) that always runs out first. Charts pass -1
-  (fch-lw5).
-- **Origin**: `0574f8b`, `39d1b7f`.
+  (fch-lw5). The stroker limit is clamped in `long long`: `(long)UINT_MAX`
+  is -1 where `long` is 32 bits, which lifted the limit.
+- **Origin**: `0574f8b`, `39d1b7f`; clamp in `f323d11`.
 - **Upstream**: not proposed; an embedder budget.
 - **Marker**: `LOCAL-PATCH (fastchart)`.
 
@@ -397,12 +398,15 @@ upstream-verbatim.
   is linear but unbounded (32,000 full-height segments on a 4096 px
   canvas took 20 s release). A canvas can carry a work budget shared by
   every fill, stroke and clip; the rasterizer charges cell steps,
-  cell-list walk steps, sort list steps, curve subdivisions, and
-  one pass over the outline per band. The path that runs it out draws
+  cell-list walk steps, sort list steps, curve subdivisions, one unit
+  per line per band, and one pass over the outline per band. The path that runs it out draws
   nothing, later paths are skipped, and the caller discards the surface.
   fastchart's `svgTo*()` sets 1.2G units per document and refuses with
-  "fill coverage too large"; charts pass -1 (fch-au7).
-- **Origin**: `d8c8629`, `dd3d77a`, `00b8b6f`, `1d711ed`.
+  "fill coverage too large"; charts pass -1 (fch-au7). The counters and
+  the API take `long long`, so an unbudgeted render past 2^31 units does
+  not stop part-way where `long` is 32 bits.
+- **Origin**: `d8c8629`, `dd3d77a`, `00b8b6f`, `fe0e23a`; 64-bit counters
+  in `f323d11`.
 - **Upstream**: not proposed; an embedder budget.
 - **Marker**: `LOCAL-PATCH (fastchart)`.
 
