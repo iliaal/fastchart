@@ -785,6 +785,9 @@ void plutovg_rasterize(plutovg_span_buffer_t* span_buffer, const plutovg_path_t*
 
     plutovg_span_buffer_reset(span_buffer);
 
+    /* LOCAL-PATCH (fastchart): hand the remaining raster budget to the
+     * rasterizer and take back what is left; a path that runs it out
+     * draws nothing. */
     PVG_FT_Raster_Budget ft_budget;
     params.budget = NULL;
     if(budget && budget->remaining >= 0) {

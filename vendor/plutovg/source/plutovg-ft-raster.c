@@ -97,6 +97,7 @@ typedef ptrdiff_t  PVG_FT_PtrDist;
  * plutovg vendor refresh. */
 #define PVG_FT_MINIMUM_POOL_SIZE (1024 * 32)
 #define PVG_FT_MAXIMUM_POOL_SIZE (1024 * 1024 * 8)
+/* LOCAL-PATCH (fastchart): see gray_find_cell() and PVG_FT_Raster_Render() */
 #define PVG_FT_MAX_CELL_WALK 32
 #define PVG_FT_POOL_BYTES_PER_POINT 64
 
@@ -189,9 +190,9 @@ PVG_FT_END_STMNT
     PCell   cells;
     PVG_FT_PtrDist     max_cells;
     PVG_FT_PtrDist     num_cells;
-    PCell   free_cells;
-    int     unsorted;
-    long    work_left;
+    PCell   free_cells;   /* LOCAL-PATCH (fastchart): folded cells    */
+    int     unsorted;     /* LOCAL-PATCH (fastchart): see find_cell   */
+    long    work_left;    /* LOCAL-PATCH (fastchart): raster budget   */
 
     TPos    x,  y;
 
@@ -236,8 +237,8 @@ PVG_FT_END_STMNT
     ras.cells       = NULL;
     ras.max_cells   = 0;
     ras.num_cells   = 0;
-    ras.free_cells  = NULL;
-    ras.unsorted    = 0;
+    ras.free_cells  = NULL;   /* LOCAL-PATCH (fastchart) */
+    ras.unsorted    = 0;      /* LOCAL-PATCH (fastchart) */
     ras.area        = 0;
     ras.cover       = 0;
     ras.invalid     = 1;
@@ -374,6 +375,7 @@ PVG_FT_END_STMNT
   }
 
 
+  /* LOCAL-PATCH (fastchart): gray_sort_cells() over every row of the band */
   static PVG_FT_PtrDist
   gray_sort_all_cells( RAS_ARG )
   {
@@ -1966,8 +1968,8 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
         }
 
         ras.num_cells = 0;
-        ras.free_cells = NULL;
-        ras.unsorted  = 0;
+        ras.free_cells = NULL;    /* LOCAL-PATCH (fastchart) */
+        ras.unsorted  = 0;        /* LOCAL-PATCH (fastchart) */
         ras.invalid   = 1;
         ras.min_ey    = band->min;
         ras.max_ey    = band->max;
@@ -1986,7 +1988,7 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
           band--;
           continue;
         }
-        else if ( error == ErrRaster_Budget )
+        else if ( error == ErrRaster_Budget )   /* LOCAL-PATCH (fastchart) */
           return error;
         else if ( error != ErrRaster_Memory_Overflow )
           return 1;
@@ -2135,6 +2137,7 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
           error = gray_raster_render(&worker, heap, length, params);
           free(heap);
       }
+      /* LOCAL-PATCH (fastchart): report the budget left, or exhaustion */
       if(params->budget != NULL && params->budget->remaining >= 0) {
           if(error == ErrRaster_Budget || worker.work_left < 0) {
               params->budget->remaining = 0;

@@ -97,6 +97,7 @@ plutovg_canvas_t* plutovg_canvas_create(plutovg_surface_t* surface)
     canvas->stroke_budget.remaining = -1;
     canvas->stroke_budget.exceeded = false;
     canvas->path->stroke_budget = &canvas->stroke_budget;
+    /* LOCAL-PATCH (fastchart): see plutovg_canvas_set_raster_budget() */
     canvas->raster_budget.remaining = -1;
     canvas->raster_budget.exceeded = false;
     canvas->path->raster_budget = &canvas->raster_budget;
