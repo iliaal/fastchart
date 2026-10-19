@@ -15,7 +15,12 @@ void plutovg_span_buffer_init(plutovg_span_buffer_t* span_buffer)
 void plutovg_span_buffer_init_rect(plutovg_span_buffer_t* span_buffer, int x, int y, int width, int height)
 {
     plutovg_array_clear(span_buffer->spans);
-    plutovg_array_ensure(span_buffer->spans, height);
+    /* LOCAL-PATCH (fastchart): checked array growth, see plutovg-utils.h. */
+    if(!plutovg_array_ensure(span_buffer->spans, height)) {
+        plutovg_span_buffer_reset(span_buffer);
+        return;
+    }
+
     plutovg_span_t* spans = span_buffer->spans.data;
     for(int i = 0; i < height; i++) {
         spans[i].x = x;
@@ -48,6 +53,12 @@ void plutovg_span_buffer_destroy(plutovg_span_buffer_t* span_buffer)
 void plutovg_span_buffer_copy(plutovg_span_buffer_t* span_buffer, const plutovg_span_buffer_t* source)
 {
     plutovg_array_clear(span_buffer->spans);
+    /* LOCAL-PATCH (fastchart): checked array growth, see plutovg-utils.h. */
+    if(!plutovg_array_ensure(span_buffer->spans, source->spans.size)) {
+        plutovg_span_buffer_reset(span_buffer);
+        return;
+    }
+
     plutovg_array_append(span_buffer->spans, source->spans);
     span_buffer->x = source->x;
     span_buffer->y = source->y;
@@ -116,7 +127,9 @@ void plutovg_span_buffer_extents(plutovg_span_buffer_t* span_buffer, plutovg_rec
 void plutovg_span_buffer_intersect(plutovg_span_buffer_t* span_buffer, const plutovg_span_buffer_t* a, const plutovg_span_buffer_t* b)
 {
     plutovg_span_buffer_reset(span_buffer);
-    plutovg_array_ensure(span_buffer->spans, plutovg_max(a->spans.size, b->spans.size));
+    /* LOCAL-PATCH (fastchart): checked array growth, see plutovg-utils.h. */
+    if(!plutovg_array_ensure(span_buffer->spans, plutovg_max(a->spans.size, b->spans.size)))
+        return;
 
     plutovg_span_t* a_spans = a->spans.data;
     plutovg_span_t* a_end = a_spans + a->spans.size;
@@ -151,7 +164,11 @@ void plutovg_span_buffer_intersect(plutovg_span_buffer_t* span_buffer, const plu
         int x = plutovg_max(ax1, bx1);
         int len = plutovg_min(ax2, bx2) - x;
         if(len) {
-            plutovg_array_ensure(span_buffer->spans, 1);
+            if(!plutovg_array_ensure(span_buffer->spans, 1)) {
+                plutovg_span_buffer_reset(span_buffer);
+                return;
+            }
+
             plutovg_span_t* span = span_buffer->spans.data + span_buffer->spans.size;
             span->x = x;
             span->len = len;
@@ -169,14 +186,22 @@ void plutovg_span_buffer_intersect(plutovg_span_buffer_t* span_buffer, const plu
 }
 
 #define ALIGN_SIZE(size) (((size) + 7ul) & ~7ul)
+/* LOCAL-PATCH (fastchart): NULL on size overflow or allocation failure;
+ * every caller treats NULL as "nothing to draw". */
 static PVG_FT_Outline* ft_outline_create(int points, int contours)
 {
+    if(points < 0 || contours < 0 || points > INT_MAX - contours)
+        return NULL;
+    const size_t element_size = sizeof(PVG_FT_Vector) + sizeof(char) + sizeof(int) + sizeof(char);
+    if((size_t)(points + contours) > (SIZE_MAX - sizeof(PVG_FT_Outline) - 32) / element_size)
+        return NULL;
     size_t points_size = ALIGN_SIZE((points + contours) * sizeof(PVG_FT_Vector));
     size_t tags_size = ALIGN_SIZE((points + contours) * sizeof(char));
     size_t contours_size = ALIGN_SIZE(contours * sizeof(int));
     size_t contours_flag_size = ALIGN_SIZE(contours * sizeof(char));
     PVG_FT_Outline* outline = malloc(points_size + tags_size + contours_size + contours_flag_size + sizeof(PVG_FT_Outline));
-
+    if(outline == NULL)
+        return NULL;
     PVG_FT_Byte* outline_data = (PVG_FT_Byte*)(outline + 1);
     outline->points = (PVG_FT_Vector*)(outline_data);
     outline->tags = (char*)(outline_data + points_size);
@@ -537,6 +562,8 @@ static PVG_FT_Outline* ft_outline_convert_path(const plutovg_path_t* path, const
 
     plutovg_point_t points[3];
     PVG_FT_Outline* outline = ft_outline_create(path->num_points, path->num_contours);
+    if(outline == NULL)
+        return NULL;
     while(plutovg_path_iterator_has_next(&it)) {
         switch(plutovg_path_iterator_next(&it, points)) {
         case PLUTOVG_PATH_COMMAND_MOVE_TO:
@@ -655,6 +682,10 @@ static PVG_FT_Outline* ft_outline_convert_stroke(const plutovg_path_t* path, con
 
     PVG_FT_Stroker stroker;
     PVG_FT_Stroker_New(&stroker);
+    /* LOCAL-PATCH (fastchart): stroker and outline allocation failures
+     * return NULL, which plutovg_rasterize() draws as nothing. */
+    if(stroker == NULL)
+        return NULL;
     PVG_FT_Stroker_Set(stroker, ftWidth, ftCap, ftJoin, ftMiterLimit);
 
     /* LOCAL-PATCH (fastchart): shared stroke budget, see
@@ -666,6 +697,11 @@ static PVG_FT_Outline* ft_outline_convert_stroke(const plutovg_path_t* path, con
         PVG_FT_Stroker_SetMaxPoints(stroker, (PVG_FT_UInt)plutovg_clamp(budget->remaining, 1, (long)UINT_MAX));
 
     PVG_FT_Outline* outline = ft_outline_convert_dash(path, matrix, &stroke_data->dash);
+    if(outline == NULL) {
+        PVG_FT_Stroker_Done(stroker);
+        return NULL;
+    }
+
     PVG_FT_Error error = PVG_FT_Stroker_ParseOutline(stroker, outline);
 
     PVG_FT_UInt points;
@@ -683,8 +719,12 @@ static PVG_FT_Outline* ft_outline_convert_stroke(const plutovg_path_t* path, con
         }
     }
 
-    PVG_FT_Outline* stroke_outline = over_budget ? ft_outline_create(0, 0) : ft_outline_create(points, contours);
-    if(!over_budget)
+    PVG_FT_Outline* stroke_outline = NULL;
+    if(over_budget)
+        stroke_outline = ft_outline_create(0, 0);
+    else if(points <= INT_MAX && contours <= INT_MAX)
+        stroke_outline = ft_outline_create(points, contours);
+    if(stroke_outline && !over_budget)
         PVG_FT_Stroker_Export(stroker, stroke_outline);
 
     PVG_FT_Stroker_Done(stroker);
@@ -701,6 +741,13 @@ static void spans_generation_callback(int count, const PVG_FT_Span* spans, void*
 void plutovg_rasterize(plutovg_span_buffer_t* span_buffer, const plutovg_path_t* path, const plutovg_matrix_t* matrix, const plutovg_rect_t* clip_rect, const plutovg_stroke_data_t* stroke_data, plutovg_fill_rule_t winding)
 {
     PVG_FT_Outline* outline = ft_outline_convert(path, matrix, stroke_data);
+    /* LOCAL-PATCH (fastchart): no outline (allocation failure) draws
+     * nothing, as an empty one would. */
+    if(outline == NULL) {
+        plutovg_span_buffer_reset(span_buffer);
+        return;
+    }
+
     if(stroke_data) {
         outline->flags = PVG_FT_OUTLINE_NONE;
     } else {
