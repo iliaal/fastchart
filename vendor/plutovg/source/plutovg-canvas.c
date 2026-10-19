@@ -97,6 +97,9 @@ plutovg_canvas_t* plutovg_canvas_create(plutovg_surface_t* surface)
     canvas->stroke_budget.remaining = -1;
     canvas->stroke_budget.exceeded = false;
     canvas->path->stroke_budget = &canvas->stroke_budget;
+    canvas->raster_budget.remaining = -1;
+    canvas->raster_budget.exceeded = false;
+    canvas->path->raster_budget = &canvas->raster_budget;
     return canvas;
 }
 
@@ -129,6 +132,7 @@ void plutovg_canvas_destroy(plutovg_canvas_t* canvas)
          * plutovg_canvas_get_path() plus a reference. */
         canvas->path->dash_budget = NULL;
         canvas->path->stroke_budget = NULL;
+        canvas->path->raster_budget = NULL;
         plutovg_path_destroy(canvas->path);
         free(canvas);
     }
@@ -397,6 +401,18 @@ void plutovg_canvas_set_stroke_budget(plutovg_canvas_t* canvas, long budget)
 bool plutovg_canvas_stroke_budget_exceeded(const plutovg_canvas_t* canvas)
 {
     return canvas->stroke_budget.exceeded;
+}
+
+/* LOCAL-PATCH (fastchart): shared rasterizer work budget, see plutovg.h */
+void plutovg_canvas_set_raster_budget(plutovg_canvas_t* canvas, long budget)
+{
+    canvas->raster_budget.remaining = budget < 0 ? -1 : budget;
+    canvas->raster_budget.exceeded = false;
+}
+
+bool plutovg_canvas_raster_budget_exceeded(const plutovg_canvas_t* canvas)
+{
+    return canvas->raster_budget.exceeded;
 }
 
 int plutovg_canvas_get_dash_array(const plutovg_canvas_t* canvas, const float** dashes)

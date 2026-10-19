@@ -740,6 +740,15 @@ static void spans_generation_callback(int count, const PVG_FT_Span* spans, void*
 
 void plutovg_rasterize(plutovg_span_buffer_t* span_buffer, const plutovg_path_t* path, const plutovg_matrix_t* matrix, const plutovg_rect_t* clip_rect, const plutovg_stroke_data_t* stroke_data, plutovg_fill_rule_t winding)
 {
+    /* LOCAL-PATCH (fastchart): shared raster budget, see
+     * plutovg_canvas_set_raster_budget(). Once it runs out nothing more
+     * is drawn; the caller discards the surface. */
+    plutovg_raster_budget_t* budget = path->raster_budget;
+    if(budget && budget->exceeded) {
+        plutovg_span_buffer_reset(span_buffer);
+        return;
+    }
+
     PVG_FT_Outline* outline = ft_outline_convert(path, matrix, stroke_data);
     /* LOCAL-PATCH (fastchart): no outline (allocation failure) draws
      * nothing, as an empty one would. */
@@ -775,6 +784,24 @@ void plutovg_rasterize(plutovg_span_buffer_t* span_buffer, const plutovg_path_t*
     }
 
     plutovg_span_buffer_reset(span_buffer);
+
+    PVG_FT_Raster_Budget ft_budget;
+    params.budget = NULL;
+    if(budget && budget->remaining >= 0) {
+        ft_budget.remaining = budget->remaining;
+        ft_budget.exceeded = 0;
+        params.budget = &ft_budget;
+    }
+
     PVG_FT_Raster_Render(&params);
     ft_outline_destroy(outline);
+
+    if(params.budget) {
+        budget->remaining = ft_budget.remaining;
+        if(ft_budget.exceeded) {
+            budget->remaining = 0;
+            budget->exceeded = true;
+            plutovg_span_buffer_reset(span_buffer);
+        }
+    }
 }

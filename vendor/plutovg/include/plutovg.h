@@ -2023,6 +2023,32 @@ PLUTOVG_API void plutovg_canvas_set_stroke_budget(plutovg_canvas_t* canvas, long
 PLUTOVG_API bool plutovg_canvas_stroke_budget_exceeded(const plutovg_canvas_t* canvas);
 
 /**
+ * @brief LOCAL-PATCH (fastchart): caps rasterizer work per canvas.
+ *
+ * Coverage work grows with the rows every edge crosses, so a small path
+ * of many tall edges costs far more than its size suggests. The budget
+ * counts that work (cells visited plus a pass over the outline per
+ * raster band) across every fill, stroke and clip this canvas
+ * rasterizes. The path that runs out is not drawn, later paths are
+ * skipped, and plutovg_canvas_raster_budget_exceeded() reports true;
+ * the caller should discard the surface. The default is no limit.
+ *
+ * @param canvas A pointer to a `plutovg_canvas_t` object.
+ * @param budget Maximum work units across all paths, or a negative
+ * value for no limit. Clears the exceeded flag.
+ */
+PLUTOVG_API void plutovg_canvas_set_raster_budget(plutovg_canvas_t* canvas, long budget);
+
+/**
+ * @brief LOCAL-PATCH (fastchart): whether rasterization stopped for lack
+ * of the budget set by plutovg_canvas_set_raster_budget().
+ *
+ * @param canvas A pointer to a `plutovg_canvas_t` object.
+ * @return `true` if a path exceeded the remaining budget.
+ */
+PLUTOVG_API bool plutovg_canvas_raster_budget_exceeded(const plutovg_canvas_t* canvas);
+
+/**
  * @brief Translates the current transformation matrix by offsets `tx` and `ty`.
  * @param canvas A pointer to a `plutovg_canvas_t` object.
  * @param tx The translation offset in the x-direction.

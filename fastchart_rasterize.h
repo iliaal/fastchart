@@ -72,6 +72,20 @@
 #define FC_MAX_STROKE_POINTS (1L << 22)
 #define FC_MAX_DASH_COMMANDS (1L << 18)
 
+/* Rasterizer work budget for caller-supplied SVG, in plutovg raster work
+ * units (see plutovg_canvas_set_raster_budget()): one per cell step of
+ * the coverage walk, one per edge per raster band and one per outline
+ * point per band, across every fill, stroke and clip in the document.
+ * Coverage cost grows with the rows each edge spans, which the element
+ * and stroke budgets cannot see: a 300 KB path of 32,000 full-height
+ * segments on a 4096 px canvas is ~870M units, ~20 s of CPU. A unit
+ * costs 8-36 ns in a release build depending on the shape, so 2^26
+ * bounds coverage work near 1-2.5 s. Ordinary documents stay far below
+ * it; eight stitched 1024x512 line charts of eight 2048-point series
+ * (2048 px square) use ~60M, and one 2048-point series on a 4096 px
+ * line chart ~11M. */
+#define FC_MAX_RASTER_WORK   (1L << 26)
+
 /* Rasterize the given SVG bytes at the requested target dimensions.
  * On success: pix->rgba is emalloc'd, pix->w/h match the requested
  * dims, return 0.
@@ -100,6 +114,7 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
  *   -7: the parsed tree holds a <use> element.
  *   -8: stroke dashes exceed FC_MAX_DASH_COMMANDS for the document.
  *   -9: stroke outlines exceed FC_MAX_STROKE_POINTS for the document.
+ *  -10: rasterizer work exceeds FC_MAX_RASTER_WORK for the document.
  */
 int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
                                        int max_dim, long long max_pixels,

@@ -403,6 +403,16 @@ typedef void
 /*    rendering a monochrome bitmap, as they are crucial to implement    */
 /*    correct drop-out control as defined in the TrueType specification. */
 /*                                                                       */
+/* LOCAL-PATCH (fastchart): optional work budget for one render.  On   */
+/* entry `remaining' is the work allowed (< 0: unlimited); on return it  */
+/* is what is left, or 0 with `exceeded' set when the render stopped.   */
+typedef struct  PVG_FT_Raster_Budget_
+{
+    long  remaining;
+    int   exceeded;
+
+} PVG_FT_Raster_Budget;
+
 typedef struct  PVG_FT_Raster_Params_
 {
     const void*             source;
@@ -410,6 +420,7 @@ typedef struct  PVG_FT_Raster_Params_
     PVG_FT_SpanFunc          gray_spans;
     void*                   user;
     PVG_FT_BBox              clip_box;
+    PVG_FT_Raster_Budget*    budget;   /* LOCAL-PATCH (fastchart) */
 
 } PVG_FT_Raster_Params;
 

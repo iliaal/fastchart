@@ -46,6 +46,7 @@ plutovg_path_t* plutovg_path_create(void)
     plutovg_array_init(path->elements);
     path->dash_budget = NULL; /* LOCAL-PATCH (fastchart) */
     path->stroke_budget = NULL; /* LOCAL-PATCH (fastchart) */
+    path->raster_budget = NULL; /* LOCAL-PATCH (fastchart) */
     return path;
 }
 

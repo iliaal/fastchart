@@ -242,18 +242,22 @@ static void fc_unpremul_row_scalar(const unsigned char *src,
  * it caps dash commands across the whole document and running out
  * returns -2. stroke_budget < 0 leaves stroke outlines uncapped;
  * otherwise it caps stroke outline points across the document and
- * running out returns -3. */
+ * running out returns -3. raster_budget < 0 leaves rasterizer work
+ * uncapped; otherwise it caps it across the document and running out
+ * returns -4, with the frame left partly drawn for the caller to drop. */
 static int fastchart_render_doc_to_frame(plutosvg_document_t *doc,
                                           int target_w, int target_h,
                                           unsigned char *frame,
                                           long dash_budget,
-                                          long stroke_budget)
+                                          long stroke_budget,
+                                          long raster_budget)
 {
 	plutovg_surface_t * volatile surf = NULL;
 	plutovg_canvas_t * volatile canvas = NULL;
 	volatile int rendered = 0;
 	volatile int dash_exceeded = 0;
 	volatile int stroke_exceeded = 0;
+	volatile int raster_exceeded = 0;
 	float doc_w = plutosvg_document_get_width(doc);
 	float doc_h = plutosvg_document_get_height(doc);
 
@@ -275,6 +279,8 @@ static int fastchart_render_doc_to_frame(plutosvg_document_t *doc,
 			                               dash_budget);
 			plutovg_canvas_set_stroke_budget((plutovg_canvas_t *)canvas,
 			                                 stroke_budget);
+			plutovg_canvas_set_raster_budget((plutovg_canvas_t *)canvas,
+			                                 raster_budget);
 			if (plutosvg_document_render(doc, NULL,
 			        (plutovg_canvas_t *)canvas, NULL, NULL, NULL)) {
 				rendered = 1;
@@ -286,6 +292,10 @@ static int fastchart_render_doc_to_frame(plutosvg_document_t *doc,
 			if (plutovg_canvas_stroke_budget_exceeded(
 			        (plutovg_canvas_t *)canvas)) {
 				stroke_exceeded = 1;
+			}
+			if (plutovg_canvas_raster_budget_exceeded(
+			        (plutovg_canvas_t *)canvas)) {
+				raster_exceeded = 1;
 			}
 		}
 		if (canvas) {
@@ -307,6 +317,9 @@ static int fastchart_render_doc_to_frame(plutosvg_document_t *doc,
 	if (stroke_exceeded) {
 		return -3;
 	}
+	if (raster_exceeded) {
+		return -4;
+	}
 	return rendered ? 0 : -1;
 }
 
@@ -319,8 +332,9 @@ static int fastchart_render_doc_to_frame(plutosvg_document_t *doc,
 #endif
 /* Render an already-loaded plutosvg document into pix and convert the
  * frame from plutovg's pre-multiplied BGRA to straight RGBA in place.
- * Returns 0 on success, -1 on rasterize failure, -2 when dash_budget
- * or -3 when stroke_budget (see fastchart_render_doc_to_frame) runs out. See
+ * Returns 0 on success, -1 on rasterize failure, -2 when dash_budget,
+ * -3 when stroke_budget or -4 when raster_budget (see
+ * fastchart_render_doc_to_frame) runs out. See
  * fastchart_render_doc_to_frame for the pix->rgba pre-allocation
  * contract. */
 /* NOTE: fastchart_render_doc_to_frame is the vendored single-shot
@@ -331,10 +345,11 @@ static int fastchart_rasterize_doc(plutosvg_document_t *doc,
                                     int target_w, int target_h,
                                     fastchart_pixels_t *pix,
                                     long dash_budget,
-                                    long stroke_budget)
+                                    long stroke_budget,
+                                    long raster_budget)
 {
 	int rc = fastchart_render_doc_to_frame(doc, target_w, target_h,
-			pix->rgba, dash_budget, stroke_budget);
+			pix->rgba, dash_budget, stroke_budget, raster_budget);
 	if (rc != 0) {
 		return rc;
 	}
@@ -404,7 +419,8 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
 
 	int rc;
 	zend_try {
-		rc = fastchart_rasterize_doc(doc, target_w, target_h, pix, -1, -1);
+		rc = fastchart_rasterize_doc(doc, target_w, target_h, pix,
+		                             -1, -1, -1);
 	} zend_catch {
 		plutosvg_document_destroy(doc);
 		if (pix->rgba) {
@@ -505,7 +521,8 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 		pix->rgba = safe_emalloc((size_t)iw * (size_t)ih, 4, 0);
 		rc = fastchart_rasterize_doc(doc, iw, ih, pix,
 		                             FC_MAX_DASH_COMMANDS,
-		                             FC_MAX_STROKE_POINTS);
+		                             FC_MAX_STROKE_POINTS,
+		                             FC_MAX_RASTER_WORK);
 	} zend_catch {
 		plutosvg_document_destroy(doc);
 		if (pix->rgba) {
@@ -524,6 +541,9 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 	}
 	if (rc == -3) {
 		return -9;
+	}
+	if (rc == -4) {
+		return -10;
 	}
 	return (rc == 0) ? 0 : -4;
 }

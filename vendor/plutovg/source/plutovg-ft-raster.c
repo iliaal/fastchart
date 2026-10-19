@@ -73,6 +73,7 @@ typedef ptrdiff_t  PVG_FT_PtrDist;
 #define ErrRaster_Invalid_Argument  -3
 #define ErrRaster_Memory_Overflow   -4
 #define ErrRaster_OutOfMemory       -6
+#define ErrRaster_Budget            -7  /* LOCAL-PATCH (fastchart) */
 
 #include <stdlib.h>
 #include <limits.h>
@@ -97,9 +98,7 @@ typedef ptrdiff_t  PVG_FT_PtrDist;
 #define PVG_FT_MINIMUM_POOL_SIZE (1024 * 32)
 #define PVG_FT_MAXIMUM_POOL_SIZE (1024 * 1024 * 8)
 #define PVG_FT_MAX_CELL_WALK 32
-#ifndef PVG_FT_POOL_BYTES_PER_POINT
 #define PVG_FT_POOL_BYTES_PER_POINT 64
-#endif
 
 #define RAS_ARG   PWorker  worker
 #define RAS_ARG_  PWorker  worker,
@@ -192,6 +191,7 @@ PVG_FT_END_STMNT
     PVG_FT_PtrDist     num_cells;
     PCell   free_cells;
     int     unsorted;
+    long    work_left;
 
     TPos    x,  y;
 
@@ -494,6 +494,11 @@ PVG_FT_END_STMNT
     /* Note that if a cell is to the left of the clipping region, it is    */
     /* actually set to the (min_ex-1) horizontal position.                 */
 
+    /* LOCAL-PATCH (fastchart): every cell step is rasterizer work, see */
+    /* PVG_FT_Raster_Budget.                                             */
+    if ( --ras.work_left < 0 )
+      pvg_ft_longjmp( ras.jump_buffer, 2 );
+
     /* All cells that are on the left of the clipping region go to the */
     /* min_ex - 1 horizontal position.                                 */
     ey -= ras.min_ey;
@@ -664,6 +669,9 @@ PVG_FT_END_STMNT
 
     ey1 = TRUNC( from_y );
     ey2 = TRUNC( to_y );     /* if (ey2 >= ras.max_ey) ey2 = ras.max_ey-1; */
+
+    if ( --ras.work_left < 0 )   /* LOCAL-PATCH (fastchart) */
+      pvg_ft_longjmp( ras.jump_buffer, 2 );
 
     /* perform vertical clipping */
     if ( ( ey1 >= ras.max_ey && ey2 >= ras.max_ey ) ||
@@ -1823,8 +1831,10 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
   gray_convert_glyph_inner( RAS_ARG )
   {
     volatile int  error = 0;
+    int           jumped;
 
-    if ( pvg_ft_setjmp( ras.jump_buffer ) == 0 )
+    jumped = pvg_ft_setjmp( ras.jump_buffer );
+    if ( jumped == 0 )
     {
       error = PVG_FT_Outline_Decompose( &ras.outline, &ras );
       if ( !ras.invalid )
@@ -1832,7 +1842,7 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
     }
     else
     {
-      error = ErrRaster_Memory_Overflow;
+      error = jumped == 2 ? ErrRaster_Budget : ErrRaster_Memory_Overflow;
     }
 
     return error;
@@ -1956,6 +1966,11 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
         ras.max_ey    = band->max;
         ras.count_ey  = band->max - band->min;
 
+        /* LOCAL-PATCH (fastchart): each band decomposes the whole outline */
+        ras.work_left -= ras.outline.n_points;
+        if ( ras.work_left < 0 )
+          return ErrRaster_Budget;
+
         error = gray_convert_glyph_inner( RAS_VAR );
 
         if ( !error )
@@ -1964,6 +1979,8 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
           band--;
           continue;
         }
+        else if ( error == ErrRaster_Budget )
+          return error;
         else if ( error != ErrRaster_Memory_Overflow )
           return 1;
 
@@ -2074,7 +2091,8 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
        * fixed pool makes outlines with many short edges cost
        * edges x cells.  Start with a pool proportional to the point
        * count (within the existing cap) so the band count stays near
-       * constant for them. */
+       * constant for them.  A pool sized for every cell would be slower:
+       * cell lists spread over megabytes miss the cache on each step. */
       if(outline != NULL && outline->n_points > 0)
           want = (size_t)outline->n_points * PVG_FT_POOL_BYTES_PER_POINT;
       if(want > length) {
@@ -2089,6 +2107,10 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
 
       TWorker worker;
       worker.skip_spans = 0;
+      /* LOCAL-PATCH (fastchart): see PVG_FT_Raster_Budget */
+      worker.work_left = LONG_MAX;
+      if(params->budget != NULL && params->budget->remaining >= 0)
+          worker.work_left = params->budget->remaining;
       int rendered_spans = 0;
       int error = gray_raster_render(&worker, pool, length, params);
       if(pool != stack)
@@ -2105,6 +2127,14 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
           worker.skip_spans = rendered_spans;
           error = gray_raster_render(&worker, heap, length, params);
           free(heap);
+      }
+      if(params->budget != NULL && params->budget->remaining >= 0) {
+          if(error == ErrRaster_Budget || worker.work_left < 0) {
+              params->budget->remaining = 0;
+              params->budget->exceeded = 1;
+          } else {
+              params->budget->remaining = worker.work_left;
+          }
       }
   }
 
