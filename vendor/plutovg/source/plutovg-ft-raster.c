@@ -1831,18 +1831,25 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
   gray_convert_glyph_inner( RAS_ARG )
   {
     volatile int  error = 0;
-    int           jumped;
 
-    jumped = pvg_ft_setjmp( ras.jump_buffer );
-    if ( jumped == 0 )
+    /* LOCAL-PATCH (fastchart): longjmp value 2 means the raster budget  */
+    /* ran out, 1 a full cell pool.  setjmp() is the whole controlling   */
+    /* expression, as C11 7.13.1.1 requires.                             */
+    switch ( pvg_ft_setjmp( ras.jump_buffer ) )
     {
+    case 0:
       error = PVG_FT_Outline_Decompose( &ras.outline, &ras );
       if ( !ras.invalid )
         gray_record_cell( RAS_VAR );
-    }
-    else
-    {
-      error = jumped == 2 ? ErrRaster_Budget : ErrRaster_Memory_Overflow;
+      break;
+
+    case 2:
+      error = ErrRaster_Budget;
+      break;
+
+    default:
+      error = ErrRaster_Memory_Overflow;
+      break;
     }
 
     return error;
