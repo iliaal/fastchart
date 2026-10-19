@@ -2037,7 +2037,7 @@ PLUTOVG_API bool plutovg_canvas_stroke_budget_exceeded(const plutovg_canvas_t* c
  * @param budget Maximum work units across all paths, or a negative
  * value for no limit. Clears the exceeded flag.
  */
-PLUTOVG_API void plutovg_canvas_set_raster_budget(plutovg_canvas_t* canvas, long budget);
+PLUTOVG_API void plutovg_canvas_set_raster_budget(plutovg_canvas_t* canvas, long long budget);
 
 /**
  * @brief LOCAL-PATCH (fastchart): whether rasterization stopped for lack

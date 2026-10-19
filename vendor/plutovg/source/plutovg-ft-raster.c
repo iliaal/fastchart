@@ -192,7 +192,7 @@ PVG_FT_END_STMNT
     PVG_FT_PtrDist     num_cells;
     PCell   free_cells;   /* LOCAL-PATCH (fastchart): folded cells    */
     int     unsorted;     /* LOCAL-PATCH (fastchart): see find_cell   */
-    long    work_left;    /* LOCAL-PATCH (fastchart): raster budget   */
+    PVG_FT_Int64  work_left;  /* LOCAL-PATCH (fastchart): raster budget */
 
     TPos    x,  y;
 
@@ -301,7 +301,7 @@ PVG_FT_END_STMNT
   {
     PCell           list = *plist, p, q, e, tail;
     PVG_FT_PtrDist  insize, psize, qsize, i, nmerges, freed = 0;
-    long            work = 0;
+    PVG_FT_Int64    work = 0;
 
 
     if ( list == NULL )
@@ -2141,7 +2141,7 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
       TWorker worker;
       worker.skip_spans = 0;
       /* LOCAL-PATCH (fastchart): see PVG_FT_Raster_Budget */
-      worker.work_left = LONG_MAX;
+      worker.work_left = LLONG_MAX;
       if(params->budget != NULL && params->budget->remaining >= 0)
           worker.work_left = params->budget->remaining;
       int rendered_spans = 0;

@@ -61,7 +61,7 @@ typedef struct {
 /* LOCAL-PATCH (fastchart): rasterizer work still available to every path
  * a canvas fills or strokes; remaining < 0 means no shared limit. */
 typedef struct {
-    long remaining;
+    long long remaining;
     bool exceeded;
 } plutovg_raster_budget_t;
 

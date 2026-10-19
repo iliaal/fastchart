@@ -408,8 +408,8 @@ typedef void
 /* is what is left, or 0 with `exceeded' set when the render stopped.   */
 typedef struct  PVG_FT_Raster_Budget_
 {
-    long  remaining;
-    int   exceeded;
+    PVG_FT_Int64  remaining;
+    int           exceeded;
 
 } PVG_FT_Raster_Budget;
 

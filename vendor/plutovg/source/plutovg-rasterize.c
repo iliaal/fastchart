@@ -693,8 +693,10 @@ static PVG_FT_Outline* ft_outline_convert_stroke(const plutovg_path_t* path, con
      * passing what is left, and an over-budget stroke is not drawn. */
     plutovg_stroke_budget_t* budget = path->stroke_budget;
     bool budgeted = budget && budget->remaining >= 0;
+    /* Clamp in long long: (long)UINT_MAX is -1 where long is 32 bits,
+     * which would lift the stroker's limit entirely. */
     if(budgeted)
-        PVG_FT_Stroker_SetMaxPoints(stroker, (PVG_FT_UInt)plutovg_clamp(budget->remaining, 1, (long)UINT_MAX));
+        PVG_FT_Stroker_SetMaxPoints(stroker, (PVG_FT_UInt)plutovg_clamp((long long)budget->remaining, 1LL, (long long)UINT_MAX));
 
     PVG_FT_Outline* outline = ft_outline_convert_dash(path, matrix, &stroke_data->dash);
     if(outline == NULL) {

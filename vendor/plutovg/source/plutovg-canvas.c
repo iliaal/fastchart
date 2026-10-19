@@ -405,7 +405,7 @@ bool plutovg_canvas_stroke_budget_exceeded(const plutovg_canvas_t* canvas)
 }
 
 /* LOCAL-PATCH (fastchart): shared rasterizer work budget, see plutovg.h */
-void plutovg_canvas_set_raster_budget(plutovg_canvas_t* canvas, long budget)
+void plutovg_canvas_set_raster_budget(plutovg_canvas_t* canvas, long long budget)
 {
     canvas->raster_budget.remaining = budget < 0 ? -1 : budget;
     canvas->raster_budget.exceeded = false;

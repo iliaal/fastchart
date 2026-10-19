@@ -95,7 +95,7 @@
  * PNG encoding, which only the element x pixel budget above bounds), and
  * a refusal, which spends the whole budget, takes 2.5-3.9 s. An x86 host
  * at load 8-12 measured 1.7-2.4x those figures. */
-#define FC_MAX_RASTER_WORK   1200000000L
+#define FC_MAX_RASTER_WORK   1200000000LL
 
 /* Rasterize the given SVG bytes at the requested target dimensions.
  * On success: pix->rgba is emalloc'd, pix->w/h match the requested

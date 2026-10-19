@@ -250,7 +250,7 @@ static int fastchart_render_doc_to_frame(plutosvg_document_t *doc,
                                           unsigned char *frame,
                                           long dash_budget,
                                           long stroke_budget,
-                                          long raster_budget)
+                                          long long raster_budget)
 {
 	plutovg_surface_t * volatile surf = NULL;
 	plutovg_canvas_t * volatile canvas = NULL;
@@ -346,7 +346,7 @@ static int fastchart_rasterize_doc(plutosvg_document_t *doc,
                                     fastchart_pixels_t *pix,
                                     long dash_budget,
                                     long stroke_budget,
-                                    long raster_budget)
+                                    long long raster_budget)
 {
 	int rc = fastchart_render_doc_to_frame(doc, target_w, target_h,
 			pix->rgba, dash_budget, stroke_budget, raster_budget);
