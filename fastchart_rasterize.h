@@ -84,13 +84,13 @@
  * The cap is sized to the heaviest ordinary document it must admit:
  * eight stitched 1024x512 line charts of eight 2048-point series in a
  * 2048 px square (~1.01G units, 2.8 s release on an idle aarch64 host).
- * The same document at 2304 px (~1.16G) still renders; at 2560 px
- * (~1.43G) it is refused. On that host the costliest in-budget documents
- * found are 4096 px paths of full-height cubics (4.5 s) and of
- * interleaved zigzags (5.5 s, about a third of it blending and PNG
- * encoding, which the pixel caps bound instead), and a refusal, which
- * spends the whole budget, takes 2.5-3.9 s. An x86 host at load 8-12
- * measured 1.7-2.4x those figures. */
+ * The same document rendered at 2304 px (~1.14G) still renders; at
+ * 2560 px (~1.35G) it is refused. On that host the costliest in-budget
+ * documents found are 4096 px paths of full-height cubics (4.5 s) and of
+ * interleaved zigzags (n=11,750: 7.0 s, about a third of it blending and
+ * PNG encoding, which only the element x pixel budget above bounds), and
+ * a refusal, which spends the whole budget, takes 2.5-3.9 s. An x86 host
+ * at load 8-12 measured 1.7-2.4x those figures. */
 #define FC_MAX_RASTER_WORK   1200000000L
 
 /* Rasterize the given SVG bytes at the requested target dimensions.
