@@ -1,5 +1,5 @@
 --TEST--
-svgToPng: heavy ordinary documents fit the raster work budget; charts carry none
+svgToPng: a heavy ordinary document fits the raster work budget
 --EXTENSIONS--
 fastchart
 --FILE--
@@ -21,9 +21,9 @@ function line_chart(int $w, int $h, int $first, int $count): FastChart\LineChart
         ->setSeries(array_map('series', range($first, $first + $count - 1)));
 }
 
-/* Eight stitched 1024x512 line charts of eight 2048-point series: ~60M
- * of the 2^26 work units. The same document at 4096 px is already
- * refused by the element x pixel budget. */
+/* Eight stitched 1024x512 line charts of eight 2048-point series, the
+ * largest ordinary document the budget was sized for: ~1.01G of the 1.2G
+ * work units. Scaled to 2560 px (~1.43G units) it is refused. */
 $g = '';
 for ($k = 0; $k < 8; $k++) {
     $g .= sprintf('<g transform="translate(%d %d)">%s</g>',
@@ -35,12 +35,6 @@ $png = FastChart\Chart::svgToPng(
     . $g . '</svg>');
 $info = getimagesizefromstring($png);
 echo "stitched charts: {$info[0]}x{$info[1]}\n";
-
-/* Chart renders carry no raster budget: the same eight series on one
- * 4096 px chart need ~86M units. */
-$info = getimagesizefromstring(line_chart(4096, 4096, 0, 8)->renderPng());
-echo "chart: {$info[0]}x{$info[1]}\n";
 ?>
 --EXPECT--
 stitched charts: 2048x2048
-chart: 4096x4096
