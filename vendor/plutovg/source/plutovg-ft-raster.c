@@ -96,6 +96,10 @@ typedef ptrdiff_t  PVG_FT_PtrDist;
  * plutovg vendor refresh. */
 #define PVG_FT_MINIMUM_POOL_SIZE (1024 * 32)
 #define PVG_FT_MAXIMUM_POOL_SIZE (1024 * 1024 * 8)
+#define PVG_FT_MAX_CELL_WALK 32
+#ifndef PVG_FT_POOL_BYTES_PER_POINT
+#define PVG_FT_POOL_BYTES_PER_POINT 64
+#endif
 
 #define RAS_ARG   PWorker  worker
 #define RAS_ARG_  PWorker  worker,
@@ -186,6 +190,8 @@ PVG_FT_END_STMNT
     PCell   cells;
     PVG_FT_PtrDist     max_cells;
     PVG_FT_PtrDist     num_cells;
+    PCell   free_cells;
+    int     unsorted;
 
     TPos    x,  y;
 
@@ -230,6 +236,8 @@ PVG_FT_END_STMNT
     ras.cells       = NULL;
     ras.max_cells   = 0;
     ras.num_cells   = 0;
+    ras.free_cells  = NULL;
+    ras.unsorted    = 0;
     ras.area        = 0;
     ras.cover       = 0;
     ras.invalid     = 1;
@@ -282,13 +290,123 @@ PVG_FT_END_STMNT
 
   /*************************************************************************/
   /*                                                                       */
+  /* Sort one scanline's cells by x and fold cells sharing an x into one,  */
+  /* returning the folded cells to the free list.  Returns the number of   */
+  /* cells freed.                                                          */
+  /*                                                                       */
+  static PVG_FT_PtrDist
+  gray_sort_cells( RAS_ARG_ PCell*  plist )
+  {
+    PCell           list = *plist, p, q, e, tail;
+    PVG_FT_PtrDist  insize, psize, qsize, i, nmerges, freed = 0;
+
+
+    if ( list == NULL )
+      return 0;
+
+    /* bottom-up merge sort of a singly linked list */
+    for ( insize = 1; ; insize *= 2 )
+    {
+      p       = list;
+      list    = NULL;
+      tail    = NULL;
+      nmerges = 0;
+
+      while ( p )
+      {
+        nmerges++;
+        q     = p;
+        psize = 0;
+        for ( i = 0; i < insize && q; i++ )
+        {
+          psize++;
+          q = q->next;
+        }
+        qsize = insize;
+
+        while ( psize > 0 || ( qsize > 0 && q ) )
+        {
+          if ( psize == 0 || ( qsize > 0 && q && q->x < p->x ) )
+          {
+            e = q;
+            q = q->next;
+            qsize--;
+          }
+          else
+          {
+            e = p;
+            p = p->next;
+            psize--;
+          }
+
+          if ( tail )
+            tail->next = e;
+          else
+            list = e;
+          tail = e;
+        }
+        p = q;
+      }
+      tail->next = NULL;
+
+      if ( nmerges <= 1 )
+        break;
+    }
+
+    for ( p = list; p->next; )
+    {
+      e = p->next;
+      if ( e->x == p->x )
+      {
+        p->area  += e->area;
+        p->cover += e->cover;
+        p->next   = e->next;
+        e->next   = ras.free_cells;
+        ras.free_cells = e;
+        freed++;
+      }
+      else
+        p = e;
+    }
+
+    *plist = list;
+    return freed;
+  }
+
+
+  static PVG_FT_PtrDist
+  gray_sort_all_cells( RAS_ARG )
+  {
+    PVG_FT_PtrDist  freed = 0;
+    TPos            yindex;
+
+
+    for ( yindex = 0; yindex < ras.ycount; yindex++ )
+      freed += gray_sort_cells( RAS_VAR_ &ras.ycells[yindex] );
+
+    return freed;
+  }
+
+
+  /*************************************************************************/
+  /*                                                                       */
   /* Record the current cell in the table.                                 */
+  /*                                                                       */
+  /* LOCAL-PATCH (fastchart): upstream walks the sorted scanline list on   */
+  /* every record, so a row crossed by k edges costs k^2.  After           */
+  /* PVG_FT_MAX_CELL_WALK steps the cell is pushed at the head instead     */
+  /* (one x may then appear more than once) and gray_sweep sorts and folds */
+  /* the band.  A full pool splits the band as before; a single-row band,  */
+  /* which cannot split, first folds its duplicates and overflows only if  */
+  /* that frees no more than an eighth of the pool, which keeps re-sorting */
+  /* at O(log k) amortized per record.                                     */
   /*                                                                       */
   static PCell
   gray_find_cell( RAS_ARG )
   {
     PCell  *pcell, cell;
-    TPos    x = ras.ex;
+    TPos    x     = ras.ex;
+    int     steps = PVG_FT_MAX_CELL_WALK;
 
 
     if ( x > ras.count_ex )
@@ -304,13 +422,34 @@ PVG_FT_END_STMNT
       if ( cell->x == x )
         goto Exit;
 
+      if ( --steps == 0 )
+      {
+        pcell        = &ras.ycells[ras.ey];
+        ras.unsorted = 1;
+        break;
+      }
+
       pcell = &cell->next;
     }
 
-    if ( ras.num_cells >= ras.max_cells )
-      pvg_ft_longjmp( ras.jump_buffer, 1 );
+    if ( ras.free_cells == NULL && ras.num_cells >= ras.max_cells )
+    {
+      if ( !ras.unsorted || ras.ycount > 1 ||
+           gray_sort_all_cells( RAS_VAR ) <= ras.max_cells / 8 )
+        pvg_ft_longjmp( ras.jump_buffer, 1 );
 
-    cell        = ras.cells + ras.num_cells++;
+      /* sorting relinked the lists */
+      pcell = &ras.ycells[ras.ey];
+    }
+
+    if ( ras.free_cells )
+    {
+      cell           = ras.free_cells;
+      ras.free_cells = cell->next;
+    }
+    else
+      cell = ras.cells + ras.num_cells++;
+
     cell->x     = x;
     cell->area  = 0;
     cell->cover = 0;
@@ -650,8 +789,34 @@ PVG_FT_END_STMNT
       p    = ONE_PIXEL * dx;
       PVG_FT_DIV_MOD( TCoord, p, dy, lift, rem );
 
-      do
+      /* LOCAL-PATCH (fastchart): every band re-decomposes the whole
+       * outline, so walking all of an edge's scanlines per band costs
+       * bands x edges x height.  Rows outside the band only touch
+       * invalid cells, so jump straight to the band's first row
+       * (advancing the DDA in closed form) and stop once the edge
+       * leaves the band.  The cells recorded are the same as with the
+       * full walk. */
+      if ( incr > 0 ? ey1 < ras.min_ey : ey1 >= ras.max_ey )
       {
+        TCoord        ey3 = incr > 0 ? ras.min_ey : ras.max_ey - 1;
+        PVG_FT_Int64  n   = ( ey3 - ey1 ) * incr;
+        PVG_FT_Int64  q   = (PVG_FT_Int64)rem * n + mod;
+
+
+        x   += (TPos)( lift * n + q / dy );
+        mod  = (TCoord)( q % dy );
+        ey1  = ey3;
+        gray_set_cell( RAS_VAR_ TRUNC( x ), ey1 );
+      }
+
+      while ( ey1 != ey2 )
+      {
+        if ( incr > 0 ? ey1 >= ras.max_ey : ey1 < ras.min_ey )
+        {
+          gray_set_cell( RAS_VAR_ TRUNC( to_x ), ey2 );
+          return;
+        }
+
         delta = lift;
         mod  += rem;
         if ( mod >= (TCoord)dy )
@@ -668,7 +833,7 @@ PVG_FT_END_STMNT
 
         ey1 += incr;
         gray_set_cell( RAS_VAR_ TRUNC( x ), ey1 );
-      } while ( ey1 != ey2 );
+      }
     }
 
     gray_render_scanline( RAS_VAR_ ey1,
@@ -1320,6 +1485,9 @@ PVG_FT_END_STMNT
     if ( ras.num_cells == 0 )
       return;
 
+    if ( ras.unsorted )
+      gray_sort_all_cells( RAS_VAR );
+
     for ( yindex = 0; yindex < ras.ycount; yindex++ )
     {
       PCell   cell  = ras.ycells[yindex];
@@ -1781,6 +1949,8 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
         }
 
         ras.num_cells = 0;
+        ras.free_cells = NULL;
+        ras.unsorted  = 0;
         ras.invalid   = 1;
         ras.min_ey    = band->min;
         ras.max_ey    = band->max;
@@ -1895,11 +2065,34 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
   {
       char stack[PVG_FT_MINIMUM_POOL_SIZE];
       size_t length = PVG_FT_MINIMUM_POOL_SIZE;
+      const PVG_FT_Outline* outline = (const PVG_FT_Outline*)params->source;
+      size_t want = 0;
+      void* pool = stack;
+
+      /* LOCAL-PATCH (fastchart): every band re-decomposes the whole
+       * outline, and the band count grows as cells / pool size, so a
+       * fixed pool makes outlines with many short edges cost
+       * edges x cells.  Start with a pool proportional to the point
+       * count (within the existing cap) so the band count stays near
+       * constant for them. */
+      if(outline != NULL && outline->n_points > 0)
+          want = (size_t)outline->n_points * PVG_FT_POOL_BYTES_PER_POINT;
+      if(want > length) {
+          while(length < want && length * 2 <= PVG_FT_MAXIMUM_POOL_SIZE)
+              length *= 2;
+          pool = malloc(length);
+          if(pool == NULL) {
+              pool = stack;
+              length = PVG_FT_MINIMUM_POOL_SIZE;
+          }
+      }
 
       TWorker worker;
       worker.skip_spans = 0;
       int rendered_spans = 0;
-      int error = gray_raster_render(&worker, stack, length, params);
+      int error = gray_raster_render(&worker, pool, length, params);
+      if(pool != stack)
+          free(pool);
       while(error == ErrRaster_OutOfMemory) {
           length *= 2;
           if(length > PVG_FT_MAXIMUM_POOL_SIZE)
