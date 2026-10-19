@@ -49,25 +49,28 @@
  * fails closed: over-counting only over-blocks. */
 #define FC_MAX_RENDER_OPS    (1LL << 32)
 
-/* Stroke-dash expansion budget for caller-supplied SVG, shared by every
- * dashed path in one document. plutovg caps each path at 2^20 dash
- * commands, but the element budget above counts a dashed path once no
- * matter how many dashes it expands into, so without a shared cap dash
- * work grows with the number of dashed paths. 2^22 lets four paths
- * each expand to the per-path cap; a document that needs more fails. */
-#define FC_MAX_DASH_COMMANDS (1L << 22)
-
-/* Stroke outline budget for caller-supplied SVG, in FreeType stroker
- * output points across every stroke in one document. The element budget
- * above counts a path once however many curves it holds, and the stroker
- * turns each curve into ~180 outline points held in native memory that
- * memory_limit never sees (~45 bytes per point for curves between the
- * stroker borders, the exported outline and the rasterizer cells). The
- * document dash budget alone can produce ~10.5M points (four paths at
- * the per-path dash cap), so 3 * 2^22 keeps that working with ~20%
- * headroom; at the cap a curve-heavy document peaks near 550 MB, and a
- * document that needs more fails. */
-#define FC_MAX_STROKE_POINTS (3L << 22)
+/* Native-memory budgets for caller-supplied SVG. The element budget above
+ * counts a path once however much geometry it expands into, so two
+ * expansions get their own per-document caps.
+ *
+ * FC_MAX_STROKE_POINTS is the ceiling: FreeType stroker output points
+ * across every stroke in one document. Those points, the exported
+ * outline and the rasterizer cells live in native memory that
+ * memory_limit never sees; a stroked curve turns into ~180 points at
+ * ~45 bytes each, so the cap bounds a curve-heavy document near 190 MB.
+ * Ordinary documents stay far below it: eight stitched charts of eight
+ * 2048-point series stroke into ~0.8M points.
+ *
+ * FC_MAX_DASH_COMMANDS caps dash commands across every dashed path. A
+ * dash command strokes into at most ~8 points (measured with round caps
+ * and round joins on sharp corners; butt caps give ~2.5), so 2^18
+ * commands stay within half the stroke budget whatever the cap and join
+ * style: a document that fits the dash budget runs out of dash budget,
+ * not stroke budget, and keeps room for its other strokes. plutovg still
+ * caps a single path at 2^20 commands, which only charts (no shared
+ * budget) can reach. */
+#define FC_MAX_STROKE_POINTS (1L << 22)
+#define FC_MAX_DASH_COMMANDS (1L << 18)
 
 /* Rasterize the given SVG bytes at the requested target dimensions.
  * On success: pix->rgba is emalloc'd, pix->w/h match the requested

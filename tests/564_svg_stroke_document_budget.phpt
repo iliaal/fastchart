@@ -8,25 +8,29 @@ asan.detect_leaks=0
 --FILE--
 <?php
 
-function dashed_round(int $n): string
+/* Each stroked cubic with control points far off a small canvas splits
+ * into ~180 outline points. */
+function curves(int $n): string
 {
+    $d = 'M0 0';
+    for ($i = 0; $i < $n; $i++) {
+        $d .= sprintf(' C 3000 -3000 -3000 3000 %d %d', $i % 64, $i % 37);
+    }
     return '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">'
-        . str_repeat('<line x1="0" y1="8" x2="1e6" y2="8" stroke="#000" '
-            . 'stroke-linecap="round" stroke-dasharray="0.2"/>', $n)
-        . '</svg>';
+        . '<path d="' . $d . '" fill="none" stroke="#000"/></svg>';
 }
 
-/* Each line stays inside the dash budget, but two of them stroke into
- * more outline points than the document may hold. */
+/* ~5.4M points: over the 2^22 document budget. */
 try {
-    FastChart\Chart::svgToPng(dashed_round(2));
+    FastChart\Chart::svgToPng(curves(30000));
     echo "over budget: rendered\n";
 } catch (ValueError $e) {
     echo 'over budget: ', $e->getMessage(), "\n";
 }
 
-$png = FastChart\Chart::svgToPng(dashed_round(1));
-echo 'one line: ', imagecreatefromstring($png) ? "rendered\n" : "NO\n";
+/* ~1M points, about a quarter of the budget, still renders. */
+$png = FastChart\Chart::svgToPng(curves(5500));
+echo 'heavy but within budget: ', imagecreatefromstring($png) ? "rendered\n" : "NO\n";
 
 /* Ordinary stroke-heavy documents stay far below the budget. */
 $paths = '';
@@ -48,6 +52,6 @@ echo 'chart: ', imagecreatefromstring($chart->renderPng()) ? "rendered\n" : "NO\
 ?>
 --EXPECT--
 over budget: FastChart\Chart::svgToPng() SVG render work exceeds cap (stroke outlines too large)
-one line: rendered
+heavy but within budget: rendered
 many ordinary strokes: rendered
 chart: rendered
