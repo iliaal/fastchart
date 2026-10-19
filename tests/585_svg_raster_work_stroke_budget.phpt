@@ -23,11 +23,11 @@ function zigzag(int $n, string $attrs): string
 }
 
 /* The 8,000-segment path of 583, stroked: stroke outlines rasterize
- * through the same coverage walk and share the budget (over 4G units
+ * through the same coverage walk and share the budget (~7.8G units
  * unbudgeted); under ASan 4f3caa5 does not finish in 900 s. The refusal
- * spends the whole budget: 3.9 s release on an idle host, 9 s on a
- * loaded one, 14-42 s for an -O0 ASan+UBSan module. The CPU-time bound
- * sits 3x above the slowest of those and 7x below 900 s. */
+ * spends the whole budget: 3.7 s release on an idle host, 32 s for an
+ * -O0 ASan+UBSan module on a loaded one. The CPU-time bound sits 3.8x
+ * above the slower of those and 7x below 900 s. */
 $t = cpu_seconds();
 try {
     FastChart\Chart::svgToPng(zigzag(8000, ' fill="none" stroke="#000"'));

@@ -77,44 +77,44 @@
 #define FC_MAX_DASH_COMMANDS (1L << 18)
 
 /* Rasterizer work budget for caller-supplied SVG, in plutovg raster work
- * units (see plutovg_canvas_set_raster_budget()): one per cell step and
- * cell-list walk step, per list step of the per-row sort, per curve
- * subdivision, per edge per raster band and per outline point per band,
- * across every fill, stroke and clip in the document. Coverage cost
- * grows with the rows each edge spans, which the element and stroke
- * budgets cannot see: unbudgeted, a 74 KB path of 8,000 full-height
- * segments on a 4096 px canvas is ~3.3G units.
+ * units (see plutovg_canvas_set_raster_budget()): each cell move, new
+ * cell, cell-list walk and sort step, curve subdivision, line per raster
+ * band, outline point per band, and cell and span of each band's sweep,
+ * weighted by its measured cost, across every fill, stroke and clip in
+ * the document. Coverage cost grows with the rows each edge spans, which
+ * the element and stroke budgets cannot see: unbudgeted, a 74 KB path of
+ * 8,000 full-height segments on a 4096 px canvas is ~5.3G units.
  *
  * The cap is sized to the heaviest ordinary document it must admit:
  * eight stitched 1024x512 line charts of eight 2048-point series in a
- * 2048 px square (~1.01G units, 2.8 s release on an idle aarch64 host).
- * The same document rendered at 2304 px (~1.14G) still renders; at
- * 2560 px (~1.35G) it is refused. On that host the costliest in-budget
- * documents found are 4096 px paths of full-height cubics (4.5 s) and of
- * interleaved zigzags (n=11,750: 7.0 s, about a third of it blending and
- * PNG encoding, which FC_MAX_PAINT_WORK and the pixel caps bound), and
- * a refusal, which spends the whole budget, takes 2.5-3.9 s. An x86 host
- * at load 8-12 measured 1.7-2.4x those figures. */
-#define FC_MAX_RASTER_WORK   1200000000LL
+ * 2048 px square (~1.72G units, 2.9 s release on an idle aarch64 host).
+ * The same document rendered at 2304 px (~1.98G) still renders; at
+ * 2560 px (~2.44G) it is refused. These are the costliest documents
+ * measured on that host, not a proven bound: in budget, 4096 px paths of
+ * 10,241 interleaved full-height segments (5.7 s with blending and PNG
+ * encoding) and of 4,955 full-height cubics (4.6 s); a refusal, which
+ * spends the whole budget, took 2.6-4.2 s across the shapes tried. */
+#define FC_MAX_RASTER_WORK   2200000000LL
 
 /* Blending budget for caller-supplied SVG, in plutovg paint units (see
  * plutovg_canvas_set_paint_budget()): every pixel each fill, stroke or
  * paint pass blends, times a weight for its paint kind and coverage
  * (fully covered: opaque solid 1, translucent solid 7, linear gradient
  * 14, radial gradient 20; partially covered, which blends pixel by
- * pixel: solid 8, linear 21, radial 26), so a unit costs 0.33-0.40 ns
- * on an idle aarch64 host whatever the paint. The element x pixel budget
- * above counts elements, not passes, paint kind or coverage, so on its
- * own it admits 251 full-canvas radial-gradient rects with fill and
- * stroke at 4096 px (~32 s on that host). 2^33 units caps blending near
- * 3.4 s there: sixteen full-canvas radial-gradient layers under a line
- * chart at 4096 px (~5.4G) render in 3.6 s, and 62 paths of half-pixel
- * strips over a 4096 px canvas, opaque at coverage 128, in 8.4 s with an
- * 11,750-segment zigzag. With every budget near its cap at once (that
+ * pixel: solid 8, linear 21, radial 26), plus a fixed charge per span
+ * (solid 14, linear 33, radial 46), so a unit costs 0.28-0.40 ns on an
+ * idle aarch64 host whatever the paint. The element x pixel budget above
+ * counts elements, not passes, paint kind or coverage, so on its own it
+ * admits 251 full-canvas radial-gradient rects with fill and stroke at
+ * 4096 px (~32 s on that host). 2^33 units
+ * cap blending near 3.4 s there: sixteen full-canvas radial-gradient
+ * layers under a line chart at 4096 px (~5.5G) render in 3.6 s. With
+ * every budget near its cap at once (a 10,217-segment interleaved
  * zigzag, 25 radial-gradient layers, a 22,000-cubic stroke and a
- * 52,000-dash line) a 4096 px document renders in 10.9 s with its PNG
- * encoding, the costliest in-budget document measured; a paint refusal
- * takes 2.9-3.1 s. */
+ * 52,000-dash line) a 4096 px document renders in 9.9 s with its PNG
+ * encoding, and the same document with a 26th layer is refused after
+ * 7.3 s: the costliest in-budget document and refusal measured, not a
+ * proven bound. */
 #define FC_MAX_PAINT_WORK    (1LL << 33)
 
 /* Rasterize the given SVG bytes at the requested target dimensions.

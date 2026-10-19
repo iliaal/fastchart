@@ -22,8 +22,9 @@ function line_chart(int $w, int $h, int $first, int $count): FastChart\LineChart
 }
 
 /* Eight stitched 1024x512 line charts of eight 2048-point series, the
- * largest ordinary document the budget was sized for: ~1.01G of the 1.2G
- * work units. Rendered at 2560 px (~1.35G units) it is refused. */
+ * largest ordinary document the budget was sized for: ~1.72G of the 2.2G
+ * work units. Rendered at 2304 px (~1.98G units) it still renders; at
+ * 2560 px (~2.44G units) it is refused. */
 $g = '';
 for ($k = 0; $k < 8; $k++) {
     $g .= sprintf('<g transform="translate(%d %d)">%s</g>',

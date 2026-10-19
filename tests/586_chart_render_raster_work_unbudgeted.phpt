@@ -21,10 +21,10 @@ function line_chart(int $w, int $h, int $first, int $count): FastChart\LineChart
         ->setSeries(array_map('series', range($first, $first + $count - 1)));
 }
 
-/* Eight 2048-point series on one 2048x4096 chart need ~1.32G work
- * units, over the 1.2G svgTo*() budget; chart renders pass no budget. */
-$info = getimagesizefromstring(line_chart(2048, 4096, 0, 8)->renderPng());
+/* Eight 2048-point series on one 2048x6144 chart need ~3.6G work
+ * units, over the 2.2G svgTo*() budget; chart renders pass no budget. */
+$info = getimagesizefromstring(line_chart(2048, 6144, 0, 8)->renderPng());
 echo "chart: {$info[0]}x{$info[1]}\n";
 ?>
 --EXPECT--
-chart: 2048x4096
+chart: 2048x6144

@@ -1145,9 +1145,12 @@ static void plutovg_blend_texture(plutovg_canvas_t* canvas, const plutovg_textur
  * Measured: translucent solid 2.5 ns, linear gradient 2.6-4.8 ns, radial
  * gradient 7.0 ns, scaled texture 2.9 ns. A span below full coverage
  * blends pixel by pixel, which costs more: opaque and translucent solid
- * 2.7 ns, linear gradient 7.3 ns, radial gradient 8.9-9.2 ns. Each weight
- * rounds the worst measured variant up; textures, whose transformed and
- * tiled variants were not all measured, are charged as radial gradients. */
+ * 2.7 ns, linear gradient 7.3 ns, radial gradient 8.9-9.2 ns. Each span
+ * also costs a fixed setup on top of its pixels, measured on one-pixel
+ * spans after their pixel charge: solid 3.4-4.8 ns, linear gradient
+ * 10.1-11.8 ns, radial gradient 12.6-16.4 ns. Each weight rounds the
+ * worst measured variant up; textures, whose transformed and tiled
+ * variants were not all measured, are charged as radial gradients. */
 #define PLUTOVG_PAINT_WEIGHT_OPAQUE  1
 #define PLUTOVG_PAINT_WEIGHT_BLEND   7
 #define PLUTOVG_PAINT_WEIGHT_LINEAR  14
@@ -1157,10 +1160,15 @@ static void plutovg_blend_texture(plutovg_canvas_t* canvas, const plutovg_textur
 #define PLUTOVG_PAINT_WEIGHT_PARTIAL_LINEAR  21
 #define PLUTOVG_PAINT_WEIGHT_PARTIAL_RADIAL  26
 #define PLUTOVG_PAINT_WEIGHT_PARTIAL_TEXTURE 26
+#define PLUTOVG_PAINT_WEIGHT_SPAN_SOLID   14
+#define PLUTOVG_PAINT_WEIGHT_SPAN_LINEAR  33
+#define PLUTOVG_PAINT_WEIGHT_SPAN_RADIAL  46
+#define PLUTOVG_PAINT_WEIGHT_SPAN_TEXTURE 46
 
 /* LOCAL-PATCH (fastchart): weight of a fully covered pixel for the
- * current paint; *partial gets the weight of a partially covered one. */
-static int plutovg_paint_weight(const plutovg_canvas_t* canvas, int* partial)
+ * current paint; *partial gets the weight of a partially covered one and
+ * *span the fixed weight of each span. */
+static int plutovg_paint_weight(const plutovg_canvas_t* canvas, int* partial, int* span)
 {
     const plutovg_state_t* state = canvas->state;
     const plutovg_paint_t* paint = state->paint;
@@ -1169,15 +1177,18 @@ static int plutovg_paint_weight(const plutovg_canvas_t* canvas, int* partial)
         const plutovg_gradient_paint_t* gradient = (const plutovg_gradient_paint_t*)(paint);
         if(gradient->type == PLUTOVG_GRADIENT_TYPE_LINEAR) {
             *partial = PLUTOVG_PAINT_WEIGHT_PARTIAL_LINEAR;
+            *span = PLUTOVG_PAINT_WEIGHT_SPAN_LINEAR;
             return PLUTOVG_PAINT_WEIGHT_LINEAR;
         }
 
         *partial = PLUTOVG_PAINT_WEIGHT_PARTIAL_RADIAL;
+        *span = PLUTOVG_PAINT_WEIGHT_SPAN_RADIAL;
         return PLUTOVG_PAINT_WEIGHT_RADIAL;
     }
 
     if(paint != NULL && paint->type != PLUTOVG_PAINT_TYPE_COLOR) {
         *partial = PLUTOVG_PAINT_WEIGHT_PARTIAL_TEXTURE;
+        *span = PLUTOVG_PAINT_WEIGHT_SPAN_TEXTURE;
         return PLUTOVG_PAINT_WEIGHT_TEXTURE;
     }
 
@@ -1185,6 +1196,7 @@ static int plutovg_paint_weight(const plutovg_canvas_t* canvas, int* partial)
         color = &((const plutovg_solid_paint_t*)(paint))->color;
     uint32_t solid = premultiply_color_with_opacity(color, state->opacity);
     *partial = PLUTOVG_PAINT_WEIGHT_PARTIAL_SOLID;
+    *span = PLUTOVG_PAINT_WEIGHT_SPAN_SOLID;
     if(plutovg_alpha(solid) == 255 && state->op == PLUTOVG_OPERATOR_SRC_OVER)
         return PLUTOVG_PAINT_WEIGHT_OPAQUE;
     return PLUTOVG_PAINT_WEIGHT_BLEND;
@@ -1211,9 +1223,10 @@ static bool plutovg_paint_budget_charge(plutovg_canvas_t* canvas, const plutovg_
         }
     }
 
-    int partial_weight;
-    int weight = plutovg_paint_weight(canvas, &partial_weight);
-    long long cost = full * weight + partial * partial_weight;
+    int partial_weight, span_weight;
+    int weight = plutovg_paint_weight(canvas, &partial_weight, &span_weight);
+    long long cost = full * weight + partial * partial_weight
+        + (long long)span_buffer->spans.size * span_weight;
     if(cost > budget->remaining) {
         budget->remaining = 0;
         budget->exceeded = true;

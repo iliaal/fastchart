@@ -2027,9 +2027,11 @@ PLUTOVG_API bool plutovg_canvas_stroke_budget_exceeded(const plutovg_canvas_t* c
  *
  * Coverage work grows with the rows every edge crosses, so a small path
  * of many tall edges costs far more than its size suggests. The budget
- * counts that work (cells visited, cell-list walk and sort steps, curve
- * subdivisions, and a pass over the outline per raster band) across
- * every fill, stroke and clip this canvas rasterizes. The path that runs out is not drawn, later paths are
+ * counts that work (cell moves and new cells, cell-list walk and sort
+ * steps, curve subdivisions, a pass over the outline per raster band, and
+ * the cells and spans each band's sweep produces), each item weighted by
+ * its measured cost, across every fill, stroke and clip this canvas
+ * rasterizes. The path that runs out is not drawn, later paths are
  * skipped, and plutovg_canvas_raster_budget_exceeded() reports true;
  * the caller should discard the surface. The default is no limit.
  *
@@ -2056,13 +2058,14 @@ PLUTOVG_API bool plutovg_canvas_raster_budget_exceeded(const plutovg_canvas_t* c
  * shapes cost tens of seconds. The budget counts the pixels each pass
  * blends times a weight for its paint kind (opaque solid, translucent
  * solid, linear gradient, radial gradient, texture) and for whether the
- * pixel is fully or partially covered, across every pass on this canvas.
- * The pass that would exceed it is not drawn, nothing is drawn after it,
- * and plutovg_canvas_paint_budget_exceeded() reports true; the caller
- * should discard the surface. The default is no limit.
+ * pixel is fully or partially covered, plus a fixed charge per span for
+ * its paint kind, across every pass on this canvas. The pass that would
+ * exceed it is not drawn, nothing is drawn after it, and
+ * plutovg_canvas_paint_budget_exceeded() reports true; the caller should
+ * discard the surface. The default is no limit.
  *
  * @param canvas A pointer to a `plutovg_canvas_t` object.
- * @param budget Maximum weighted pixels across all passes, or a negative
+ * @param budget Maximum paint units across all passes, or a negative
  * value for no limit. Clears the exceeded flag.
  */
 PLUTOVG_API void plutovg_canvas_set_paint_budget(plutovg_canvas_t* canvas, long long budget);
