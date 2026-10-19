@@ -73,18 +73,25 @@
 #define FC_MAX_DASH_COMMANDS (1L << 18)
 
 /* Rasterizer work budget for caller-supplied SVG, in plutovg raster work
- * units (see plutovg_canvas_set_raster_budget()): one per cell step of
- * the coverage walk, one per edge per raster band and one per outline
- * point per band, across every fill, stroke and clip in the document.
- * Coverage cost grows with the rows each edge spans, which the element
- * and stroke budgets cannot see: a 300 KB path of 32,000 full-height
- * segments on a 4096 px canvas is ~870M units, ~20 s of CPU. A unit
- * costs 8-36 ns in a release build depending on the shape, so 2^26
- * bounds coverage work near 1-2.5 s. Ordinary documents stay far below
- * it; eight stitched 1024x512 line charts of eight 2048-point series
- * (2048 px square) use ~60M, and one 2048-point series on a 4096 px
- * line chart ~11M. */
-#define FC_MAX_RASTER_WORK   (1L << 26)
+ * units (see plutovg_canvas_set_raster_budget()): one per cell step and
+ * cell-list walk step, per list step of the per-row sort, per curve
+ * subdivision, per edge per raster band and per outline point per band,
+ * across every fill, stroke and clip in the document. Coverage cost
+ * grows with the rows each edge spans, which the element and stroke
+ * budgets cannot see: unbudgeted, a 74 KB path of 8,000 full-height
+ * segments on a 4096 px canvas is ~3.3G units.
+ *
+ * The cap is sized to the heaviest ordinary document it must admit:
+ * eight stitched 1024x512 line charts of eight 2048-point series in a
+ * 2048 px square (~1.01G units, 2.8 s release on an idle aarch64 host).
+ * The same document at 2304 px (~1.16G) still renders; at 2560 px
+ * (~1.43G) it is refused. On that host the costliest in-budget documents
+ * found are 4096 px paths of full-height cubics (4.5 s) and of
+ * interleaved zigzags (5.5 s, about a third of it blending and PNG
+ * encoding, which the pixel caps bound instead), and a refusal, which
+ * spends the whole budget, takes 2.5-3.9 s. An x86 host at load 8-12
+ * measured 1.7-2.4x those figures. */
+#define FC_MAX_RASTER_WORK   1200000000L
 
 /* Rasterize the given SVG bytes at the requested target dimensions.
  * On success: pix->rgba is emalloc'd, pix->w/h match the requested

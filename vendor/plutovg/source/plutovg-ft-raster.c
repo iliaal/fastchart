@@ -291,15 +291,17 @@ PVG_FT_END_STMNT
 
   /*************************************************************************/
   /*                                                                       */
-  /* Sort one scanline's cells by x and fold cells sharing an x into one,  */
-  /* returning the folded cells to the free list.  Returns the number of   */
-  /* cells freed.                                                          */
+  /* LOCAL-PATCH (fastchart): sort one scanline's cells by x and fold     */
+  /* cells sharing an x into one, returning the folded cells to the free   */
+  /* list.  Returns the number of cells freed.  Every list step of the     */
+  /* merge sort and of the fold is charged to the raster budget.          */
   /*                                                                       */
   static PVG_FT_PtrDist
   gray_sort_cells( RAS_ARG_ PCell*  plist )
   {
     PCell           list = *plist, p, q, e, tail;
     PVG_FT_PtrDist  insize, psize, qsize, i, nmerges, freed = 0;
+    long            work = 0;
 
 
     if ( list == NULL )
@@ -322,6 +324,7 @@ PVG_FT_END_STMNT
         {
           psize++;
           q = q->next;
+          work++;
         }
         qsize = insize;
 
@@ -345,6 +348,7 @@ PVG_FT_END_STMNT
           else
             list = e;
           tail = e;
+          work++;
         }
         p = q;
       }
@@ -356,6 +360,7 @@ PVG_FT_END_STMNT
 
     for ( p = list; p->next; )
     {
+      work++;
       e = p->next;
       if ( e->x == p->x )
       {
@@ -371,6 +376,7 @@ PVG_FT_END_STMNT
     }
 
     *plist = list;
+    ras.work_left -= work;
     return freed;
   }
 
@@ -460,6 +466,11 @@ PVG_FT_END_STMNT
     *pcell      = cell;
 
   Exit:
+    /* LOCAL-PATCH (fastchart): each step of the walk is raster work */
+    ras.work_left -= PVG_FT_MAX_CELL_WALK - steps;
+    if ( ras.work_left < 0 )
+      pvg_ft_longjmp( ras.jump_buffer, 2 );
+
     return cell;
   }
 
@@ -1226,6 +1237,8 @@ PVG_FT_END_STMNT
       split = 1;
       while ( ( draw & split ) == 0 )
       {
+        if ( --ras.work_left < 0 )   /* LOCAL-PATCH (fastchart) */
+          pvg_ft_longjmp( ras.jump_buffer, 2 );
         gray_split_conic( arc );
         arc += 2;
         split <<= 1;
@@ -1360,6 +1373,8 @@ PVG_FT_END_STMNT
     Split:
       if( arc == limit )
         return;
+      if ( --ras.work_left < 0 )   /* LOCAL-PATCH (fastchart) */
+        pvg_ft_longjmp( ras.jump_buffer, 2 );
       gray_split_cubic( arc );
       arc += 3;
     }
@@ -1495,8 +1510,15 @@ PVG_FT_END_STMNT
     if ( ras.num_cells == 0 )
       return;
 
+    /* LOCAL-PATCH (fastchart): rows pushed unsorted by gray_find_cell().  */
+    /* The sort charges the raster budget; gray_convert_glyph() refuses    */
+    /* the render if it ran out, so nothing is swept.                      */
     if ( ras.unsorted )
+    {
       gray_sort_all_cells( RAS_VAR );
+      if ( ras.work_left < 0 )
+        return;
+    }
 
     for ( yindex = 0; yindex < ras.ycount; yindex++ )
     {
@@ -1985,6 +2007,8 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
         if ( !error )
         {
           gray_sweep( RAS_VAR);
+          if ( ras.work_left < 0 )      /* LOCAL-PATCH (fastchart) */
+            return ErrRaster_Budget;
           band--;
           continue;
         }

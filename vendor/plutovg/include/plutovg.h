@@ -2027,9 +2027,9 @@ PLUTOVG_API bool plutovg_canvas_stroke_budget_exceeded(const plutovg_canvas_t* c
  *
  * Coverage work grows with the rows every edge crosses, so a small path
  * of many tall edges costs far more than its size suggests. The budget
- * counts that work (cells visited plus a pass over the outline per
- * raster band) across every fill, stroke and clip this canvas
- * rasterizes. The path that runs out is not drawn, later paths are
+ * counts that work (cells visited, cell-list walk and sort steps, curve
+ * subdivisions, and a pass over the outline per raster band) across
+ * every fill, stroke and clip this canvas rasterizes. The path that runs out is not drawn, later paths are
  * skipped, and plutovg_canvas_raster_budget_exceeded() reports true;
  * the caller should discard the surface. The default is no limit.
  *
