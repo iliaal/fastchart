@@ -93,7 +93,11 @@
  * measured on that host, not a proven bound: in budget, 4096 px paths of
  * 10,241 interleaved full-height segments (5.7 s with blending and PNG
  * encoding) and of 4,955 full-height cubics (4.6 s); a refusal, which
- * spends the whole budget, took 2.6-4.2 s across the shapes tried. */
+ * spends the whole budget, took 2.6-4.2 s across the shapes tried.
+ * Paths of tens of thousands of tiny contours run slower per unit,
+ * because their cell pool reaches its 8 MB cap and misses cache: 25,000
+ * small triangles plus 3,450 full-height segments render in 9.3 s and,
+ * past the cap, are refused in 9.2 s. */
 #define FC_MAX_RASTER_WORK   2200000000LL
 
 /* Blending budget for caller-supplied SVG, in plutovg paint units (see
@@ -113,8 +117,9 @@
  * zigzag, 25 radial-gradient layers, a 22,000-cubic stroke and a
  * 52,000-dash line) a 4096 px document renders in 9.9 s with its PNG
  * encoding, and the same document with a 26th layer is refused after
- * 7.3 s: the costliest in-budget document and refusal measured, not a
- * proven bound. */
+ * 7.3 s. Swapping the zigzag for the 25,000-triangle path above raises
+ * the in-budget render to 14.0 s, the costliest measured, not a proven
+ * bound. */
 #define FC_MAX_PAINT_WORK    (1LL << 33)
 
 /* Rasterize the given SVG bytes at the requested target dimensions.

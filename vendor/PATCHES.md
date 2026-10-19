@@ -410,7 +410,9 @@ upstream-verbatim.
   caller discards the surface. fastchart's `svgTo*()` sets 2.2G units
   per document and refuses with "fill coverage too large"; charts pass
   -1 (fch-au7). The costliest documents measured on that host, not a
-  proven bound, render in 5.7 s and are refused in 4.2 s. The counters and
+  proven bound, render in 5.7 s and are refused in 4.2 s; paths of tens
+  of thousands of tiny contours, whose cell pool reaches its 8 MB cap and
+  misses cache, render in 9.3 s and are refused in 9.2 s. The counters and
   the API take `long long`, so an unbudgeted render past 2^31 units does
   not stop part-way where `long` is 32 bits.
 - **Origin**: `d8c8629`, `dd3d77a`, `00b8b6f`, `fe0e23a`; 64-bit counters
@@ -446,9 +448,10 @@ upstream-verbatim.
   per document and refuses with "paint coverage too large"; charts and
   symbols pass -1 (fch-ak7). With the raster, stroke, dash and paint
   budgets all near their caps, the costliest in-budget 4096 px document
-  measured renders in 9.9 s on an idle aarch64 host, PNG encoding
-  included, and the costliest refusal measured takes 7.3 s; these are
-  measurements, not a proven bound.
+  measured renders in 14.0 s on an idle aarch64 host, PNG encoding
+  included (9.9 s when the raster load is a zigzag rather than tens of
+  thousands of tiny contours), and the costliest refusal measured takes
+  9.2 s; these are measurements, not a proven bound.
 - **Origin**: `f5d2df0`; partial-coverage weights `3f327c3`; per-span
   charge `f2ae00c`.
 - **Upstream**: not proposed; an embedder budget.
