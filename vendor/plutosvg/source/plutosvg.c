@@ -253,6 +253,12 @@ typedef struct element {
     struct element* image_cache_prev;
     struct element* image_cache_next;
     bool image_loaded;
+    /* LOCAL-PATCH (fastchart): the element's <stop> children in document
+     * order, linked at parse time, so resolving a gradient for each paint
+     * that uses it does not walk every other child as well. */
+    struct element* first_stop;
+    struct element* last_stop;
+    struct element* next_stop;
 } element_t;
 
 typedef struct heap_chunk {
@@ -1482,6 +1488,9 @@ plutosvg_document_t* plutosvg_document_load_from_data(const char* data, int leng
                 element->image_cache_prev = NULL;
                 element->image_cache_next = NULL;
                 element->image_loaded = false;
+                element->first_stop = NULL; /* LOCAL-PATCH (fastchart) */
+                element->last_stop = NULL;
+                element->next_stop = NULL;
                 if(document->root_element == NULL) {
                     if(element->id != TAG_SVG)
                         goto error;
@@ -1494,6 +1503,16 @@ plutosvg_document_t* plutosvg_document_load_from_data(const char* data, int leng
                     } else {
                         current->last_child = element;
                         current->first_child = element;
+                    }
+
+                    /* LOCAL-PATCH (fastchart): see element_t.first_stop */
+                    if(element->id == TAG_STOP) {
+                        if(current->last_stop) {
+                            current->last_stop->next_stop = element;
+                        } else {
+                            current->first_stop = element;
+                        }
+                        current->last_stop = element;
                     }
                 }
             }
@@ -1800,7 +1819,8 @@ typedef struct {
 
 static void resolve_gradient_stops(render_context_t* context, const element_t* element, gradient_stop_array_t* stops)
 {
-    const element_t* child = element->first_child;
+    /* LOCAL-PATCH (fastchart): walk only the <stop> children */
+    const element_t* child = element->first_stop;
     while(child && stops->size < MAX_STOPS) {
         if(child->id == TAG_STOP) {
             float offset = 0.f;
@@ -1817,7 +1837,7 @@ static void resolve_gradient_stops(render_context_t* context, const element_t* e
             stops->size += 1;
         }
 
-        child = child->next_sibling;
+        child = child->next_stop;
     }
 }
 
@@ -1843,14 +1863,8 @@ static void collect_gradient_attributes(const element_t* element, gradient_attri
         attributes->spread = element;
     if(attributes->transform == NULL && has_attribute(element, ATTR_GRADIENT_TRANSFORM))
         attributes->transform = element;
-    if(attributes->stops == NULL) {
-        for(const element_t* child = element->first_child; child; child = child->next_sibling) {
-            if(child->id == TAG_STOP) {
-                attributes->stops = element;
-                break;
-            }
-        }
-    }
+    if(attributes->stops == NULL && element->first_stop) /* LOCAL-PATCH (fastchart) */
+        attributes->stops = element;
 }
 
 static void fill_gradient_attributes(const element_t* element, gradient_attributes_t* attributes)
