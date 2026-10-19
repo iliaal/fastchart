@@ -93,6 +93,16 @@ worker memory budgets for both:
   plutovg's malloc-backed surfaces, outside PHP's `memory_limit`.
   Lowering the cache limit causes repeat decodes rather than rejecting
   a render; temporary decode allocations are not covered by this limit.
+  The bundled decoder refuses images larger than 4096 px on a side, so
+  one temporary decode stays near 128 MiB at most.
+- `svgTo*()` render work: stroked outlines are capped at 4,194,304
+  points per document (about 190 MB of native stroker memory at worst)
+  and dash expansion at 262,144 dash commands. Rasterizer fill coverage
+  and blended paint coverage have per-document work budgets as well; the
+  costliest in-budget document measured took about 14 s of CPU on an idle
+  aarch64 release build. Documents beyond any budget throw `ValueError`.
+  Each fill's rasterizer cell pool is up to 8 MiB, outside
+  `memory_limit`. Chart renders are not subject to these budgets.
 
 Rough render-memory allowance per concurrently active worker, using
 positive configured caps (not an RSS upper bound):

@@ -12,11 +12,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Source-image and font loading reject blocking built-in wrappers, enforce
   `open_basedir` for custom wrappers, and bind descriptor ownership to
   bailout-safe cleanup.
+- `svgToPng()`, `svgToJpeg()`, and `svgToWebp()` apply the `data:image/`
+  and `<use>` rejection to the parsed SVG tree instead of a byte-level
+  pre-scan. Comment, CDATA, or processing-instruction openers inside
+  attribute values, a DOCTYPE, or the XML declaration no longer hide
+  embedded images, which could decode about 2 GB outside `memory_limit`,
+  or `<use>` graphs, which could crash the worker or burn CPU. Affects
+  applications that pass untrusted SVG to these methods; error messages
+  are unchanged.
+- Source images passed to `setBackgroundImage()` and `addIconAt()` are
+  capped on the dimensions the decoder uses. A PNG with a leading Apple
+  `CgBI` chunk could report decoy dimensions to the size check and decode
+  up to about 1 GiB of pixels outside `memory_limit`. PNGs whose first
+  chunk is not `IHDR` are refused, and the bundled decoder refuses any
+  image larger than 4096 px on a side. Affects applications that pass
+  untrusted image files to these methods.
+- `svgTo*()` budgets render work per document: dash expansion (262,144
+  dash commands), stroke outline points (about 4.2 million), rasterizer
+  fill coverage, and blended paint coverage, throwing `ValueError` beyond
+  any of them. A small document of many dashed, stroked, tall-edged, or
+  overlapping gradient-filled paths could otherwise spend tens of seconds
+  to minutes of CPU or gigabytes of native memory outside `memory_limit`.
+  Chart renders are not budgeted.
+- Bundled plutosvg: `<use>` recursion counts toward the render depth cap,
+  total `<use>` expansion is capped, and a `<use>` that references its own
+  ancestor is refused. Before, a deep chain overflowed the stack, nested
+  fan-out cost CPU exponential in depth, and an ancestor reference never
+  terminated. Duplicate attributes collapse to one record per name, and
+  gradient stops are linked at parse time, so padding an element with
+  repeated attributes or a gradient with non-stop children no longer costs
+  CPU quadratic in document size.
+- Bundled plutovg: SVG geometry far outside the canvas (beyond about 2
+  million px, or non-finite after transform) is clipped before
+  fixed-point conversion, and stroke widths and miter limits are capped.
+  This removes undefined behavior in the FreeType-derived stroker and
+  rasterizer that cost seconds of CPU and gigabytes of native memory.
+  Strokes wider than about 1,048,576 px draw at that width.
+- Bundled plutovg: an arc whose sweep overflows to NaN draws a straight
+  line instead of emitting curve segments until memory runs out on
+  optimized builds. Path, array, and font-cache growth check for
+  allocation failure and capacity overflow. Degenerate gradient geometry
+  no longer converts NaN or out-of-range positions to `int`.
+- Bundled plutovg: the rasterizer no longer re-walks every scanline of an
+  edge for each raster band or scans a row's whole cell list for every
+  coverage update, and it checks span-buffer growth and outline
+  allocation. Output is unchanged; line-heavy raster charts render faster.
 
 ### Changed
 
 - `SunburstChart` computes wedge layout in linear time, avoiding repeated
   whole-hierarchy scans while preserving sibling order and geometry.
+- `svgTo*()` refuses some very heavy documents it used to render, such as
+  eight stitched eight-series line charts scaled to 2560 px, which took
+  over 20 seconds of CPU before.
+- PNGs whose first chunk is not `IHDR` (including Apple `CgBI` PNGs) and
+  JPEGs the bundled decoder cannot parse (lossless, arithmetic-coded, or
+  non-8-bit) are dropped from SVG output too, matching raster output.
+- Formatted value labels (`setShowValues()`, cell values, Pareto and Funnel
+  values, pie percentages) and radial bar and radar category labels share
+  a 65,536-byte budget per render. Axis tick labels built from
+  `setXAxisLabelFormat()` / `setYAxisLabelFormat()` have their own
+  65,536-byte budget per render. Labels past a budget are omitted, or the
+  render throws `ValueError` in strict mode.
+- `addHorizontalLine()` and `addVerticalLine()` accept at most 128 lines
+  combined and 65,536 bytes of label text, throwing `ValueError` beyond
+  either limit.
+- `GanttChart`, `BoxPlot`, `Treemap`, `Funnel`, `Waterfall`,
+  `ParetoChart`, `SankeyChart`, and `MarimekkoChart` label collections
+  enforce the 65,536-byte aggregate label budget on retained entries,
+  throwing `ValueError` and keeping their prior state.
 
 ### Fixed
 
@@ -81,6 +145,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LineChart`, `ScatterChart`, and vertical/horizontal `BarChart` keep
   complete shown value labels for accepted `setShowValues()` formats
   instead of truncating them to 31 bytes.
+- Calling a setter on a chart while that chart renders, from a stream
+  wrapper or error handler that runs during a lazy image or font load,
+  throws `Error` instead of freeing data the renderer still uses.
+  Rendering a chart from inside its own render also throws.
+- A fatal error inside `Waterfall` or `BoxPlot` layout no longer leaves the
+  chart holding a borrowed label array, which caused a double free or
+  use-after-free at shutdown.
+- `exit()` called from a stream wrapper or error handler during a
+  render-time image or font load ends the script. Other exceptions raised
+  there are still discarded and the resource treated as unavailable.
+- Instantiating a userland subclass of `FastChart\Chart`, `Symbol`, or
+  `Barcode` that declares properties throws the documented `Error`
+  instead of corrupting the heap.
+- The QR encoder's Reed-Solomon tables are constant data, removing an
+  unsynchronized lazy initialization under ZTS. Output is unchanged.
+- The FreeType face cache is keyed on the identity of the font file opened
+  for the current render instead of the caller's path string, and the
+  `open_basedir` check is bound to that descriptor on POSIX. A relative
+  font path no longer reuses a face loaded under another working
+  directory or `open_basedir`, and a replaced or deleted font is re-read
+  instead of served from cache. Windows still checks the path and opens
+  it in separate steps.
 
 ## [1.7.4] - 2026-09-17
 
