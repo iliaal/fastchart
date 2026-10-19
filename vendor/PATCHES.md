@@ -32,7 +32,8 @@ upstream file fetched from GitHub.
 
 Pinned tag `v1.3.3`. Changed files: `plutovg.h`, `plutovg-blend.c`,
 `plutovg-canvas.c`, `plutovg-font.c`, `plutovg-ft-raster.c`,
-`plutovg-ft-stroker.c`, `plutovg-ft-stroker.h`, `plutovg-path.c`,
+`plutovg-ft-raster.h`, `plutovg-ft-stroker.c`, `plutovg-ft-stroker.h`,
+`plutovg-path.c`,
 `plutovg-private.h`, `plutovg-rasterize.c`, `plutovg-stb-image.h`,
 `plutovg-surface.c`, `plutovg-utils.h`. All other vendored files are
 upstream-verbatim.
@@ -351,6 +352,59 @@ upstream-verbatim.
 - **Marker**: `LOCAL-PATCH (fastchart)`.
 
 <!-- Integrator: append further plutovg entries below this line. -->
+
+### PV-23: banded rasterizer work bounds
+
+- **File:function**: `source/plutovg-ft-raster.c`: `gray_render_line`,
+  `gray_find_cell`, `gray_sort_cells`, `gray_sort_all_cells`,
+  `gray_sweep`, `gray_convert_glyph`, `PVG_FT_Raster_Render`.
+- **What / why**: three superlinear costs in the gray rasterizer, each
+  reachable from a small SVG; output stays byte-identical.
+  - Band clip: every raster band re-decomposes the whole outline, and
+    `gray_render_line` walked every scanline of an edge for each band,
+    so cost was bands x edges x height (a 2 KB path of 250 full-height
+    segments took 7.6 s release, 20 s ASan). The walk now jumps to the
+    band's first row by advancing the line stepper in closed form and
+    stops once the edge leaves the band.
+  - Cell walk cap: each coverage record walked the row's sorted cell
+    list, so a row crossed by k edges cost k^2. The walk now stops after
+    32 cells and pushes the cell unsorted; `gray_sweep` sorts and folds
+    such bands, and a full single-row band folds its duplicates before
+    it overflows.
+  - Pool sizing: with a fixed 32 KB pool the band count grew with the
+    cell count, so outlines of many short edges cost edges x cells. The
+    first pool is now 64 bytes per outline point within the existing
+    8 MB cap. Sizing it for every cell was slower: cell lists spread
+    over megabytes miss the cache on each walk step.
+- **Origin**: `45a46a9` (fch-au7); markers in `00b8b6f`.
+- **Upstream**: PR candidate. plutovg `main` and FreeType's `ftgrays.c`
+  share the per-band scanline walk and the sorted cell list.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
+### PV-24: per-canvas raster work budget
+
+- **File:function**: `include/plutovg.h`:
+  `plutovg_canvas_set_raster_budget`,
+  `plutovg_canvas_raster_budget_exceeded`; `source/plutovg-canvas.c`;
+  `source/plutovg-path.c`; `source/plutovg-private.h`;
+  `source/plutovg-ft-raster.h`: `PVG_FT_Raster_Budget`,
+  `PVG_FT_Raster_Params.budget`; `source/plutovg-ft-raster.c`: cell,
+  walk, sort, curve-split and per-band charges, `ErrRaster_Budget`,
+  `gray_convert_glyph_inner`, `PVG_FT_Raster_Render`;
+  `source/plutovg-rasterize.c`: `plutovg_rasterize`.
+- **What / why**: coverage work grows with the rows every edge spans,
+  which the element, dash and stroke budgets cannot see; with PV-23 it
+  is linear but unbounded (32,000 full-height segments on a 4096 px
+  canvas took 20 s release). A canvas can carry a work budget shared by
+  every fill, stroke and clip; the rasterizer charges cell steps,
+  cell-list walk steps, sort list steps, curve subdivisions, and
+  one pass over the outline per band. The path that runs it out draws
+  nothing, later paths are skipped, and the caller discards the surface.
+  fastchart's `svgTo*()` sets 1.2G units per document and refuses with
+  "fill coverage too large"; charts pass -1 (fch-au7).
+- **Origin**: `d8c8629`, `dd3d77a`, `00b8b6f`, `1d711ed`.
+- **Upstream**: not proposed; an embedder budget.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
 
 ## plutosvg
 
