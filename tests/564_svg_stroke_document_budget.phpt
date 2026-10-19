@@ -12,12 +12,12 @@ asan.detect_leaks=0
  * into ~180 outline points. */
 function curves(int $n): string
 {
-    $d = 'M0 0';
+    $d = ['M0 0'];
     for ($i = 0; $i < $n; $i++) {
-        $d .= sprintf(' C 3000 -3000 -3000 3000 %d %d', $i % 64, $i % 37);
+        $d[] = sprintf('C 3000 -3000 -3000 3000 %d %d', $i % 64, $i % 37);
     }
     return '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">'
-        . '<path d="' . $d . '" fill="none" stroke="#000"/></svg>';
+        . '<path d="' . implode(' ', $d) . '" fill="none" stroke="#000"/></svg>';
 }
 
 /* ~5.4M points: over the 2^22 document budget. */
@@ -33,12 +33,13 @@ $png = FastChart\Chart::svgToPng(curves(5500));
 echo 'heavy but within budget: ', imagecreatefromstring($png) ? "rendered\n" : "NO\n";
 
 /* Ordinary stroke-heavy documents stay far below the budget. */
-$paths = '';
+$paths = [];
 for ($i = 0; $i < 400; $i++) {
-    $paths .= sprintf('<path d="M%d 0 C 10 300 300 10 %d 400" fill="none" '
+    $paths[] = sprintf('<path d="M%d 0 C 10 300 300 10 %d 400" fill="none" '
         . 'stroke="#036" stroke-width="2" stroke-linejoin="round"/>',
         $i, 400 - $i);
 }
+$paths = implode('', $paths);
 $png = FastChart\Chart::svgToPng(
     '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">'
     . $paths . '</svg>');

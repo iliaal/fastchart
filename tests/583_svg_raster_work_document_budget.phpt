@@ -14,12 +14,12 @@ function cpu_seconds(): float
 
 function zigzag(int $n, string $attrs): string
 {
-    $d = 'M0 0';
+    $d = ['M0 0'];
     for ($i = 0; $i < $n; $i++) {
-        $d .= ' L' . ($i % 4096) . ' ' . (($i & 1) ? 4096 : 0);
+        $d[] = 'L' . ($i % 4096) . ' ' . (($i & 1) ? 4096 : 0);
     }
     return '<svg xmlns="http://www.w3.org/2000/svg" width="4096" height="4096">'
-        . '<path d="' . $d . '"' . $attrs . '/></svg>';
+        . '<path d="' . implode(' ', $d) . '"' . $attrs . '/></svg>';
 }
 
 /* 8,000 full-height segments in one 74 KB filled path need ~3.3G work

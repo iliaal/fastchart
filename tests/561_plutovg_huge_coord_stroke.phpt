@@ -51,10 +51,11 @@ echo 'cubic leaves along its tangent: ',
     (inked($cubic, 20, 44) && !inked($cubic, 20, 20)) ? "yes\n" : "NO\n";
 
 /* Thousands of huge stroked cubics and circles stay cheap and drawable. */
-$d = 'M0 0';
+$d = ['M0 0'];
 for ($i = 0; $i < 3000; $i++) {
-    $d .= sprintf(' C 1e30 -1e30 -1e30 1e30 %d %d', $i % 64, $i % 37);
+    $d[] = sprintf('C 1e30 -1e30 -1e30 1e30 %d %d', $i % 64, $i % 37);
 }
+$d = implode(' ', $d);
 $png = FastChart\Chart::svgToPng(
     '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">'
     . '<path d="' . $d . '" stroke="black" fill="none"/></svg>');

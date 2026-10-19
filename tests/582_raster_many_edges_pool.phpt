@@ -18,10 +18,13 @@ function cpu_seconds(): float
  * ASan). The pool now starts proportional to the outline. Bound as in
  * 580. */
 mt_srand(7);
-$d = '';
+/* Pieces are joined once: appending to one growing string costs a copy
+ * per append without the Zend allocator (USE_ZEND_ALLOC=0 in CI). */
+$d = [];
 for ($i = 0; $i < 150000; $i++) {
-    $d .= 'M' . mt_rand(0, 2040) . ' ' . mt_rand(0, 2040) . 'l3 5l3 -5z';
+    $d[] = 'M' . mt_rand(0, 2040) . ' ' . mt_rand(0, 2040) . 'l3 5l3 -5z';
 }
+$d = implode('', $d);
 $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="2048">'
     . '<path d="' . $d . '"/></svg>';
 

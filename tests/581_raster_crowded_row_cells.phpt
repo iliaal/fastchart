@@ -17,12 +17,15 @@ function cpu_seconds(): float
  * one. Each row then holds ~80,000 cell records over 4,096 columns, and
  * the rasterizer used to walk the row's sorted cell list on every
  * record (~27 s under ASan). Bound as in 580. */
-$d = '';
+/* Pieces are joined once: appending to one growing string costs a copy
+ * per append without the Zend allocator (USE_ZEND_ALLOC=0 in CI). */
+$d = [];
 for ($j = 0; $j < 40000; $j++) {
     $k = ($j >> 1) % 4095;
     $x = ($j & 1) ? 4094 - $k : $k;
-    $d .= 'M' . $x . ' 0L' . $x . '.5 64L' . ($x + 1) . ' 0Z';
+    $d[] = 'M' . $x . ' 0L' . $x . '.5 64L' . ($x + 1) . ' 0Z';
 }
+$d = implode('', $d);
 $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="4096" height="64">'
     . '<path d="' . $d . '"/></svg>';
 
