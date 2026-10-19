@@ -43,8 +43,12 @@
  * bound the canvas, not how often each pixel is repainted: rasterization
  * is immediate-mode, so worst-case work is element_count x canvas pixels
  * (65,536 full-canvas shapes ~ 1.1e12 pixel ops, minutes of CPU that no
- * PHP timer can interrupt). 2^32 ops ~ 256 full-canvas passes at 16 Mpx
- * (single-digit seconds) while ordinary icons/logos stay far below. The
+ * PHP timer can interrupt). 2^32 ops ~ 256 full-canvas elements at 16 Mpx
+ * while ordinary icons/logos stay far below. The budget counts elements,
+ * not paint passes or paint kind: an element can paint twice (fill and
+ * stroke), and gradient paint costs about 10x a solid fill, so blend and
+ * encode cost at the cap reaches ~32 s release at 4096 px (251
+ * full-canvas radial-gradient rects with fill, stroke and opacity). The
  * count includes non-painting elements (g/defs/gradients), so the bound
  * fails closed: over-counting only over-blocks. */
 #define FC_MAX_RENDER_OPS    (1LL << 32)
