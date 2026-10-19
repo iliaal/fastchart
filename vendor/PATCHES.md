@@ -389,24 +389,32 @@ upstream-verbatim.
   `plutovg_canvas_raster_budget_exceeded`; `source/plutovg-canvas.c`;
   `source/plutovg-path.c`; `source/plutovg-private.h`;
   `source/plutovg-ft-raster.h`: `PVG_FT_Raster_Budget`,
-  `PVG_FT_Raster_Params.budget`; `source/plutovg-ft-raster.c`: cell,
-  walk, sort, curve-split and per-band charges, `ErrRaster_Budget`,
+  `PVG_FT_Raster_Params.budget`; `source/plutovg-ft-raster.c`: the
+  `PVG_FT_WORK_*` weights, cell, new-cell, walk, sort, curve-split,
+  per-band, sweep-cell and span charges, `ErrRaster_Budget`,
   `gray_convert_glyph_inner`, `PVG_FT_Raster_Render`;
   `source/plutovg-rasterize.c`: `plutovg_rasterize`.
 - **What / why**: coverage work grows with the rows every edge spans,
   which the element, dash and stroke budgets cannot see; with PV-23 it
   is linear but unbounded (32,000 full-height segments on a 4096 px
   canvas took 20 s release). A canvas can carry a work budget shared by
-  every fill, stroke and clip; the rasterizer charges cell steps,
-  cell-list walk steps, sort list steps, curve subdivisions, one unit
-  per line per band, and one pass over the outline per band. The path that runs it out draws
-  nothing, later paths are skipped, and the caller discards the surface.
-  fastchart's `svgTo*()` sets 1.2G units per document and refuses with
-  "fill coverage too large"; charts pass -1 (fch-au7). The counters and
+  every fill, stroke and clip; the rasterizer charges cell moves, new
+  cells, cell-list walk steps, sort list steps, curve subdivisions, each
+  line per band, a pass over the outline per band, and each cell and
+  span the sweep produces, each weighted by its measured cost in walk
+  steps (about 1.5 ns each on an idle aarch64 release build). Charging
+  only moves and walk steps let one-pixel stripes drawn right to left,
+  whose new cells all land at the head of their row lists, cost about
+  11 ns per unit: eighteen such paths rendered in 13.6 s. The path that
+  runs the budget out draws nothing, later paths are skipped, and the
+  caller discards the surface. fastchart's `svgTo*()` sets 2.2G units
+  per document and refuses with "fill coverage too large"; charts pass
+  -1 (fch-au7). The costliest documents measured on that host, not a
+  proven bound, render in 5.7 s and are refused in 4.2 s. The counters and
   the API take `long long`, so an unbudgeted render past 2^31 units does
   not stop part-way where `long` is 32 bits.
 - **Origin**: `d8c8629`, `dd3d77a`, `00b8b6f`, `fe0e23a`; 64-bit counters
-  in `f323d11`.
+  in `f323d11`; per-item weights `f2ae00c`.
 - **Upstream**: not proposed; an embedder budget.
 - **Marker**: `LOCAL-PATCH (fastchart)`.
 
@@ -430,14 +438,19 @@ upstream-verbatim.
   take the per-pixel blend path and are charged a partial weight (solid
   8, linear 21, radial and texture 26; measured 2.7, 7.3 and 8.9-9.2 ns),
   so opaque half-coverage strips are no longer charged as cheap opaque
-  fills. The pass that would exceed the budget is not drawn and later
+  fills. Each span also pays a fixed setup charge for its paint kind
+  (solid 14, linear 33, radial and texture 46; measured 3.4-4.8,
+  10.1-11.8 and 12.6-16.4 ns), which one-pixel spans otherwise left
+  uncharged. The pass that would exceed the budget is not drawn and later
   fills and strokes return early. fastchart's `svgTo*()` sets 2^33 units
   per document and refuses with "paint coverage too large"; charts and
   symbols pass -1 (fch-ak7). With the raster, stroke, dash and paint
   budgets all near their caps, the costliest in-budget 4096 px document
-  measured renders in 10.9 s on an idle aarch64 host, PNG encoding
-  included.
-- **Origin**: `f5d2df0`; partial-coverage weights `3f327c3`.
+  measured renders in 9.9 s on an idle aarch64 host, PNG encoding
+  included, and the costliest refusal measured takes 7.3 s; these are
+  measurements, not a proven bound.
+- **Origin**: `f5d2df0`; partial-coverage weights `3f327c3`; per-span
+  charge `f2ae00c`.
 - **Upstream**: not proposed; an embedder budget.
 - **Marker**: `LOCAL-PATCH (fastchart)`.
 
