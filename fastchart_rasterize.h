@@ -62,10 +62,10 @@
  * 2048-point series stroke into ~0.8M points.
  *
  * FC_MAX_DASH_COMMANDS caps dash commands across every dashed path. A
- * dash command strokes into at most ~8 points (measured with round caps
- * and round joins on sharp corners; butt caps give ~2.5), so 2^18
- * commands stay within half the stroke budget whatever the cap and join
- * style: a document that fits the dash budget runs out of dash budget,
+ * dash command strokes into at most ~9 points (measured with round caps
+ * and round joins on sharp reversals; butt caps give ~2.5), so 2^18
+ * commands use a little over half the stroke budget whatever the cap and
+ * join style: a document that fits the dash budget runs out of dash budget,
  * not stroke budget, and keeps room for its other strokes. plutovg still
  * caps a single path at 2^20 commands, which only charts (no shared
  * budget) can reach. */
