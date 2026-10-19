@@ -1139,9 +1139,66 @@ static void plutovg_blend_texture(plutovg_canvas_t* canvas, const plutovg_textur
     }
 }
 
+/* LOCAL-PATCH (fastchart): paint budget weights, the cost of blending one
+ * pixel of each paint kind in units of an opaque solid pixel (0.36 ns on
+ * an idle aarch64 release build; see plutovg_canvas_set_paint_budget()).
+ * Measured: translucent solid 2.5 ns, linear gradient 2.6-4.8 ns, radial
+ * gradient 7.0 ns, scaled texture 2.9 ns. Each weight rounds the worst
+ * measured variant up; textures, whose transformed and tiled variants
+ * were not all measured, are charged as radial gradients. */
+#define PLUTOVG_PAINT_WEIGHT_OPAQUE  1
+#define PLUTOVG_PAINT_WEIGHT_BLEND   7
+#define PLUTOVG_PAINT_WEIGHT_LINEAR  14
+#define PLUTOVG_PAINT_WEIGHT_RADIAL  20
+#define PLUTOVG_PAINT_WEIGHT_TEXTURE 20
+
+static int plutovg_paint_weight(const plutovg_canvas_t* canvas)
+{
+    const plutovg_state_t* state = canvas->state;
+    const plutovg_paint_t* paint = state->paint;
+    const plutovg_color_t* color = &state->color;
+    if(paint != NULL && paint->type == PLUTOVG_PAINT_TYPE_GRADIENT) {
+        const plutovg_gradient_paint_t* gradient = (const plutovg_gradient_paint_t*)(paint);
+        return gradient->type == PLUTOVG_GRADIENT_TYPE_LINEAR ? PLUTOVG_PAINT_WEIGHT_LINEAR : PLUTOVG_PAINT_WEIGHT_RADIAL;
+    }
+    if(paint != NULL && paint->type != PLUTOVG_PAINT_TYPE_COLOR)
+        return PLUTOVG_PAINT_WEIGHT_TEXTURE;
+    if(paint != NULL)
+        color = &((const plutovg_solid_paint_t*)(paint))->color;
+    uint32_t solid = premultiply_color_with_opacity(color, state->opacity);
+    if(plutovg_alpha(solid) == 255 && state->op == PLUTOVG_OPERATOR_SRC_OVER)
+        return PLUTOVG_PAINT_WEIGHT_OPAQUE;
+    return PLUTOVG_PAINT_WEIGHT_BLEND;
+}
+
+/* LOCAL-PATCH (fastchart): charge one pass to the canvas paint budget;
+ * false means the pass must not be drawn. */
+static bool plutovg_paint_budget_charge(plutovg_canvas_t* canvas, const plutovg_span_buffer_t* span_buffer)
+{
+    plutovg_raster_budget_t* budget = &canvas->paint_budget;
+    if(budget->remaining < 0)
+        return true;
+    if(budget->exceeded)
+        return false;
+    long long pixels = 0;
+    for(int i = 0; i < span_buffer->spans.size; i++)
+        pixels += span_buffer->spans.data[i].len;
+    long long cost = pixels * plutovg_paint_weight(canvas);
+    if(cost > budget->remaining) {
+        budget->remaining = 0;
+        budget->exceeded = true;
+        return false;
+    }
+
+    budget->remaining -= cost;
+    return true;
+}
+
 void plutovg_blend(plutovg_canvas_t* canvas, const plutovg_span_buffer_t* span_buffer)
 {
     if(span_buffer->spans.size == 0)
+        return;
+    if(!plutovg_paint_budget_charge(canvas, span_buffer)) /* LOCAL-PATCH (fastchart) */
         return;
     if(canvas->state->paint == NULL) {
         plutovg_blend_color(canvas, &canvas->state->color, span_buffer);

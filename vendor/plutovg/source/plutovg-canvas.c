@@ -101,6 +101,9 @@ plutovg_canvas_t* plutovg_canvas_create(plutovg_surface_t* surface)
     canvas->raster_budget.remaining = -1;
     canvas->raster_budget.exceeded = false;
     canvas->path->raster_budget = &canvas->raster_budget;
+    /* LOCAL-PATCH (fastchart): see plutovg_canvas_set_paint_budget() */
+    canvas->paint_budget.remaining = -1;
+    canvas->paint_budget.exceeded = false;
     return canvas;
 }
 
@@ -416,6 +419,18 @@ bool plutovg_canvas_raster_budget_exceeded(const plutovg_canvas_t* canvas)
     return canvas->raster_budget.exceeded;
 }
 
+/* LOCAL-PATCH (fastchart): shared paint budget, see plutovg.h */
+void plutovg_canvas_set_paint_budget(plutovg_canvas_t* canvas, long long budget)
+{
+    canvas->paint_budget.remaining = budget < 0 ? -1 : budget;
+    canvas->paint_budget.exceeded = false;
+}
+
+bool plutovg_canvas_paint_budget_exceeded(const plutovg_canvas_t* canvas)
+{
+    return canvas->paint_budget.exceeded;
+}
+
 int plutovg_canvas_get_dash_array(const plutovg_canvas_t* canvas, const float** dashes)
 {
     if(dashes)
@@ -623,6 +638,8 @@ void plutovg_canvas_clip(plutovg_canvas_t* canvas)
 
 void plutovg_canvas_paint(plutovg_canvas_t* canvas)
 {
+    if(canvas->paint_budget.exceeded) /* LOCAL-PATCH (fastchart) */
+        return;
     if(canvas->state->clipping) {
         plutovg_blend(canvas, &canvas->state->clip_spans);
     } else {
@@ -633,6 +650,10 @@ void plutovg_canvas_paint(plutovg_canvas_t* canvas)
 
 void plutovg_canvas_fill_preserve(plutovg_canvas_t* canvas)
 {
+    /* LOCAL-PATCH (fastchart): once the paint budget runs out nothing more
+     * is drawn, so skip the rasterizing too. */
+    if(canvas->paint_budget.exceeded)
+        return;
     plutovg_rasterize(&canvas->fill_spans, canvas->path, &canvas->state->matrix, &canvas->clip_rect, NULL, canvas->state->winding);
     if(canvas->state->clipping) {
         plutovg_span_buffer_intersect(&canvas->clip_spans, &canvas->fill_spans, &canvas->state->clip_spans);
@@ -644,6 +665,8 @@ void plutovg_canvas_fill_preserve(plutovg_canvas_t* canvas)
 
 void plutovg_canvas_stroke_preserve(plutovg_canvas_t* canvas)
 {
+    if(canvas->paint_budget.exceeded) /* LOCAL-PATCH (fastchart) */
+        return;
     plutovg_rasterize(&canvas->fill_spans, canvas->path, &canvas->state->matrix, &canvas->clip_rect, &canvas->state->stroke, PLUTOVG_FILL_RULE_NON_ZERO);
     if(canvas->state->clipping) {
         plutovg_span_buffer_intersect(&canvas->clip_spans, &canvas->fill_spans, &canvas->state->clip_spans);

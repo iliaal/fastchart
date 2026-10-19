@@ -4910,6 +4910,13 @@ static int fastchart_svg_to_pixels(
             method_name);
         return -1;
     }
+    if (rc == -11) {
+        zend_value_error(
+            "%s() SVG render work exceeds cap "
+            "(paint coverage too large)",
+            method_name);
+        return -1;
+    }
     if (rc == -4) {
         zend_value_error(
             "%s() SVG rasterization failed after parsing "

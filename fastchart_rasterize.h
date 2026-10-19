@@ -46,11 +46,11 @@
  * PHP timer can interrupt). 2^32 ops ~ 256 full-canvas elements at 16 Mpx
  * while ordinary icons/logos stay far below. The budget counts elements,
  * not paint passes or paint kind: an element can paint twice (fill and
- * stroke), and gradient paint costs about 10x a solid fill, so blend and
- * encode cost at the cap reaches ~32 s release at 4096 px (251
- * full-canvas radial-gradient rects with fill, stroke and opacity). The
- * count includes non-painting elements (g/defs/gradients), so the bound
- * fails closed: over-counting only over-blocks. */
+ * stroke), and gradient paint costs about 10x a solid fill, so on its own
+ * it admits ~32 s of blending at 4096 px (251 full-canvas radial-gradient
+ * rects with fill, stroke and opacity); FC_MAX_PAINT_WORK below bounds
+ * that. The count includes non-painting elements (g/defs/gradients), so
+ * the bound fails closed: over-counting only over-blocks. */
 #define FC_MAX_RENDER_OPS    (1LL << 32)
 
 /* Native-memory budgets for caller-supplied SVG. The element budget above
@@ -92,10 +92,24 @@
  * 2560 px (~1.35G) it is refused. On that host the costliest in-budget
  * documents found are 4096 px paths of full-height cubics (4.5 s) and of
  * interleaved zigzags (n=11,750: 7.0 s, about a third of it blending and
- * PNG encoding, which only the element x pixel budget above bounds), and
+ * PNG encoding, which FC_MAX_PAINT_WORK and the pixel caps bound), and
  * a refusal, which spends the whole budget, takes 2.5-3.9 s. An x86 host
  * at load 8-12 measured 1.7-2.4x those figures. */
 #define FC_MAX_RASTER_WORK   1200000000LL
+
+/* Blending budget for caller-supplied SVG, in plutovg paint units (see
+ * plutovg_canvas_set_paint_budget()): every pixel each fill, stroke or
+ * paint pass blends, times a weight for its paint kind (opaque solid 1,
+ * translucent solid 7, linear gradient 14, radial gradient 20), so a unit
+ * costs about 0.36 ns on an idle aarch64 host. The element x pixel budget
+ * above counts elements, not passes or paint kind, so on its own it
+ * admits 251 full-canvas radial-gradient rects with fill and stroke at
+ * 4096 px (~32 s on an idle aarch64 host). 2^33 units caps blending
+ * near 3.1 s there: sixteen full-canvas radial-gradient layers under a
+ * line chart at 4096 px (~5.4G) render in 3.6 s, the costliest in-budget
+ * document measured (25 such layers, ~8.4G) in 5.2 s with its PNG
+ * encoding, and a refusal takes 2.9-3.1 s. */
+#define FC_MAX_PAINT_WORK    (1LL << 33)
 
 /* Rasterize the given SVG bytes at the requested target dimensions.
  * On success: pix->rgba is emalloc'd, pix->w/h match the requested
@@ -126,6 +140,7 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
  *   -8: stroke dashes exceed FC_MAX_DASH_COMMANDS for the document.
  *   -9: stroke outlines exceed FC_MAX_STROKE_POINTS for the document.
  *  -10: rasterizer work exceeds FC_MAX_RASTER_WORK for the document.
+ *  -11: blending work exceeds FC_MAX_PAINT_WORK for the document.
  */
 int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
                                        int max_dim, long long max_pixels,

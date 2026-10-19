@@ -189,6 +189,7 @@ struct plutovg_canvas {
     plutovg_dash_budget_t dash_budget; /* LOCAL-PATCH (fastchart) */
     plutovg_stroke_budget_t stroke_budget; /* LOCAL-PATCH (fastchart) */
     plutovg_raster_budget_t raster_budget; /* LOCAL-PATCH (fastchart) */
+    plutovg_raster_budget_t paint_budget; /* LOCAL-PATCH (fastchart) */
 };
 
 void plutovg_span_buffer_init(plutovg_span_buffer_t* span_buffer);

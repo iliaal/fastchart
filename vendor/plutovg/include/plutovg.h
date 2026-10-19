@@ -2049,6 +2049,33 @@ PLUTOVG_API void plutovg_canvas_set_raster_budget(plutovg_canvas_t* canvas, long
 PLUTOVG_API bool plutovg_canvas_raster_budget_exceeded(const plutovg_canvas_t* canvas);
 
 /**
+ * @brief LOCAL-PATCH (fastchart): caps blending work per canvas.
+ *
+ * Each fill, stroke or paint blends every covered pixel, and a gradient
+ * pixel costs several times a solid one, so a few hundred full-canvas
+ * shapes cost tens of seconds. The budget counts the pixels each pass
+ * blends times a weight for its paint kind (opaque solid, translucent
+ * solid, linear gradient, radial gradient, texture) across every pass on
+ * this canvas. The pass that would exceed it is not drawn, nothing is
+ * drawn after it, and plutovg_canvas_paint_budget_exceeded() reports
+ * true; the caller should discard the surface. The default is no limit.
+ *
+ * @param canvas A pointer to a `plutovg_canvas_t` object.
+ * @param budget Maximum weighted pixels across all passes, or a negative
+ * value for no limit. Clears the exceeded flag.
+ */
+PLUTOVG_API void plutovg_canvas_set_paint_budget(plutovg_canvas_t* canvas, long long budget);
+
+/**
+ * @brief LOCAL-PATCH (fastchart): whether painting stopped for lack of
+ * the budget set by plutovg_canvas_set_paint_budget().
+ *
+ * @param canvas A pointer to a `plutovg_canvas_t` object.
+ * @return `true` if a pass exceeded the remaining budget.
+ */
+PLUTOVG_API bool plutovg_canvas_paint_budget_exceeded(const plutovg_canvas_t* canvas);
+
+/**
  * @brief Translates the current transformation matrix by offsets `tx` and `ty`.
  * @param canvas A pointer to a `plutovg_canvas_t` object.
  * @param tx The translation offset in the x-direction.
