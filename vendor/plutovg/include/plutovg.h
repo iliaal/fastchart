@@ -2056,9 +2056,10 @@ PLUTOVG_API bool plutovg_canvas_raster_budget_exceeded(const plutovg_canvas_t* c
  * shapes cost tens of seconds. The budget counts the pixels each pass
  * blends times a weight for its paint kind (opaque solid, translucent
  * solid, linear gradient, radial gradient, texture) and for whether the
- * pixel is fully or partially covered, across every pass on this canvas. The pass that would exceed it is not drawn, nothing is
- * drawn after it, and plutovg_canvas_paint_budget_exceeded() reports
- * true; the caller should discard the surface. The default is no limit.
+ * pixel is fully or partially covered, across every pass on this canvas.
+ * The pass that would exceed it is not drawn, nothing is drawn after it,
+ * and plutovg_canvas_paint_budget_exceeded() reports true; the caller
+ * should discard the surface. The default is no limit.
  *
  * @param canvas A pointer to a `plutovg_canvas_t` object.
  * @param budget Maximum weighted pixels across all passes, or a negative
