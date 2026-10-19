@@ -426,11 +426,18 @@ upstream-verbatim.
   image draw reaches, now charges each pass the pixels it blends times a
   paint-kind weight (opaque solid 1, translucent solid 7, linear
   gradient 14, radial gradient 20, texture 20), measured at 0.36, 2.5,
-  2.6-4.8 and 7.0 ns per pixel. The pass that would exceed the budget is
-  not drawn and later fills and strokes return early. fastchart's
-  `svgTo*()` sets 2^33 units per document and refuses with "paint
-  coverage too large"; charts and symbols pass -1 (fch-ak7).
-- **Origin**: `f5d2df0`.
+  2.6-4.8 and 7.0 ns per pixel. Pixels of a span below full coverage
+  take the per-pixel blend path and are charged a partial weight (solid
+  8, linear 21, radial and texture 26; measured 2.7, 7.3 and 8.9-9.2 ns),
+  so opaque half-coverage strips are no longer charged as cheap opaque
+  fills. The pass that would exceed the budget is not drawn and later
+  fills and strokes return early. fastchart's `svgTo*()` sets 2^33 units
+  per document and refuses with "paint coverage too large"; charts and
+  symbols pass -1 (fch-ak7). With the raster, stroke, dash and paint
+  budgets all near their caps, the costliest in-budget 4096 px document
+  measured renders in 10.9 s on an idle aarch64 host, PNG encoding
+  included.
+- **Origin**: `f5d2df0`; partial-coverage weights `3f327c3`.
 - **Upstream**: not proposed; an embedder budget.
 - **Marker**: `LOCAL-PATCH (fastchart)`.
 
@@ -537,6 +544,29 @@ Pinned tag `v0.0.8`. Changed files: `plutosvg.c`, `plutosvg.h`.
   attribute values, a DOCTYPE or the XML declaration (fch-ntf).
 - **Origin**: `b6f859b`, `5f06114`.
 - **Upstream**: fastchart-specific; not proposed.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
+### PS-8: gradient stops linked at parse time
+
+- **File:function**: `source/plutosvg.c`: `struct element`
+  (`first_stop`, `last_stop`, `next_stop`), `plutosvg_document_load_from_data`,
+  `resolve_gradient_stops`, `collect_gradient_attributes`.
+- **What / why**: every fill or stroke painted with a gradient resolved
+  its stops by walking all children of the gradient and each element on
+  its `href` chain, `<stop>` or not. A gradient padded with 16,000 `<g/>`
+  children and used by 16,000 rects for fill and stroke cost 0.5G child
+  visits, 7.4 s against 0.56 s unpadded on a release build (fch-9hm). The
+  parser now links each element's `<stop>` children in document order as
+  it appends them, and both functions follow that chain; the per-paint
+  cost is the stop count. After parsing, only `render_use` touches the
+  tree, and it redirects a parent pointer without changing any child
+  list, so the chain cannot go stale; `svgTo*()` refuses `<use>` anyway.
+  The stops, their order and the 64-stop limit are unchanged: rendered
+  bytes match the previous build on every gradient case and corpus
+  document checked.
+- **Origin**: `224003e`.
+- **Upstream**: candidate for an upstream PR; `v0.0.8` and `master`
+  walk every child per paint.
 - **Marker**: `LOCAL-PATCH (fastchart)`.
 
 <!-- Integrator: append further plutosvg entries below this line. -->
