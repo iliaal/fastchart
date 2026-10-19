@@ -35,7 +35,26 @@ $solid = str_replace(['fill="url(#g)" stroke="url(#g)" stroke-width="16384" opac
     ['fill="#336699"'], $svg);
 $info = getimagesizefromstring(FastChart\Chart::svgToPng($solid));
 echo "opaque solid: {$info[0]}x{$info[1]}\n";
+
+/* Opaque solid paint at partial coverage takes the per-pixel blend path,
+ * ~7x a fully covered pixel. 80 paths of half-pixel strips cover the
+ * whole canvas at coverage 128 each; charged at full-coverage rates they
+ * fitted the budget with room to spare. */
+$strips = ['M0 0'];
+for ($y = 0; $y < 4096; $y++) {
+    $strips[] = 'H4096v.5H0v.5';
+}
+$strips = '<path d="' . implode('', $strips) . '"/>';
+$svg = '<svg xmlns="http://www.w3.org/2000/svg" width="4096" height="4096">'
+    . str_repeat($strips, 80) . '</svg>';
+try {
+    FastChart\Chart::svgToPng($svg);
+    echo "partial coverage: rendered\n";
+} catch (ValueError $e) {
+    echo "partial coverage: ", $e->getMessage(), "\n";
+}
 ?>
 --EXPECT--
 FastChart\Chart::svgToPng() SVG render work exceeds cap (paint coverage too large)
 opaque solid: 4096x4096
+partial coverage: FastChart\Chart::svgToPng() SVG render work exceeds cap (paint coverage too large)

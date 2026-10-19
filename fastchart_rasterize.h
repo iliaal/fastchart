@@ -99,16 +99,22 @@
 
 /* Blending budget for caller-supplied SVG, in plutovg paint units (see
  * plutovg_canvas_set_paint_budget()): every pixel each fill, stroke or
- * paint pass blends, times a weight for its paint kind (opaque solid 1,
- * translucent solid 7, linear gradient 14, radial gradient 20), so a unit
- * costs about 0.36 ns on an idle aarch64 host. The element x pixel budget
- * above counts elements, not passes or paint kind, so on its own it
- * admits 251 full-canvas radial-gradient rects with fill and stroke at
- * 4096 px (~32 s on an idle aarch64 host). 2^33 units caps blending
- * near 3.1 s there: sixteen full-canvas radial-gradient layers under a
- * line chart at 4096 px (~5.4G) render in 3.6 s, the costliest in-budget
- * document measured (25 such layers, ~8.4G) in 5.2 s with its PNG
- * encoding, and a refusal takes 2.9-3.1 s. */
+ * paint pass blends, times a weight for its paint kind and coverage
+ * (fully covered: opaque solid 1, translucent solid 7, linear gradient
+ * 14, radial gradient 20; partially covered, which blends pixel by
+ * pixel: solid 8, linear 21, radial 26), so a unit costs 0.33-0.40 ns
+ * on an idle aarch64 host whatever the paint. The element x pixel budget
+ * above counts elements, not passes, paint kind or coverage, so on its
+ * own it admits 251 full-canvas radial-gradient rects with fill and
+ * stroke at 4096 px (~32 s on that host). 2^33 units caps blending near
+ * 3.4 s there: sixteen full-canvas radial-gradient layers under a line
+ * chart at 4096 px (~5.4G) render in 3.6 s, and 62 paths of half-pixel
+ * strips over a 4096 px canvas, opaque at coverage 128, in 8.4 s with an
+ * 11,750-segment zigzag. With every budget near its cap at once (that
+ * zigzag, 25 radial-gradient layers, a 22,000-cubic stroke and a
+ * 52,000-dash line) a 4096 px document renders in 10.9 s with its PNG
+ * encoding, the costliest in-budget document measured; a paint refusal
+ * takes 2.9-3.1 s. */
 #define FC_MAX_PAINT_WORK    (1LL << 33)
 
 /* Rasterize the given SVG bytes at the requested target dimensions.
