@@ -410,6 +410,30 @@ upstream-verbatim.
 - **Upstream**: not proposed; an embedder budget.
 - **Marker**: `LOCAL-PATCH (fastchart)`.
 
+### PV-25: per-canvas paint budget
+
+- **File:function**: `include/plutovg.h`:
+  `plutovg_canvas_set_paint_budget`,
+  `plutovg_canvas_paint_budget_exceeded`; `source/plutovg-private.h`
+  (canvas field); `source/plutovg-canvas.c`: `plutovg_canvas_create`,
+  `plutovg_canvas_paint`, `plutovg_canvas_fill_preserve`,
+  `plutovg_canvas_stroke_preserve`; `source/plutovg-blend.c`:
+  `plutovg_paint_weight`, `plutovg_paint_budget_charge`, `plutovg_blend`.
+- **What / why**: the element x pixel budget counts elements, not paint
+  passes or paint kind, so 251 full-canvas radial-gradient rects with
+  fill, stroke and opacity at 4096 px took 31.7 s of blending on an idle
+  aarch64 host. `plutovg_blend`, which every fill, stroke, paint and
+  image draw reaches, now charges each pass the pixels it blends times a
+  paint-kind weight (opaque solid 1, translucent solid 7, linear
+  gradient 14, radial gradient 20, texture 20), measured at 0.36, 2.5,
+  2.6-4.8 and 7.0 ns per pixel. The pass that would exceed the budget is
+  not drawn and later fills and strokes return early. fastchart's
+  `svgTo*()` sets 2^33 units per document and refuses with "paint
+  coverage too large"; charts and symbols pass -1 (fch-ak7).
+- **Origin**: `f5d2df0`.
+- **Upstream**: not proposed; an embedder budget.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
 ## plutosvg
 
 Pinned tag `v0.0.8`. Changed files: `plutosvg.c`, `plutosvg.h`.
