@@ -30,9 +30,12 @@ upstream file fetched from GitHub.
 
 ## plutovg
 
-Pinned tag `v1.3.3`. Changed files: `plutovg-font.c`,
-`plutovg-ft-raster.c`, `plutovg-surface.c`, `plutovg-stb-image.h`,
-`plutovg-path.c`. All other vendored files are upstream-verbatim.
+Pinned tag `v1.3.3`. Changed files: `plutovg.h`, `plutovg-blend.c`,
+`plutovg-canvas.c`, `plutovg-font.c`, `plutovg-ft-raster.c`,
+`plutovg-ft-stroker.c`, `plutovg-ft-stroker.h`, `plutovg-path.c`,
+`plutovg-private.h`, `plutovg-rasterize.c`, `plutovg-stb-image.h`,
+`plutovg-surface.c`, `plutovg-utils.h`. All other vendored files are
+upstream-verbatim.
 
 ### PV-1: portable `PATH_MAX`
 
@@ -201,6 +204,152 @@ Pinned tag `v1.3.3`. Changed files: `plutovg-font.c`,
 - **Upstream**: not submitted.
 - **Marker**: `LOCAL-PATCH (fastchart)`.
 
+### PV-14: decoder image ceiling
+
+- **File:function**: `include/plutovg.h`: `PLUTOVG_IMAGE_MAX_DIMENSION`;
+  `source/plutovg-surface.c`: stb configuration.
+- **What / why**: sets `STBI_MAX_DIMENSIONS` from
+  `PLUTOVG_IMAGE_MAX_DIMENSION` (4096) instead of stb's default 2^24, so
+  stb refuses any image larger than 4096 px on a side on every decode
+  path. Before, a small compressed PNG or JPEG could drive a decode of
+  about 1 GiB outside `memory_limit` whenever a caller-side size check
+  disagreed with stb's own header parse (fch-qz0, CgBI PNGs).
+  `fastchart_target.c` fails the build with `#error` if the value
+  differs from `FC_IMAGE_MAX_DIM`.
+- **Origin**: `0ebdddf`, `69cb5b5`.
+- **Upstream**: not proposed; an embedder policy that stb leaves
+  configurable.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
+### PV-15: `plutovg_image_info_from_data`
+
+- **File:function**: `include/plutovg.h`, `source/plutovg-surface.c`:
+  `plutovg_image_info_from_data`.
+- **What / why**: wraps `stbi_info_from_memory` so fastchart sizes and
+  caps source images from the decoder's own header parse rather than a
+  separate sniff that a leading `CgBI` chunk could fool (fch-qz0).
+- **Origin**: `0ebdddf`.
+- **Upstream**: not submitted; a candidate info-only counterpart to
+  `plutovg_surface_load_from_image_data`.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
+### PV-16: non-finite arc sweeps
+
+- **File:function**: `source/plutovg-path.c`: `plutovg_path_arc_to`,
+  `plutovg_path_add_arc`.
+- **What / why**: a non-finite sweep made `(int)ceilf(...)` of the
+  segment count undefined; optimized builds emitted cubics until memory
+  ran out (3.1 GB in under 2 s). `arc_to` now draws a line to the end
+  point, as SVG does for degenerate arcs, and `add_arc` returns early,
+  which also removes the `2 + 4 * seg_n` reserve overflow (fch-tvt).
+- **Origin**: `350bf63`.
+- **Upstream**: unfixed on `main` (`f63f9b5`); PR pending.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
+### PV-17: checked array and cache growth
+
+- **File:function**: `source/plutovg-utils.h`: `plutovg_array_ensure`
+  (now `plutovg_array_reserve`, returns `bool`); `source/plutovg-path.c`
+  callers; `source/plutovg-canvas.c` `append_data`;
+  `source/plutovg-font.c`: `plutovg_glyph_cache_get`,
+  `plutovg_font_face_cache_add`, `plutovg_font_face_cache_load_file`.
+- **What / why**: growth assigned the `realloc` result unchecked and
+  doubled an `int` capacity, so allocation failure or overflow wrote
+  through NULL. Growth now detects both, frees and empties the array,
+  and callers drop the command; font-cache allocations return NULL or
+  skip the entry. In `source/plutovg-rasterize.c`, span-buffer growth
+  resets the buffer on failure, `ft_outline_create` rejects overflowing
+  counts and checks `malloc`, and NULL outlines (including a failed
+  stroker) propagate to `plutovg_rasterize`, which draws nothing
+  (fch-tvt).
+- **Origin**: `350bf63`, `a0e9173`, `82b30ed`.
+- **Upstream**: unfixed on `main`; PR pending.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
+### PV-18: per-canvas dash budget
+
+- **File:function**: `include/plutovg.h`: `plutovg_canvas_set_dash_budget`,
+  `plutovg_canvas_dash_budget_exceeded`; `source/plutovg-canvas.c`;
+  `source/plutovg-private.h`: `plutovg_dash_budget_t`;
+  `source/plutovg-path.c`: `plutovg_path_traverse_dashed`.
+- **What / why**: PV-12's 2^20 cap applied per path, so a document of
+  many dashed paths still cost tens of seconds. A canvas can now carry
+  one budget that all its strokes share; fastchart's `svgTo*()` sets
+  2^18 dash commands per document, sized so it runs out before the
+  PV-22 stroke budget, and throws `ValueError` when it does. Charts pass
+  -1 and keep only PV-12 (fch-6nw).
+- **Origin**: `fa334d5`, `1e9123d`, `39d1b7f`.
+- **Upstream**: not proposed; upstream has no dash cap at all.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
+### PV-19: clip geometry before fixed-point conversion
+
+- **File:function**: `source/plutovg-rasterize.c`:
+  `ft_outline_convert_path`, `ft_path_clip`, `ft_outline_convert_stroke`,
+  `plutovg_span_buffer_contains`.
+- **What / why**: `FT_COORD` cast floats to 26.6 fixed point unchecked,
+  and the FreeType-derived stroker and rasterizer overflow well before
+  that cast does. Paths with a mapped point beyond +/-2^21 px are clipped
+  to that box first (lines split on the box edge, winding preserved
+  inside it; cubics halved, then chorded). Infinite coordinates map to
+  +/-`FLT_MAX` and NaN paths are dropped. Stroke half-width is capped at
+  2^19 px and radius x miter at 2^20 px (miter <= 2^14), so every
+  product stays below 2^62.2. Paths entirely inside the box take the
+  original path, so ordinary output is byte-identical. Visible change: a
+  stroke wider than about 2^20 px draws at the cap, so a round-capped
+  segment 10^6 px off-canvas with width 2.1*10^6 no longer covers the
+  canvas. `plutovg_span_buffer_contains` rejects input outside `int`
+  range (fch-lw5, fch-son).
+- **Origin**: `ac8e406`, `fb5fece`, `fea52d0`.
+- **Upstream**: unfixed on `main` (`f63f9b5`); PR pending.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
+### PV-20: empty stroke border export
+
+- **File:function**: `source/plutovg-ft-stroker.c`:
+  `ft_stroke_border_export`.
+- **What / why**: returns early on an empty border instead of calling
+  `memcpy` with a NULL source (UBSan) (fch-son).
+- **Origin**: `ac8e406`.
+- **Upstream**: unfixed on `main`; PR pending.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
+### PV-21: gradient position saturation
+
+- **File:function**: `source/plutovg-blend.c`: `gradient_pixel`,
+  `fetch_linear_gradient`.
+- **What / why**: degenerate gradient geometry (a far-off radial focus, a
+  near-zero linear vector) converted NaN or out-of-range floats to `int`.
+  Positions now saturate at +/-2^30 with NaN mapped to 0, and `t` is
+  range-checked before the fixed-point path, so pad spread paints the
+  last stop as SVG requires (fch-son). The texture fetchers'
+  float-to-int casts (`fetch_*_transformed`, about lines 737-956) are
+  not changed; fastchart feeds them integer image geometry only.
+- **Origin**: `2e5f16b`.
+- **Upstream**: unfixed on `main`; PR pending.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
+### PV-22: per-canvas stroke outline budget
+
+- **File:function**: `include/plutovg.h`:
+  `plutovg_canvas_set_stroke_budget`,
+  `plutovg_canvas_stroke_budget_exceeded`; `source/plutovg-canvas.c`;
+  `source/plutovg-private.h`; `source/plutovg-path.c`;
+  `source/plutovg-ft-stroker.[ch]`: `PVG_FT_Stroker_SetMaxPoints`,
+  `PVG_FT_Stroker_ParseOutline`; `source/plutovg-rasterize.c`:
+  `ft_outline_convert_stroke`.
+- **What / why**: stroker output for in-range geometry had no bound; one
+  path of 300,000 stroked cubics took 23.7 s and 2.0 GB of native
+  memory. A canvas can carry a stroke-point budget shared by all its
+  strokes, the stroker stops parsing once a stroke passes it, and an
+  over-budget stroke is not drawn. fastchart's `svgTo*()` sets 2^22
+  points per document (about 190 MB at worst) and pairs it with a 2^18
+  dash-command budget (PV-18) that always runs out first. Charts pass -1
+  (fch-lw5).
+- **Origin**: `0574f8b`, `39d1b7f`.
+- **Upstream**: not proposed; an embedder budget.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
 <!-- Integrator: append further plutovg entries below this line. -->
 
 ## plutosvg
@@ -264,6 +413,48 @@ Pinned tag `v0.0.8`. Changed files: `plutosvg.c`, `plutosvg.h`.
   purpose and renders the parsed prefix, as upstream and SVG 2 do.
 - **Origin**: `0b555d1`.
 - **Upstream**: not submitted.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
+### PS-5: bounded `<use>` expansion
+
+- **File:function**: `source/plutosvg.c`: `render_use`, `render_element`,
+  `render_context_t`, `plutosvg_document_render`,
+  `plutosvg_document_extents`; `source/plutosvg.h` return-value docs.
+- **What / why**: `render_use` called `render_element` directly and
+  bypassed `MAX_RENDER_DEPTH`, so a deep `<use>` chain overflowed the
+  stack, 2-way fan-out cost CPU exponential in depth, and a `<use>` that
+  referenced its own ancestor never terminated. `<use>` hops now count
+  toward the depth cap, ancestor references are refused, and expansion
+  under `<use>` is capped at 2^20 element visits and 8 MiB of rendered
+  attribute bytes (href excluded); render and extents return `false`
+  when the budget is hit (fch-q6i).
+- **Origin**: `18e5e4c`, `71988ee`.
+- **Upstream**: unfixed on `master` (`fd8a080`); PR pending.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
+### PS-6: one attribute record per id
+
+- **File:function**: `source/plutosvg.c`: `add_attribute`.
+- **What / why**: duplicate attributes were all kept (up to 262,144), so
+  every lookup and PS-5's byte charge walked them. A repeated record now
+  overwrites the earlier value in place, which keeps the last-wins
+  result and caps each element at one record per attribute id (fch-q6i
+  review).
+- **Origin**: `5a6b614`.
+- **Upstream**: unfixed on `master`; PR pending.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
+### PS-7: `plutosvg_document_content_flags`
+
+- **File:function**: `source/plutosvg.h`, `source/plutosvg.c`:
+  `plutosvg_document_content_flags`, `href_has_data_image`.
+- **What / why**: reports `<use>` elements and data-URI `<image>`
+  elements from the parsed tree, so `svgTo*()` applies its content
+  policy to exactly what plutosvg renders. The earlier byte-level
+  pre-scan could be bypassed with comment, CDATA or PI openers inside
+  attribute values, a DOCTYPE or the XML declaration (fch-ntf).
+- **Origin**: `b6f859b`, `5f06114`.
+- **Upstream**: fastchart-specific; not proposed.
 - **Marker**: `LOCAL-PATCH (fastchart)`.
 
 <!-- Integrator: append further plutosvg entries below this line. -->
