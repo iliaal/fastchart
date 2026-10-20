@@ -120,8 +120,10 @@ output cap in constraint 4. A 10x10 root SVG carrying a 4097x4097
 embedded PNG would allocate about 67 MB inside plutosvg before the
 cap check sees the rasterized size.
 
-The public `svgTo*()` methods reject any SVG containing `data:image/`
-(case-insensitive). To composite raster content with a chart
+The public `svgTo*()` methods reject any SVG whose parsed tree holds an
+`<image>` with a `data:image/` href (case-insensitive). The check runs on
+the parsed document, so comments, CDATA, a DOCTYPE, or markup-like text
+inside attribute values can't hide an embedded image. To composite raster content with a chart
 fragment, decode the images separately. Instance-side chart rendering
 differs: the trusted builder validates source files first and may
 embed their validated bytes before calling the internal rasterizer
@@ -140,8 +142,7 @@ commodity hardware, the SVG equivalent of a billion-laughs attack.
 A 256-tag source-count cap (commit bacedd1) was not enough: nesting
 amplifies expansion independently of source count, so 71 source
 `<use>` tags reach the worst case. The public methods reject any
-`<use>` (case-insensitive substring scan with a tag-name boundary
-check). This includes SVG from `renderSvg()` or `drawSvgFragment()`,
+`<use>` element in the parsed tree. This includes SVG from `renderSvg()` or `drawSvgFragment()`,
 so image-bearing generated SVG can't go back through `svgTo*()`.
 
 The trusted chart builder has a bounded exception in the instance
@@ -161,6 +162,29 @@ more than 65,536 elements, 262,144 attributes, or 256 nesting levels,
 which bounds parser memory and recursion below the byte cap. SVG
 whose element count times output pixels exceeds the render-work
 budget is also rejected. All throw `\ValueError`.
+
+### 8. Render-work budgets
+
+The limits above bound the input and the canvas, not how much work one
+document makes the rasterizer do. Four per-document budgets cover that,
+and a document over any of them throws `\ValueError` with the message
+`<method>() SVG render work exceeds cap (<reason>)`:
+
+| Budget | Limit | Reason in the message |
+|---|---|---|
+| Dash expansion | 262,144 dash commands | `stroke dash expansion too large` |
+| Stroke outlines | 4,194,304 points | `stroke outlines too large` |
+| Rasterizer fill coverage | `FC_MAX_RASTER_WORK` work units | `fill coverage too large` |
+| Blended paint coverage | `FC_MAX_PAINT_WORK` work units | `paint coverage too large` |
+
+The fill and paint budgets weight each operation by its measured cost;
+`fastchart_rasterize.h` documents the weights. Ordinary charts and icons
+stay far below every budget. Some heavy, legitimate documents that
+earlier releases rendered slowly are now refused, for example eight
+stitched eight-series line charts scaled to 2560 px, or 26 or more
+full-canvas radial-gradient layers at 4096 px. Eight stitched charts at
+2048 px or 2304 px still render. Chart renders (`renderPng()`,
+`renderJpeg()`, `renderWebp()`) are not budgeted.
 
 ## Out of scope
 

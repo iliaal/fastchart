@@ -245,6 +245,12 @@ $webp = FastChart\Chart::svgToWebp($svg, 90, FastChart\Chart::WEBP_LOSSLESS);
 ```
 
 Output dimensions come from the SVG's `width` / `height` / `viewBox`.
+Input is untrusted by default: embedded `data:image/` images and `<use>`
+elements are refused, and per-document budgets on dashes, stroke
+outlines, fill coverage, and blended paint throw `ValueError` for SVG
+that would cost too much CPU or native memory. A few heavy but
+legitimate documents hit those budgets too, such as many full-canvas
+gradient layers at 4096 px; render them smaller or catch `ValueError`.
 SVG `<text>` elements render blank because plutovg has no text
 engine, so text must be path-flattened first (fastchart's own SVG
 builder does this automatically). See

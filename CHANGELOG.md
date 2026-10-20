@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10-20
+
 ### Security
 
 - Source-image and font loading reject blocking built-in wrappers, enforce
@@ -1614,7 +1616,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.7.4...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.8.0...HEAD
+[1.8.0]: https://github.com/iliaal/fastchart/releases/tag/1.8.0
 [1.7.4]: https://github.com/iliaal/fastchart/releases/tag/1.7.4
 [1.7.3]: https://github.com/iliaal/fastchart/releases/tag/1.7.3
 [1.7.2]: https://github.com/iliaal/fastchart/releases/tag/1.7.2
