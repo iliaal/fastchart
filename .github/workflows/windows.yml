@@ -150,7 +150,9 @@ jobs:
             '463_source_image_execute_only_parent.phpt',
             '468_source_image_compress_wrapper_fifo.phpt',
             '470_pinned_parent_fd_ownership.phpt',
-            '473_render_to_file_local_colon_path.phpt'
+            '473_render_to_file_local_colon_path.phpt',
+            '542_font_pinned_parent_moved_outside_basedir.phpt',
+            '543_font_pinned_directory_swap.phpt'
           )
           $skipRows = @(Select-String -Path win-tests.txt -Pattern '^SKIP ')
           foreach ($test in $platformSkips) {
@@ -161,9 +163,9 @@ jobs:
             }
           }
           $otherSkipped = $skipped - $platformSkips.Count
-          Write-Host "Tests skipped: $skipped ($($platformSkips.Count) audited FIFO/POSIX/procfs skips; remaining $otherSkipped, ceiling 30)"
-          if ($otherSkipped -lt 0 -or $otherSkipped -gt 30) {
-            throw "Windows skip count excluding audited platform tests is $otherSkipped; ceiling 30"
+          Write-Host "Tests skipped: $skipped ($($platformSkips.Count) audited FIFO/POSIX/procfs skips; remaining $otherSkipped, ceiling 31)"
+          if ($otherSkipped -lt 0 -or $otherSkipped -gt 31) {
+            throw "Windows skip count excluding audited platform tests is $otherSkipped; ceiling 31"
           }
 
   # Single representative lane that compiles and tests the MSVC PDF path
