@@ -240,12 +240,19 @@ $builders = [
 /* WordCloud never paints the background image; its render reaches user
  * code through a font path that looks like a URL and no longer resolves
  * locally, which makes the font loader consult the stream wrappers and
- * warn into the error handler. */
+ * warn into the error handler. Windows has no such route: a colon cannot
+ * appear in a file name there, and a missing local font fails silently. */
+$expected_classes = count($builders);
+if (PHP_OS_FAMILY === 'Windows') {
+    unset($builders[FastChart\WordCloud::class]);
+}
 $font = fc_pick_font();
 $dir = sys_get_temp_dir() . '/fc_reentry_' . getmypid();
 @mkdir($dir);
-@mkdir($dir . '/fcnoscheme:');
-copy($font, $dir . '/fcnoscheme:/f.ttf');
+if (PHP_OS_FAMILY !== 'Windows') {
+    @mkdir($dir . '/fcnoscheme:');
+    copy($font, $dir . '/fcnoscheme:/f.ttf');
+}
 $cwd = getcwd();
 chdir($dir);
 
@@ -298,11 +305,14 @@ foreach ($builders as $class => $builder) {
 chdir($cwd);
 @rmdir($dir . '/fcnoscheme:');
 @rmdir($dir);
-echo "classes: $classes\n";
-echo $methods > 38 * 40 ? "methods: many\n" : "methods: too few ($methods)\n";
+$want = PHP_OS_FAMILY === 'Windows' ? $expected_classes - 1 : $expected_classes;
+echo $expected_classes === 38 && $classes === $want
+    ? "classes: all\n" : "classes: $classes of $expected_classes\n";
+echo $methods > $classes * 40
+    ? "methods: many\n" : "methods: too few ($methods)\n";
 echo "failures: $failures\n";
 ?>
 --EXPECT--
-classes: 38
+classes: all
 methods: many
 failures: 0

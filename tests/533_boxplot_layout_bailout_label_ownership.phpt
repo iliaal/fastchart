@@ -32,6 +32,9 @@ $chart->setFontPath($font)->setSvgTextMode(FastChart\Chart::SVG_TEXT_NATIVE);
 
 register_shutdown_function(function () use ($chart, $expected) {
     $GLOBALS['pad'] = null;
+    /* PHP 8.1 and 8.2 reserve the whole 16 MiB stream cap when the font
+     * is read, which the 8M limit that forced the bailout cannot hold. */
+    ini_set('memory_limit', '64M');
     echo "shutdown\n";
     /* Replacing the category labels must free only arrays the chart owns,
      * and the chart must accept setters again after the aborted render. */
