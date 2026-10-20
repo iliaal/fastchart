@@ -62,9 +62,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `SunburstChart` computes wedge layout in linear time, avoiding repeated
   whole-hierarchy scans while preserving sibling order and geometry.
-- `svgTo*()` refuses some very heavy documents it used to render, such as
-  eight stitched eight-series line charts scaled to 2560 px, which took
-  over 20 seconds of CPU before.
+- `svgTo*()` now throws `ValueError` for some heavy but legitimate SVG
+  documents that it used to render slowly. Examples: eight stitched
+  eight-series line charts scaled to 2560 px, which took about 22 seconds
+  of CPU before, and 26 or more full-canvas radial-gradient layers at
+  4096 px. If your application passes large or gradient-heavy SVG to
+  these methods, catch `ValueError` or render the document at a smaller
+  size. Chart renders such as `renderPng()` have no render-work budget
+  and are unaffected.
 - PNGs whose first chunk is not `IHDR` (including Apple `CgBI` PNGs) and
   JPEGs the bundled decoder cannot parse (lossless, arithmetic-coded, or
   non-8-bit) are dropped from SVG output too, matching raster output.
