@@ -4,6 +4,7 @@
 error_reporting(E_ALL);
 
 $deprecations = [];
+$failed = false;
 set_error_handler(
     function (int $errno, string $errstr, string $errfile, int $errline)
         use (&$deprecations): bool {
@@ -56,9 +57,13 @@ try {
 } catch (Throwable $e) {
     fwrite(STDERR, 'deprecation-gate ERROR: '
         . get_class($e) . ': ' . $e->getMessage() . "\n");
-    exit(2);
+    $failed = true;
 } finally {
     @unlink(sys_get_temp_dir() . '/fc-deprecation-gate.svg');
+}
+
+if ($failed) {
+    exit(2);
 }
 
 if ($deprecations !== []) {
