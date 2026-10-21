@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 22658)
+Total output lines: 1643
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -6,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Fixed
+
+- RadarChart keeps large finite series proportional when the intermediate
+  pixel-radius multiplication would overflow, rather than drawing vertices
+  far outside the plot. Ordinary finite-input rounding is unchanged.
 
 ## [1.8.0] - 2026-10-20
 
@@ -702,196 +711,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   categorical coordinate mappers it did not reach. Band edges
   (`addVerticalBand` / `addHorizontalBand` on a category axis) and
   vertical-line positions (`addVerticalLine`) are finite-checked at the
-  setter but not range-checked, so a finite-but-large value such as
-  `1e300` reached a float-to-int cast that is undefined (C11 §6.3.1.4p1).
-  The categorical band drawers now route through `fastchart_frac_to_px()`,
-  which clamps to `[0, 1]` before the cast, and `v_pos_categorical`
-  range-guards the index before casting, matching the continuous and
-  time-axis mappers (`fastchart_axis.c`).
-
-- **`SunburstChart` produced NaN wedge angles on value overflow.** An
-  interior node whose children summed past `DBL_MAX` aggregated to
-  `+Inf`; the proportion `value / sum` then evaluated to `Inf / Inf =
-  NaN`, which reached the wedge-angle float-to-int cast. The aggregation
-  now skips a non-finite total the way it already skipped a non-positive
-  one, leaving the affected wedges zero-width, in line with the
-  `isfinite` guards `MarimekkoChart::setColumns` and
-  `VectorChart::setVectors` already carry (`fastchart_sunburst.c`).
-
-- **The calendar-aware time-axis stride read an indeterminate `struct
-  tm` on out-of-range timestamps.** With `setDateAxisStride()` active,
-  the stride path broke `t_min` down via `gmtime_r` before snapping to a
-  unit boundary, but ignored the `NULL` `gmtime_r` returns when the year
-  overflows `struct tm`'s `int tm_year`. Candle timestamps arrive
-  unclamped from `setOhlcv()`, so a `PHP_INT_MAX` timestamp left the
-  `struct tm` indeterminate and the following `timegm()` / `strftime()`
-  read uninitialised members (undefined behaviour). The adjacent
-  numeric/auto-density path already clamped; the calendar branch did not.
-  `fc_gmtime` now reports break-down failure, the stride branch falls
-  through to the numeric path on failure, and both label paths fall back
-  to a raw-integer label rather than a garbage date (`fastchart_axis.c`).
-
-- **Hardening.** The un-premultiply lookup table is now pre-warmed at
-  `MINIT` rather than lazily on first rasterize, closing a ZTS data race
-  on its unsynchronised ready flag (`fastchart_rasterize.c`).
-  `fastchart_y_to_pixel` / `fastchart_x_to_pixel` self-guard against a
-  non-finite argument (the frac clamps never caught NaN), so the
-  coordinate chokepoint no longer depends on caller discipline
-  (`fastchart_axis.c`). The hand-rolled SVG number formatter self-guards
-  its integer cast against a non-finite or out-of-range value
-  (`fastchart_svg.c`), the treemap strip-ratio divide guards against a
-  zero remaining-area denominator (`fastchart_treemap.c`), and the stock
-  moving-average legend arrays size to `FASTCHART_MAX_SMA` instead of a
-  literal `8` so they track the cap (`fastchart_stock.c`).
-
-- **In-tree builds used the wrong source directory.** `config.m4`
-  referenced `abs_srcdir` when locating the vendored plutovg/plutosvg
-  sources, which is unset for an in-tree (static-into-php-src) build and
-  left the compiler unable to find the vendored headers. It now uses
-  `$ext_srcdir`, matching the line above it, so building fastchart inside
-  a php-src tree works the same as a standalone `phpize` build. Thanks to
-  Marc (@pyc) for the fix.
-
-### Performance
-
-- **`renderSvg()` is ~5x faster on coordinate-heavy charts.** Every SVG
-  coordinate was formatted with `snprintf("%f")` (a format-string parse
-  plus a full double-to-decimal conversion per number); `fc_svg_fmt_num`
-  and `fc_emit_num` now use an allocation-free integer/fraction emitter
-  with an integer fast path. Output is byte-identical. Measured −80% to
-  −83% on three `renderSvg` scenarios (scatter-with-trend, 1000-point
-  log line, 8x500-point multi-series) against a release build; raster
-  outputs are unaffected (encode dominates there). The pixel-mapping
-  helpers also cache `log10(min)/log10(max)` once per render instead of
-  recomputing them per data point on log axes.
-
-- **Large StockChart and image-map cases avoid quadratic work.**
-  `StockChart::setOhlcv()` now uses a stable merge sort with an
-  already-sorted fast path instead of shifting rows through insertion
-  sort on unsorted input. BarChart, PieChart, and ScatterChart image-map
-  rendering now reserves/reuses hotspot capacity instead of growing the
-  area list one slot at a time during render.
-
-- **AArch64 builds now have NEON byte-pack fast paths.** The opaque-row
-  un-premultiply path uses NEON interleaved loads/stores for BGRA → RGBA,
-  and JPEG opaque rows use NEON for RGBA → RGB packing. x86 SSSE3
-  dispatch is unchanged. On `gir` (AArch64, PHP 8.4 release build,
-  80-iteration bench), raster p50 improved by 0.1–1.9% and JPEG p50
-  improved by 9.0%, with output byte counts unchanged.
-
-## [1.1.1] - 2026-05-21
-
-### Fixed
-
-- **`PolarChart::addVectors()` accepted NaN/Inf doubles**, which
-  cascaded through to a render-time float-to-int cast that is
-  undefined per C11 §6.3.1.4p1. Every other polar setter rejects
-  non-finite doubles at the boundary; `addVectors` was the only one
-  using `zval_get_double` and is now switched to
-  `fastchart_zval_to_double` with a `TypeError` on failure.
-  Atomic-commit semantics preserved.
-
-- **`MarimekkoChart::setColumns()` overflow in running totals.** Each
-  individual segment value is `isfinite`-guarded, but the per-column
-  sum `col_total` and the cross-column `total_w` could overflow to
-  `+Inf` (e.g. two segments at `1e308` each). The non-finite total
-  reached the renderer where `col_frac = col->total / total_width =
-  inf/inf = NaN` fed the int cast at `fastchart_marimekko.c`. Columns
-  whose running sum is non-finite are now silently dropped, matching
-  the existing `val <= 0` skip pattern and the sibling
-  `VectorChart::setVectors` guard.
-
-- **`LineChart` icon x-coordinate cast was unguarded.** `addIconAt`
-  only rejects NaN/Inf, so a finite-but-large user x overflowed the
-  multiplication past `INT_MAX` and the cast became UB; on x86-64 the
-  pixel landed in `INT_MIN` territory. Now clamps the fractional
-  coordinate to `[0, 1]` before the int cast, matching
-  `fastchart_y_to_pixel`'s pattern.
-
-- **`PieChart::setExplode()` accepted unbounded `zend_long` offsets.**
-  A value near `PHP_INT_MAX` overflowed `(int)(off * cos(mid_rad))`
-  in the renderer. Offset is now capped to the slice diameter; beyond
-  that the slice center is off-canvas anyway.
-
-- **`StockChart` STYLE_VECTOR climax-deque ring-buffer overflow.**
-  After 11 successful pushes without tail-domination (a strictly
-  decreasing `cv` sequence), `dq_tail` wrapped to `dq_head` and the
-  deque was silently corrupted: every subsequent bar trivially
-  satisfied `climax >= climax_max=0` and got misclassified as a
-  climax. The stale-front drop now runs **before** the push, keeping
-  the deque within its unambiguous capacity.
-
-- **`fc_ft_measure()` dropped 4-byte UTF-8 sequences.** The UTF-8
-  decoder only recognised 1-, 2-, and 3-byte leads, so non-BMP
-  codepoints (emoji, CJK extensions, mathematical alphanumeric
-  symbols) contributed 0 to the measured width and chart layout
-  reservations came up systematically narrow on labels containing
-  emoji. 4-byte branch added; `fc_ft_measure` refactored to take a
-  byte length so callers no longer need NUL-terminated copies.
-
-- **`fastchart_text_draw_rotated` did not split multi-line strings
-  on `\n`.** It emitted a single `<text>` with the raw newline in the
-  body. SVG `<text>` collapses newlines to whitespace, so the label
-  rendered as one squashed line while the companion `_measure`
-  function reported a multi-line height. Now mirrors the
-  unrotated-draw line loop with per-line baseline offsets computed
-  perpendicular to the rotation direction.
-
-- **`fastchart_text_draw` / `_measure` byte-truncated lines at 1023
-  bytes.** The fixed `char buf[1024]` silently capped any line at
-  `sizeof(buf) - 1` bytes; the cap was in bytes (not codepoints) so
-  it could split a multi-byte UTF-8 sequence and produce malformed
-  XML, and long single-line annotations lost their tail without
-  signal. The fixed buffer is gone; both functions now operate directly
-  on the source pointer + byte length (`fc_svg_emit_text` already
-  takes a length).
-
-- **`Funnel::STYLE_CONE` divided by zero on a wide-and-short
-  canvas.** `total_h = (y1 - y0) - cone_bottom_reserve` collapses to
-  0 when `max_half * 0.22` consumes the entire plot height (e.g.
-  1890×210). The first iteration then computed `0.0 / total_v * 0`
-  feeding NaN into the int cast (UB per C11 §6.3.1.4p1). A clean
-  `zend_throw_error` now fires before the divide, mirroring the
-  canvas-too-narrow guard above it.
-
-- **`shadow_alpha_to_255()` left a one-unit floor at full
-  transparency.** Mapping libgd 0..127 (127 = fully transparent) to
-  SVG 0..255 (0 = fully transparent) via the linear `255 - a * 2`
-  produced output `1/255` at input 127, so a user requesting an
-  invisible drop shadow still got a faint `rgba(0,0,0,0.004)` trace.
-  Switched to proportional scaling `255 - (a * 255 + 63) / 127`
-  which maps 127 → 0 cleanly while preserving the opaque endpoint
-  at input 0.
-
-- **JPEG encoder local pointers were not `volatile` across
-  `setjmp()`.** Per C99 §7.13.2.1, automatic-storage locals modified
-  after `setjmp` and read in the `longjmp` recovery branch have
-  indeterminate values unless declared `volatile`. Without it, an
-  optimizer could keep `jpeg_buf` / `rgb_row` in a register that
-  libjpeg's `longjmp` clobbers, and the cleanup branch would leak
-  the allocation or double-free. Both pointers now carry `volatile`;
-  the libjpeg API cast strips the qualifier at the call site.
-
-- **Time-axis arithmetic overflowed signed `zend_long` on extreme
-  timestamps.** `setOhlcv` accepts the full `zend_long` range so
-  callers can supply `LLONG_MIN .. LLONG_MAX` candle timestamps. Four
-  call sites computed `t_max - t_min` (or `t_min + 86400` in the
-  Gantt renderer) in signed arithmetic (UB per C), and the wrapped
-  value defeated the subsequent `<= 0` early-return, collapsing all
-  candles to `plot.x0`. Promoted to double arithmetic at
-  `fastchart_x_time_to_pixel` and the time-axis fallback tick
-  generator; out-of-range double-to-`zend_long` casts in
-  `fastchart_draw_v_plot_bands_time` are clamped to the destination
-  range; Gantt's `t_min + 86400` saturates near `ZEND_LONG_MAX`.
-
-- **`(double)ZEND_LONG_MAX` round-up bit the time-axis clamps added
-  above.** IEEE-754 binary64 can't represent `2^63 - 1`, so
-  `(double)ZEND_LONG_MAX` rounds up to `2^63`; casting that back to
-  `zend_long` is UB per Annex F.4 (CI ASAN caught it on test 178).
-  Introduces `FASTCHART_LONG_MAX_AS_DOUBLE = 9223372036854774784.0`
-  (the largest double ≤ `LONG_MAX`, exactly `2^63 - 1024`) and uses
-  it for the upper-bound clamp at four call sites in
-  `fastchart_axis.c`. Lower bound stays `(double)ZEND_LONG_MIN`
+  setter but …2658 tokens truncated…nd stays `(double)ZEND_LONG_MIN`
   because `-2^63` is exactly representable.
 
 - **`StockChart` half-step time padding overflowed signed
