@@ -5,7 +5,7 @@
  * HTML at docs/v1-gallery.html). Add new chart cases here.
  *
  * Returns: ['font' => string, 'dpi' => int, 'cases' => array].
- * Caller must have fastchart.so + ext/gd loaded — every case's build
+ * Caller must have fastchart.so loaded — every case's build
  * closure constructs a FastChart\* instance.
  *
  * Font picking shares the tests/_font_candidates.inc helper so
