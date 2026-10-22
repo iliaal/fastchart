@@ -15,6 +15,15 @@ $warmup_env = getenv('FC_BENCH_WARMUP');
 $WARMUP = ($warmup_env === false || $warmup_env === '') ? 5 : (int)$warmup_env;
 $LABEL  = getenv('FC_BENCH_LABEL') ?: 'unlabeled';
 
+if ($ITERS < 1) {
+    fwrite(STDERR, "FC_BENCH_ITERS must be greater than zero\n");
+    exit(1);
+}
+if ($WARMUP < 0) {
+    fwrite(STDERR, "FC_BENCH_WARMUP must not be negative\n");
+    exit(1);
+}
+
 function bench(string $name, int $warmup, int $iters, callable $fn): array {
     /* Warm up: face/library init, allocator priming. */
     $sample_out = null;

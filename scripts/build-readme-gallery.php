@@ -8,7 +8,7 @@
  * Run with the fastchart extension loaded (php -d extension=...). */
 
 if (!class_exists('FastChart\\Chart')) {
-    fwrite(STDERR, "FastChart not loaded; load fastchart.so + gd.so.\n");
+    fwrite(STDERR, "FastChart not loaded; load fastchart.so.\n");
     exit(1);
 }
 

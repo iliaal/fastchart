@@ -9,6 +9,10 @@ if (fc_pick_font() === '') die("skip no system font available\n");
 if (getenv('USE_ZEND_ALLOC') === '0' && getenv('USE_TRACKED_ALLOC') !== '1') {
     die("skip memory_limit is not enforced without ZendMM or tracked allocation\n");
 }
+require __DIR__ . '/_bailout_shutdown.inc';
+if (!fc_oom_runs_shutdown()) {
+    die("skip memory_limit exhaustion exits without running shutdown functions\n");
+}
 ?>
 --INI--
 memory_limit=8M

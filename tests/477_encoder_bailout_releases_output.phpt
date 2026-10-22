@@ -10,6 +10,10 @@ if (!function_exists('exec') || getenv('TEST_PHP_ARGS') === false) {
 if (@ini_set('memory_limit', '24M') === false) {
     echo "skip memory_limit is not settable here\n";
 }
+require __DIR__ . '/_bailout_shutdown.inc';
+if (!fc_oom_runs_shutdown()) {
+    die("skip memory_limit exhaustion exits without running shutdown functions\n");
+}
 ?>
 --FILE--
 <?php
