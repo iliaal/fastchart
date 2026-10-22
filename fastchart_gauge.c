@@ -72,7 +72,21 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
      * a top-half semicircle of radius `radius`; the bottom-tick labels
      * (0% / 100%) sit just under the cy line and need ~size*1.5 below.
      * Vertically centre the body+labels block inside [top, H]. */
+    double value_size = fastchart_resolve_font_size(
+        (fastchart_obj *)self, FC_FONT_LABEL, base_size * 1.4);
+    /* Use the width-limited hub radius as a conservative bound before
+     * vertical fitting. This keeps the readout clear of large hubs too. */
+    int hub_radius = (W - 60) / 120;
+    if (hub_radius < 4) hub_radius = 4;
+    int value_height = (int)(value_size * 1.5);
+    const char *value_font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
+    if (value_font) {
+        fastchart_text_measure(t, value_font, value_size, "Mg",
+                               NULL, &value_height, NULL, 0);
+    }
+    int value_offset = hub_radius + value_height + 4;
     int label_pad = (int)(base_size * 1.5) + 8;
+    if (label_pad < value_offset + 8) label_pad = value_offset + 8;
     int avail_h = H - top - label_pad;
     int avail_w = W - 60;  /* 30px side padding for 0%/100% labels */
     int radius = (avail_w / 2 < avail_h ? avail_w / 2 : avail_h);
@@ -205,11 +219,11 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
         const char *fmt = self->gauge_value_format
             ? ZSTR_VAL(self->gauge_value_format) : "%.1f";
         char *buf = fastchart_format_double_label(fmt, v);
-        double base = self->font_size > 0 ? self->font_size : FASTCHART_DEFAULT_FONT_SIZE;
-        double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base * 1.4);
         int tx = cx;
-        int ty = cy + (int)(diameter * 0.35);
-        fastchart_text_draw(t, font, size, pal.text, tx, ty,
+        /* The readout belongs below the hub, not a fraction of the
+         * diameter below the semicircle (which is often off-canvas). */
+        int ty = cy + value_offset;
+        fastchart_text_draw(t, font, value_size, pal.text, tx, ty,
                             FASTCHART_ALIGN_CENTER, buf, NULL, 0);
         efree(buf);
     }
