@@ -69,8 +69,9 @@ int fastchart_gauge_render_to_target(fastchart_gauge_obj *self, fastchart_target
     }
 
     /* Compute the gauge geometry from the available area. The body is
-     * a top-half semicircle of radius `radius`; the bottom-tick labels
-     * (0% / 100%) sit just under the cy line and need ~size*1.5 below.
+     * a top-half semicircle of radius `radius`. Below the cy line, reserve
+     * room for both endpoint labels (0% / 100%) and the current-value
+     * readout, including its font height and needle-hub clearance.
      * Vertically centre the body+labels block inside [top, H]. */
     double value_size = fastchart_resolve_font_size(
         (fastchart_obj *)self, FC_FONT_LABEL, base_size * 1.4);

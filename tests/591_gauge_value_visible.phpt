@@ -14,6 +14,7 @@ $cases = [
     'explicit plot' => [480, 320, 10, null, true],
     'high DPI' => [480, 320, 10, null, true],
 ];
+$gallerySvg = [];
 foreach ($cases as $name => [$w, $h, $base, $label, $title]) {
     foreach ([FastChart\GaugeChart::STYLE_NEEDLE, FastChart\GaugeChart::STYLE_SOLID] as $style) {
         $chart = (new FastChart\GaugeChart($w, $h))
@@ -25,6 +26,12 @@ foreach ($cases as $name => [$w, $h, $base, $label, $title]) {
         if ($title) $chart->setTitle('CPU utilization');
         if ($label !== null) $chart->setLabelFont(null, $label);
         $svg = $chart->renderSvg();
+        if ($name === 'gallery') $gallerySvg[$style] = $svg;
+        if ($name === 'high DPI') {
+            // SVG uses logical pixels; this checks invariance, not raster scaling.
+            echo "high DPI style=$style SVG unchanged: ",
+                $svg === $gallerySvg[$style] ? 'yes' : 'FAIL', "\n";
+        }
         preg_match('/<text[^>]* y="([^"]+)"[^>]* font-size="([^"]+)"[^>]*>72%<\/text>/', $svg, $value);
         preg_match('/<circle[^>]* cy="([^"]+)"/', $svg, $hub);
         $ok = count($value) === 3 && count($hub) === 2;
@@ -58,5 +65,7 @@ short style=0: visible
 short style=1: visible
 explicit plot style=0: visible
 explicit plot style=1: visible
+high DPI style=0 SVG unchanged: yes
 high DPI style=0: visible
+high DPI style=1 SVG unchanged: yes
 high DPI style=1: visible

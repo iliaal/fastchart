@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Clarify the GaugeChart layout reservation and explicitly verify SVG
+  DPI invariance alongside its current-value visibility regression.
+
 ### Fixed
 
 - GaugeChart keeps its current-value readout visible below the needle hub,
