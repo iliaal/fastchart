@@ -169,8 +169,12 @@ int fastchart_radar_render_to_target(fastchart_radar_obj *self, fastchart_target
         fastchart_point_t poly[MAX_RADAR_AXES];
         for (int i = 0; i < n_axes; i++) {
             double v = radar_read_d(&series[s], i);
-            double rr = radar_clamp_radius((double)radius * v / dmax,
-                                           (double)radius);
+            double scaled = (double)radius * v;
+            /* Normalize first only when the intermediate product overflows;
+             * keep ordinary finite inputs' pixel rounding unchanged. */
+            double rr = radar_clamp_radius(isfinite(scaled)
+                ? scaled / dmax : (v / dmax) * (double)radius,
+                (double)radius);
             poly[i].x = cx + (int)(rr * cos_a[i]);
             poly[i].y = cy + (int)(rr * sin_a[i]);
         }
