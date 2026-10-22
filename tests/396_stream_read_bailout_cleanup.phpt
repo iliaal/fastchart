@@ -7,6 +7,10 @@ fastchart
 if (PHP_OS_FAMILY !== 'Linux' || !is_dir('/proc/self/fd')) {
     echo "skip: requires Linux /proc/self/fd\n";
 }
+require __DIR__ . '/_bailout_shutdown.inc';
+if (!fc_oom_runs_shutdown()) {
+    die("skip memory_limit exhaustion exits without running shutdown functions\n");
+}
 ?>
 --FILE--
 <?php
