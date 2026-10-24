@@ -11930,6 +11930,7 @@ static int fastchart_sunburst_build_rec(
         have_val = true;
     }
 
+    double child_sum = 0.0;
     zval *zch = zend_hash_str_find(ht, "children", sizeof("children") - 1);
     if (zch) ZVAL_DEREF(zch);
     if (zch && Z_TYPE_P(zch) == IS_ARRAY) {
@@ -11941,10 +11942,12 @@ static int fastchart_sunburst_build_rec(
             ZEND_HASH_FOREACH_VAL(cht, ce) {
                 if (ce) ZVAL_DEREF(ce);
                 if (Z_TYPE_P(ce) != IS_ARRAY) continue;
+                int child_idx = *n;
                 int child_result = fastchart_sunburst_build_rec(
                     Z_ARRVAL_P(ce), nodes, n, cap,
                     self_idx, depth + 1, max_depth);
                 if (child_result != 0) return child_result;
+                child_sum += (*nodes)[child_idx].value;
                 kept++;
             } ZEND_HASH_FOREACH_END();
             self = &(*nodes)[self_idx];  /* erealloc may have moved it */
@@ -11959,16 +11962,13 @@ static int fastchart_sunburst_build_rec(
      * status so setHierarchy() can reject the input without replacing the
      * previously committed tree. */
     if (self->child_count > 0) {
-        /* Depth-first storage interleaves children with descendants; select
-         * direct children by parent index, not a contiguous child range.
+        /* Accumulate direct children as recursion completes, preserving their
+         * input order without rescanning the interleaved descendants. Check
+         * after building all children so structural errors retain precedence.
          * The renderer partitions by this sum even when the user supplied
          * an explicit parent value, so both paths require a finite total. */
-        double sum = 0.0;
-        for (int i = self->child_first; i < *n; i++) {
-            if ((*nodes)[i].parent == self_idx) sum += (*nodes)[i].value;
-        }
-        if (!isfinite(sum)) return -2;
-        self->value = have_val ? val_set : sum;
+        if (!isfinite(child_sum)) return -2;
+        self->value = have_val ? val_set : child_sum;
     } else {
         self->value = have_val ? val_set : 0.0;
     }
