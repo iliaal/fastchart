@@ -112,7 +112,10 @@ static int lookupid(const char* data, size_t length, const name_entry_t* table, 
         name[i] = data[i];
     name[length] = '\0';
 
-    name_entry_t* entry = bsearch(name, table, count / sizeof(name_entry_t), sizeof(name_entry_t), name_entry_compare);
+    /* LOCAL-PATCH (fastchart): const result. Under C23, glibc 2.43 makes
+     * bsearch return a const pointer for a const base, so the upstream
+     * non-const store warns and fails the zero-warning build gate. */
+    const name_entry_t* entry = bsearch(name, table, count / sizeof(name_entry_t), sizeof(name_entry_t), name_entry_compare);
     if(entry == NULL)
         return 0;
     return entry->id;
