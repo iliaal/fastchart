@@ -7,8 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Clarify the GaugeChart layout reservation and explicitly verify SVG
+  DPI invariance alongside its current-value visibility regression.
+
 ### Fixed
 
+- Building against newer C libraries, such as Ubuntu 26.04's, no longer
+  emits a const-qualifier warning from the vendored SVG parser.
 - GaugeChart keeps its current-value readout visible below the needle hub,
   reserving space for the configured label size instead of placing it
   outside ordinary canvases.
@@ -16,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RadarChart keeps large finite series proportional when the intermediate
   pixel-radius multiplication would overflow, rather than drawing vertices
   far outside the plot. Ordinary finite-input rounding is unchanged.
+
+### Performance
 
 - `SunburstChart::setHierarchy()` avoids repeatedly scanning descendants
   when summing direct children. Input order, aggregate validation and

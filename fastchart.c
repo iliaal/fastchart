@@ -11964,7 +11964,9 @@ static int fastchart_sunburst_build_rec(
     if (self->child_count > 0) {
         /* Accumulate direct children as recursion completes, preserving their
          * input order without rescanning the interleaved descendants. Check
-         * after building all children so structural errors retain precedence. */
+         * after building all children so structural errors retain precedence.
+         * The renderer partitions by this sum even when the user supplied
+         * an explicit parent value, so both paths require a finite total. */
         if (!isfinite(child_sum)) return -2;
         self->value = have_val ? val_set : child_sum;
     } else {
