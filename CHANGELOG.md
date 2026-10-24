@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Building against newer C libraries, such as Ubuntu 26.04's, no longer
+  emits a const-qualifier warning from the vendored SVG parser.
 - GaugeChart keeps its current-value readout visible below the needle hub,
   reserving space for the configured label size instead of placing it
   outside ordinary canvases.

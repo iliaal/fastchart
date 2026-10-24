@@ -585,6 +585,21 @@ Pinned tag `v0.0.8`. Changed files: `plutosvg.c`, `plutosvg.h`.
   walk every child per paint.
 - **Marker**: `LOCAL-PATCH (fastchart)`.
 
+### PS-9: const `bsearch` result in `lookupid`
+
+- **File:function**: `source/plutosvg.c`: `lookupid`.
+- **What / why**: stores the `bsearch` result in a `const name_entry_t*`.
+  Under C23 (gcc 15's default), glibc 2.43 makes `bsearch` return a const
+  pointer for a const base. On the Ubuntu 26.04 runner image
+  (`20261021.618`) the upstream non-const store therefore raises
+  `-Wdiscarded-qualifiers` (gcc) and
+  `-Wincompatible-pointer-types-discards-qualifiers` (clang), which fails
+  the zero-warning build gate. The entry is only read.
+- **Origin**: `fix/plutosvg-bsearch-const`.
+- **Upstream**: `v0.0.8` and `master` keep the non-const store; candidate
+  for an upstream PR.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
 <!-- Integrator: append further plutosvg entries below this line. -->
 
 ## qrcodegen
