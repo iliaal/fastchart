@@ -113,17 +113,26 @@ int fastchart_venn_render_to_target(fastchart_venn_obj *self, fastchart_target_t
     int n = self->set_count;
     double r[3] = {0, 0, 0};
     double cx[3] = {0, 0, 0}, cy[3] = {0, 0, 0};
+    double area_unit = 0.0;
     for (int i = 0; i < n; i++) {
         double s = self->sets[i].size > 0.0 ? self->sets[i].size : 1.0;
-        r[i] = sqrt(s / M_PI);
+        if (s > area_unit) area_unit = s;
+    }
+    /* Keep tiny areas away from absolute geometry tolerances and underflow.
+     * Scale intersections in the same units; retain ordinary-sized rounding.
+     * Divide directly, since the reciprocal of a subnormal unit can overflow. */
+    if (area_unit >= 1.0) area_unit = 1.0;
+    for (int i = 0; i < n; i++) {
+        double s = self->sets[i].size > 0.0 ? self->sets[i].size : 1.0;
+        r[i] = sqrt((s / area_unit) / M_PI);
     }
 
-    double d01 = venn_solve_distance(r[0], r[1], venn_pair_size(self, 0, 1));
+    double d01 = venn_solve_distance(r[0], r[1], venn_pair_size(self, 0, 1) / area_unit);
     cx[0] = 0.0; cy[0] = 0.0;
     cx[1] = d01; cy[1] = 0.0;
     if (n == 3) {
-        double d02 = venn_solve_distance(r[0], r[2], venn_pair_size(self, 0, 2));
-        double d12 = venn_solve_distance(r[1], r[2], venn_pair_size(self, 1, 2));
+        double d02 = venn_solve_distance(r[0], r[2], venn_pair_size(self, 0, 2) / area_unit);
+        double d12 = venn_solve_distance(r[1], r[2], venn_pair_size(self, 1, 2) / area_unit);
         int infeasible = 1;
         if (d01 > 1e-6) {
             double x = (d01 * d01 + d02 * d02 - d12 * d12) / (2.0 * d01);
