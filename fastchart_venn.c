@@ -118,10 +118,12 @@ int fastchart_venn_render_to_target(fastchart_venn_obj *self, fastchart_target_t
         double s = self->sets[i].size > 0.0 ? self->sets[i].size : 1.0;
         if (s > area_unit) area_unit = s;
     }
-    /* Keep tiny areas away from absolute geometry tolerances and underflow.
-     * Scale intersections in the same units; retain ordinary-sized rounding.
+    /* Normalize only below the square of the 1e-6 geometry tolerance.
+     * Scaling ordinary fractional areas can change a tangent triangle
+     * cancellation sign and select a different fallback layout.
+     * Scale tiny intersections in the same units as the set areas.
      * Divide directly, since the reciprocal of a subnormal unit can overflow. */
-    if (area_unit >= 1.0) area_unit = 1.0;
+    if (area_unit >= 1e-12) area_unit = 1.0;
     for (int i = 0; i < n; i++) {
         double s = self->sets[i].size > 0.0 ? self->sets[i].size : 1.0;
         r[i] = sqrt((s / area_unit) / M_PI);
