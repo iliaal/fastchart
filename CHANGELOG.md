@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- VennDiagram scales small positive set and intersection areas together,
+  keeping tiny inputs visible and preserving their pairwise overlap geometry.
 - Building against newer C libraries, such as Ubuntu 26.04's, no longer
   emits a const-qualifier warning from the vendored SVG parser.
 - GaugeChart keeps its current-value readout visible below the needle hub,
