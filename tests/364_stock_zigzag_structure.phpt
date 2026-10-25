@@ -53,6 +53,32 @@ echo "A_segments: $sa\n";
 echo "B_vertices: $vb\n";
 echo "B_segments: $sb\n";
 echo "reversal_adds_pivots: ", ($va > $vb ? 'yes' : 'NO'), "\n";
+
+/* Changing candle highs and lows alone must not create close-price
+ * pivots. Constant closes leave the first bar as the sole pivot. */
+$wickRows = [];
+foreach ([110, 140, 105, 160, 115] as $i => $high) {
+    $wickRows[] = [1700000000 + $i * 86400, 100, $high, 200 - $high, 100, 1000];
+}
+$wickChart = (new FastChart\StockChart(600, 400))->setOhlcv($wickRows);
+[$wickSegments, $wickVertices] = zz($wickChart->addZigZag(5.0)->renderSvg());
+echo "wick-only segments: $wickSegments\n";
+
+/* Threshold validation is rejection, not clamping. Each fresh chart
+ * avoids the overlay-count cap; both finite boundaries are exercised. */
+foreach ([0.0, -0.01, 100.01, INF, -INF, NAN] as $threshold) {
+    try {
+        $mk($A)->addZigZag($threshold);
+        echo "invalid threshold accepted\n";
+    } catch (ValueError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+foreach ([PHP_FLOAT_MIN, 100.0] as $threshold) {
+    $chart = $mk($A);
+    echo "valid threshold fluent: ",
+        ($chart->addZigZag($threshold) === $chart ? 'yes' : 'NO'), "\n";
+}
 ?>
 --EXPECT--
 A_vertices: 4
@@ -60,3 +86,12 @@ A_segments: 3
 B_vertices: 2
 B_segments: 1
 reversal_adds_pivots: yes
+wick-only segments: 0
+FastChart\StockChart::addZigZag() threshold must be in (0, 100]
+FastChart\StockChart::addZigZag() threshold must be in (0, 100]
+FastChart\StockChart::addZigZag() threshold must be in (0, 100]
+FastChart\StockChart::addZigZag() threshold must be in (0, 100]
+FastChart\StockChart::addZigZag() threshold must be in (0, 100]
+FastChart\StockChart::addZigZag() threshold must be in (0, 100]
+valid threshold fluent: yes
+valid threshold fluent: yes
