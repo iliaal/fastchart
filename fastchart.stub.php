@@ -1801,8 +1801,9 @@ final class CalendarHeatmap extends Chart
 
 /**
  * Sunburst (radial hierarchical donut): nested rings where each
- * ring is a level of the hierarchy and each slice's angular span is
- * proportional to its value. Children always sum to their parent.
+ * ring is a level of the hierarchy. Children divide their parent's
+ * angular span in proportion to their values relative to their siblings,
+ * not to an explicit parent value. Zero-total siblings have zero-width wedges.
   * @strict-properties
  */
 final class SunburstChart extends Chart
@@ -1810,8 +1811,14 @@ final class SunburstChart extends Chart
     /**
      * Hierarchical tree. Each node:
      * `['label' => string?, 'value' => number?, 'color' => int?,
-     *   'children' => array?]`. Leaf nodes need a value; interior
-     * nodes sum their children's values if no value is set.
+     *   'children' => array?]`. A finite, non-negative int or float
+     * (including zero) is an explicit value, even for an interior node;
+     * it need not equal the sum of its children. Missing or invalid values
+     * (including numeric strings, booleans, null, negatives, NaN and infinity)
+     * fall back to the sum of direct children's effective values, or zero
+     * for a leaf. Non-array children are ignored. Rendering requires a
+     * positive effective root value. Overflowing child totals are rejected
+     * even when their parent has an explicit value.
      */
     public function setHierarchy(array $root): static {}
 

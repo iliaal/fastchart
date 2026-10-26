@@ -28,8 +28,9 @@
 #include "fastchart_text.h"
 
 /* Each node gets a precomputed angular wedge [start, end] (radians)
- * based on its share of its parent's value. Root sits at depth 0;
- * leaves at max_depth. Rings sized so the outermost ring still
+ * based on its share of its siblings' total value, independent of an
+ * explicit parent value. Root sits at depth 0; each child is one
+ * level deeper. Rings sized so the outermost ring still
  * leaves room for the title. */
 typedef struct {
     double start_rad;

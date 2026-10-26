@@ -1,7 +1,7 @@
 <?php
 /* SunburstChart: nested ring donut. Each ring is one level of the
- * hierarchy; each slice's angular span is proportional to its
- * value. Interior nodes auto-sum their children. */
+ * hierarchy; siblings divide their parent's span in proportion to
+ * their values. These interior nodes omit value and sum their children. */
 
 require __DIR__ . '/_bootstrap.php';
 
