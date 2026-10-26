@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RadarChart keeps large finite series proportional when the intermediate
   pixel-radius multiplication would overflow, rather than drawing vertices
   far outside the plot. Ordinary finite-input rounding is unchanged.
+- ViolinPlot samples large groups by value rather than input position, preventing periodic input order from hiding distribution modes.
 
 ### Performance
 
