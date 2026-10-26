@@ -152,7 +152,8 @@ jobs:
             '470_pinned_parent_fd_ownership.phpt',
             '473_render_to_file_local_colon_path.phpt',
             '542_font_pinned_parent_moved_outside_basedir.phpt',
-            '543_font_pinned_directory_swap.phpt'
+            '543_font_pinned_directory_swap.phpt',
+            '597_benchmark_report_preservation.phpt'
           )
           $skipRows = @(Select-String -Path win-tests.txt -Pattern '^SKIP ')
           foreach ($test in $platformSkips) {
@@ -163,7 +164,7 @@ jobs:
             }
           }
           $otherSkipped = $skipped - $platformSkips.Count
-          Write-Host "Tests skipped: $skipped ($($platformSkips.Count) audited FIFO/POSIX/procfs skips; remaining $otherSkipped, ceiling 31)"
+          Write-Host "Tests skipped: $skipped ($($platformSkips.Count) audited platform skips; remaining $otherSkipped, ceiling 31)"
           if ($otherSkipped -lt 0 -or $otherSkipped -gt 31) {
             throw "Windows skip count excluding audited platform tests is $otherSkipped; ceiling 31"
           }
