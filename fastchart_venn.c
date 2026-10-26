@@ -14,6 +14,7 @@
 #include "config.h"
 #endif
 
+#include <float.h>
 #include <math.h>
 
 #include "php.h"
@@ -118,12 +119,10 @@ int fastchart_venn_render_to_target(fastchart_venn_obj *self, fastchart_target_t
         double s = self->sets[i].size > 0.0 ? self->sets[i].size : 1.0;
         if (s > area_unit) area_unit = s;
     }
-    /* Normalize only below the square of the 1e-6 geometry tolerance.
-     * Scaling ordinary fractional areas can change a tangent triangle
-     * cancellation sign and select a different fallback layout.
-     * Scale tiny intersections in the same units as the set areas.
+    /* Keep tiny areas away from absolute geometry tolerances and underflow.
+     * Scale intersections in the same units; retain ordinary-sized rounding.
      * Divide directly, since the reciprocal of a subnormal unit can overflow. */
-    if (area_unit >= 1e-12) area_unit = 1.0;
+    if (area_unit >= 1.0) area_unit = 1.0;
     for (int i = 0; i < n; i++) {
         double s = self->sets[i].size > 0.0 ? self->sets[i].size : 1.0;
         r[i] = sqrt((s / area_unit) / M_PI);
@@ -139,11 +138,17 @@ int fastchart_venn_render_to_target(fastchart_venn_obj *self, fastchart_target_t
         if (d01 > 1e-6) {
             double x = (d01 * d01 + d02 * d02 - d12 * d12) / (2.0 * d01);
             double y2 = d02 * d02 - x * x;
-            /* y2 < 0 means the three solved pairwise distances violate the
-             * triangle inequality: the requested overlaps cannot all hold
-             * at once (e.g. A-B and A-C both near-total but B-C zero).
-             * Rather than flatten circle 2 onto the axis and emit a
-             * misleading layout, fall back to a symmetric triad below. */
+            /* At tangency, subtracting nearly equal squared distances can
+             * leave a negative roundoff residue. Clamp only finite residues
+             * within 64 machine epsilons of the squared-distance scale; do
+             * not turn an overflow or an infeasible triangle into a layout. */
+            double roundoff = 64.0 * DBL_EPSILON * fmax(d02 * d02, x * x);
+            if (isfinite(y2) && y2 < 0.0 && y2 >= -roundoff) y2 = 0.0;
+            /* Treat a remaining negative height as infeasible. Rather than
+             * flatten circle 2 onto the axis and silently ignore an overlap
+             * (e.g. A-B and A-C near-total but B-C zero), retain the symmetric
+             * fallback below. Larger errors from solving near-containment
+             * distances are not covered by the arithmetic roundoff clamp. */
             if (y2 >= 0.0) {
                 cx[2] = x;
                 cy[2] = sqrt(y2);

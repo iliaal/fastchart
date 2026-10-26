@@ -14,10 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- VennDiagram scales tiny positive set and intersection areas together
-  when the largest set area is below `1e-12`, keeping tiny inputs visible.
-  Ordinary fractional areas retain their original arithmetic and tangent
-  layout instead of changing fallback selection through normalization.
+- VennDiagram keeps small areas normalized and tolerates finite roundoff at
+  a three-circle tangency instead of selecting the fallback layout. Regression
+  tests cover tangent and infeasible inputs at every decade from `1e3` to
+  `1e-13`, without treating inconsistent tiny overlaps as co-located sets.
 - Building against newer C libraries, such as Ubuntu 26.04's, no longer
   emits a const-qualifier warning from the vendored SVG parser.
 - GaugeChart keeps its current-value readout visible below the needle hub,
@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RadarChart keeps large finite series proportional when the intermediate
   pixel-radius multiplication would overflow, rather than drawing vertices
   far outside the plot. Ordinary finite-input rounding is unchanged.
+- ViolinPlot samples large groups by value rather than input position, preventing periodic input order from hiding distribution modes.
 
 ### Performance
 

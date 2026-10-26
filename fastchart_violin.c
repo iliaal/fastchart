@@ -131,6 +131,18 @@ int fastchart_violin_render_to_target(fastchart_violin_obj *self, fastchart_targ
         if (h < (vmax - vmin) * 0.01) h = (vmax - vmin) * 0.02;  /* floor */
         int sample_stride = n > 1024 ? (n + 1023) / 1024 : 1;
 
+        double *sorted = emalloc(sizeof(double) * grp->n);
+        int sn = 0;
+        for (int i = 0; i < grp->n; i++) {
+            if (isfinite(grp->values[i])) sorted[sn++] = grp->values[i];
+        }
+        qsort(sorted, sn, sizeof(double), violin_dcmp);
+        /* Striding the original order can alias periodic data and erase
+         * an entire mode. Reuse the median's sorted copy for subsampling;
+         * retain the original accumulation order when using every value. */
+        const double *samples = sample_stride > 1 ? sorted : grp->values;
+        int sample_count = sample_stride > 1 ? sn : grp->n;
+
         /* Density over the global value grid. Cache each grid point's
          * pixel y so the two polygon passes below don't recompute it. */
         double dens[VIOLIN_GRID];
@@ -141,9 +153,9 @@ int fastchart_violin_render_to_target(fastchart_violin_obj *self, fastchart_targ
             yv[j] = plot_y1 - (x - vmin) / (vmax - vmin) * plot_h;
             double s = 0.0;
             int sampled = 0;
-            for (int i = 0; i < grp->n; i += sample_stride) {
-                if (!isfinite(grp->values[i])) continue;
-                double u = (x - grp->values[i]) / h;
+            for (int i = 0; i < sample_count; i += sample_stride) {
+                if (!isfinite(samples[i])) continue;
+                double u = (x - samples[i]) / h;
                 s += exp(-0.5 * u * u);
                 sampled++;
             }
@@ -169,13 +181,7 @@ int fastchart_violin_render_to_target(fastchart_violin_obj *self, fastchart_targ
         fastchart_target_polygon(t, poly, np, color, 1, 0);
         fastchart_target_polygon(t, poly, np, pal.border, 0, 1);
 
-        double *sorted = emalloc(sizeof(double) * grp->n);
-        int sn = 0;
-        for (int i = 0; i < grp->n; i++) {
-            if (isfinite(grp->values[i])) sorted[sn++] = grp->values[i];
-        }
         if (sn > 0) {
-            qsort(sorted, sn, sizeof(double), violin_dcmp);
             double med = sn % 2 ? sorted[sn / 2]
                                 : (sorted[sn / 2 - 1] + sorted[sn / 2]) / 2.0;
             double my = plot_y1 - (med - vmin) / (vmax - vmin) * plot_h;

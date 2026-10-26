@@ -22,12 +22,23 @@ fi
 
 mkdir -p "$REPO_ROOT/bench/results"
 OUTFILE="$REPO_ROOT/bench/results/$LABEL.json"
+if [[ -d "$OUTFILE" ]]; then
+    echo "report path is a directory: $OUTFILE" >&2; exit 1
+fi
+# Keep an earlier report intact when PHP fails, including after partial output.
+# An adjacent temporary file keeps the successful rename on one filesystem.
+# Reports use private mktemp permissions; an existing symlink is replaced, not followed.
+TMPFILE="$(mktemp "$OUTFILE.tmp.XXXXXX")"
+trap 'rm -f -- "$TMPFILE"' EXIT
+trap 'exit 1' HUP INT TERM
 
 FC_BENCH_LABEL="$LABEL" \
 FC_BENCH_ITERS="$ITERS" \
 "$PHP_BIN" \
     -d extension="$EXT" \
     "$REPO_ROOT/bench/perf.php" \
-    > "$OUTFILE"
+    > "$TMPFILE"
+
+mv -f -- "$TMPFILE" "$OUTFILE"
 
 echo "wrote $OUTFILE"

@@ -1258,10 +1258,13 @@ final class StockChart extends Chart
     public function addVWAP(int $color = -1): static {}
 
     /**
-     * ZigZag: a pivot line overlaid on the price pane that connects
-     * swing highs and lows, filtering out moves smaller than
-     * `threshold_pct` percent (default 5, clamped to (0, 100]). Requires
-     * `setOhlcv()`; uses the overlay budget.
+     * ZigZag: a pivot line overlaid on the price pane, calculated from
+     * close-price extrema rather than candle highs/lows. A reversal of
+     * at least `threshold_pct` percent of max(abs(extreme), 1e-9) confirms
+     * a pivot; the first close and final running extreme are also pivots.
+     * The threshold defaults to 5 and must be finite and in (0, 100];
+     * invalid values throw ValueError, rather than being clamped.
+     * Requires `setOhlcv()`; uses the overlay budget.
      */
     public function addZigZag(float $threshold_pct = 5.0): static {}
 
