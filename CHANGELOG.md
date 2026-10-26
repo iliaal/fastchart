@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a consistent layout by less than one millionth of the centre-distance sum
   now render collinear instead of falling back; larger conflicts still use
   the fallback.
+- Linux and macOS prebuilt binaries are compiled against the oldest patch
+  release of each PHP minor (8.4.1 and 8.5.0) and must load and render on
+  both the oldest and the newest patch before they upload. Compiled against
+  current headers, they would fail on 8.4 releases before 8.4.27 and 8.5
+  releases before 8.5.12 with `undefined symbol: smart_str_ferealloc`. The
+  Linux binaries now build on Debian 12 and load with glibc 2.36; the 1.8.0
+  Linux binaries required glibc 2.38. Source builds were unaffected.
 - Building against newer C libraries, such as Ubuntu 26.04's, no longer
   emits a const-qualifier warning from the vendored SVG parser.
 - GaugeChart keeps its current-value readout visible below the needle hub,
