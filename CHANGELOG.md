@@ -7,10 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-10-26
+
 ### Changed
 
 - Clarify the GaugeChart layout reservation and explicitly verify SVG
   DPI invariance alongside its current-value visibility regression.
+- Correct the `StockChart::addZigZag()` documentation: pivots come from
+  close prices, and an invalid threshold throws `ValueError` instead of
+  being clamped.
 
 ### Fixed
 
@@ -1658,7 +1663,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.8.0...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.8.1...HEAD
+[1.8.1]: https://github.com/iliaal/fastchart/releases/tag/1.8.1
 [1.8.0]: https://github.com/iliaal/fastchart/releases/tag/1.8.0
 [1.7.4]: https://github.com/iliaal/fastchart/releases/tag/1.7.4
 [1.7.3]: https://github.com/iliaal/fastchart/releases/tag/1.7.3
