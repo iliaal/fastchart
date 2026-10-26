@@ -14,10 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- VennDiagram keeps small areas normalized and tolerates finite roundoff at
-  a three-circle tangency instead of selecting the fallback layout. Regression
-  tests cover tangent and infeasible inputs at every decade from `1e3` to
-  `1e-13`, without treating inconsistent tiny overlaps as co-located sets.
+- VennDiagram scales small positive set and intersection areas together,
+  keeping tiny inputs visible and preserving their pairwise overlap geometry.
+- VennDiagram no longer switches three-set inputs between the collinear
+  layout and the symmetric fallback when every set and intersection area is
+  multiplied by the same factor. Exactly tangent inputs (one set inside
+  another with a third touching both, or a nested chain), near-tangent and
+  nearly collinear inputs, and near-co-located pairs render the same layout
+  at each of 19 swept factors from `1e9` down to `1e-13`. Overlaps that miss
+  a consistent layout by less than one millionth of the centre-distance sum
+  now render collinear instead of falling back; larger conflicts still use
+  the fallback.
 - Building against newer C libraries, such as Ubuntu 26.04's, no longer
   emits a const-qualifier warning from the vendored SVG parser.
 - GaugeChart keeps its current-value readout visible below the needle hub,

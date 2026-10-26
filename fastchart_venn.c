@@ -14,7 +14,6 @@
 #include "config.h"
 #endif
 
-#include <float.h>
 #include <math.h>
 
 #include "php.h"
@@ -119,10 +118,11 @@ int fastchart_venn_render_to_target(fastchart_venn_obj *self, fastchart_target_t
         double s = self->sets[i].size > 0.0 ? self->sets[i].size : 1.0;
         if (s > area_unit) area_unit = s;
     }
-    /* Keep tiny areas away from absolute geometry tolerances and underflow.
-     * Scale intersections in the same units; retain ordinary-sized rounding.
-     * Divide directly, since the reciprocal of a subnormal unit can overflow. */
-    if (area_unit >= 1.0) area_unit = 1.0;
+    /* Work in units of the largest set area at every input scale, so the
+     * absolute 1e-6 distance gates below and the label-offset check stay
+     * relative to the diagram and tiny areas cannot underflow. Scale
+     * intersections in the same units. Divide directly, since the reciprocal
+     * of a subnormal unit can overflow. */
     for (int i = 0; i < n; i++) {
         double s = self->sets[i].size > 0.0 ? self->sets[i].size : 1.0;
         r[i] = sqrt((s / area_unit) / M_PI);
@@ -138,20 +138,29 @@ int fastchart_venn_render_to_target(fastchart_venn_obj *self, fastchart_target_t
         if (d01 > 1e-6) {
             double x = (d01 * d01 + d02 * d02 - d12 * d12) / (2.0 * d01);
             double y2 = d02 * d02 - x * x;
-            /* At tangency, subtracting nearly equal squared distances can
-             * leave a negative roundoff residue. Clamp only finite residues
-             * within 64 machine epsilons of the squared-distance scale; do
-             * not turn an overflow or an infeasible triangle into a layout. */
-            double roundoff = 64.0 * DBL_EPSILON * fmax(d02 * d02, x * x);
-            if (isfinite(y2) && y2 < 0.0 && y2 >= -roundoff) y2 = 0.0;
-            /* Treat a remaining negative height as infeasible. Rather than
-             * flatten circle 2 onto the axis and silently ignore an overlap
-             * (e.g. A-B and A-C near-total but B-C zero), retain the symmetric
-             * fallback below. Larger errors from solving near-containment
-             * distances are not covered by the arithmetic roundoff clamp. */
-            if (y2 >= 0.0) {
+            /* Decide feasibility from the triangle inequality, not from the
+             * sign of y2. At a tangency the triangle is degenerate and x
+             * comes from cancelling squared distances, so y2 carries an
+             * absolute error of order eps * d01 * d02 when d02 is much
+             * smaller than d01, and its sign depends on the input scale.
+             * Each slack below is a sum of three distances, so its rounding
+             * error is relative to their sum. The distances are not exact,
+             * though: scaled inputs differ by a few ulps, and close to a
+             * tangency, where acos() in the lens area is ill-conditioned,
+             * that moves a solved distance by up to about 1e-8 of r + R. A
+             * few-eps tolerance would still split such inputs by scale.
+             * Accept a violation up to 1e-6 of the distance sum, the same
+             * order as the co-located tolerance below and far below a pixel
+             * once circle 2 sits on the axis. A larger violation means the
+             * requested overlaps cannot all hold (e.g. A-B and A-C
+             * near-total but B-C zero); keep the symmetric fallback below
+             * instead of flattening circle 2 onto the axis and silently
+             * ignoring an overlap. */
+            double slack = fmin(fmin(d01 + d02 - d12, d01 + d12 - d02),
+                                d02 + d12 - d01);
+            if (isfinite(y2) && slack >= -1e-6 * (d01 + d02 + d12)) {
                 cx[2] = x;
-                cy[2] = sqrt(y2);
+                cy[2] = sqrt(fmax(y2, 0.0));
                 infeasible = 0;
             }
         } else {
