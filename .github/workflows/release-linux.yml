@@ -165,16 +165,21 @@ jobs:
           sudo apt-get install -y --no-install-recommends zip
 
       # Anonymous pulls from shared runner IPs hit both Docker Hub's and ECR
-      # Public's per-IP limits. ECR Public mirrors the official images under
-      # the same digests, so either source yields the pinned image.
+      # Public's per-IP limits. ghcr.io/iliaal/php and ECR Public mirror the
+      # official images under the same digests, so any source yields the
+      # pinned image.
       - name: Pull the oldest and newest patch images (Linux)
         if: startsWith(matrix.os, 'ubuntu-')
         run: |
           set -euo pipefail
           pull() {
             local delay reg
+            if [[ "$2" != *@sha256:* ]]; then
+              echo "::error::$2 is not pinned by digest"
+              return 1
+            fi
             for delay in 10 30 60 0; do
-              for reg in public.ecr.aws/docker/library docker.io/library; do
+              for reg in ghcr.io/iliaal public.ecr.aws/docker/library docker.io/library; do
                 if docker pull -q "$reg/$2" > /dev/null; then
                   echo "$1=$reg/$2" >> "$GITHUB_ENV"
                   docker image inspect --format "$1: {{index .RepoDigests 0}}" "$reg/$2"
