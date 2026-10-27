@@ -118,9 +118,11 @@ echo 'fragment namespace: ',
      && $fragment_uses[0][1] === 'iconsfci1'
      && !str_contains($fragment, 'href="#fci')) ? "yes\n" : "NO\n";
 
+// Reserve both paths before deleting either: tempnam() may reuse a deleted
+// path, and Windows uses only the first three prefix characters (fc_ here).
 $missing = tempnam(sys_get_temp_dir(), 'fc_icon_missing_');
-@unlink($missing);
 $invalid = tempnam(sys_get_temp_dir(), 'fc_icon_invalid_');
+@unlink($missing);
 file_put_contents($invalid, 'not an image');
 $failures = (new FastChart\LineChart(640, 240))->setSeries($data);
 for ($i = 0; $i < 16; $i++) {
