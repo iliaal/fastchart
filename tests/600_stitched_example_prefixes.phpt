@@ -5,7 +5,8 @@ fastchart
 --FILE--
 <?php
 $root = dirname(__DIR__);
-$guide = file_get_contents($root . '/docs/README.md');
+// Git may check documentation out with CRLF on Windows.
+$guide = str_replace("\r\n", "\n", file_get_contents($root . '/docs/README.md'));
 $claim = 'one image, stitch SVG fragments with a distinct `drawSvgFragment($idPrefix)`' . "\n"
     . 'for each chart so gradient and clip-path definitions cannot collide, or' . "\n"
     . 'composite the `renderPng()` bytes in userland.';
