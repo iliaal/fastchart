@@ -25,17 +25,18 @@
 
 require __DIR__ . '/_bootstrap.php';
 
-/* Step 1: build two charts, get fragments, stitch them. */
+/* Step 1: build two charts, get fragments, stitch them. Use distinct
+ * id prefixes so gradient and clip-path definitions cannot collide. */
 $left  = (new FastChart\LineChart(320, 240))
     ->setFontPath($font)
     ->setTitle('Revenue')
     ->setSeries([['data' => [120, 145, 168, 190, 215]]])
-    ->drawSvgFragment();
+    ->drawSvgFragment('left_');
 $right = (new FastChart\BarChart(320, 240))
     ->setFontPath($font)
     ->setTitle('Cost')
     ->setSeries([['data' => [80, 95, 110, 125, 140]]])
-    ->drawSvgFragment();
+    ->drawSvgFragment('right_');
 
 $W = 640; $H = 240;
 $svg  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";

@@ -474,8 +474,9 @@ selectable text, call
 
 v1.0 removed GIF and AVIF output and `draw($canvas)`, because
 fastchart now owns the pixel buffer through plutovg. To combine several charts in
-one image, stitch SVG fragments from `drawSvgFragment()` or composite
-the `renderPng()` bytes in userland.
+one image, stitch SVG fragments with a distinct `drawSvgFragment($idPrefix)`
+for each chart so gradient and clip-path definitions cannot collide, or
+composite the `renderPng()` bytes in userland.
 
 ![](examples/20a_renderToFile.png)
 
@@ -686,13 +687,14 @@ carrying `'shape'` (`'rect'`, `'circle'`, or `'poly'`), HTML
 
 ```php
 /* There is no shared canvas to draw onto, so compose multi-chart
- * layouts in SVG and rasterize the result once if needed. */
+ * layouts in SVG and rasterize the result once if needed. Distinct
+ * id prefixes keep gradient and clip-path definitions separate. */
 $left = (new FastChart\LineChart(380, 320))
     ->setTitle('Left chart')->setSeries([/* … */])
-    ->drawSvgFragment();
+    ->drawSvgFragment('left_');
 $right = (new FastChart\BarChart(380, 320))
     ->setTitle('Right chart')->setSeries([/* … */])
-    ->drawSvgFragment();
+    ->drawSvgFragment('right_');
 $svg  = '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"'
       . ' width="800" height="320" viewBox="0 0 800 320">';
 $svg .= '<g transform="translate(0,0)">'    . $left  . '</g>';

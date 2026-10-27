@@ -13,7 +13,8 @@
  *   - setBackgroundImage(path)         : draw an image behind the chart
  *
  * To put two charts on one canvas, compose drawSvgFragment() output in
- * an outer SVG document (31b below).
+ * an outer SVG document (31b below). Give each fragment a distinct
+ * id prefix so gradient and clip-path definitions cannot collide.
  *
  * fastchart doesn't need ext/gd. This example uses it only to build a
  * gradient image for setBackgroundImage, and skips that part without
@@ -44,13 +45,13 @@ $left_g = (new FastChart\LineChart($W, $H))
     ->setTitle('Left chart')
     ->setSeries([['data' => [22, 35, 28, 41, 38]]])
     ->setPlotRect(60, 30, 380, 280)
-    ->drawSvgFragment();
+    ->drawSvgFragment('left_');
 $right_g = (new FastChart\BarChart($W, $H))
     ->setFontPath($font)
     ->setTitle('Right chart')
     ->setSeries([['data' => [12, 18, 15, 24, 21]]])
     ->setPlotRect(440, 30, 760, 280)
-    ->drawSvgFragment();
+    ->drawSvgFragment('right_');
 
 $svg  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 $svg .= '<svg xmlns="http://www.w3.org/2000/svg" width="' . $W . '" height="' . $H
