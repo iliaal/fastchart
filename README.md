@@ -229,8 +229,12 @@ exactly because the current pdfio API doesn't expose per-shape
 transparency.
 
 On Windows, the PDF backend is opt-in via `--with-pdfio`
-(`config.w32`) and requires `pdfio.h` / `pdfio.lib` to be provisioned
-first; the Windows CI and prebuilt DLLs ship PDF-disabled.
+(`config.w32`). Provision the pdfio headers and one of `pdfio_a.lib`,
+`pdfio.lib`, or `pdfio1.lib` first. A dedicated PHP 8.4 x64 NTS
+Windows CI lane builds with PDF enabled and requires every PDF test
+to pass without skipping. The ordinary Windows build matrix and
+published prebuilt DLLs remain PDF-disabled; the dedicated PDF lane
+does not publish release artifacts.
 
 Three static methods on `FastChart\Chart` rasterize caller-supplied
 SVG bytes through the same plutovg + libpng / libjpeg-turbo /
