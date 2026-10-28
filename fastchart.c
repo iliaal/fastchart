@@ -11956,8 +11956,8 @@ static int fastchart_sunburst_build_rec(
         }
     }
 
-    /* Aggregate value: explicit if leaf or if user set one; sum of
-     * children otherwise. Child values are finite non-negative doubles,
+    /* Use an accepted explicit value; otherwise sum direct children,
+     * or use zero for a leaf. Child values are finite non-negative doubles,
      * but their mathematical sum can exceed DBL_MAX. Return a distinct
      * status so setHierarchy() can reject the input without replacing the
      * previously committed tree. */

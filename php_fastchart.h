@@ -828,7 +828,7 @@ typedef struct {
  * child_first identifies the first child, not a contiguous sibling range. */
 typedef struct {
     char *label;          /* emalloc'd, NUL-terminated; NULL = no label */
-    double value;         /* leaf value, or sum-of-children for interior */
+    double value;         /* explicit value; otherwise child sum, or 0 for a leaf */
     int color_rgb;        /* -1 = palette default by leaf-position */
     int depth;            /* 0 = root, 1 = first ring, ... */
     int parent;           /* -1 for root */

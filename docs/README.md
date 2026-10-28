@@ -786,9 +786,17 @@ for ($ts = $start; $ts <= $end; $ts += 86400) {
 ## 46. Sunburst chart
 
 `FastChart\SunburstChart` is a nested ring donut. Each ring is one
-level of the hierarchy; each slice's angular span is proportional
-to its value. Interior nodes auto-sum their children when no
-explicit `value` is set.
+level of the hierarchy. Children divide their parent's angular span in
+proportion to their values relative to their siblings, not to an explicit
+parent value. Zero-total siblings have zero-width wedges.
+
+A finite, non-negative integer or float (including zero) is an explicit
+`value`, even for an interior node; it need not equal the sum of its
+children. Missing or invalid values (including numeric strings, booleans,
+null, negatives, NaN and infinity) fall back to the sum of direct children's
+effective values, or zero for a leaf. Non-array children are ignored.
+Rendering requires a positive effective root value. Overflowing child
+totals are rejected even when their parent has an explicit value.
 
 ```php
 (new FastChart\SunburstChart(520, 520))
