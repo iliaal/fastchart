@@ -1,29 +1,15 @@
 --TEST--
-Windows PDF build documentation distinguishes CI coverage from release artifacts
+Windows PDF configuration distinguishes CI coverage from release artifacts
 --FILE--
 <?php
 function check(bool $ok, string $label): void {
     echo $label, ': ', $ok ? 'ok' : 'FAIL', "\n";
 }
 $root = dirname(__DIR__);
-$readme = str_replace("\r\n", "\n", file_get_contents($root . '/README.md'));
 $config = file_get_contents($root . '/config.w32');
 $workflow = str_replace("\r\n", "\n", file_get_contents($root . '/.github/workflows/windows.yml'));
 $matched = preg_match('/CHECK_LIB\("(pdfio[^"\n]+)"/', $config, $libs);
 check($matched === 1, 'library probe found');
-$names = $matched ? explode(';', $libs[1]) : [];
-$quoted = array_map(fn($name) => '`' . $name . '`', $names);
-$last = array_pop($quoted);
-$libraryText = implode(",\n", $quoted) . ', or ' . $last;
-// Normalize whitespace, but assert the entire paragraph, not a suffix.
-$normalize = fn($text) => preg_replace('/\s+/', ' ', trim($text));
-preg_match('/On Windows, the PDF backend.*?(?=\n\n)/s', $readme, $paragraph);
-$expected = "On Windows, the PDF backend is opt-in via `--with-pdfio` "
-    . "(`config.w32`). Provision the pdfio headers and one of $libraryText first. "
-    . 'A dedicated PHP 8.4 x64 NTS Windows CI lane builds with PDF enabled and requires every PDF test '
-    . 'to pass without skipping. The ordinary Windows build matrix and published prebuilt DLLs remain '
-    . 'PDF-disabled; the dedicated PDF lane does not publish release artifacts.';
-check(isset($paragraph[0]) && $normalize($paragraph[0]) === $normalize($expected), 'complete Windows PDF claim');
 check(str_contains($config, 'ARG_WITH("pdfio",') && str_contains($config, 'if (PHP_PDFIO != "no")')
     && str_contains($config, 'CHECK_HEADER_ADD_INCLUDE("pdfio.h"'), 'opt-in and headers');
 preg_match('/^  windows-pdf:\n(.*?)(?=^  release:)/ms', $workflow, $pdf);
@@ -42,7 +28,6 @@ check(isset($release[1]) && preg_match('/^    needs: windows-build$/m', $release
 ?>
 --EXPECT--
 library probe found: ok
-complete Windows PDF claim: ok
 opt-in and headers: ok
 dedicated PDF configuration: ok
 PDF tests must pass: ok

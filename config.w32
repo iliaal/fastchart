@@ -95,7 +95,7 @@ if (PHP_FASTCHART != "no") {
                 STDOUT.WriteLine("fastchart: pdfio found, PDF output enabled");
             } else {
                 ERROR("fastchart: --with-pdfio given but pdfio " +
-                      "(pdfio.lib + pdfio.h) was not found");
+                      "(pdfio_a.lib, pdfio.lib, or pdfio1.lib plus pdfio.h) was not found");
             }
         }
 

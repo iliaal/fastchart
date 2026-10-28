@@ -661,8 +661,8 @@ jobs:
             grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
             exit 1
           fi
-          # Skip ceiling. This lane loads gd AND builds --with-pdfio, so
-          # both the ~91 gd round-trip tests and the 7 PDF tests RUN.
+          # Skip ceiling. This lane loads gd AND builds --with-pdfio,
+          # enabling tests that require those capabilities.
           # Legitimate skips: up to 12 fc_pick_font()-gated (system font
           # absent) + 1 comma-decimal-locale + a couple environment-gated.
           # Budget 12 + ~6 slack = 18. More means a capability quietly
