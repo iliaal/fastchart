@@ -6,7 +6,7 @@ if (!function_exists('proc_open')) die('skip proc_open unavailable');
 ?>
 --FILE--
 <?php
-$dir = sys_get_temp_dir() . '/fc-gate-test-' . bin2hex(random_bytes(8));
+$dir = sys_get_temp_dir() . '/fc-gate~test-' . bin2hex(random_bytes(8));
 mkdir($dir);
 $mock = <<<'PHP'
 <?php
@@ -30,15 +30,27 @@ PHP;
 file_put_contents($dir . '/mock.php', $mock);
 file_put_contents($dir . '/fc-deprecation-gate.svg', 'keep me');
 $paths = [];
+// CLI -d values use INI syntax; Windows short paths can contain a tilde.
+$iniPath = static fn(string $path): string => '"' . addcslashes($path, "\\\"") . '"';
 try {
+    $windowsPath = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp';
+    $proc = proc_open([PHP_BINARY, '-n', '-d', 'sys_temp_dir=' . $iniPath($windowsPath),
+        '-r', 'echo ini_get("sys_temp_dir");'],
+        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    if (!is_resource($proc)) throw new RuntimeException('cannot start PHP');
+    fclose($pipes[0]);
+    $out = stream_get_contents($pipes[1]); fclose($pipes[1]);
+    $err = stream_get_contents($pipes[2]); fclose($pipes[2]);
+    $status = proc_close($proc);
+    echo 'INI path: ', $status === 0 && $err === '' && $out === $windowsPath ? 'OK' : 'FAIL', "\n";
     foreach (['first', 'second', 'render error', 'allocation error'] as $scenario) {
         $env = getenv();
         $env['FC_GATE_PATH'] = $dir . '/path';
         $env['FC_GATE_THROW'] = $scenario === 'render error' ? '1' : '';
         @unlink($dir . '/path');
         $args = [PHP_BINARY, '-n', '-d', 'display_errors=0', '-d', 'error_reporting=-1',
-            '-d', 'sys_temp_dir=' . ($scenario === 'allocation error' ? $dir . '/absent' : $dir),
-            '-d', 'auto_prepend_file=' . $dir . '/mock.php',
+            '-d', 'sys_temp_dir=' . $iniPath($scenario === 'allocation error' ? $dir . '/absent' : $dir),
+            '-d', 'auto_prepend_file=' . $iniPath($dir . '/mock.php'),
             dirname(__DIR__) . '/scripts/deprecation-gate.php'];
         $proc = proc_open($args, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'],
             2 => ['pipe', 'w']], $pipes, null, $env);
@@ -76,6 +88,7 @@ try {
 }
 ?>
 --EXPECT--
+INI path: OK
 first: OK
 second: OK
 render error: OK
