@@ -196,6 +196,9 @@ figcaption { font-size: 0.82rem; color: var(--muted); margin-bottom: 6px;
 HTML;
 
 $out = __DIR__ . '/../docs/v1-gallery.html';
-file_put_contents($out, $html);
+if (file_put_contents($out, $html) === false) {
+    fwrite(STDERR, "Failed to write gallery: $out\n");
+    exit(1);
+}
 fprintf(STDOUT, "wrote %s (%.1f KB across %d charts)\n",
     realpath($out), filesize($out) / 1024, $ncharts);
