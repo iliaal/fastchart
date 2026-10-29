@@ -812,7 +812,10 @@ footer { max-width: 1200px; margin: 0 auto; padding: 16px 24px 40px;
 HTML;
 
 $out = __DIR__ . '/../compare-svg-png.html';
-file_put_contents($out, $html);
+if (file_put_contents($out, $html) === false) {
+    fwrite(STDERR, "Failed to write gallery: $out\n");
+    exit(1);
+}
 echo "wrote ", realpath($out),
      " (", number_format(filesize($out) / 1024, 1), " KB)\n";
 echo "SVG total: {$total_svg_kb} KB across {$ncharts} charts\n";
