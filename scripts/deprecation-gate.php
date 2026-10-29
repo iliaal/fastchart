@@ -5,6 +5,7 @@ error_reporting(E_ALL);
 
 $deprecations = [];
 $failed = false;
+$path = null;
 set_error_handler(
     function (int $errno, string $errstr, string $errfile, int $errline)
         use (&$deprecations): bool {
@@ -17,6 +18,11 @@ set_error_handler(
 );
 
 try {
+    $directory = sys_get_temp_dir() . '/fc-deprecation-gate-' . bin2hex(random_bytes(8));
+    if (!mkdir($directory, 0700)) {
+        throw new RuntimeException('Cannot create render gate temporary directory');
+    }
+    $path = $directory . '/gate.svg';
     $series = [1, 4, 2, 5, 3, 6];
 
     $charts = [
@@ -38,8 +44,7 @@ try {
         $chart->renderPng();
         $chart->renderJpeg();
         $chart->renderWebp();
-        $chart->renderToFile(
-            sys_get_temp_dir() . '/fc-deprecation-gate.svg');
+        $chart->renderToFile($path);
         $chart->drawSvgFragment('gate');
         $chart->getImageMap();
     }
@@ -59,7 +64,10 @@ try {
         . get_class($e) . ': ' . $e->getMessage() . "\n");
     $failed = true;
 } finally {
-    @unlink(sys_get_temp_dir() . '/fc-deprecation-gate.svg');
+    if ($path !== null) {
+        @unlink($path);
+        @rmdir($directory);
+    }
 }
 
 if ($failed) {
