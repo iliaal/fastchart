@@ -53,7 +53,7 @@ try {
             $ok = $ok && $status === 2 && $out === '' && !file_exists($dir . '/path')
                 && str_contains($err, 'Cannot create render gate temporary directory');
         } else {
-            $path = file_get_contents($dir . '/path');
+            $path = is_file($dir . '/path') ? file_get_contents($dir . '/path') : '';
             $ok = $ok && dirname($path) !== $dir && str_ends_with($path, '/gate.svg')
                 && !file_exists($path) && !is_dir(dirname($path));
             $paths[] = $path;
@@ -61,6 +61,8 @@ try {
                 ? $status === 2 && $out === '' && str_contains($err, 'render failed')
                 : $status === 0 && $err === '' && str_contains($out, 'deprecation-gate clean:'));
         }
+        if (!$ok) echo "child status=$status stdout=" . json_encode($out)
+            . ' stderr=' . json_encode($err) . "\n";
         echo "$scenario: ", $ok ? 'OK' : 'FAIL', "\n";
     }
     echo 'unique paths: ', count(array_unique($paths)) === 3 ? 'OK' : 'FAIL', "\n";
