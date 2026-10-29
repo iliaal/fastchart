@@ -294,8 +294,8 @@ jobs:
             Tee-Object -FilePath pdf-tests.txt
           $m = Select-String -Path pdf-tests.txt -Pattern 'Tests passed\s*:\s*(\d+)'
           $passed = if ($m) { [int]$m.Matches.Groups[1].Value } else { 0 }
-          # Every PDF test must PASS, not skip: a skip here means pdfio
-          # didn't link and the lane proved nothing.
+          # Each filename-selected test must PASS, not skip: a skip here
+          # means pdfio didn't link and the lane proved nothing.
           if ($LASTEXITCODE -ne 0 -or $passed -lt $pdfTests.Count) {
             Write-Error "PDF tests: $passed/$($pdfTests.Count) passed; pdfio may not have linked (see SKIPs above)"
             exit 1

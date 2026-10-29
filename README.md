@@ -231,8 +231,10 @@ transparency.
 On Windows, the PDF backend is opt-in via `--with-pdfio`
 (`config.w32`). Provision the pdfio headers and one of `pdfio_a.lib`,
 `pdfio.lib`, or `pdfio1.lib` first. A dedicated PHP 8.4 x64 NTS
-Windows CI lane builds with PDF enabled and requires every PDF test
-to pass without skipping. The ordinary Windows build matrix and
+Windows CI lane builds with PDF enabled and requires every test selected
+by the `tests/*pdf*.phpt` filename pattern to pass without skipping.
+Tests with other filenames are not included in that lane, even if they
+call `renderPdf()`. The ordinary Windows build matrix and
 published prebuilt DLLs remain PDF-disabled; the dedicated PDF lane
 does not publish release artifacts.
 
