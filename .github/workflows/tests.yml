@@ -290,7 +290,7 @@ jobs:
           echo "symbol audit: no libgcc cpu-feature symbols"
 
       - name: Verify gd capabilities (guard against silent mass-skips)
-        # ~91 phpts declare `--EXTENSIONS-- gd` and round-trip raster
+        # PHPTs declaring `--EXTENSIONS-- gd` round-trip raster
         # output through imagecreatefromstring / imagecreatefromwebp for
         # pixel inspection. If gd vanishes, or its build loses WebP /
         # JPEG / FreeType support, those tests SKIP silently and a "green"
@@ -344,12 +344,13 @@ jobs:
             grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
             exit 1
           fi
-          # Skip ceiling. This lane loads gd (so the ~91 gd round-trip
-          # tests RUN) and is built without --with-pdfio. Legitimate
-          # skips: 7 PDF-gated + up to 12 fc_pick_font()-gated (system
-          # font absent) + 1 comma-decimal-locale + a couple of
-          # environment-gated (open_basedir / non-regular-source). Budget
-          # 7 + 12 + ~5 slack = 25. A run that skips MORE than this means
+          # Skip ceiling. This lane loads gd (so gd round-trip tests RUN)
+          # and is built without --with-pdfio. Eight tests are PDF-gated;
+          # other skips depend on fonts, the comma-decimal locale, and
+          # environment capabilities (open_basedir / non-regular-source).
+          # These gates can overlap. Keep the existing ceiling of 25,
+          # rather than deriving it by adding overlapping gate counts.
+          # A run that skips MORE than this means
           # a capability quietly vanished and tests are hiding in the skip
           # counter rather than failing; treat it as a failure. Bump this
           # only alongside a deliberate new skip-gated test.
@@ -600,7 +601,7 @@ jobs:
       - name: Verify gd capabilities (guard against silent mass-skips)
         # Same guard as the Linux lane: this lane also runs the full
         # suite, so a vanished gd (or a gd without WebP/JPEG/FreeType)
-        # would silently skip the ~91 raster round-trip tests here too.
+        # would silently skip raster round-trip tests here too.
         run: |
           php -r '
             if (!extension_loaded("gd")) {
@@ -663,9 +664,9 @@ jobs:
           fi
           # Skip ceiling. This lane loads gd AND builds --with-pdfio,
           # enabling tests that require those capabilities.
-          # Legitimate skips: up to 12 fc_pick_font()-gated (system font
-          # absent) + 1 comma-decimal-locale + a couple environment-gated.
-          # Budget 12 + ~6 slack = 18. More means a capability quietly
+          # Remaining skips depend on fonts, the comma-decimal locale,
+          # and environment capabilities; these gates can overlap.
+          # Keep the existing ceiling of 18. More means a capability quietly
           # vanished (gd/webp/fonts/pdfio) and tests are hiding in the
           # skip counter. Bump only alongside a deliberate new skip-gated
           # test.
@@ -779,7 +780,7 @@ jobs:
       - name: Verify gd capabilities (guard against silent mass-skips)
         # This lane builds gd directly into the ASAN PHP
         # (--enable-gd --with-external-gd against the runner's libgd-dev),
-        # so the ~91 gd round-trip tests EXECUTE here, they do not skip.
+        # so gd round-trip tests EXECUTE here, they do not skip.
         # Assert the external-gd build kept WebP/JPEG/FreeType so a codec
         # gap in the runner's libgd surfaces loudly instead of silently
         # skipping those tests under ASAN.
@@ -829,10 +830,10 @@ jobs:
             exit 1
           fi
           # Skip ceiling. NOTE: gd IS present in this lane (built into the
-          # ASAN PHP above), so the ~91 gd tests run; the skip profile
-          # matches the Linux lane, NOT a gd-less lane. Legitimate skips:
-          # 7 PDF-gated (no --with-pdfio) + up to 12 font-gated + locale/
-          # environment-gated. Budget 30 (Linux's 25 + a little extra
+          # ASAN PHP above), so gd tests run; the skip profile matches
+          # the Linux lane, NOT a gd-less lane: eight PDF-gated tests
+          # (no --with-pdfio), plus potentially overlapping font, locale,
+          # and environment gates. Budget 30 (Linux's 25 + a little extra
           # slack for ASAN-specific environment differences). If gd were
           # ever dropped from this lane the capability probe above fails
           # first, so reaching this check means gd ran.
@@ -883,7 +884,7 @@ jobs:
           make -j$(sysctl -n hw.ncpu)
 
       - name: Verify gd capabilities (guard against silent mass-skips)
-        # Same guard as the Linux lane: the ~91 gd round-trip tests need
+        # Same guard as the Linux lane: gd round-trip tests need
         # gd with WebP/JPEG/FreeType. macOS gd comes from setup-php's
         # `extensions: gd`; if that build ever loses a codec those tests
         # would skip silently and the lane would still go green.
