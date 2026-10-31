@@ -25,6 +25,7 @@
 #include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
+#include "fastchart_numeric.h"
 
 /* Violin plot: per group, a gaussian kernel-density estimate of the
  * sample distribution is mirrored about the group's column centre to
@@ -112,21 +113,27 @@ int fastchart_violin_render_to_target(fastchart_violin_obj *self, fastchart_targ
 
         if (grp->n < 1) continue;
 
-        double sum = 0.0;
+        /* Center before accumulation so a large common offset does not
+         * erase the spread that determines the kernel bandwidth. */
+        double origin = grp->values[0];
+        fastchart_sum sum = {0};
         int n = 0;
         for (int i = 0; i < grp->n; i++) {
-            if (isfinite(grp->values[i])) { sum += grp->values[i]; n++; }
-        }
-        if (n < 1) continue;
-        double mean = sum / n;
-        double var = 0.0;
-        for (int i = 0; i < grp->n; i++) {
             if (isfinite(grp->values[i])) {
-                double d = grp->values[i] - mean;
-                var += d * d;
+                fastchart_sum_add(&sum, grp->values[i] - origin);
+                n++;
             }
         }
-        double sd = n > 1 ? sqrt(var / (n - 1)) : 0.0;
+        if (n < 1) continue;
+        double mean = fastchart_sum_value(&sum) / n;
+        fastchart_sum var = {0};
+        for (int i = 0; i < grp->n; i++) {
+            if (isfinite(grp->values[i])) {
+                double d = (grp->values[i] - origin) - mean;
+                fastchart_sum_add(&var, d * d);
+            }
+        }
+        double sd = n > 1 ? sqrt(fastchart_sum_value(&var) / (n - 1)) : 0.0;
         double h = sd > 0.0 ? 1.06 * sd * pow((double)n, -0.2) : 0.0;
         if (h < (vmax - vmin) * 0.01) h = (vmax - vmin) * 0.02;  /* floor */
         int sample_stride = n > 1024 ? (n + 1023) / 1024 : 1;
