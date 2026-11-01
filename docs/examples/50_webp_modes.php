@@ -55,8 +55,6 @@ foreach ($modes as $name => $mode) {
 
     printf("%-10s %10d %10.2f\n", $name, $bytes, $median);
 
-    /* Also dump one PNG per mode so you can eyeball the visual
-     * result (no difference between lossy modes at q=90 for chart
-     * content; LOSSLESS will be pixel-identical to the SVG render). */
+    /* Save one WebP per mode so you can compare the visual results. */
     $c->renderToFile(__DIR__ . "/50_webp_{$name}.webp");
 }
