@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
 - Preserve ViolinPlot bandwidth for small spreads around large finite offsets.
+- Preserve proportional PolarChart geometry for large finite radii, including rose wedges and vector endpoints.
 
 ## [1.8.1] - 2026-10-26
 
