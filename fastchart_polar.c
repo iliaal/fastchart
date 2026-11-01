@@ -48,6 +48,15 @@ static double polar_clamp_radius(double rr, double radius)
     return rr;
 }
 
+/* Preserve ordinary pixel rounding; normalize first only when multiplying
+ * a finite data radius by the plot radius overflows. */
+static double polar_scaled_radius(double value, double maximum, double radius)
+{
+    double scaled = radius * value;
+    return polar_clamp_radius(isfinite(scaled)
+        ? scaled / maximum : (value / maximum) * radius, radius);
+}
+
 int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target_t *t)
 {
     if (self->n_series == 0) {
@@ -134,8 +143,7 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
                     : series[s].angles[0];
                 double r = series[s].radii[i];
                 if (r <= 0) continue;
-                int rr_px = (int)polar_clamp_radius((double)radius * r / rmax,
-                                                    (double)radius);
+                int rr_px = (int)polar_scaled_radius(r, rmax, (double)radius);
                 /* Renderer angles are CW with 0° at 3-o'clock; our
                  * angles are CCW math angles. Convert by negating
                  * and adding 360 so the renderer draws the wedge oriented
@@ -179,7 +187,7 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
              * angle overflows a * M_PI to Inf, and cos/sin(Inf) is NaN:
              * float-cast-overflow UB at the int casts below. */
             double rad = fmod(a, 360.0) * M_PI / 180.0;
-            double rr = polar_clamp_radius(radius * r / rmax, radius);
+            double rr = polar_scaled_radius(r, rmax, radius);
             raw[n_raw].x = cx + (int)(rr * cos(rad));
             raw[n_raw].y = cy - (int)(rr * sin(rad));
             n_raw++;
@@ -283,8 +291,8 @@ int fastchart_polar_render_to_target(fastchart_polar_obj *self, fastchart_target
              * series branches, so the int casts below stay defined. */
             double a0 = fmod(v->angle, 360.0) * M_PI / 180.0;
             double a1 = fmod(v->angle_to, 360.0) * M_PI / 180.0;
-            double r0 = polar_clamp_radius(radius * v->radius    / rmax, radius);
-            double r1 = polar_clamp_radius(radius * v->radius_to / rmax, radius);
+            double r0 = polar_scaled_radius(v->radius, rmax, radius);
+            double r1 = polar_scaled_radius(v->radius_to, rmax, radius);
             int x0 = cx + (int)(r0 * cos(a0));
             int y0 = cy - (int)(r0 * sin(a0));
             int x1 = cx + (int)(r1 * cos(a1));
