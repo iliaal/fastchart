@@ -65,7 +65,7 @@ function bench(string $name, int $warmup, int $iters, callable $fn): array {
 }
 
 /* Repeated digit glyphs exercise the outline cache. */
-function scenario_label_chart(): callable {
+function label_chart_rows(): array {
     mt_srand(424242);  /* deterministic candle data → stable output bytes */
     $rows = [];
     $base_ts = 1700000000;
@@ -79,6 +79,11 @@ function scenario_label_chart(): callable {
         $rows[] = [$base_ts + $i * 86400, $o, $h, $l, $c, $v];
         $price = $c;
     }
+    return $rows;
+}
+
+function scenario_label_chart(): callable {
+    $rows = label_chart_rows();
     return function() use ($rows) {
         $chart = (new FastChart\StockChart())
             ->setSize(1200, 700)
@@ -158,19 +163,7 @@ function scenario_basic_chart(): callable {
 }
 
 function scenario_label_chart_jpeg(): callable {
-    mt_srand(424242);
-    $rows = [];
-    $base_ts = 1700000000;
-    $price = 100.0;
-    for ($i = 0; $i < 200; $i++) {
-        $o = $price;
-        $c = $price + sin($i * 0.3) * 4 + (mt_rand(-500, 500) / 250.0);
-        $h = max($o, $c) + 1.5;
-        $l = min($o, $c) - 1.5;
-        $v = 1000 + mt_rand(0, 500);
-        $rows[] = [$base_ts + $i * 86400, $o, $h, $l, $c, $v];
-        $price = $c;
-    }
+    $rows = label_chart_rows();
     return function() use ($rows) {
         return (new FastChart\StockChart())
             ->setSize(1200, 700)
@@ -183,19 +176,7 @@ function scenario_label_chart_jpeg(): callable {
 }
 
 function scenario_label_chart_webp(): callable {
-    mt_srand(424242);
-    $rows = [];
-    $base_ts = 1700000000;
-    $price = 100.0;
-    for ($i = 0; $i < 200; $i++) {
-        $o = $price;
-        $c = $price + sin($i * 0.3) * 4 + (mt_rand(-500, 500) / 250.0);
-        $h = max($o, $c) + 1.5;
-        $l = min($o, $c) - 1.5;
-        $v = 1000 + mt_rand(0, 500);
-        $rows[] = [$base_ts + $i * 86400, $o, $h, $l, $c, $v];
-        $price = $c;
-    }
+    $rows = label_chart_rows();
     return function() use ($rows) {
         return (new FastChart\StockChart())
             ->setSize(1200, 700)
