@@ -256,11 +256,14 @@ static int code128_encode(const char *data, size_t len,
 
         if (subset == 'C') {
             if (digits_here >= 2) {
-                int v = (data[i] - '0') * 10 + (data[i + 1] - '0');
-                EMIT(v);
-                i += 2;
-                int remaining_digits = count_consecutive_digits(data, len, i);
-                if (remaining_digits < 2 && i < len) {
+                /* Consume the measured run without rescanning each suffix. */
+                do {
+                    int v = (data[i] - '0') * 10 + (data[i + 1] - '0');
+                    EMIT(v);
+                    i += 2;
+                    digits_here -= 2;
+                } while (digits_here >= 2);
+                if (i < len) {
                     if ((unsigned char)data[i] < 32) {
                         EMIT(C128_CODE_A); subset = 'A';
                     } else {
