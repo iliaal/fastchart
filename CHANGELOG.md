@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve ViolinPlot bandwidth for small spreads around large finite offsets.
 - Preserve proportional PolarChart geometry for large finite radii, including rose wedges and vector endpoints.
 
+### Performance
+
+- Code128 subset C encoding consumes each digit run without rescanning
+  the remaining digits after every pair. Encoded bars are unchanged.
+
 ## [1.8.1] - 2026-10-26
 
 ### Changed
