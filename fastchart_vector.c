@@ -87,6 +87,9 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_AXIS);
     double size = fastchart_resolve_font_size(
         (fastchart_obj *)self, FC_FONT_AXIS, base_size);
+    int label_color = self->axis_label_color >= 0
+        ? fastchart_target_color_rgb(t, (int)self->axis_label_color)
+        : pal.text;
 
     /* Light grid. Each axis's gridlines + labels are gated on its
      * visibility flag, matching the shared axis drawers (setXAxisVisible /
@@ -101,7 +104,7 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
             if (font && draw_labels) {
                 char buf[24];
                 snprintf(buf, sizeof(buf), "%g", yr.ticks[i]);
-                fastchart_text_draw(t, font, size, pal.text,
+                fastchart_text_draw(t, font, size, label_color,
                                     plot.x0 - 6, y + (int)(size * 0.4),
                                     FASTCHART_ALIGN_RIGHT, buf, NULL, 0);
             }
@@ -117,7 +120,7 @@ int fastchart_vector_render_to_target(fastchart_vector_obj *self, fastchart_targ
             if (font && draw_labels) {
                 char buf[24];
                 snprintf(buf, sizeof(buf), "%g", xr.ticks[i]);
-                fastchart_text_draw(t, font, size, pal.text,
+                fastchart_text_draw(t, font, size, label_color,
                                     x, plot.y1 + (int)(size * 1.4),
                                     FASTCHART_ALIGN_CENTER, buf, NULL, 0);
             }
