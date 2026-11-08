@@ -132,6 +132,9 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
 
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base_size);
+    int label_color = self->axis_label_color >= 0
+        ? fastchart_target_color_rgb(t, (int)self->axis_label_color)
+        : pal.text;
     const char *fmt = self->value_label_format
         ? ZSTR_VAL(self->value_label_format) : "%.0f";
     for (int k = 0; k <= 5; k++) {
@@ -143,7 +146,7 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
         char *buf = font ? fastchart_format_tick_label(
             t, (fastchart_obj *)self, fmt, v) : NULL;
         if (buf) {
-            fastchart_text_draw(t, font, size, pal.text,
+            fastchart_text_draw(t, font, size, label_color,
                                 plot_x0 - 6, y + (int)(size * 0.4),
                                 FASTCHART_ALIGN_RIGHT, buf, NULL, 0);
             efree(buf);
@@ -155,7 +158,7 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
         if (font) {
             char buf[16];
             snprintf(buf, sizeof(buf), "%d%%", (int)pct);
-            fastchart_text_draw(t, font, size, pal.text,
+            fastchart_text_draw(t, font, size, label_color,
                                 plot_x1 + 6, y + (int)(size * 0.4),
                                 FASTCHART_ALIGN_LEFT, buf, NULL, 0);
         }
@@ -186,7 +189,7 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
         fastchart_target_rect(t, bx, by, bar_w, bh, pal.border, 0, 1);
 
         if (font && self->bars[i].label) {
-            fastchart_text_draw(t, font, size, pal.text,
+            fastchart_text_draw(t, font, size, label_color,
                                 bx + bar_w / 2, plot_y1 + (int)(size * 1.4),
                                 FASTCHART_ALIGN_CENTER,
                                 self->bars[i].label, NULL, 0);
