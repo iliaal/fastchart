@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- VectorChart honors `setAxisLabelColor()` for both X and Y tick labels, including the `-1` text-color/theme fallback.
 - WordCloud honors background images and omits the canvas fill when a custom plot rectangle is used for compositing.
 - Preserve ViolinPlot bandwidth for small spreads around large finite offsets.
 - Preserve proportional PolarChart geometry for large finite radii, including rose wedges and vector endpoints.
