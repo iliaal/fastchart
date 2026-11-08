@@ -7,15 +7,20 @@ fastchart
 if (PHP_OS_FAMILY !== 'Linux') die('skip Linux strace fault injection');
 if (!function_exists('proc_open')) die('skip proc_open unavailable');
 if (!is_readable('/proc/self/maps')) die('skip loaded module path unavailable');
-$probe = proc_open([
+$probe = @proc_open([
 	'strace', '-qq', '-e', 'trace=write',
 	'-e', 'inject=write:error=EIO:when=1',
 	'--', 'env', 'ASAN_OPTIONS=detect_leaks=0',
-	PHP_BINARY, '-n', '-r', 'fwrite(STDOUT, "probe");',
+	PHP_BINARY, '-n', '-r', 'exit(@fwrite(STDOUT, "probe") === false ? 42 : 0);',
 ], [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], $pipes);
 if (!is_resource($probe)) die('skip strace unavailable');
-foreach ($pipes as $pipe) fclose($pipe);
-if (proc_close($probe) === 0) die('skip strace write injection ineffective');
+fclose($pipes[0]);
+stream_get_contents($pipes[1]);
+stream_get_contents($pipes[2]);
+fclose($pipes[1]);
+fclose($pipes[2]);
+// Only the child's failed write confirms injection, not a strace launch error.
+if (proc_close($probe) !== 42) die('skip strace write injection unavailable');
 ?>
 --INI--
 asan.detect_leaks=0
