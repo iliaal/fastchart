@@ -153,7 +153,8 @@ jobs:
             '473_render_to_file_local_colon_path.phpt',
             '542_font_pinned_parent_moved_outside_basedir.phpt',
             '543_font_pinned_directory_swap.phpt',
-            '597_benchmark_report_preservation.phpt'
+            '597_benchmark_report_preservation.phpt',
+            '609_atomic_abort_probe.phpt'
           )
           $skipRows = @(Select-String -Path win-tests.txt -Pattern '^SKIP ')
           foreach ($test in $platformSkips) {
