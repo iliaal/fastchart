@@ -76,6 +76,9 @@ int fastchart_marimekko_render_to_target(fastchart_marimekko_obj *self, fastchar
     const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
     double size = fastchart_resolve_font_size(
         (fastchart_obj *)self, FC_FONT_LABEL, base_size);
+    int label_color = self->axis_label_color >= 0
+        ? fastchart_target_color_rgb(t, (int)self->axis_label_color)
+        : pal.text;
 
     /* Walk columns. Use double accumulators to spread rounding evenly. */
     double cx_acc = 0.0;
@@ -120,7 +123,7 @@ int fastchart_marimekko_render_to_target(fastchart_marimekko_obj *self, fastchar
         }
 
         if (font && col->label) {
-            fastchart_text_draw(t, font, size, pal.text,
+            fastchart_text_draw(t, font, size, label_color,
                                 x0 + cw / 2, plot_y1 + (int)(size * 1.4),
                                 FASTCHART_ALIGN_CENTER, col->label, NULL, 0);
         }
