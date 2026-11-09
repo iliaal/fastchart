@@ -130,8 +130,11 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
     fastchart_draw_v_plot_bands_categorical(t, (fastchart_obj *)self,
                                             &ann_plot, self->bar_count, &pal);
 
-    const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
-    double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base_size);
+    /* Tick/category labels use the axis role; bar values keep the label role. */
+    const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_AXIS);
+    double size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_AXIS, base_size);
+    const char *label_font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
+    double label_size = fastchart_resolve_font_size((fastchart_obj *)self, FC_FONT_LABEL, base_size);
     int label_color = self->axis_label_color >= 0
         ? fastchart_target_color_rgb(t, (int)self->axis_label_color)
         : pal.text;
@@ -194,11 +197,11 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
                                 FASTCHART_ALIGN_CENTER,
                                 self->bars[i].label, NULL, 0);
         }
-        if (font && ((fastchart_obj *)self)->show_values) {
+        if (label_font && ((fastchart_obj *)self)->show_values) {
             char *buf = fastchart_format_value_label(
                 t, (fastchart_obj *)self, fmt, self->bars[i].value);
             if (buf) {
-                fastchart_text_draw(t, font, size * 0.9, pal.text,
+                fastchart_text_draw(t, label_font, label_size * 0.9, pal.text,
                                     bx + bar_w / 2, by - 4,
                                     FASTCHART_ALIGN_CENTER, buf, NULL, 0);
                 efree(buf);

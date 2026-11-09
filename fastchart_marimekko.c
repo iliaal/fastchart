@@ -73,8 +73,12 @@ int fastchart_marimekko_render_to_target(fastchart_marimekko_obj *self, fastchar
         return -1;
     }
 
-    const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
+    /* Column labels use the axis role; segment text keeps the label role. */
+    const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_AXIS);
     double size = fastchart_resolve_font_size(
+        (fastchart_obj *)self, FC_FONT_AXIS, base_size);
+    const char *label_font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
+    double label_size = fastchart_resolve_font_size(
         (fastchart_obj *)self, FC_FONT_LABEL, base_size);
     int label_color = self->axis_label_color >= 0
         ? fastchart_target_color_rgb(t, (int)self->axis_label_color)
@@ -114,9 +118,9 @@ int fastchart_marimekko_render_to_target(fastchart_marimekko_obj *self, fastchar
             fastchart_target_rect(t, x0, y0, cw, sh, color, 1, 0);
             fastchart_target_rect(t, x0, y0, cw, sh, pal.border, 0, 1);
 
-            if (font && seg->label && sh > size * 1.6 && cw > size * 4) {
-                fastchart_text_draw(t, font, size, pal.text,
-                                    x0 + cw / 2, y0 + sh / 2 + (int)(size * 0.4),
+            if (label_font && seg->label && sh > label_size * 1.6 && cw > label_size * 4) {
+                fastchart_text_draw(t, label_font, label_size, pal.text,
+                                    x0 + cw / 2, y0 + sh / 2 + (int)(label_size * 0.4),
                                     FASTCHART_ALIGN_CENTER,
                                     seg->label, NULL, 0);
             }
