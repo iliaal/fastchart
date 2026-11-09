@@ -98,9 +98,12 @@ int fastchart_violin_render_to_target(fastchart_violin_obj *self, fastchart_targ
     double col_w = (double)(plot_x1 - plot_x0) / self->group_count;
     double half_max = col_w / 2.0 * 0.85;
 
-    const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_LABEL);
+    const char *font = fastchart_resolve_font((fastchart_obj *)self, FC_FONT_AXIS);
     double size = fastchart_resolve_font_size(
-        (fastchart_obj *)self, FC_FONT_LABEL, base_size);
+        (fastchart_obj *)self, FC_FONT_AXIS, base_size);
+    int label_color = self->axis_label_color >= 0
+        ? fastchart_target_color_rgb(t, (int)self->axis_label_color)
+        : pal.text;
 
     fastchart_point_t poly[2 * VIOLIN_GRID + 2];
 
@@ -198,8 +201,8 @@ int fastchart_violin_render_to_target(fastchart_violin_obj *self, fastchart_targ
         }
         efree(sorted);
 
-        if (font && grp->label) {
-            fastchart_text_draw(t, font, size, pal.text,
+        if (font && grp->label && g % self->x_label_stride == 0) {
+            fastchart_text_draw(t, font, size, label_color,
                                 (int)cx, plot_y1 + (int)(size * 1.1),
                                 FASTCHART_ALIGN_CENTER, grp->label, NULL, 0);
         }
