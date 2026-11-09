@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ParetoChart and MarimekkoChart honor `setXLabelStride()` for category labels without changing bar values, segment labels, or chart geometry.
 
 - ParetoChart honors `setAxisLabelColor()` for its value, percent, and category tick labels, and MarimekkoChart for its column labels, including the `-1` text-color/theme fallback.
+- ParetoChart honors `setAxisFont()` for both Y axes and category labels, and MarimekkoChart for column labels. Bar values and segment text continue to use `setLabelFont()`; chart-wide font defaults are unchanged.
 - VectorChart honors `setAxisLabelColor()` for both X and Y tick labels, including the `-1` text-color/theme fallback.
 - WordCloud honors background images and omits the canvas fill when a custom plot rectangle is used for compositing.
 - Preserve ViolinPlot bandwidth for small spreads around large finite offsets.
