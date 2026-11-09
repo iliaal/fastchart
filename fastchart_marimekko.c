@@ -122,7 +122,7 @@ int fastchart_marimekko_render_to_target(fastchart_marimekko_obj *self, fastchar
             }
         }
 
-        if (font && col->label) {
+        if (font && col->label && c % self->x_label_stride == 0) {
             fastchart_text_draw(t, font, size, label_color,
                                 x0 + cw / 2, plot_y1 + (int)(size * 1.4),
                                 FASTCHART_ALIGN_CENTER, col->label, NULL, 0);

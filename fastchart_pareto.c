@@ -188,7 +188,7 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
         fastchart_target_rect(t, bx, by, bar_w, bh, color, 1, 0);
         fastchart_target_rect(t, bx, by, bar_w, bh, pal.border, 0, 1);
 
-        if (font && self->bars[i].label) {
+        if (font && self->bars[i].label && i % self->x_label_stride == 0) {
             fastchart_text_draw(t, font, size, label_color,
                                 bx + bar_w / 2, plot_y1 + (int)(size * 1.4),
                                 FASTCHART_ALIGN_CENTER,
