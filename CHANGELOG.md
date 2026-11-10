@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- ViolinPlot honors `setAxisFont()`, `setAxisLabelColor()`, and `setXLabelStride()` for group labels. Group labels no longer use `setLabelFont()`; chart-wide font and text-color fallbacks are unchanged.
 - ParetoChart and MarimekkoChart honor `setXLabelStride()` for category labels without changing bar values, segment labels, or chart geometry.
 
 - ParetoChart honors `setAxisLabelColor()` for its value, percent, and category tick labels, and MarimekkoChart for its column labels, including the `-1` text-color/theme fallback.
