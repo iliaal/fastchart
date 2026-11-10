@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Heatmap honors `setTitleColor()`, including black and the `-1` text-color/theme fallback, without changing automatic cell-label contrast.
 - Preserve ViolinPlot bandwidth for small spreads around large finite offsets.
 - Preserve proportional PolarChart geometry for large finite radii, including rose wedges and vector endpoints.
+- Honor `setTitleColor()` in ArcDiagram, BulletChart, CalendarHeatmap, ChordDiagram,
+  CirclePacking, Dendrogram, Funnel, LinearMeter, MarimekkoChart, NetworkChart,
+  ParetoChart, Partition, Pictogram, PopulationPyramid, SankeyChart, SerpentineTimeline,
+  SunburstChart, Treemap, VectorChart, VennDiagram, and WordCloud, including black and
+  the `-1` text-color/theme fallback.
 
 ### Performance
 

@@ -311,7 +311,10 @@ int fastchart_treemap_render_to_target(fastchart_treemap_obj *self, fastchart_ta
     /* Title last so it sits on top of any cell that might have
      * leaked into the top reservation under setPlotRect overrides. */
     if (self->title && ZSTR_LEN(self->title) > 0 && title_font && title_h > 0) {
-        fastchart_text_draw(t, title_font, title_size, pal.text,
+        int title_color = self->title_color >= 0
+            ? fastchart_target_color_rgb(t, (int)self->title_color)
+            : pal.text;
+        fastchart_text_draw(t, title_font, title_size, title_color,
                             W / 2, 12 + title_h, FASTCHART_ALIGN_CENTER,
                             ZSTR_VAL(self->title), NULL, 0);
     }
