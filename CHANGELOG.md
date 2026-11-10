@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ParetoChart honors `setAxisFont()` for both Y axes and category labels, and MarimekkoChart for column labels. Bar values and segment text continue to use `setLabelFont()`; chart-wide font defaults are unchanged.
 - VectorChart honors `setAxisLabelColor()` for both X and Y tick labels, including the `-1` text-color/theme fallback.
 - WordCloud honors background images and omits the canvas fill when a custom plot rectangle is used for compositing.
+- Heatmap honors `setTitleColor()`, including black and the `-1` text-color/theme fallback, without changing automatic cell-label contrast.
 - Preserve ViolinPlot bandwidth for small spreads around large finite offsets.
 - Preserve proportional PolarChart geometry for large finite radii, including rose wedges and vector endpoints.
 
