@@ -86,4 +86,5 @@ SunburstChart: OK
 Treemap: OK
 VectorChart: OK
 VennDiagram: OK
+ViolinPlot: OK
 WordCloud: OK

@@ -45,6 +45,10 @@ function bespokeTitleCharts(): array {
         ->setIntersections([['sets' => [0, 1], 'size' => 1]]);
     $charts['WordCloud'] = (new FastChart\WordCloud(480, 320))
         ->setWords([['text' => 'Alpha', 'weight' => 3], ['text' => 'Beta', 'weight' => 2]]);
+    $charts['ViolinPlot'] = (new FastChart\ViolinPlot(480, 320))->setGroups([
+        ['label' => 'Alpha', 'values' => [1, 2, 3, 4, 5]],
+        ['label' => 'Beta', 'values' => [2, 3, 4, 5, 6]],
+    ]);
     ksort($charts);
     return $charts;
 }
