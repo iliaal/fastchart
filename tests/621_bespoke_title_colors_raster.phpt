@@ -49,8 +49,7 @@ foreach (bespokeTitleCharts() as $name => $chart) {
     // Require real title ink, but do not pin glyph counts to a particular font.
     if ($changed < 10 || $titleInk < 10) $failures[] = 'PNG title color';
     if ($outsideChanged !== 0) $failures[] = 'non-title pixels changed';
-    imagedestroy($plain);
-    imagedestroy($colored);
+    unset($plain, $colored);
     if ($chart->renderSvg() !== $coloredSvg || $chart->renderPng() !== $coloredPng) {
         $failures[] = 'repeated render';
     }
