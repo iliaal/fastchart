@@ -4534,24 +4534,19 @@ ZEND_METHOD(FastChart_GaugeChart, setZones)
      * mutates, so a caught over-cap leaves prior zones renderable.
      * Bound calls live in fastchart_parse_gauge_zones (shared with
      * LinearMeter/Bullet). */
-    fastchart_gauge_zone *parsed = ecalloc(FASTCHART_MAX_GAUGE_ZONES,
-        sizeof(fastchart_gauge_zone));
+    fastchart_gauge_zone parsed[FASTCHART_MAX_GAUGE_ZONES];
     int n = 0;
     if (fastchart_parse_gauge_zones(zones,
             "FastChart\\GaugeChart::setZones()",
             parsed, FASTCHART_MAX_GAUGE_ZONES, &n) != 0) {
-        efree(parsed);
         RETURN_THROWS();
     }
 
+    fastchart_gauge_zone *new_zones = n > 0
+        ? fc_memdup(parsed, (size_t)n * sizeof(fastchart_gauge_zone)) : NULL;
     fastchart_gauge_obj *self = Z_FASTCHART_GAUGE_OBJ_P(ZEND_THIS);
     if (self->zones) efree(self->zones);
-    if (n == 0) {
-        efree(parsed);
-        self->zones = NULL;
-    } else {
-        self->zones = parsed;
-    }
+    self->zones = new_zones;
     self->n_zones = n;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
 }

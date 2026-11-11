@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- GaugeChart retains storage only for accepted zones rather than all 16
+  possible zones. Empty or entirely filtered zone lists need no heap allocation.
 - Code128 subset C encoding consumes each digit run without rescanning
   the remaining digits after every pair. Encoded bars are unchanged.
 
