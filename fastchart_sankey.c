@@ -40,34 +40,48 @@ typedef struct {
 
 /* Compute per-node topological layer: longest path from any source.
  * Sources (no incoming) sit at layer 0. Returns 0 on success, -1 if the
- * graph contains a cycle (the longest-path relaxation never converges). */
+ * graph contains a cycle. */
 static int fastchart_sankey_compute_layers(
     const fastchart_sankey_link *links, int link_count,
     sankey_node_layout *L, int node_count, int *max_layer_out)
 {
-    for (int i = 0; i < node_count; i++) L[i].layer = 0;
-    /* A DAG's longest path has at most node_count-1 edges, so the
-     * relaxation reaches a fixed point within node_count passes. If the
-     * node_count-th pass still changes something, a cycle keeps promoting
-     * layers indefinitely. Reject rather than emit an order-dependent,
-     * backward-ribbon layout. */
-    int converged = 0;
-    for (int pass = 0; pass < node_count; pass++) {
-        int changed = 0;
-        for (int e = 0; e < link_count; e++) {
-            int target = L[links[e].from].layer + 1;
-            if (target > L[links[e].to].layer) {
-                L[links[e].to].layer = target;
-                changed = 1;
-            }
-        }
-        if (!changed) { converged = 1; break; }
-    }
-    if (!converged) return -1;
-    int mx = 0;
+    /* setNodes/setLinks bound these counts and validate endpoints. Keep
+     * scratch space bounded without allocating on every render. */
+    int incoming[FASTCHART_MAX_SANKEY_NODES];
+    int first_link[FASTCHART_MAX_SANKEY_NODES];
+    int next_link[FASTCHART_MAX_SANKEY_LINKS];
+    int queue[FASTCHART_MAX_SANKEY_NODES];
+    int head = 0, tail = 0;
     for (int i = 0; i < node_count; i++) {
-        if (L[i].layer > mx) mx = L[i].layer;
+        L[i].layer = 0;
+        incoming[i] = 0;
+        first_link[i] = -1;
     }
+    for (int e = 0; e < link_count; e++) {
+        incoming[links[e].to]++;
+        next_link[e] = first_link[links[e].from];
+        first_link[links[e].from] = e;
+    }
+    for (int i = 0; i < node_count; i++) {
+        if (incoming[i] == 0) queue[tail++] = i;
+    }
+
+    int mx = 0;
+    while (head < tail) {
+        int from = queue[head++];
+        int target = L[from].layer + 1;
+        for (int e = first_link[from]; e != -1; e = next_link[e]) {
+            int to = links[e].to;
+            if (target > L[to].layer) {
+                L[to].layer = target;
+                if (target > mx) mx = target;
+            }
+            /* Parallel links each contribute to the incoming count. A
+             * node is ready only after all its predecessors are final. */
+            if (--incoming[to] == 0) queue[tail++] = to;
+        }
+    }
+    if (head != node_count) return -1;
     *max_layer_out = mx;
     return 0;
 }

@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- SankeyChart computes longest-path node layers with one topological
+  traversal instead of repeatedly rescanning all links. Layer assignment,
+  cycle rejection, and rendered node and ribbon order are unchanged.
 - GaugeChart retains storage only for accepted zones rather than all 16
   possible zones. Empty or entirely filtered zone lists need no heap allocation.
 - Code128 subset C encoding consumes each digit run without rescanning
