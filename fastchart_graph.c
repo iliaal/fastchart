@@ -132,6 +132,9 @@ int fastchart_graph_parse_links(zval *arr, int node_count, int max,
     } ZEND_HASH_FOREACH_END();
 
     if (kept == 0) { efree(parsed); return 0; }
+    if (kept < n) {
+        parsed = erealloc(parsed, (size_t)kept * sizeof(*parsed));
+    }
     *out = parsed;
     *count = kept;
     return 0;
