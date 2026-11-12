@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- ArcDiagram, ChordDiagram and NetworkChart retain link storage only for
+  accepted entries after filtering, instead of retaining space for every
+  supplied entry. Parsing still initially allocates for all supplied entries;
+  filtering rules are unchanged.
 - SankeyChart computes longest-path node layers with one topological
   traversal instead of repeatedly rescanning all links. Layer assignment,
   cycle rejection, and rendered node and ribbon order are unchanged.
