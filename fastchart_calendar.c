@@ -227,18 +227,15 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
          * week 0 spans two months but only the canonical "new month
          * starts here" label should appear, one cell to the right. */
         if (font) {
-            int label_month = 0;
-            for (int dr = 0; dr < 7; dr++) {
-                long check_day = grid_start + (long)w * 7 + dr;
-                if (check_day < first || check_day > last) continue;
-                int yy, mm, dd;
-                fastchart_civil_from_days(check_day, &yy, &mm, &dd);
-                if (dd == 1) {
-                    label_month = mm;
-                    break;
-                }
-            }
-            if (label_month) {
+            long week_first = grid_start + (long)w * 7;
+            long week_last = week_first + 6;
+            if (week_first < first) week_first = first;
+            if (week_last > last) week_last = last;
+            int yy, mm, dd;
+            fastchart_civil_from_days(week_last, &yy, &mm, &dd);
+            /* A clipped week contains at most seven days, so its final
+             * date identifies the only month start it could contain. */
+            if (dd <= week_last - week_first + 1) {
                 static const char *month_labels[12] = {
                     "Jan","Feb","Mar","Apr","May","Jun",
                     "Jul","Aug","Sep","Oct","Nov","Dec"
@@ -246,7 +243,7 @@ int fastchart_calendar_render_to_target(fastchart_calendar_obj *self, fastchart_
                 int cx = grid_x0 + w * cell_size;
                 fastchart_text_draw(t, font, size, pal.text,
                                     cx, grid_y0 - 4, FASTCHART_ALIGN_LEFT,
-                                    month_labels[label_month - 1], NULL, 0);
+                                    month_labels[mm - 1], NULL, 0);
             }
         }
     }
