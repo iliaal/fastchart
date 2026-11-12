@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- SankeyChart retains link storage only for accepted entries after filtering.
+  Parsing still initially allocates for all supplied entries; filtering and
+  rendering are unchanged.
+
 - ArcDiagram, ChordDiagram and NetworkChart retain link storage only for
   accepted entries after filtering, instead of retaining space for every
   supplied entry. Parsing still initially allocates for all supplied entries;

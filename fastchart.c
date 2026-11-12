@@ -12128,6 +12128,7 @@ ZEND_METHOD(FastChart_SankeyChart, setLinks)
         kept++;
     } ZEND_HASH_FOREACH_END();
     if (kept == 0) { efree(parsed); RETURN_ZVAL(ZEND_THIS, 1, 0); }
+    if (kept < n) parsed = erealloc(parsed, (size_t)kept * sizeof(*parsed));
     self->links = parsed;
     self->link_count = kept;
     RETURN_ZVAL(ZEND_THIS, 1, 0);
