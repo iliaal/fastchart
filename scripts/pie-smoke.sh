@@ -20,9 +20,9 @@ echo " PIE install smoke test for iliaal/fastchart"
 echo "======================================================================"
 echo
 echo "PHP:"
-php --version | head -1
+php --version | sed -n 1p
 echo "phpize:"
-phpize --version 2>&1 | head -2
+phpize --version 2>&1 | sed -n '1,2p'
 echo
 
 echo "---- 1. System build tools + pkg-config deps ----"
@@ -43,8 +43,8 @@ apt-get install -y -qq \
     git ca-certificates bison libtool-bin pkg-config unzip \
     libfreetype6-dev libpng-dev libjpeg-dev libwebp-dev libgd-dev >/dev/null
 git --version
-bison --version | head -1
-libtoolize --version | head -1 || echo "libtoolize not found"
+bison --version | sed -n 1p
+libtoolize --version | sed -n 1p || echo "libtoolize not found"
 pkg-config --modversion freetype2 libpng libjpeg libwebp || echo "pkg-config probe failed"
 echo
 
@@ -69,7 +69,7 @@ echo
 echo "---- 4. Install Composer ----"
 curl -sS https://getcomposer.org/installer | php -- --quiet
 mv composer.phar /usr/local/bin/composer
-composer --version | head -1
+composer --version | sed -n 1p
 echo
 
 echo "---- 5. Download PIE ----"
@@ -79,7 +79,7 @@ curl -fsSL "https://github.com/php/pie/releases/download/${PIE_VERSION}/pie.phar
 echo "${PIE_SHA256}  /usr/local/bin/pie" | sha256sum -c -
 chmod +x /usr/local/bin/pie
 ls -la /usr/local/bin/pie
-pie --version 2>&1 | head -3
+pie --version 2>&1 | sed -n '1,3p'
 echo
 
 echo "---- 6. pie install (against Packagist, real-user path) ----"
@@ -100,7 +100,7 @@ if [ "$PIE_RC" -ne 0 ]; then
     echo "   PIE install failed with exit code $PIE_RC"
     exit "$PIE_RC"
 fi
-if ! php -m | grep -qi '^fastchart$'; then
+if ! php -m | grep -i '^fastchart$' >/dev/null; then
     echo "   PIE returned success but fastchart is not loaded"
     exit 1
 fi
