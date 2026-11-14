@@ -45,6 +45,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the remaining digits after every pair. Encoded bars are unchanged.
 - CalendarHeatmap locates month labels with one date conversion per week
   instead of scanning each day. Label placement and rendered output are unchanged.
+- QrCode scores each of its eight candidate masks in one pass instead of
+  four module-by-module passes, and builds each mask once instead of
+  applying and undoing it module by module. The chosen mask and rendered
+  output are unchanged.
 
 ## [1.8.1] - 2026-10-26
 

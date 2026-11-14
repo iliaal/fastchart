@@ -70,7 +70,8 @@ testable int getAlignmentPatternPositions(int version, uint8_t result[7]);
 static void fillRectangle(int left, int top, int width, int height, uint8_t qrcode[]);
 
 static void drawCodewords(const uint8_t data[], int dataLen, uint8_t qrcode[]);
-static void applyMask(const uint8_t functionModules[], uint8_t qrcode[], enum qrcodegen_Mask mask);
+static void buildMaskBits(const uint8_t functionModules[], enum qrcodegen_Mask mask, uint8_t maskBits[]);
+static void xorMaskBits(const uint8_t maskBits[], uint8_t qrcode[]);
 static long getPenaltyScore(const uint8_t qrcode[]);
 static int finderPenaltyCountPatterns(const int runHistory[7], int qrsize);
 static int finderPenaltyTerminateAndCount(bool currentRunColor, int currentRunLength, int runHistory[7], int qrsize);
@@ -266,22 +267,28 @@ bool qrcodegen_encodeSegmentsAdvanced(const struct qrcodegen_Segment segs[], siz
 	initializeFunctionModules(version, tempBuffer);
 	
 	// Do masking
+	// LOCAL-PATCH (fastchart): build each mask's bits once and XOR them in
+	// and back out bytewise, instead of upstream's two per-module
+	// applyMask() passes per candidate. Same modules, penalties, and mask.
+	uint8_t maskBits[qrcodegen_BUFFER_LEN_MAX];
 	if (mask == qrcodegen_Mask_AUTO) {  // Automatically choose best mask
 		long minPenalty = LONG_MAX;
 		for (int i = 0; i < 8; i++) {
 			enum qrcodegen_Mask msk = (enum qrcodegen_Mask)i;
-			applyMask(tempBuffer, qrcode, msk);
+			buildMaskBits(tempBuffer, msk, maskBits);
+			xorMaskBits(maskBits, qrcode);
 			drawFormatBits(ecl, msk, qrcode);
 			long penalty = getPenaltyScore(qrcode);
 			if (penalty < minPenalty) {
 				mask = msk;
 				minPenalty = penalty;
 			}
-			applyMask(tempBuffer, qrcode, msk);  // Undoes the mask due to XOR
+			xorMaskBits(maskBits, qrcode);  // Undoes the mask due to XOR
 		}
 	}
 	assert(0 <= (int)mask && (int)mask <= 7);
-	applyMask(tempBuffer, qrcode, mask);  // Apply the final choice of mask
+	buildMaskBits(tempBuffer, mask, maskBits);
+	xorMaskBits(maskBits, qrcode);  // Apply the final choice of mask
 	drawFormatBits(ecl, mask, qrcode);  // Overwrite old format bits
 	return true;
 }
@@ -672,14 +679,17 @@ static void drawCodewords(const uint8_t data[], int dataLen, uint8_t qrcode[]) {
 }
 
 
-// XORs the codeword modules in this QR Code with the given mask pattern
-// and given pattern of function modules. The codeword bits must be drawn
-// before masking. Due to the arithmetic of XOR, calling applyMask() with
-// the same mask value a second time will undo the mask. A final well-formed
-// QR Code needs exactly one (not zero, two, etc.) mask applied.
-static void applyMask(const uint8_t functionModules[], uint8_t qrcode[], enum qrcodegen_Mask mask) {
+// LOCAL-PATCH (fastchart): replaces upstream's applyMask(). Writes the given
+// mask pattern, excluding function modules, to maskBits[] in the qrcode[]
+// layout (byte 0 holds the size). xorMaskBits() then applies it; applying
+// the same bits a second time undoes the mask. A final well-formed QR Code
+// needs exactly one mask applied.
+static void buildMaskBits(const uint8_t functionModules[], enum qrcodegen_Mask mask, uint8_t maskBits[]) {
 	assert(0 <= (int)mask && (int)mask <= 7);  // Disallows qrcodegen_Mask_AUTO
-	int qrsize = qrcodegen_getSize(qrcode);
+	int qrsize = qrcodegen_getSize(functionModules);
+	int len = qrcodegen_BUFFER_LEN_FOR_VERSION((qrsize - 17) / 4);
+	memset(maskBits, 0, (size_t)len * sizeof(maskBits[0]));
+	maskBits[0] = (uint8_t)qrsize;
 	for (int y = 0; y < qrsize; y++) {
 		for (int x = 0; x < qrsize; x++) {
 			if (getModuleBounded(functionModules, x, y))
@@ -696,83 +706,116 @@ static void applyMask(const uint8_t functionModules[], uint8_t qrcode[], enum qr
 				case 7:  invert = ((x + y) % 2 + x * y % 3) % 2 == 0;  break;
 				default:  assert(false);  return;
 			}
-			bool val = getModuleBounded(qrcode, x, y);
-			setModuleBounded(qrcode, x, y, val ^ invert);
+			if (invert)
+				setModuleBounded(maskBits, x, y, true);
 		}
 	}
 }
 
 
+// LOCAL-PATCH (fastchart): XORs buildMaskBits() output into qrcode[]. The
+// codeword bits must be drawn first. Bits past the last module stay clear.
+static void xorMaskBits(const uint8_t maskBits[], uint8_t qrcode[]) {
+	int qrsize = qrcodegen_getSize(qrcode);
+	assert(maskBits[0] == qrsize);
+	int len = qrcodegen_BUFFER_LEN_FOR_VERSION((qrsize - 17) / 4);
+	for (int i = 1; i < len; i++)
+		qrcode[i] ^= maskBits[i];
+}
+
+
 // Calculates and returns the penalty score based on state of the given QR Code's current modules.
 // This is used by the automatic mask choice algorithm to find the mask pattern that yields the lowest score.
+// LOCAL-PATCH (fastchart): one row-major pass with the same integer terms as
+// upstream. Each row is unpacked once. Row runs are walked from a list of
+// color-change positions, and a run of length n >= 5 adds n - 2, the sum of
+// upstream's per-module N1 and +1 steps. Columns keep one run state each and
+// advance it a row at a time, in upstream's top-to-bottom order; unchanged
+// columns are counted without a branch and changed ones are handled from a
+// list. The 2*2 and balance rules count without branches.
 static long getPenaltyScore(const uint8_t qrcode[]) {
+	enum { MAXSIZE = qrcodegen_VERSION_MAX * 4 + 17 };
 	int qrsize = qrcodegen_getSize(qrcode);
 	long result = 0;
+	uint8_t rowBufs[2][MAXSIZE];
+	uint8_t colColor[MAXSIZE];
+	int colRun[MAXSIZE];
+	int colHistory[MAXSIZE][7];
+	int changes[MAXSIZE];
+	memset(colColor, 0, sizeof(colColor));
+	memset(colRun, 0, sizeof(colRun));
+	memset(colHistory, 0, sizeof(colHistory));
+	long dark = 0;
+	long blocks = 0;
 	
-	// Adjacent modules in row having same color, and finder-like patterns
 	for (int y = 0; y < qrsize; y++) {
-		bool runColor = false;
-		int runX = 0;
-		int runHistory[7] = {0};
+		uint8_t *row = rowBufs[y & 1];
+		const uint8_t *prev = rowBufs[(y & 1) ^ 1];
 		for (int x = 0; x < qrsize; x++) {
-			if (getModuleBounded(qrcode, x, y) == runColor) {
-				runX++;
-				if (runX == 5)
-					result += PENALTY_N1;
-				else if (runX > 5)
-					result++;
-			} else {
-				finderPenaltyAddHistory(runX, runHistory, qrsize);
-				if (!runColor)
-					result += finderPenaltyCountPatterns(runHistory, qrsize) * PENALTY_N3;
-				runColor = getModuleBounded(qrcode, x, y);
-				runX = 1;
-			}
+			row[x] = getModuleBounded(qrcode, x, y) ? 1 : 0;
+			dark += row[x];
 		}
-		result += finderPenaltyTerminateAndCount(runColor, runX, runHistory, qrsize) * PENALTY_N3;
-	}
-	// Adjacent modules in column having same color, and finder-like patterns
-	for (int x = 0; x < qrsize; x++) {
+		
+		// Adjacent modules in row having same color, and finder-like patterns.
+		// Upstream starts each row with a light run of length 0.
+		int numChanges = 0;
+		uint8_t last = 0;
+		for (int x = 0; x < qrsize; x++) {
+			changes[numChanges] = x;
+			numChanges += row[x] != last;
+			last = row[x];
+		}
 		bool runColor = false;
-		int runY = 0;
+		int runStart = 0;
 		int runHistory[7] = {0};
-		for (int y = 0; y < qrsize; y++) {
-			if (getModuleBounded(qrcode, x, y) == runColor) {
-				runY++;
-				if (runY == 5)
-					result += PENALTY_N1;
-				else if (runY > 5)
-					result++;
-			} else {
-				finderPenaltyAddHistory(runY, runHistory, qrsize);
-				if (!runColor)
-					result += finderPenaltyCountPatterns(runHistory, qrsize) * PENALTY_N3;
-				runColor = getModuleBounded(qrcode, x, y);
-				runY = 1;
+		for (int i = 0; i < numChanges; i++) {
+			int x = changes[i];
+			int runX = x - runStart;
+			if (runX >= 5)
+				result += PENALTY_N1 + (runX - 5);
+			finderPenaltyAddHistory(runX, runHistory, qrsize);
+			if (!runColor)
+				result += finderPenaltyCountPatterns(runHistory, qrsize) * PENALTY_N3;
+			runColor = row[x];
+			runStart = x;
+		}
+		int runX = qrsize - runStart;
+		if (runX >= 5)
+			result += PENALTY_N1 + (runX - 5);
+		result += finderPenaltyTerminateAndCount(runColor, runX, runHistory, qrsize) * PENALTY_N3;
+		
+		// Adjacent modules in column having same color, and finder-like patterns
+		numChanges = 0;
+		for (int x = 0; x < qrsize; x++) {
+			int same = row[x] == colColor[x];
+			int run = colRun[x] + same;
+			colRun[x] = run;
+			result += same * ((run == 5) * PENALTY_N1 + (run > 5));
+			changes[numChanges] = x;
+			numChanges += !same;
+		}
+		for (int i = 0; i < numChanges; i++) {
+			int x = changes[i];
+			finderPenaltyAddHistory(colRun[x], colHistory[x], qrsize);
+			if (!colColor[x])
+				result += finderPenaltyCountPatterns(colHistory[x], qrsize) * PENALTY_N3;
+			colColor[x] = row[x];
+			colRun[x] = 1;
+		}
+		
+		// 2*2 blocks of modules having same color
+		if (y > 0) {
+			for (int x = 0; x < qrsize - 1; x++) {
+				uint8_t color = prev[x];
+				blocks += (color == prev[x + 1]) & (color == row[x]) & (color == row[x + 1]);
 			}
 		}
-		result += finderPenaltyTerminateAndCount(runColor, runY, runHistory, qrsize) * PENALTY_N3;
 	}
-	
-	// 2*2 blocks of modules having same color
-	for (int y = 0; y < qrsize - 1; y++) {
-		for (int x = 0; x < qrsize - 1; x++) {
-			bool  color = getModuleBounded(qrcode, x, y);
-			if (  color == getModuleBounded(qrcode, x + 1, y) &&
-			      color == getModuleBounded(qrcode, x, y + 1) &&
-			      color == getModuleBounded(qrcode, x + 1, y + 1))
-				result += PENALTY_N2;
-		}
-	}
+	for (int x = 0; x < qrsize; x++)
+		result += finderPenaltyTerminateAndCount(colColor[x], colRun[x], colHistory[x], qrsize) * PENALTY_N3;
+	result += blocks * PENALTY_N2;
 	
 	// Balance of dark and light modules
-	int dark = 0;
-	for (int y = 0; y < qrsize; y++) {
-		for (int x = 0; x < qrsize; x++) {
-			if (getModuleBounded(qrcode, x, y))
-				dark++;
-		}
-	}
 	int total = qrsize * qrsize;  // Note that size is odd, so dark/total != 1/2
 	// Compute the smallest integer k >= 0 such that (45-5k)% <= dark/total <= (55+5k)%
 	int k = (int)((labs(dark * 20L - total * 10L) + total - 1) / total) - 1;

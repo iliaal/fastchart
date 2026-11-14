@@ -16,7 +16,7 @@ note: >-
   only the fast-Java and Rust implementations and the Readme;
   c/qrcodegen.{c,h} are byte-identical to the prior pin, so the vendor copy
   already matches head.
-  The vendored qrcodegen.c additionally carries a fastchart-local perf patch
+  The vendored qrcodegen.c additionally carries fastchart-local perf patches
   (precomputed const GF(2^8) log/antilog tables replacing the upstream
-  Russian-peasant multiply; see vendor/PATCHES.md QR-1); qrcodegen.h is
-  upstream-verbatim.
+  Russian-peasant multiply, and single-pass mask penalty scoring; see
+  vendor/PATCHES.md QR-1 and QR-2); qrcodegen.h is upstream-verbatim.

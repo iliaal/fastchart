@@ -626,3 +626,26 @@ counterpart.
 - **Marker**: `LOCAL-PATCH (fastchart)`.
 
 <!-- Integrator: append further qrcodegen entries below this line. -->
+
+### QR-2: single-pass mask penalty and bytewise masking
+
+- **File:function**: `qrcodegen.c`: `getPenaltyScore`, `buildMaskBits`,
+  `xorMaskBits`, `qrcodegen_encodeSegmentsAdvanced`; upstream `applyMask`
+  is removed.
+- **What / why**: `getPenaltyScore` ran four module-by-module passes per
+  candidate mask (rows, columns, 2*2 blocks, dark count) with
+  data-dependent branches on every module; it was most of the encode time
+  for `Mask_AUTO`. It now unpacks each row once, walks row runs from a list of
+  color changes, advances one run state per column a row at a time (the
+  same top-to-bottom order), and counts 2*2 blocks and dark modules without
+  branches. Every term is the same integer sum as upstream's. Each mask is
+  built once into a bit buffer and XORed in and out bytewise instead of two
+  `applyMask` passes per candidate. Extra stack is about 11 KB (penalty
+  state plus one `qrcodegen_BUFFER_LEN_MAX` mask buffer).
+  A differential against the pinned upstream file matched penalty scores on
+  1M random grids across all 40 versions, mask bits for every version and
+  mask, and complete symbols for 100k random encodes.
+- **Origin**: this change.
+- **Upstream**: not proposed. Re-apply on re-vendor, or drop if upstream
+  speeds up its mask scoring.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
