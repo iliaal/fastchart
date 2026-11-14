@@ -28,6 +28,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- The rasterizer's cell lookup starts at one of the row's last two found
+  or inserted cells instead of the row head when the outline has at least
+  64 points and the band has at most twice the pool's band-size rows (every
+  `svgTo*()` band; charts taller than about 6,800 px can have one taller
+  band). Output is byte-identical. Dense 1200x600 line charts take 10-27%
+  less time, a dense area chart 8% less; sparse line, scatter and small
+  charts and documents change by -5% to +3%. The `svgTo*()` render-work
+  budget still charges each step of the lookup walk, at most 32 per lookup,
+  now counted from where the walk starts: documents whose rows many edges
+  cross can cost less, and some that exceeded the 2.2G-unit cap now render
+  (left-to-right one-pixel stripes, dense zigzags, large random polygons).
+  Refusing a document that still exceeds it can take up to 17% more time.
+  Outlines of more than 512 points allocate up to 17% more raster pool
+  memory (at most 1.4 MB more), as do out-of-memory retries for any
+  outline, including outlines of 512 points or fewer and outlines under 64
+  points that never use hints; each raster call uses 5.4 KB more stack.
+
 - SankeyChart retains link storage only for accepted entries after filtering.
   Parsing still initially allocates for all supplied entries; filtering and
   rendering are unchanged.
