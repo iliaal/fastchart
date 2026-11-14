@@ -22,11 +22,12 @@ function zigzag(int $n, string $attrs): string
         . '<path d="' . implode(' ', $d) . '"' . $attrs . '/></svg>';
 }
 
-/* 8,000 full-height segments in one 74 KB filled path need ~5.3G work
- * units; under ASan 4f3caa5 does not finish in 900 s. The refusal spends
- * the whole 2.2G-unit budget: 2.9 s release on an idle host, 31 s for an
- * -O0 ASan+UBSan module on a loaded one. The CPU-time bound sits 3.9x
- * above the slower of those and 7x below 900 s. */
+/* 8,000 full-height segments in one 74 KB filled path need ~3.1G work
+ * units (~5.3G before the PV-26 row hints); under ASan 4f3caa5 does not
+ * finish in 900 s. The refusal spends the whole 2.2G-unit budget: 2.9 s
+ * release on an idle host, 31 s for an -O0 ASan+UBSan module on a loaded
+ * one. The CPU-time bound sits 3.9x above the slower of those and 7x
+ * below 900 s. */
 $t = cpu_seconds();
 try {
     FastChart\Chart::svgToPng(zigzag(8000, ''));

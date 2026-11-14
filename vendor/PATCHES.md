@@ -457,6 +457,42 @@ upstream-verbatim.
 - **Upstream**: not proposed; an embedder budget.
 - **Marker**: `LOCAL-PATCH (fastchart)`.
 
+### PV-26: row hints for the cell lookup
+
+- **File:function**: `source/plutovg-ft-raster.c`: `gray_hint_start`,
+  `gray_find_cell`, `gray_sort_all_cells`, `gray_convert_glyph`,
+  `gray_raster_render`, `PVG_FT_Raster_Render`, `PVG_FT_HINT_*`.
+- **What / why**: `gray_find_cell()` walked each scanline's sorted cell
+  list from its head on every record, so a row crossed by k edges cost up
+  to 32 steps per record and fell back to unsorted pushes and a band sort
+  once the walk gave up; a dense line chart spent up to 40% of its
+  raster time there. A band uses row hints when
+  `outline.n_points >= 64 && ycount <= 2 * (pool_bytes / (8 * sizeof(TCell)))`,
+  i.e. up to twice the pool's band size (340 rows for the 32 KB stack pool
+  on LP64); only the last band of an outline that needs more than 39 bands
+  is taller. Each such row keeps the links to its last two found or
+  inserted cells, cleared when the band starts and after
+  `gray_sort_all_cells()`. The lookup checks hints[0], then hints[1], and
+  returns the first link that points at x, or at a cell right of x while
+  its owner (the cell before it, or the row head) lies left of x, the
+  insertion point itself; otherwise the walk starts at the next link of
+  the rightmost hinted cell left of x, and failing that at the row head.
+  While the band is sorted the walk lands where a walk from
+  the head would; output is byte-identical. The hints live beside the cell
+  pool (`2 * hint_rows` pointers: a stack array for the 32 KB pool, the
+  tail of each heap pool allocation), not in it, so bands split exactly as
+  before. The PV-24 budget charges each walk step from where the walk
+  starts, still at most 32 per record, and nothing for the hint check:
+  left-to-right one-pixel stripes now cost what right-to-left ones do
+  (~1.10G vs ~1.06G units for two 4096 px paths, from ~3.58G), and test
+  583's 8,000-segment zigzag ~3.08G (was ~5.28G). Refusing a document that
+  spends the whole budget takes up to ~17% more time (x86-64 release,
+  adversarial zigzags), probably because hinted walks start in colder
+  parts of the cell list.
+- **Origin**: this change (Durandal).
+- **Upstream**: not proposed; depends on PV-23's walk cap.
+- **Marker**: `LOCAL-PATCH (fastchart)`.
+
 ## plutosvg
 
 Pinned tag `v0.0.8`. Changed files: `plutosvg.c`, `plutosvg.h`.

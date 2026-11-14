@@ -76,6 +76,7 @@ typedef ptrdiff_t  PVG_FT_PtrDist;
 #define ErrRaster_Budget            -7  /* LOCAL-PATCH (fastchart) */
 
 #include <stdlib.h>
+#include <string.h>
 #include <limits.h>
 
 /* Stack-allocated working pool for the FT raster cell table.
@@ -99,6 +100,13 @@ typedef ptrdiff_t  PVG_FT_PtrDist;
 #define PVG_FT_MAXIMUM_POOL_SIZE (1024 * 1024 * 8)
 /* LOCAL-PATCH (fastchart): see gray_find_cell() and PVG_FT_Raster_Render() */
 #define PVG_FT_MAX_CELL_WALK 32
+/* LOCAL-PATCH (fastchart): gray_find_cell() row hints per pool size: two */
+/* links for each row of a band up to twice the band size the pool gives. */
+#define PVG_FT_HINT_MIN_POINTS  ( 2 * PVG_FT_MAX_CELL_WALK )
+#define PVG_FT_HINT_ROWS( pool_bytes ) \
+          ( 2 * (long)( (pool_bytes) / ( sizeof ( TCell ) * 8 ) ) )
+#define PVG_FT_HINT_BYTES( pool_bytes ) \
+          ( (size_t)PVG_FT_HINT_ROWS( pool_bytes ) * 2 * sizeof ( PCell* ) )
 #define PVG_FT_POOL_BYTES_PER_POINT 64
 
 /* LOCAL-PATCH (fastchart): raster budget charge per work item, in units
@@ -232,6 +240,9 @@ PVG_FT_END_STMNT
     long        buffer_size;
 
     PCell*     ycells;
+    PCell**    yhints;    /* LOCAL-PATCH (fastchart): see find_cell   */
+    PCell**    hint_pool; /* LOCAL-PATCH (fastchart): yhints storage  */
+    TPos       hint_rows; /* LOCAL-PATCH (fastchart): rows it holds   */
     TPos       ycount;
   } TWorker, *PWorker;
 
@@ -248,6 +259,7 @@ PVG_FT_END_STMNT
     ras.buffer_size = byte_size;
 
     ras.ycells      = (PCell*) buffer;
+    ras.yhints      = NULL;   /* LOCAL-PATCH (fastchart) */
     ras.cells       = NULL;
     ras.max_cells   = 0;
     ras.num_cells   = 0;
@@ -404,9 +416,70 @@ PVG_FT_END_STMNT
 
 
     for ( yindex = 0; yindex < ras.ycount; yindex++ )
+    {
       freed += gray_sort_cells( RAS_VAR_ &ras.ycells[yindex] );
+      /* the sort relinked the row and freed folded cells */
+      if ( ras.yhints )
+      {
+        ras.yhints[2 * yindex]     = NULL;
+        ras.yhints[2 * yindex + 1] = NULL;
+      }
+    }
 
     return freed;
+  }
+
+
+  /*************************************************************************/
+  /*                                                                       */
+  /* LOCAL-PATCH (fastchart): where gray_find_cell() starts its walk.      */
+  /* hints[0] and hints[1] are the links that pointed at the row's last    */
+  /* two found or inserted cells.  The edges of an outline cross a row in  */
+  /* nearly monotonic x order, so x usually lies at or next to one of      */
+  /* them.  While ras.unsorted is clear the row is sorted, and a link      */
+  /* whose owner (the cell before it, or the row head) lies left of x is   */
+  /* a start from which the walk lands where one from the head would: a    */
+  /* link pointing at x or, when its owner lies left of x, at a cell right */
+  /* of x is the answer itself, and the next link of a cell left of x is a */
+  /* start, the rightmost such cell the best.                              */
+  /*                                                                       */
+  static PCell*
+  gray_hint_start( RAS_ARG_ PCell**  hints,
+                            TPos     x )
+  {
+    PCell*  head  = &ras.ycells[ras.ey];
+    PCell*  start = head;
+    TPos    best  = LONG_MIN;
+    int     i;
+
+
+    for ( i = 0; i < 2; i++ )
+    {
+      PCell*  link = hints[i];
+      PCell   cell;
+
+
+      if ( link == NULL )
+        continue;
+
+      cell = *link;
+      if ( cell->x == x )
+        return link;
+
+      if ( cell->x > x )
+      {
+        if ( link == head ||
+             ( (PCell)( (char*)link - offsetof( TCell, next ) ) )->x < x )
+          return link;
+      }
+      else if ( cell->x > best )
+      {
+        best  = cell->x;
+        start = &cell->next;
+      }
+    }
+
+    return start;
   }
 
 
@@ -427,6 +500,7 @@ PVG_FT_END_STMNT
   gray_find_cell( RAS_ARG )
   {
     PCell  *pcell, cell;
+    PCell **hints = NULL;
     TPos    x     = ras.ex;
     int     steps = PVG_FT_MAX_CELL_WALK;
 
@@ -435,6 +509,12 @@ PVG_FT_END_STMNT
       x = ras.count_ex;
 
     pcell = &ras.ycells[ras.ey];
+    if ( ras.yhints )   /* LOCAL-PATCH (fastchart): see gray_hint_start() */
+    {
+      hints = &ras.yhints[2 * ras.ey];
+      pcell = gray_hint_start( RAS_VAR_ hints, x );
+    }
+
     for (;;)
     {
       cell = *pcell;
@@ -482,6 +562,13 @@ PVG_FT_END_STMNT
     ras.work_left -= PVG_FT_WORK_NEW_CELL;   /* LOCAL-PATCH (fastchart) */
 
   Exit:
+    /* LOCAL-PATCH (fastchart): pcell now points at cell */
+    if ( hints && hints[0] != pcell )
+    {
+      hints[1] = hints[0];
+      hints[0] = pcell;
+    }
+
     /* LOCAL-PATCH (fastchart): each step of the walk is raster work */
     ras.work_left -= PVG_FT_MAX_CELL_WALK - steps;
     if ( ras.work_left < 0 )
@@ -1995,6 +2082,14 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
 
           ras.ycells = (PCell*)ras.buffer;
           ras.ycount = band->max - band->min;
+          /* LOCAL-PATCH (fastchart): per-row walk hints live outside */
+          /* the cell pool, so bands split exactly where they did      */
+          /* before.  Outlines too small to fill a row walk, and bands  */
+          /* taller than the hint pool, walk from the row head.        */
+          ras.yhints = NULL;
+          if ( ras.outline.n_points >= PVG_FT_HINT_MIN_POINTS &&
+               ras.ycount <= ras.hint_rows )
+            ras.yhints = ras.hint_pool;
 
           cell_start = sizeof ( PCell ) * ras.ycount;
           cell_mod   = cell_start % sizeof ( TCell );
@@ -2015,6 +2110,8 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
 
           for ( yindex = 0; yindex < ras.ycount; yindex++ )
             ras.ycells[yindex] = NULL;
+          if ( ras.yhints )
+            memset( ras.yhints, 0, 2 * sizeof ( PCell* ) * ras.ycount );
         }
 
         ras.num_cells = 0;
@@ -2087,8 +2184,10 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
   }
 
 
+  /* LOCAL-PATCH (fastchart): hint_pool holds 2 * hint_rows row hints */
   static int
   gray_raster_render( RAS_ARG_ void* buffer, long buffer_size,
+                      PCell** hint_pool, long hint_rows,
                       const PVG_FT_Raster_Params*  params )
   {
     const PVG_FT_Outline*  outline    = (const PVG_FT_Outline*)params->source;
@@ -2127,6 +2226,8 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
     }
 
     gray_init_cells( RAS_VAR_ buffer, buffer_size );
+    ras.hint_pool = hint_pool;   /* LOCAL-PATCH (fastchart) */
+    ras.hint_rows = hint_rows;
 
     ras.outline   = *outline;
     ras.num_cells = 0;
@@ -2143,10 +2244,14 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
   PVG_FT_Raster_Render(const PVG_FT_Raster_Params *params)
   {
       char stack[PVG_FT_MINIMUM_POOL_SIZE];
+      /* LOCAL-PATCH (fastchart): row hints for gray_find_cell(), kept   */
+      /* beside the cell pool rather than in it                          */
+      PCell* stack_hints[2 * PVG_FT_HINT_ROWS(PVG_FT_MINIMUM_POOL_SIZE)];
       size_t length = PVG_FT_MINIMUM_POOL_SIZE;
       const PVG_FT_Outline* outline = (const PVG_FT_Outline*)params->source;
       size_t want = 0;
       void* pool = stack;
+      PCell** hints = stack_hints;
 
       /* LOCAL-PATCH (fastchart): every band re-decomposes the whole
        * outline, and the band count grows as cells / pool size, so a
@@ -2160,10 +2265,12 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
       if(want > length) {
           while(length < want && length * 2 <= PVG_FT_MAXIMUM_POOL_SIZE)
               length *= 2;
-          pool = malloc(length);
+          pool = malloc(length + PVG_FT_HINT_BYTES(length));
           if(pool == NULL) {
               pool = stack;
               length = PVG_FT_MINIMUM_POOL_SIZE;
+          } else {
+              hints = (PCell**)((char*)pool + length);
           }
       }
 
@@ -2174,20 +2281,23 @@ void PVG_FT_Outline_Get_CBox(const PVG_FT_Outline* outline, PVG_FT_BBox* acbox)
       if(params->budget != NULL && params->budget->remaining >= 0)
           worker.work_left = params->budget->remaining;
       int rendered_spans = 0;
-      int error = gray_raster_render(&worker, pool, length, params);
+      int error = gray_raster_render(&worker, pool, length, hints,
+                                     PVG_FT_HINT_ROWS(length), params);
       if(pool != stack)
           free(pool);
       while(error == ErrRaster_OutOfMemory) {
           length *= 2;
           if(length > PVG_FT_MAXIMUM_POOL_SIZE)
               break;
-          void* heap = malloc(length);
+          void* heap = malloc(length + PVG_FT_HINT_BYTES(length));
           if(heap == NULL)
               break;
           if(worker.skip_spans < 0)
               rendered_spans += -worker.skip_spans;
           worker.skip_spans = rendered_spans;
-          error = gray_raster_render(&worker, heap, length, params);
+          error = gray_raster_render(&worker, heap, length,
+                                     (PCell**)((char*)heap + length),
+                                     PVG_FT_HINT_ROWS(length), params);
           free(heap);
       }
       /* LOCAL-PATCH (fastchart): report the budget left, or exhaustion */
