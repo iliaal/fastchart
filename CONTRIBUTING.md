@@ -7,12 +7,19 @@
 - C compiler: GCC 11+, Clang 14+
 - `phpize` and `php-config` (from `php-dev` / `php8.x-dev`)
 - GNU Make
-- libpng, libjpeg-turbo, libwebp, FreeType development headers:
-  - Debian / Ubuntu: `apt install libpng-dev libjpeg-turbo8-dev libwebp-dev libfreetype-dev`
-  - RHEL / Fedora: `dnf install libpng-devel libjpeg-turbo-devel libwebp-devel freetype-devel`
+- pkg-config and FreeType development headers are required. The libpng,
+  libjpeg-turbo and libwebp development headers are optional for building
+  the extension, but install all three for raster development and tests.
+  `config.m4` probes each codec independently; a missing codec disables
+  its corresponding output format, not SVG output.
 
-  Probed via pkg-config in `config.m4`. plutovg + plutosvg are
-  vendored under `vendor/`, so they need no install.
+  Install the build dependencies for all three raster formats:
+  - Debian / Ubuntu: `apt install pkg-config libpng-dev libjpeg-dev libwebp-dev libfreetype-dev`
+  - RHEL / Fedora: `dnf install pkgconf-pkg-config libpng-devel libjpeg-turbo-devel libwebp-devel freetype-devel`
+
+  `libjpeg-dev` selects the distribution's default JPEG development
+  package on both Debian and Ubuntu. plutovg + plutosvg are vendored
+  under `vendor/`, so they need no install.
 - ext/gd is **not** a runtime requirement. The test suite uses ext/gd
   in roughly 90 PHPT files to round-trip raster output for pixel
   inspection; those tests SKIP cleanly when ext/gd isn't available.
