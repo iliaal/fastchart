@@ -68,6 +68,18 @@ static double pack_siblings(fastchart_pack_node **kids, int n)
      * Normal-sized groups never approach the budget and are unaffected. */
     long work = 0;
     const long WORK_BUDGET = 8000000;
+    const long SPIRAL_STEPS = 200000;
+
+    /* Spiral slot s is the same point for every sibling, so its direction
+     * is computed once. first[s] is the lowest sibling index that overlapped
+     * slot s for an earlier sibling (or the index placed there). Siblings
+     * are sorted by descending radius, so a lower index cannot overlap slot
+     * s for a later sibling, and the scan resumes at first[s]. work still
+     * counts every index the scan from 0 would test, so the budget cut-off
+     * lands on the same sibling. */
+    double *ux = NULL, *uy = NULL;
+    int *first = NULL;
+    long slots = 0;
 
     for (int i = 0; i < n; i++) {
         fastchart_pack_node *c = kids[i];
@@ -85,25 +97,41 @@ static double pack_siblings(fastchart_pack_node **kids, int n)
          * long before it for any realistic radius set. If the cap is hit,
          * the last (possibly overlapping) candidate stands. */
         int placed = 0;
-        for (long s = 0; s < 200000 && !placed; s++) {
-            double tt = (double)s;
-            double ang = tt * 2.39996322972865332;   /* golden angle */
-            double rad = rad_step * tt;
-            c->x = rad * cos(ang);
-            c->y = rad * sin(ang);
-            placed = 1;
-            for (int j = 0; j < i; j++) {
-                work++;
+        for (long s = 0; s < SPIRAL_STEPS && !placed; s++) {
+            if (s == slots) {
+                long grow = slots ? slots * 2 : 256;
+                ux = safe_erealloc(ux, grow, sizeof(*ux), 0);
+                uy = safe_erealloc(uy, grow, sizeof(*uy), 0);
+                first = safe_erealloc(first, grow, sizeof(*first), 0);
+                for (long k = slots; k < grow; k++) {
+                    double tt = (double)k;
+                    double ang = tt * 2.39996322972865332;   /* golden angle */
+                    ux[k] = cos(ang);
+                    uy[k] = sin(ang);
+                    first[k] = 0;
+                }
+                slots = grow;
+            }
+            double rad = rad_step * (double)s;
+            c->x = rad * ux[s];
+            c->y = rad * uy[s];
+            int j = first[s];
+            for (; j < i; j++) {
                 double dxp = c->x - kids[j]->x;
                 double dyp = c->y - kids[j]->y;
                 double need = c->r + kids[j]->r;
                 if (dxp * dxp + dyp * dyp < need * need - 0.001) {
-                    placed = 0;
                     break;
                 }
             }
+            placed = j == i;
+            work += placed ? i : j + 1;
+            first[s] = j;
         }
     }
+    efree(ux);
+    efree(uy);
+    efree(first);
 
     /* Enclose: bbox centre, then max reach. */
     double minx = kids[0]->x - kids[0]->r, maxx = kids[0]->x + kids[0]->r;
