@@ -15,6 +15,7 @@
 #endif
 
 #include <math.h>
+#include <stdlib.h>
 #include <stdint.h>
 
 #include "php.h"
@@ -103,6 +104,121 @@ static bool fc_net_row_forces(const double *rx, const double *ry,
 }
 #endif
 
+
+/* TEMPORARY DIAGNOSTICS (PR #109). Revert this commit after CI shows
+ * whether the gcc lanes' scalar path matches the recorded digests.
+ * FASTCHART_NETWORK_SCALAR=1 forces the pre-packed pair loop.
+ * FASTCHART_NETWORK_DIAG=1 prints compiler identity and flags once. */
+static int fc_net_env_on(const char *name)
+{
+	const char *e = getenv(name);
+	return e != NULL && e[0] != '\0' && e[0] != '0';
+}
+
+static void fc_net_diag_compiler(void)
+{
+	static int once = 0;
+	if (once || !fc_net_env_on("FASTCHART_NETWORK_DIAG")) {
+		return;
+	}
+	once = 1;
+	php_printf("DIAG compiler="
+#ifdef __clang__
+		"clang " __clang_version__
+#elif defined(__GNUC__)
+		"gcc " __VERSION__
+#else
+		"unknown"
+#endif
+		"\n");
+#if defined(__GNUC__) && !defined(__clang__)
+	php_printf("DIAG gnuc=%d.%d.%d\n", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+#endif
+	php_printf("DIAG macros:");
+#ifdef FC_NET_PACKED
+	php_printf(" FC_NET_PACKED");
+#endif
+#ifdef FC_NET_SSE2
+	php_printf(" FC_NET_SSE2");
+#endif
+#ifdef FC_NET_NEON
+	php_printf(" FC_NET_NEON");
+#endif
+#ifdef __x86_64__
+	php_printf(" x86_64");
+#endif
+#ifdef __SSE2__
+	php_printf(" SSE2");
+#endif
+#ifdef __SSE3__
+	php_printf(" SSE3");
+#endif
+#ifdef __SSSE3__
+	php_printf(" SSSE3");
+#endif
+#ifdef __SSE4_1__
+	php_printf(" SSE4_1");
+#endif
+#ifdef __SSE4_2__
+	php_printf(" SSE4_2");
+#endif
+#ifdef __AVX__
+	php_printf(" AVX");
+#endif
+#ifdef __AVX2__
+	php_printf(" AVX2");
+#endif
+#ifdef __FMA__
+	php_printf(" FMA");
+#endif
+#ifdef __FMA4__
+	php_printf(" FMA4");
+#endif
+#ifdef __FAST_MATH__
+	php_printf(" FAST_MATH");
+#endif
+#ifdef __FINITE_MATH_ONLY__
+	php_printf(" FINITE_MATH_ONLY=%d", (int)__FINITE_MATH_ONLY__);
+#endif
+#ifdef __NO_MATH_ERRNO__
+	php_printf(" NO_MATH_ERRNO");
+#endif
+#ifdef __RECIPROCAL_MATH__
+	php_printf(" RECIPROCAL_MATH");
+#endif
+#ifdef __ASSOCIATIVE_MATH__
+	php_printf(" ASSOCIATIVE_MATH");
+#endif
+#ifdef __FP_FAST_FMA
+	php_printf(" FP_FAST_FMA");
+#endif
+#ifdef FP_FAST_FMA
+	php_printf(" FP_FAST_FMA_macro");
+#endif
+#ifdef __OPTIMIZE__
+	php_printf(" OPTIMIZE");
+#endif
+#ifdef __OPTIMIZE_SIZE__
+	php_printf(" OPTIMIZE_SIZE");
+#endif
+#ifdef __PIC__
+	php_printf(" PIC");
+#endif
+#ifdef __PIE__
+	php_printf(" PIE");
+#endif
+	php_printf(" FLT_EVAL_METHOD=%d\n",
+#ifdef __FLT_EVAL_METHOD__
+		(int)__FLT_EVAL_METHOD__
+#else
+		-999
+#endif
+	);
+#ifdef __GLIBC__
+	php_printf("DIAG glibc=%d.%d\n", __GLIBC__, __GLIBC_MINOR__);
+#endif
+}
+
 int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_target_t *t)
 {
     fastchart_palette pal;
@@ -167,7 +283,9 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
 		double *rx = safe_emalloc((size_t)n, 6 * sizeof(double), 0);
 		double *ry = rx + n, *rq = ry + n, *rf = rq + n;
 		double *rux = rf + n, *ruy = rux + n;
+		const int force_scalar = fc_net_env_on("FASTCHART_NETWORK_SCALAR");
 #endif
+		fc_net_diag_compiler();
 
 		uint32_t rng = (uint32_t)self->seed;
 		if (rng == 0) rng = 1;
@@ -200,6 +318,7 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
 
 			for (int i = 0; i < n; i++) {
 #ifdef FC_NET_PACKED
+				if (!force_scalar) {
 				int m = n - i - 1;
 				const double pxi = px[i], pyi = py[i];
 				for (int t = 0; t < m; t++) {
@@ -220,6 +339,7 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
 					}
 					dx[i] = dxi; dy[i] = dyi;
 					continue;
+				}
 				}
 #endif
 				for (int j = i + 1; j < n; j++) {
