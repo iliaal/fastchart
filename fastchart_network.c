@@ -27,7 +27,10 @@
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
 
-#if defined(__x86_64__) && defined(__SSE2__)
+/* SSE2 is baseline on x86-64; MSVC x86 builds use it for scalar doubles
+ * under /arch:SSE2 (the default), so packed and scalar round alike. */
+#if (defined(__x86_64__) && defined(__SSE2__)) || defined(_M_X64) \
+	|| (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
 #  define FC_NET_SSE2 1
 #  define FC_NET_PACKED 1
 #  include <emmintrin.h>
