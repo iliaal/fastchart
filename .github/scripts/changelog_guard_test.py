@@ -96,7 +96,10 @@ class Fixture:
     def commit(self, branch, text, msg, new=False, start="main", path="CHANGELOG.md"):
         if not new:
             sh(self.work, "git", "checkout", "-q", "-B", branch, f"origin/{start}")
-        (self.work / path).write_text(textwrap.dedent(text))
+        if text is None:
+            (self.work / path).unlink()
+        else:
+            (self.work / path).write_text(textwrap.dedent(text))
         sh(self.work, "git", "add", "-A")
         sh(self.work, "git", "commit", "-q", "-m", msg)
         sh(self.work, "git", "push", "-q", "origin", f"+HEAD:refs/heads/{branch}")
@@ -164,6 +167,22 @@ class GuardTest(unittest.TestCase):
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertIn(needle, p.stdout)
         self.assertTrue(any(l.startswith("::error") and needle in l for l in p.stdout.splitlines()), p.stdout)
+
+    def test_deleted_released_changelog_fails(self):
+        self.f.pr(1, None)
+        self.assertFail(self.f.run("pr", 1), "changes released section [1.0.0]")
+
+    def test_deleted_released_changelog_override_warns(self):
+        self.f.pr(1, None, labels=["changelog-override"])
+        p = self.f.run("pr", 1)
+        self.assertPass(p)
+        self.assertIn("::warning", p.stdout)
+        self.assertIn("changes released section [1.0.0]", p.stdout)
+
+    def test_deleted_unreleased_only_changelog_passes(self):
+        self.f.commit("main", "# Changelog\n\n## [Unreleased]\n- Pending\n", "unreleased only")
+        self.f.pr(1, None)
+        self.assertPass(self.f.run("pr", 1))
 
     # Allowed edits
     def test_entry_under_unreleased_passes(self):
