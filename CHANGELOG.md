@@ -28,6 +28,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- CirclePacking computes each spiral slot's direction once per sibling
+  group and resumes each slot's overlap scan at the lowest sibling that
+  overlapped that slot for an earlier sibling, instead of rescanning from
+  the largest sibling at every step. Siblings are sorted by descending
+  radius, so a lower sibling that did not overlap a slot cannot overlap it
+  for a later one. Output is byte-identical, including groups past the 8M
+  collision-work budget, which still counts every test the full scan would
+  make. SVG renders of 50 to 2,000 leaves take 50-89% less time; 800x800
+  PNG renders take about 3% less. Each group of two or more siblings
+  allocates 20 bytes per spiral step reached, in blocks of 256 steps
+  doubled as needed (at most 5.2 MB at the 200,000-step cap), freed before
+  the next group.
+
 - The rasterizer's cell lookup starts at one of the row's last two found
   or inserted cells instead of the row head when the outline has at least
   64 points and the band has at most twice the pool's band-size rows (every
