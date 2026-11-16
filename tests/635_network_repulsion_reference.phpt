@@ -2,15 +2,6 @@
 NetworkChart packed repulsion stays identical to the scalar loop, including coincident-node jitter
 --EXTENSIONS--
 fastchart
---SKIPIF--
-<?php
-/* Packed repulsion is compiled only on 64-bit SSE2/NEON builds. 32-bit
- * builds keep the scalar loop, so packed-vs-scalar would not test the
- * new path. Windows unaudited skip ceiling counts this 32-bit skip. */
-if (PHP_INT_SIZE < 8) {
-    echo "skip: packed repulsion is 64-bit only\n";
-}
-?>
 --FILE--
 <?php
 /* In-process packed vs scalar comparison. FASTCHART_NETWORK_SCALAR=1
@@ -19,7 +10,8 @@ if (PHP_INT_SIZE < 8) {
  * against digests recorded on a different machine. The 130x120 chain
  * clamps nodes onto the plot edges, where they coincide and take the
  * sub-0.01 distance jitter path; the 512-node ring is the review_perf
- * fixture. */
+ * fixture. Builds without packed repulsion (32-bit, MSVC) compile no
+ * packed path, so there both renders take the scalar loop. */
 function centers(string $svg): array {
     preg_match_all('/<circle cx="(-?\d+)" cy="(-?\d+)" r="\d+" fill="#/',
         $svg, $m, PREG_SET_ORDER);

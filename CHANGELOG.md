@@ -58,10 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `-march=x86-64-v3`, and a non-FMA `-g -O2` build); the 8,320 renders in
   `bench/network_equivalence.php 160` match the pre-change scalar path
   under the same flags. `tests/635` compares the packed path to the
-  scalar loop in one process via `FASTCHART_NETWORK_SCALAR=1`, and skips
-  only on 32-bit. First renders of 50- and 128-node networks take 21.3%
-  less time, 512-node networks 18.2% less, and 10 nodes no measurable
-  change; renders that reuse the cached layout do not run this code. The
+  scalar loop in one process via `FASTCHART_NETWORK_SCALAR=1`. First
+  renders of 50- and 128-node networks take 21.3% less time, 512-node
+  networks 18.2% less, and 10 nodes no measurable change; renders that reuse the cached layout do not run this code. The
   layout allocates 48 bytes of scratch per node (24 KB at 512 nodes),
   freed with its other temporaries.
 
