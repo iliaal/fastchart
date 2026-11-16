@@ -45,26 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outline, including outlines of 512 points or fewer and outlines under 64
   points that never use hints; each raster call uses 5.4 KB more stack.
 
-- NetworkChart's force layout, on x86-64 GCC/Clang (SSE2), MSVC x64, MSVC
-  x86 with SSE2 (`_M_IX86_FP >= 2`, the MSVC default) and AArch64 (NEON)
-  builds, gathers each node's row of pair offsets and computes the
-  square root and three divisions per pair two pairs at a time. A row with
-  any pair closer than 0.01 is redone with the scalar loop, so its random
-  jitter is drawn in the same order. Other builds keep the scalar loop.
-  Squared distances use `fma(ddx, ddx, ddy * ddy)` when `FP_FAST_FMA` is
-  set, matching the compiler's contraction of `ddx*ddx + ddy*ddy`, and
-  force accumulation stays a sequential scalar loop so a vectorized
-  reduction cannot change FMA association. Packed and scalar layouts stay
-  byte-identical on FMA and non-FMA builds (gcc 14 and gcc 15 with
-  `-march=x86-64-v3`, and a non-FMA `-g -O2` build); the 8,320 renders in
-  `bench/network_equivalence.php 160` match the pre-change scalar path
-  under the same flags. `tests/635` compares the packed path to the
-  scalar loop in one process via `FASTCHART_NETWORK_SCALAR=1`. First
-  renders of 50- and 128-node networks take 21.3% less time, 512-node
-  networks 18.2% less, and 10 nodes no measurable change (Linux x86-64 GCC; MSVC builds
-  were not timed); renders that reuse the cached layout do not run this code. The
-  layout allocates 48 bytes of scratch per node (24 KB at 512 nodes),
-  freed with its other temporaries.
+- NetworkChart's first layout of a 50- to 512-node network takes 11% to 33%
+  less time on x86-64, MSVC x86 SSE2 and AArch64 builds (timed on Linux x86-64
+  with GCC 11 to 14 and Clang 18). Output is unchanged.
 
 - SankeyChart retains link storage only for accepted entries after filtering.
   Parsing still initially allocates for all supplied entries; filtering and

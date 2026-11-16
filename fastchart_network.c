@@ -112,7 +112,8 @@ static bool fc_net_row_forces(const double *rx, const double *ry,
 
 /* gcc 15+ will vectorize the running-sum loop over four pairs, which
  * changes FMA association versus the scalar path's sequential
- * dxi += ux * force and makes layouts diverge. Keep that loop scalar. */
+ * dxi += ux * force and makes layouts diverge. Keep that loop scalar.
+ * GCC before 14 has no novector pragma and leaves this loop scalar. */
 #if defined(__clang__)
 #  define FC_NET_NOVECTOR_LOOP _Pragma("clang loop vectorize(disable) interleave(disable)")
 #elif defined(__GNUC__) && __GNUC__ >= 14
@@ -254,9 +255,6 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
 						double ux = rux[t], uy = ruy[t];
 						dxi += ux * force; dyi += uy * force;
 						dx[j] -= ux * force; dy[j] -= uy * force;
-#if defined(__GNUC__) && !(defined(__clang__) || (__GNUC__ >= 14))
-						__asm__ volatile("" : "+m"(dxi), "+m"(dyi));
-#endif
 					}
 					dx[i] = dxi; dy[i] = dyi;
 					continue;
