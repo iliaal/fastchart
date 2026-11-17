@@ -45,9 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outline, including outlines of 512 points or fewer and outlines under 64
   points that never use hints; each raster call uses 5.4 KB more stack.
 
-- NetworkChart's first layout of a 50- to 512-node network takes 11% to 33%
-  less time on x86-64, MSVC x86 SSE2 and AArch64 builds (timed on Linux x86-64
-  with GCC 11 to 14 and Clang 18). Output is unchanged.
+- NetworkChart's first layout of a 50- to 512-node network takes 10% to 28%
+  less time on Linux x86-64 (GCC 11 to 14, Clang 18). Output is unchanged.
 
 - SankeyChart retains link storage only for accepted entries after filtering.
   Parsing still initially allocates for all supplied entries; filtering and

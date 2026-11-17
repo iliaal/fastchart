@@ -61,11 +61,10 @@ static inline double fc_xs_unit(uint32_t *s)
 #ifdef FC_NET_PACKED
 /* sqrt and the three divisions per pair dominate repulsion. Computes, for
  * t < m, d = sqrt(q[t]), f[t] = k2 / d, ux[t] = rx[t] / d, uy[t] = ry[t] / d.
- * Packed sqrt/div are correctly rounded like the scalar ops. Squared
- * distances use fma(ddx, ddx, ddy * ddy) when FP_FAST_FMA is set, which is
- * the contraction of ddx*ddx + ddy*ddy. Force accumulation stays a
- * sequential scalar loop so a vectorized reduction cannot change FMA
- * association. Packed and scalar stay bit-identical on FMA and non-FMA builds. Returns false when any d is
+ * Packed sqrt/div are correctly rounded like the scalar ops. The caller
+ * computes squared distances with the scalar path's own expression,
+ * ddx * ddx + ddy * ddy. Force accumulation stays a sequential scalar loop
+ * so a vectorized reduction cannot change association. Returns false when any d is
  * below 0.01; the caller then redoes the row with the scalar jitter path,
  * which draws from the PRNG in pair order. Without packed instructions
  * the original pair loop is faster, so other builds keep only that. */
@@ -236,15 +235,7 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
 					double ddy = pyi - py[i + 1 + t];
 					rx[t] = ddx;
 					ry[t] = ddy;
-#if defined(FP_FAST_FMA) && FP_FAST_FMA
-					/* Same operand order as GCC/Clang contracting
-					 * ddx*ddx + ddy*ddy into fma under -mfma, so a
-					 * vectorized q loop stays bit-identical to the
-					 * scalar sqrt(ddx*ddx + ddy*ddy) path. */
-					rq[t] = fma(ddx, ddx, ddy * ddy);
-#else
 					rq[t] = ddx * ddx + ddy * ddy;
-#endif
 				}
 				if (EXPECTED(fc_net_row_forces(rx, ry, rq, rf, rux, ruy, m, k2))) {
 					double dxi = dx[i], dyi = dy[i];
