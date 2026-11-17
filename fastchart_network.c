@@ -15,6 +15,7 @@
 #endif
 
 #include <math.h>
+#include <stdlib.h>
 #include <stdint.h>
 
 #include "php.h"
@@ -25,6 +26,19 @@
 #include "fastchart_target.h"
 #include "fastchart_axis.h"
 #include "fastchart_text.h"
+
+/* SSE2 is baseline on x86-64; MSVC x86 builds use it for scalar doubles
+ * under /arch:SSE2 (the default), so packed and scalar round alike. */
+#if (defined(__x86_64__) && defined(__SSE2__)) || defined(_M_X64) \
+	|| (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
+#  define FC_NET_SSE2 1
+#  define FC_NET_PACKED 1
+#  include <emmintrin.h>
+#elif defined(__aarch64__) && (defined(__ARM_NEON) || defined(__ARM_NEON__))
+#  define FC_NET_NEON 1
+#  define FC_NET_PACKED 1
+#  include <arm_neon.h>
+#endif
 
 /* Fruchterman-Reingold layout with a seeded PRNG and fixed iteration
  * count for deterministic output. Repulsion costs O(n^2) per pass. */
@@ -42,6 +56,77 @@ static inline uint32_t fc_xs_next(uint32_t *s)
 static inline double fc_xs_unit(uint32_t *s)
 {
     return (double)fc_xs_next(s) / (double)UINT32_MAX;
+}
+
+#ifdef FC_NET_PACKED
+/* sqrt and the three divisions per pair dominate repulsion. Computes, for
+ * t < m, d = sqrt(q[t]), f[t] = k2 / d, ux[t] = rx[t] / d, uy[t] = ry[t] / d.
+ * Packed sqrt/div are correctly rounded like the scalar ops. The caller
+ * computes squared distances with the scalar path's own expression,
+ * ddx * ddx + ddy * ddy. Force accumulation stays a sequential scalar loop
+ * so a vectorized reduction cannot change association. Returns false when any d is
+ * below 0.01; the caller then redoes the row with the scalar jitter path,
+ * which draws from the PRNG in pair order. Without packed instructions
+ * the original pair loop is faster, so other builds keep only that. */
+static bool fc_net_row_forces(const double *rx, const double *ry,
+                              const double *q, double *f, double *ux,
+                              double *uy, int m, double k2)
+{
+	int t = 0;
+#ifdef FC_NET_SSE2
+	const __m128d vk2 = _mm_set1_pd(k2);
+	const __m128d vmin = _mm_set1_pd(0.01);
+	int lt = 0;
+	for (; t + 2 <= m; t += 2) {
+		__m128d d = _mm_sqrt_pd(_mm_loadu_pd(q + t));
+		lt |= _mm_movemask_pd(_mm_cmplt_pd(d, vmin));
+		_mm_storeu_pd(f + t, _mm_div_pd(vk2, d));
+		_mm_storeu_pd(ux + t, _mm_div_pd(_mm_loadu_pd(rx + t), d));
+		_mm_storeu_pd(uy + t, _mm_div_pd(_mm_loadu_pd(ry + t), d));
+	}
+	if (lt) return false;
+#else
+	const float64x2_t vk2 = vdupq_n_f64(k2);
+	const float64x2_t vmin = vdupq_n_f64(0.01);
+	uint64x2_t lt = vdupq_n_u64(0);
+	for (; t + 2 <= m; t += 2) {
+		float64x2_t d = vsqrtq_f64(vld1q_f64(q + t));
+		lt = vorrq_u64(lt, vcltq_f64(d, vmin));
+		vst1q_f64(f + t, vdivq_f64(vk2, d));
+		vst1q_f64(ux + t, vdivq_f64(vld1q_f64(rx + t), d));
+		vst1q_f64(uy + t, vdivq_f64(vld1q_f64(ry + t), d));
+	}
+	if (vgetq_lane_u64(lt, 0) | vgetq_lane_u64(lt, 1)) return false;
+#endif
+	for (; t < m; t++) {
+		double d = sqrt(q[t]);
+		if (d < 0.01) return false;
+		f[t] = k2 / d;
+		ux[t] = rx[t] / d;
+		uy[t] = ry[t] / d;
+	}
+	return true;
+}
+#endif
+
+/* gcc 15+ will vectorize the running-sum loop over four pairs, which
+ * changes FMA association versus the scalar path's sequential
+ * dxi += ux * force and makes layouts diverge. Keep that loop scalar.
+ * GCC before 14 has no novector pragma and leaves this loop scalar. */
+#if defined(__clang__)
+#  define FC_NET_NOVECTOR_LOOP _Pragma("clang loop vectorize(disable) interleave(disable)")
+#elif defined(__GNUC__) && __GNUC__ >= 14
+#  define FC_NET_NOVECTOR_LOOP _Pragma("GCC novector")
+#else
+#  define FC_NET_NOVECTOR_LOOP
+#endif
+
+/* FASTCHART_NETWORK_SCALAR=1 forces the pre-packed pair loop. Used by
+ * tests/635 to compare packed and scalar layouts in one process. */
+static int fc_net_force_scalar(void)
+{
+	const char *e = getenv("FASTCHART_NETWORK_SCALAR");
+	return e != NULL && e[0] != '\0' && e[0] != '0';
 }
 
 int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_target_t *t)
@@ -103,6 +188,13 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
 		py = ecalloc((size_t)n, sizeof(*py));
 		double *dx = ecalloc((size_t)n, sizeof(*dx));
 		double *dy = ecalloc((size_t)n, sizeof(*dy));
+#ifdef FC_NET_PACKED
+		/* Per-row scratch: offsets, squared distances, force terms. */
+		double *rx = safe_emalloc((size_t)n, 6 * sizeof(double), 0);
+		double *ry = rx + n, *rq = ry + n, *rf = rq + n;
+		double *rux = rf + n, *ruy = rux + n;
+		const int force_scalar = fc_net_force_scalar();
+#endif
 
 		uint32_t rng = (uint32_t)self->seed;
 		if (rng == 0) rng = 1;
@@ -134,6 +226,32 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
 			for (int i = 0; i < n; i++) { dx[i] = 0.0; dy[i] = 0.0; }
 
 			for (int i = 0; i < n; i++) {
+#ifdef FC_NET_PACKED
+				if (!force_scalar) {
+				int m = n - i - 1;
+				const double pxi = px[i], pyi = py[i];
+				for (int t = 0; t < m; t++) {
+					double ddx = pxi - px[i + 1 + t];
+					double ddy = pyi - py[i + 1 + t];
+					rx[t] = ddx;
+					ry[t] = ddy;
+					rq[t] = ddx * ddx + ddy * ddy;
+				}
+				if (EXPECTED(fc_net_row_forces(rx, ry, rq, rf, rux, ruy, m, k2))) {
+					double dxi = dx[i], dyi = dy[i];
+					FC_NET_NOVECTOR_LOOP
+					for (int t = 0; t < m; t++) {
+						int j = i + 1 + t;
+						double force = rf[t];
+						double ux = rux[t], uy = ruy[t];
+						dxi += ux * force; dyi += uy * force;
+						dx[j] -= ux * force; dy[j] -= uy * force;
+					}
+					dx[i] = dxi; dy[i] = dyi;
+					continue;
+				}
+				}
+#endif
 				for (int j = i + 1; j < n; j++) {
 					double ddx = px[i] - px[j];
 					double ddy = py[i] - py[j];
@@ -196,6 +314,9 @@ int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_ta
 					(plot_h - 2 * pad)
 				: (plot_y0 + plot_y1) / 2.0;
 		}
+#ifdef FC_NET_PACKED
+		efree(rx);
+#endif
 		efree(dx);
 		efree(dy);
 
