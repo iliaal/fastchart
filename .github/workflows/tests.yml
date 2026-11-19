@@ -290,6 +290,9 @@ jobs:
           fi
           echo "symbol audit: no libgcc cpu-feature symbols"
 
+      - name: Guard against assert() in vendored objects
+        run: scripts/check-vendor-ndebug.sh
+
       - name: Verify gd capabilities (guard against silent mass-skips)
         # PHPTs declaring `--EXTENSIONS-- gd` round-trip raster
         # output through imagecreatefromstring / imagecreatefromwebp for
