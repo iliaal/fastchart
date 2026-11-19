@@ -125,8 +125,12 @@ static bool fc_net_row_forces(const double *rx, const double *ry,
  * tests/635 to compare packed and scalar layouts in one process. */
 static int fc_net_force_scalar(void)
 {
+	/* PHP's putenv() mutates environ under this lock in ZTS builds. */
+	tsrm_env_lock();
 	const char *e = getenv("FASTCHART_NETWORK_SCALAR");
-	return e != NULL && e[0] != '\0' && e[0] != '0';
+	int force = e != NULL && e[0] != '\0' && e[0] != '0';
+	tsrm_env_unlock();
+	return force;
 }
 
 int fastchart_network_render_to_target(fastchart_network_obj *self, fastchart_target_t *t)

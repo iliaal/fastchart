@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A ZTS process no longer crashes at module shutdown when worker threads exit without calling `ts_free_thread()`, as embed-SAPI hosts can. PHP then runs fastchart's globals destructor for each of those threads from the main thread, and the destructor released the calling thread's FreeType state and caches instead of the ones it was handed.
 - Vendored plutovg and qrcodegen code is built with `-DNDEBUG`, matching their release builds, so a failed internal `assert()` no longer calls `abort()`. Under a threaded SAPI, one such abort ended every request the process was serving.
+- NetworkChart reads `FASTCHART_NETWORK_SCALAR` under PHP's environment lock, so a concurrent `putenv()` in another ZTS thread can no longer race the lookup.
 - ParetoChart, MarimekkoChart, and ViolinPlot honor X-axis visibility for category labels; ParetoChart also honors Y-axis visibility for both scales and their grid lines, without hiding data labels or changing plot geometry.
 - ViolinPlot honors `setTitleColor()`, including black and the `-1` text-color/theme fallback, without recoloring group labels or median lines.
 - ViolinPlot honors `setAxisFont()`, `setAxisLabelColor()`, and `setXLabelStride()` for group labels. Group labels no longer use `setLabelFont()`; chart-wide font and text-color fallbacks are unchanged.
