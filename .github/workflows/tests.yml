@@ -588,7 +588,7 @@ jobs:
             --enable-cli \
             --enable-embed=shared \
             --prefix=/tmp/php-zts
-          make -j$(nproc)
+          make -j"$(nproc)"
           make install
 
       - name: Build fastchart against it
@@ -598,7 +598,7 @@ jobs:
           CFLAGS="-fsanitize=address -g" LDFLAGS="-fsanitize=address" \
           ./configure --enable-fastchart --enable-fastchart-dev \
             --with-php-config=/tmp/php-zts/bin/php-config
-          make -j$(nproc)
+          make -j"$(nproc)"
 
       - name: Worker-thread GSHUTDOWN regression
         run: scripts/zts-embed-gshutdown.sh /tmp/php-zts
