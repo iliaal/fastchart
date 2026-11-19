@@ -267,7 +267,10 @@ static int fastchart_symbol_render_to_sink(fastchart_symbol_obj *self,
             ZSTR_VAL(svg_buf.s), ZSTR_LEN(svg_buf.s),
             alloc_w, alloc_h, &pix) != 0) {
 		smart_str_free(&svg_buf);
-		zend_throw_error(NULL, "FastChart\\Symbol: plutovg rasterization failed");
+		if (!fastchart_oom_pending()) {
+			zend_throw_error(NULL,
+				"FastChart\\Symbol: plutovg rasterization failed");
+		}
 		return -1;
     }
     zend_string_release(svg_buf.s);
@@ -299,7 +302,7 @@ static int fastchart_symbol_render_to_sink(fastchart_symbol_obj *self,
 	if (rc != 0 || sink->failed || sink->bytes_written == 0) {
 		/* A codec may have thrown its own specific error (e.g. libpng
 		 * via png_get_error_ptr); keep it instead of overwriting. */
-		if (!EG(exception)) {
+		if (!EG(exception) && !fastchart_oom_pending()) {
 			zend_throw_error(NULL,
 				"FastChart\\Symbol: encoder produced no output");
 		}
@@ -331,7 +334,7 @@ static void fastchart_symbol_render_to_string(INTERNAL_FUNCTION_PARAMETERS,
     smart_str enc_buf = {0};
     if (fastchart_symbol_render_to_buf(self, ce, format, (int)quality,
                                        "FastChart\\Symbol", &enc_buf) != 0) {
-        RETURN_THROWS();
+        FASTCHART_RETURN_FAILED();
     }
     RETURN_STR(enc_buf.s);
 }
@@ -368,7 +371,7 @@ static void fastchart_symbol_render_to_svg(INTERNAL_FUNCTION_PARAMETERS,
 	if (fastchart_build_svg(&buf, (int)lw, (int)lh, (int)self->dpi,
 			(int)self->svg_text_mode, fragment_only, "fastchart-symbol",
 			id_prefix, dispatch_symbol_svg_render, self, ce) != 0) {
-		RETURN_THROWS();
+		FASTCHART_RETURN_FAILED();
     }
     RETURN_STR(buf.s);
 }
@@ -397,7 +400,7 @@ static void fastchart_symbol_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS,
 	if (fastchart_build_svg(&buf, (int)lw, (int)lh, (int)self->dpi,
 			(int)self->svg_text_mode, 0, "fastchart-symbol", NULL,
 			dispatch_symbol_svg_render, self, ce) != 0) {
-		RETURN_THROWS();
+		FASTCHART_RETURN_FAILED();
     }
 
     zend_long written = 0;
@@ -781,7 +784,7 @@ ZEND_METHOD(FastChart_Symbol, renderToFile)
 	} zend_end_try();
 	if (rc != 0) {
 		fastchart_atomic_file_abort(&file);
-		RETURN_THROWS();
+		FASTCHART_RETURN_FAILED();
 	}
 	zend_long written = 0;
 	if (fastchart_atomic_file_commit(&file, sink.bytes_written,

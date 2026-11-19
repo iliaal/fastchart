@@ -274,13 +274,17 @@ if test "$PHP_FASTCHART" != "no"; then
   dnl added here: vendored code stays warning-tolerant regardless of how
   dnl complete the suppression list is. The visibility and static-build
   dnl defines are repeated because the vendored TUs need them too.
+  dnl -DNDEBUG compiles out the vendored assert()/STBI_ASSERT debug checks,
+  dnl matching the release posture of their upstreams (FreeType's FT_ASSERT
+  dnl is debug-only): under a threaded SAPI one failing assert aborts every
+  dnl request the process is serving.
   FASTCHART_VENDOR_CFLAGS="-Wall -Wextra \
     -Wno-unused-parameter -Wno-unused-function -Wno-sign-compare \
     -Wno-implicit-fallthrough -Wno-unused-but-set-variable \
     -Wno-misleading-indentation -Wno-missing-field-initializers \
     -fvisibility=hidden \
     -DPLUTOVG_BUILD_STATIC -DPLUTOSVG_BUILD_STATIC \
-    -DPLUTOVG_DISABLE_IMAGE_WRITE"
+    -DPLUTOVG_DISABLE_IMAGE_WRITE -DNDEBUG"
 
   if test "$PHP_FASTCHART_DEV" = "yes"; then
     FASTCHART_CFLAGS="$FASTCHART_CFLAGS -Werror -Wstrict-prototypes"

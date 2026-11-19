@@ -292,6 +292,7 @@ void fastchart_target_line(fastchart_target_t *t,
                             int x0, int y0, int x1, int y1,
                             int color, int thickness, int dash)
 {
+    if (fastchart_oom_pending()) return;
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) {
@@ -306,6 +307,7 @@ void fastchart_target_rect(fastchart_target_t *t,
                             int x, int y, int w, int h,
                             int color, int fill, int thickness)
 {
+    if (fastchart_oom_pending()) return;
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) {
@@ -320,7 +322,7 @@ void fastchart_target_polygon(fastchart_target_t *t,
                                const fastchart_point_t *pts, int n,
                                int color, int fill, int thickness)
 {
-    if (n < 2) return;
+    if (n < 2 || fastchart_oom_pending()) return;
     int xs_stack[256], ys_stack[256];
     int *xs = xs_stack, *ys = ys_stack;
     FASTCHART_SPLIT_POINTS(pts, n, xs, ys);
@@ -340,7 +342,7 @@ void fastchart_target_polyline(fastchart_target_t *t,
                                 const fastchart_point_t *pts, int n,
                                 int color, int thickness, int dash)
 {
-    if (n < 2) return;
+    if (n < 2 || fastchart_oom_pending()) return;
     int xs_stack[256], ys_stack[256];
     int *xs = xs_stack, *ys = ys_stack;
     FASTCHART_SPLIT_POINTS(pts, n, xs, ys);
@@ -362,6 +364,7 @@ void fastchart_target_arc(fastchart_target_t *t,
                            double start_deg, double end_deg,
                            int color, int fill, int thickness)
 {
+    if (fastchart_oom_pending()) return;
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) {
@@ -378,6 +381,7 @@ void fastchart_target_ellipse(fastchart_target_t *t,
                                int cx, int cy, int rx, int ry,
                                int color, int fill, int thickness)
 {
+    if (fastchart_oom_pending()) return;
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) {
@@ -1187,9 +1191,9 @@ static void fc_face_memo_remember(const char *font_path, FT_Face face)
     memo[slot].face = face;
 }
 
-static void fastchart_ft_face_memo_shutdown(void)
+static void fastchart_ft_face_memo_shutdown(zend_fastchart_globals *g)
 {
-    fc_ft_face_memo *memo = FASTCHART_G(ft_face_memo);
+    fc_ft_face_memo *memo = g->ft_face_memo;
     for (int i = 0; i < FC_FT_FACE_MEMO_N; i++) {
         free(memo[i].path);
         memset(&memo[i], 0, sizeof(memo[i]));
@@ -1321,25 +1325,25 @@ FT_Face fastchart_ft_face(const char *font_path)
     return face;
 }
 
-void fastchart_ft_library_shutdown(void)
+void fastchart_ft_library_shutdown(zend_fastchart_globals *g)
 {
     /* Free cached glyph paths first; they reference cached faces. */
-    fc_glyph_cache_entry *gcache = FASTCHART_G(glyph_cache);
+    fc_glyph_cache_entry *gcache = g->glyph_cache;
     for (int i = 0; i < FC_GLYPH_CACHE_N; i++) {
         free(gcache[i].ops);
         free(gcache[i].pts);
         memset(&gcache[i], 0, sizeof(gcache[i]));
     }
-    memset(FASTCHART_G(measure_cache), 0,
+    memset(g->measure_cache, 0,
            sizeof(fc_measure_cache_entry) * FC_MEASURE_CACHE_N);
 
-    fastchart_ft_face_memo_shutdown();
+    fastchart_ft_face_memo_shutdown(g);
 
     /* Free cached faces explicitly (FT_Done_FreeType would too) so the
      * cache state and path-string ownership stay deterministic. Called
      * from PHP_GSHUTDOWN: once per thread under ZTS, once at MSHUTDOWN
      * under NTS. */
-    fc_ft_face_slot *cache = FASTCHART_G(ft_face_cache);
+    fc_ft_face_slot *cache = g->ft_face_cache;
     for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
         if (cache[i].face) {
             FT_Done_Face(cache[i].face);
@@ -1355,11 +1359,11 @@ void fastchart_ft_library_shutdown(void)
             cache[i].data_len = 0;
         }
     }
-    if (FASTCHART_G(ft_lib) != NULL) {
-        FT_Done_FreeType(FASTCHART_G(ft_lib));
-        FASTCHART_G(ft_lib) = NULL;
+    if (g->ft_lib != NULL) {
+        FT_Done_FreeType(g->ft_lib);
+        g->ft_lib = NULL;
     }
-    FASTCHART_G(ft_lib_init_failed) = 0;
+    g->ft_lib_init_failed = 0;
 }
 
 /* Glyph cache lookup. Linear scan + swap-to-front. Returns NULL on
@@ -1746,7 +1750,7 @@ void fastchart_target_image(fastchart_target_t *t,
                              int x, int y, int w, int h,
                              const char *path)
 {
-    if (w <= 0 || h <= 0) return;
+    if (w <= 0 || h <= 0 || fastchart_oom_pending()) return;
 
 	fastchart_target_image_cache_entry *entry =
         fastchart_target_image_cache_get(t, path);
@@ -1825,7 +1829,7 @@ void fastchart_target_gradient_rect(fastchart_target_t *t,
                                      uint32_t from_rgb, uint32_t to_rgb,
                                      int dir)
 {
-    if (w <= 0 || h <= 0) return;
+    if (w <= 0 || h <= 0 || fastchart_oom_pending()) return;
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) {
         fc_pdf_emit_gradient_rect(t->u.pdf.state, x, y, w, h,
@@ -1851,7 +1855,7 @@ void fastchart_target_gradient_polygon(fastchart_target_t *t,
                                         uint32_t from_rgb, uint32_t to_rgb,
                                         int dir)
 {
-    if (n < 3) return;
+    if (n < 3 || fastchart_oom_pending()) return;
     int xs_stack[256], ys_stack[256];
     int *xs = xs_stack, *ys = ys_stack;
     FASTCHART_SPLIT_POINTS(pts, n, xs, ys);

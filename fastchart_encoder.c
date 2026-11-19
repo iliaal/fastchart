@@ -27,6 +27,7 @@
 
 #include "fastchart_encoder.h"
 #include "fastchart_atomic.h"
+#include "fastchart_target.h"
 #include "zend_smart_str.h"
 
 #ifdef HAVE_LIBPNG
@@ -159,11 +160,17 @@ void fastchart_pixels_release(fastchart_pixels_t *pix)
 
 /* --------------------------- sinks --------------------------------- */
 
+/* Encoded output grows the buffer in place; once a memory-limit error is
+ * queued, further growth heads for the engine's hard limit. Failing the
+ * write ends the encode through the codec's own error path. */
 static int fc_smart_str_sink_write(void *context, const uint8_t *data,
 	size_t length)
 {
+	if (fastchart_oom_pending()) {
+		return -1;
+	}
 	smart_str_appendl((smart_str *)context, (const char *)data, length);
-	return 0;
+	return fastchart_oom_pending() ? -1 : 0;
 }
 
 static int fc_stream_sink_write(void *context, const uint8_t *data,
@@ -282,7 +289,7 @@ int fastchart_encode_png_sink(fastchart_sink_t *sink,
 
 	if (setjmp(png_jmpbuf(png))) {
 		png_destroy_write_struct(&png, &info);
-		if (!EG(exception)) {
+		if (!EG(exception) && !fastchart_oom_pending()) {
 			zend_throw_error(NULL, "FastChart: libpng error: %s",
 				png_err[0] ? png_err : "write failed");
 		}
