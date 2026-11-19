@@ -32,7 +32,8 @@
 
 /* Lazy FreeType library, per-thread under ZTS; GSHUTDOWN releases it. */
 FT_Library fastchart_ft_library(void);
-void fastchart_ft_library_shutdown(void);
+struct _zend_fastchart_globals;
+void fastchart_ft_library_shutdown(struct _zend_fastchart_globals *g);
 
 /* Four-slot face cache, per-thread under ZTS. Set the returned face's
  * size before glyph operations; never call FT_Done_Face on it.

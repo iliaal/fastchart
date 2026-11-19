@@ -1187,9 +1187,9 @@ static void fc_face_memo_remember(const char *font_path, FT_Face face)
     memo[slot].face = face;
 }
 
-static void fastchart_ft_face_memo_shutdown(void)
+static void fastchart_ft_face_memo_shutdown(zend_fastchart_globals *g)
 {
-    fc_ft_face_memo *memo = FASTCHART_G(ft_face_memo);
+    fc_ft_face_memo *memo = g->ft_face_memo;
     for (int i = 0; i < FC_FT_FACE_MEMO_N; i++) {
         free(memo[i].path);
         memset(&memo[i], 0, sizeof(memo[i]));
@@ -1321,25 +1321,25 @@ FT_Face fastchart_ft_face(const char *font_path)
     return face;
 }
 
-void fastchart_ft_library_shutdown(void)
+void fastchart_ft_library_shutdown(zend_fastchart_globals *g)
 {
     /* Free cached glyph paths first; they reference cached faces. */
-    fc_glyph_cache_entry *gcache = FASTCHART_G(glyph_cache);
+    fc_glyph_cache_entry *gcache = g->glyph_cache;
     for (int i = 0; i < FC_GLYPH_CACHE_N; i++) {
         free(gcache[i].ops);
         free(gcache[i].pts);
         memset(&gcache[i], 0, sizeof(gcache[i]));
     }
-    memset(FASTCHART_G(measure_cache), 0,
+    memset(g->measure_cache, 0,
            sizeof(fc_measure_cache_entry) * FC_MEASURE_CACHE_N);
 
-    fastchart_ft_face_memo_shutdown();
+    fastchart_ft_face_memo_shutdown(g);
 
     /* Free cached faces explicitly (FT_Done_FreeType would too) so the
      * cache state and path-string ownership stay deterministic. Called
      * from PHP_GSHUTDOWN: once per thread under ZTS, once at MSHUTDOWN
      * under NTS. */
-    fc_ft_face_slot *cache = FASTCHART_G(ft_face_cache);
+    fc_ft_face_slot *cache = g->ft_face_cache;
     for (int i = 0; i < FC_FT_FACE_CACHE_N; i++) {
         if (cache[i].face) {
             FT_Done_Face(cache[i].face);
@@ -1355,11 +1355,11 @@ void fastchart_ft_library_shutdown(void)
             cache[i].data_len = 0;
         }
     }
-    if (FASTCHART_G(ft_lib) != NULL) {
-        FT_Done_FreeType(FASTCHART_G(ft_lib));
-        FASTCHART_G(ft_lib) = NULL;
+    if (g->ft_lib != NULL) {
+        FT_Done_FreeType(g->ft_lib);
+        g->ft_lib = NULL;
     }
-    FASTCHART_G(ft_lib_init_failed) = 0;
+    g->ft_lib_init_failed = 0;
 }
 
 /* Glyph cache lookup. Linear scan + swap-to-front. Returns NULL on

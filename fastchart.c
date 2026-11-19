@@ -152,8 +152,9 @@ static PHP_GINIT_FUNCTION(fastchart)
 
 static PHP_GSHUTDOWN_FUNCTION(fastchart)
 {
-    (void)fastchart_globals;
-    fastchart_ft_library_shutdown();
+    /* TSRM may run this dtor for another thread's globals (ts_free_id at
+     * module shutdown), so the parameter, not FASTCHART_G, names the state. */
+    fastchart_ft_library_shutdown(fastchart_globals);
 }
 
 /* Operator-only ceilings: scripts must not raise native-memory budgets.
