@@ -13,6 +13,7 @@
 */
 
 #include "fastchart_rasterize.h"
+#include "fastchart_atomic.h"
 #include "fastchart_target.h"
 #include "php_fastchart.h"
 #include <plutosvg.h>
@@ -336,13 +337,6 @@ static int fastchart_render_doc_to_frame(plutosvg_document_t *doc,
 	return rendered ? 0 : -1;
 }
 
-/* EG(timed_out) became zend_atomic_bool in 8.2 (php/php-src#8327);
- * on 8.1 it is sig_atomic_t, so read it directly. */
-#if PHP_VERSION_ID >= 80200
-#define FC_TIMED_OUT() zend_atomic_bool_load_ex(&EG(timed_out))
-#else
-#define FC_TIMED_OUT() EG(timed_out)
-#endif
 /* Render an already-loaded plutosvg document into pix and convert the
  * frame from plutovg's pre-multiplied BGRA to straight RGBA in place.
  * Returns 0 on success, -1 on rasterize failure, -2 when dash_budget,
@@ -385,7 +379,7 @@ static int fastchart_rasterize_doc(plutosvg_document_t *doc,
 		/* Honor max_execution_time: EG() is per-thread, so this is
 		 * ZTS-safe. The caller holds a zend_try whose catch frees the
 		 * frame, so bail out and let the VM raise the timeout Error. */
-		if ((y & 63) == 0 && FC_TIMED_OUT()) {
+		if ((y & 63) == 0 && fastchart_timed_out()) {
 			zend_bailout();
 		}
 		const unsigned char *row = pix->rgba + (size_t)y * pix->w * 4;

@@ -26,6 +26,7 @@
 #endif
 
 #include "fastchart_encoder.h"
+#include "fastchart_atomic.h"
 #include "zend_smart_str.h"
 
 #ifdef HAVE_LIBPNG
@@ -43,13 +44,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-/* EG(timed_out) became zend_atomic_bool in 8.2 (php/php-src#8327);
- * on 8.1 it is a plain bool, so read it directly. */
-#if PHP_VERSION_ID >= 80200
-#define FC_TIMED_OUT() zend_atomic_bool_load_ex(&EG(timed_out))
-#else
-#define FC_TIMED_OUT() EG(timed_out)
-#endif
 /* Same SIMD gates as fastchart_rasterize.c: x86 uses SSSE3 runtime
  * dispatch via raw CPUID (__builtin_cpu_supports drags in libgcc's
  * __cpu_model and breaks static/musl/zig dlopen);
@@ -336,7 +330,7 @@ int fastchart_encode_png_sink(fastchart_sink_t *sink,
 		 * a canvas that outlives the deadline used to run to the last
 		 * row before the VM could raise the timeout Error. The
 		 * zend_try above destroys the libpng structs on the way out. */
-		if ((y & 63) == 0 && FC_TIMED_OUT()) {
+		if ((y & 63) == 0 && fastchart_timed_out()) {
 			zend_bailout();
 		}
 		png_write_row(png, (png_bytep)row);
@@ -531,7 +525,7 @@ int fastchart_encode_jpeg_sink(fastchart_sink_t *sink,
 		 * ZTS-safe. Bail out to the nearest zend_try (which releases
 		 * the compress struct and rgb_row) so the VM can raise the
 		 * timeout Error instead of running the whole canvas first. */
-		if ((y & 63) == 0 && FC_TIMED_OUT()) {
+		if ((y & 63) == 0 && fastchart_timed_out()) {
 			zend_bailout();
 		}
 		const uint8_t *src = pix->rgba + (size_t)y * pix->w * 4;
@@ -661,7 +655,7 @@ static int fc_webp_progress(int percent, const WebPPicture *picture)
 	(void)picture;
 	/* libwebp reports client progress on the calling thread. Returning
 	 * false lets its worker joins and temporary allocations unwind. */
-	return !FC_TIMED_OUT();
+	return !fastchart_timed_out();
 }
 
 int fastchart_encode_webp_sink(fastchart_sink_t *sink,
@@ -699,7 +693,7 @@ int fastchart_encode_webp_sink(fastchart_sink_t *sink,
 	}
 	config.thread_level = 1;
 
-	if (FC_TIMED_OUT()) {
+	if (fastchart_timed_out()) {
 		zend_bailout();
 	}
 	/* The picture lives on the heap because WebPEncode mutates it after
@@ -735,7 +729,7 @@ int fastchart_encode_webp_sink(fastchart_sink_t *sink,
 	picture->progress_hook = fc_webp_progress;
 	volatile int enc_ok = 0;
 	zend_try {
-		if (FC_TIMED_OUT()) {
+		if (fastchart_timed_out()) {
 			zend_bailout();
 		}
 		enc_ok = WebPEncode(&config, picture);
@@ -746,7 +740,7 @@ int fastchart_encode_webp_sink(fastchart_sink_t *sink,
 	} zend_end_try();
 	WebPPictureFree(picture);
 	efree(picture);
-	if (FC_TIMED_OUT()) {
+	if (fastchart_timed_out()) {
 		zend_bailout();
 	}
 	return enc_ok && !sink->failed ? 0 : -1;
