@@ -554,6 +554,55 @@ jobs:
             exit 1
           fi
 
+  zts-embed:
+    name: PHP 8.4 ZTS embed - ASAN thread shutdown
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: validate
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            re2c bison autoconf pkg-config fonts-dejavu-core \
+            libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev
+
+      - name: Build ZTS PHP with the embed SAPI and ASAN
+        # scripts/zts-embed-gshutdown.sh links its driver against
+        # libphp.so, so this lane needs --enable-embed; setup-php ships
+        # no embed SAPI. GCC throughout so the driver, libphp.so and
+        # fastchart.so share one ASan runtime.
+        run: |
+          git clone --depth=1 --branch=PHP-8.4 https://github.com/php/php-src.git /tmp/php-src
+          cd /tmp/php-src
+          ./buildconf --force
+          CFLAGS="-fsanitize=address -g" LDFLAGS="-fsanitize=address" \
+          ./configure \
+            --enable-debug \
+            --enable-zts \
+            --disable-all \
+            --enable-cli \
+            --enable-embed=shared \
+            --prefix=/tmp/php-zts
+          make -j$(nproc)
+          make install
+
+      - name: Build fastchart against it
+        run: |
+          export PATH="/tmp/php-zts/bin:$PATH"
+          phpize
+          CFLAGS="-fsanitize=address -g" LDFLAGS="-fsanitize=address" \
+          ./configure --enable-fastchart --enable-fastchart-dev \
+            --with-php-config=/tmp/php-zts/bin/php-config
+          make -j$(nproc)
+
+      - name: Worker-thread GSHUTDOWN regression
+        run: scripts/zts-embed-gshutdown.sh /tmp/php-zts
+
   asan:
     name: PHP ${{ matrix.php }} - ASAN
     runs-on: ubuntu-latest

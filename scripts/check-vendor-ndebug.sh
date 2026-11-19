@@ -17,7 +17,7 @@ fi
 bad=0
 for obj in "${objs[@]}"; do
 	undef=$(nm --undefined-only "$obj")
-	if grep -qwE '__assert_fail|__assert_rtn|__assert' <<<"$undef"; then
+	if grep -qwE '_{2,3}assert(_fail|_rtn)?' <<<"$undef"; then
 		echo "assert() compiled in: $obj"
 		bad=1
 	fi
