@@ -140,7 +140,7 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
         : pal.text;
     const char *fmt = self->value_label_format
         ? ZSTR_VAL(self->value_label_format) : "%.0f";
-    for (int k = 0; k <= 5; k++) {
+    for (int k = 0; self->y_axis_visible && k <= 5; k++) {
         /* Keep the intermediate bounded by the finite axis maximum. */
         double v = y_axis_max * ((double)k / 5.0);
         int y = plot_y1 - (int)((double)k / 5.0 * (plot_y1 - plot_y0));
@@ -155,7 +155,7 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
             efree(buf);
         }
     }
-    for (int k = 0; k <= 4; k++) {
+    for (int k = 0; self->y_axis_visible && k <= 4; k++) {
         double pct = k * 25.0;
         int y = plot_y1 - (int)(pct / 100.0 * (plot_y1 - plot_y0));
         if (font) {
@@ -191,7 +191,7 @@ int fastchart_pareto_render_to_target(fastchart_pareto_obj *self, fastchart_targ
         fastchart_target_rect(t, bx, by, bar_w, bh, color, 1, 0);
         fastchart_target_rect(t, bx, by, bar_w, bh, pal.border, 0, 1);
 
-        if (font && self->bars[i].label && i % self->x_label_stride == 0) {
+        if (self->x_axis_visible && font && self->bars[i].label && i % self->x_label_stride == 0) {
             fastchart_text_draw(t, font, size, label_color,
                                 bx + bar_w / 2, plot_y1 + (int)(size * 1.4),
                                 FASTCHART_ALIGN_CENTER,

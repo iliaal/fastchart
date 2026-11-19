@@ -201,7 +201,7 @@ int fastchart_violin_render_to_target(fastchart_violin_obj *self, fastchart_targ
         }
         efree(sorted);
 
-        if (font && grp->label && g % self->x_label_stride == 0) {
+        if (self->x_axis_visible && font && grp->label && g % self->x_label_stride == 0) {
             fastchart_text_draw(t, font, size, label_color,
                                 (int)cx, plot_y1 + (int)(size * 1.1),
                                 FASTCHART_ALIGN_CENTER, grp->label, NULL, 0);
