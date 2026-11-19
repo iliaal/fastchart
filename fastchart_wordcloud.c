@@ -114,6 +114,7 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
     int placed_n = 0;
     long spiral_budget = 2000000L;
 	wc_spiral_point *spiral = NULL;
+	unsigned char *blocked = NULL;
 	int spiral_n = 0;
 	int spiral_cap = 0;
 
@@ -160,8 +161,24 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
 
         double bx = cx, by = cy;
         int ok = 0;
+        /* A step is in bounds only if |dx| <= ax and |dy| <= ay, so only
+         * while the spiral radius 1.5*sqrt(s) <= hypot(ax, ay). From s_far
+         * on (2px of slack for rounding) every step fails the bounds test,
+         * so the steps this word has left are charged to the budget in one
+         * subtraction instead of being walked. ax, ay >= 0 (impossible fits
+         * were skipped above) and plot coordinates are <= 65535, so s_far
+         * stays below 1e9 and fits a 32-bit long. */
+        double ax = (plot_x1 - plot_x0) / 2.0 - hw;
+        double ay = (plot_y1 - plot_y0) / 2.0 - hh;
+        double reach = (sqrt(ax * ax + ay * ay) + 2.0) / 1.5;
+        long s_far = (long)(reach * reach) + 1;
         for (long s = 0; s < WC_SPIRAL_MAX_STEPS && !ok && spiral_budget > 0;
              s++, spiral_budget--) {
+			if (s >= s_far) {
+				long rest = WC_SPIRAL_MAX_STEPS - s;
+				spiral_budget -= rest < spiral_budget ? rest : spiral_budget;
+				break;
+			}
 			if (s == spiral_n) {
 				if (spiral_n >= spiral_cap) {
 					int new_cap = spiral_cap > 0 ? spiral_cap * 2 : 1024;
@@ -171,6 +188,9 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
 					spiral = spiral
 						? erealloc(spiral, (size_t)new_cap * sizeof(*spiral))
 						: emalloc((size_t)new_cap * sizeof(*spiral));
+					blocked = blocked
+						? erealloc(blocked, (size_t)new_cap)
+						: emalloc((size_t)new_cap);
 					spiral_cap = new_cap;
 				}
 				double tt = (double)s;
@@ -178,8 +198,14 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
 				double rad = 1.5 * sqrt(tt);
 				spiral[s].dx = rad * cos(ang);
 				spiral[s].dy = rad * sin(ang);
+				blocked[s] = 0;
 				spiral_n++;
 			}
+			/* Step s is blocked once its centre lies within 0.5px of a
+			 * placed box: every later candidate there contains that
+			 * centre, so it fails the 1px-margin collision test below,
+			 * with half a pixel to spare for rounding. */
+			if (blocked[s]) continue;
 			bx = cx + spiral[s].dx;
 			by = cy + spiral[s].dy;
             wc_box cand = { bx - hw, by - hh, bx + hw, by + hh };
@@ -202,6 +228,10 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
                         if (!(cand.x1 < placed[p].x0 - 1 || cand.x0 > placed[p].x1 + 1 ||
                               cand.y1 < placed[p].y0 - 1 || cand.y0 > placed[p].y1 + 1)) {
                             ok = 0;
+                            if (bx >= placed[p].x0 - 0.5 && bx <= placed[p].x1 + 0.5 &&
+                                by >= placed[p].y0 - 0.5 && by <= placed[p].y1 + 0.5) {
+                                blocked[s] = 1;
+                            }
                             break;
                         }
                     }
@@ -280,6 +310,7 @@ int fastchart_wordcloud_render_to_target(fastchart_wordcloud_obj *self, fastchar
     efree(node_box);
     efree(node_next);
 	if (spiral) efree(spiral);
+	if (blocked) efree(blocked);
     fastchart_draw_text_annotations(t, (fastchart_obj *)self, &pal);
     return 0;
 }
