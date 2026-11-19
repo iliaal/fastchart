@@ -398,6 +398,19 @@ static int fastchart_rasterize_doc(plutosvg_document_t *doc,
 	return 0;
 }
 
+/* A frame reaches 256 MiB at the 64M-pixel cap, above twice the default
+ * memory_limit. On engines that queue memory-limit errors an infallible
+ * allocation that large crosses the hard limit, which terminates the
+ * process; the fallible one queues the error and returns NULL. */
+static uint8_t *fc_frame_alloc(int w, int h)
+{
+#ifdef ZEND_HAS_OOM
+	return safe_femalloc((size_t)w * (size_t)h, 4, 0, true);
+#else
+	return safe_emalloc((size_t)w * (size_t)h, 4, 0);
+#endif
+}
+
 int fastchart_rasterize_svg(const char *svg, size_t svg_len,
                             int target_w, int target_h,
                             fastchart_pixels_t *pix)
@@ -417,7 +430,8 @@ int fastchart_rasterize_svg(const char *svg, size_t svg_len,
 	}
 	/* Destination first; see fastchart_rasterize_doc's no-Zend-alloc
 	 * contract for the vendor-state window. */
-	pix->rgba = safe_emalloc((size_t)target_w * (size_t)target_h, 4, 0);
+	pix->rgba = fc_frame_alloc(target_w, target_h);
+	if (!pix->rgba) return -1;
 
 	plutosvg_document_t *doc = fastchart_load_svg(svg, svg_len);
 	if (!doc) {
@@ -527,8 +541,8 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 	 * would otherwise leak the malloc'd document persistently. */
 	int rc;
 	zend_try {
-		pix->rgba = safe_emalloc((size_t)iw * (size_t)ih, 4, 0);
-		rc = fastchart_rasterize_doc(doc, iw, ih, pix,
+		pix->rgba = fc_frame_alloc(iw, ih);
+		rc = !pix->rgba ? -1 : fastchart_rasterize_doc(doc, iw, ih, pix,
 		                             FC_MAX_DASH_COMMANDS,
 		                             FC_MAX_STROKE_POINTS,
 		                             FC_MAX_RASTER_WORK,
@@ -542,7 +556,7 @@ int fastchart_rasterize_svg_with_dims(const char *svg, size_t svg_len,
 		zend_bailout();
 	} zend_end_try();
 	plutosvg_document_destroy(doc);
-	if (rc != 0) {
+	if (rc != 0 && pix->rgba) {
 		efree(pix->rgba);
 		pix->rgba = NULL;
 	}

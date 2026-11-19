@@ -777,7 +777,8 @@ void fc_svg_emit_text_as_path(smart_str *buf,
 		const unsigned char *p = (const unsigned char *)text;
 		const unsigned char *e = p + text_len;
 		uint32_t cp;
-		while ((p = fc_utf8_next(p, e, &cp))) {
+		while (!fastchart_oom_pending()
+		       && (p = fc_utf8_next(p, e, &cp))) {
 			const fc_glyph_cache_entry *g =
 			    fastchart_resolve_glyph(face, (uint16_t)pix, cp);
 			if (!g) continue;

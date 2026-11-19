@@ -292,6 +292,7 @@ void fastchart_target_line(fastchart_target_t *t,
                             int x0, int y0, int x1, int y1,
                             int color, int thickness, int dash)
 {
+    if (fastchart_oom_pending()) return;
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) {
@@ -306,6 +307,7 @@ void fastchart_target_rect(fastchart_target_t *t,
                             int x, int y, int w, int h,
                             int color, int fill, int thickness)
 {
+    if (fastchart_oom_pending()) return;
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) {
@@ -320,7 +322,7 @@ void fastchart_target_polygon(fastchart_target_t *t,
                                const fastchart_point_t *pts, int n,
                                int color, int fill, int thickness)
 {
-    if (n < 2) return;
+    if (n < 2 || fastchart_oom_pending()) return;
     int xs_stack[256], ys_stack[256];
     int *xs = xs_stack, *ys = ys_stack;
     FASTCHART_SPLIT_POINTS(pts, n, xs, ys);
@@ -340,7 +342,7 @@ void fastchart_target_polyline(fastchart_target_t *t,
                                 const fastchart_point_t *pts, int n,
                                 int color, int thickness, int dash)
 {
-    if (n < 2) return;
+    if (n < 2 || fastchart_oom_pending()) return;
     int xs_stack[256], ys_stack[256];
     int *xs = xs_stack, *ys = ys_stack;
     FASTCHART_SPLIT_POINTS(pts, n, xs, ys);
@@ -362,6 +364,7 @@ void fastchart_target_arc(fastchart_target_t *t,
                            double start_deg, double end_deg,
                            int color, int fill, int thickness)
 {
+    if (fastchart_oom_pending()) return;
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) {
@@ -378,6 +381,7 @@ void fastchart_target_ellipse(fastchart_target_t *t,
                                int cx, int cy, int rx, int ry,
                                int color, int fill, int thickness)
 {
+    if (fastchart_oom_pending()) return;
     uint32_t rgba = fastchart_target_color_to_rgba(t, color);
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) {
@@ -1746,7 +1750,7 @@ void fastchart_target_image(fastchart_target_t *t,
                              int x, int y, int w, int h,
                              const char *path)
 {
-    if (w <= 0 || h <= 0) return;
+    if (w <= 0 || h <= 0 || fastchart_oom_pending()) return;
 
 	fastchart_target_image_cache_entry *entry =
         fastchart_target_image_cache_get(t, path);
@@ -1825,7 +1829,7 @@ void fastchart_target_gradient_rect(fastchart_target_t *t,
                                      uint32_t from_rgb, uint32_t to_rgb,
                                      int dir)
 {
-    if (w <= 0 || h <= 0) return;
+    if (w <= 0 || h <= 0 || fastchart_oom_pending()) return;
 #ifdef HAVE_FASTCHART_PDF
     if (t->kind == FASTCHART_TARGET_PDF) {
         fc_pdf_emit_gradient_rect(t->u.pdf.state, x, y, w, h,
@@ -1851,7 +1855,7 @@ void fastchart_target_gradient_polygon(fastchart_target_t *t,
                                         uint32_t from_rgb, uint32_t to_rgb,
                                         int dir)
 {
-    if (n < 3) return;
+    if (n < 3 || fastchart_oom_pending()) return;
     int xs_stack[256], ys_stack[256];
     int *xs = xs_stack, *ys = ys_stack;
     FASTCHART_SPLIT_POINTS(pts, n, xs, ys);

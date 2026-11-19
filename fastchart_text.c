@@ -190,7 +190,7 @@ int fastchart_text_draw(fastchart_target_t *t,
      * could split a UTF-8 sequence or truncate long lines) is needed. */
     double line_y = (double)y;
     const char *p = text;
-    while (1) {
+    while (!fastchart_oom_pending()) {
         const char *end = strchr(p, '\n');
         size_t len = end ? (size_t)(end - p) : strlen(p);
 
@@ -277,7 +277,7 @@ int fastchart_text_draw_rotated(fastchart_target_t *t,
 
     int line_no = 0;
     const char *p = text;
-    while (1) {
+    while (!fastchart_oom_pending()) {
         const char *end = strchr(p, '\n');
         size_t len = end ? (size_t)(end - p) : strlen(p);
 

@@ -30,6 +30,30 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+/* Engines that define ZEND_HAS_OOM() let an allocation that crosses
+ * memory_limit succeed and queue the error until control returns to the
+ * VM. Output that keeps growing after that reaches the hard limit (by
+ * default twice memory_limit), where the engine _exit()s the process with
+ * no shutdown, taking every request a threaded SAPI is serving with it.
+ * Emitters stop once an error is queued; the render entries then return
+ * without throwing so the engine reports the memory-limit error. Older
+ * engines bail out of the allocation instead, so nothing is queued. */
+static zend_always_inline bool fastchart_oom_pending(void)
+{
+#ifdef ZEND_HAS_OOM
+	return ZEND_HAS_OOM();
+#else
+	return false;
+#endif
+}
+
+/* Failure return for a render entry point: a queued memory-limit error
+ * stands in for the exception RETURN_THROWS() expects. */
+#define FASTCHART_RETURN_FAILED() do { \
+		if (fastchart_oom_pending()) return; \
+		RETURN_THROWS(); \
+	} while (0)
+
 /* Lazy FreeType library, per-thread under ZTS; GSHUTDOWN releases it. */
 FT_Library fastchart_ft_library(void);
 struct _zend_fastchart_globals;

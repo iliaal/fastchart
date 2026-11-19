@@ -4846,6 +4846,9 @@ static int fastchart_svg_to_pixels(
         ZSTR_VAL(svg), ZSTR_LEN(svg),
         FC_IMAGE_MAX_DIM, max_pixels,
         pix, &w, &h);
+    if (rc != 0 && fastchart_oom_pending()) {
+        return -1;
+    }
     if (rc == -1) {
         zend_value_error(
             "%s() SVG could not be parsed, has no resolvable intrinsic "
@@ -4954,7 +4957,7 @@ ZEND_METHOD(FastChart_Chart, svgToPng)
 
     fastchart_pixels_t pix;
     if (fastchart_svg_to_pixels(svg, "FastChart\\Chart::svgToPng", &pix) != 0) {
-        RETURN_THROWS();
+        FASTCHART_RETURN_FAILED();
     }
 
     smart_str out = {0};
@@ -5004,7 +5007,7 @@ ZEND_METHOD(FastChart_Chart, svgToJpeg)
 
     fastchart_pixels_t pix;
     if (fastchart_svg_to_pixels(svg, "FastChart\\Chart::svgToJpeg", &pix) != 0) {
-        RETURN_THROWS();
+        FASTCHART_RETURN_FAILED();
     }
 
     /* Composite over the caller's bg color BEFORE encoding so JPEG's
@@ -5077,7 +5080,7 @@ ZEND_METHOD(FastChart_Chart, svgToWebp)
 
     fastchart_pixels_t pix;
     if (fastchart_svg_to_pixels(svg, "FastChart\\Chart::svgToWebp", &pix) != 0) {
-        RETURN_THROWS();
+        FASTCHART_RETURN_FAILED();
     }
 
     smart_str out = {0};
@@ -6707,7 +6710,7 @@ int fastchart_build_svg(smart_str *out, int width, int height, int dpi,
 	}
 
 	int rc = render(object, ce, &target);
-	bool failed = rc != 0 || EG(exception);
+	bool failed = rc != 0 || EG(exception) || fastchart_oom_pending();
 	if (!failed) {
 		fc_svg_emit_g_close(out);
 		if (!fragment_only) {
@@ -6860,7 +6863,9 @@ static int fastchart_chart_render_to_sink(fastchart_obj *self,
             ZSTR_VAL(svg_buf.s), ZSTR_LEN(svg_buf.s),
             alloc_w, alloc_h, &pix) != 0) {
 		smart_str_free(&svg_buf);
-		zend_throw_error(NULL, "FastChart: plutovg rasterization failed");
+		if (!fastchart_oom_pending()) {
+			zend_throw_error(NULL, "FastChart: plutovg rasterization failed");
+		}
 		return -1;
     }
     zend_string_release(svg_buf.s);
@@ -6926,7 +6931,7 @@ static void fastchart_render_to_string(INTERNAL_FUNCTION_PARAMETERS,
     if (fastchart_chart_render_to_buf(self, Z_OBJCE_P(ZEND_THIS), format,
                                       (int)quality, "FastChart",
                                       &out_buf) != 0) {
-        RETURN_THROWS();
+        FASTCHART_RETURN_FAILED();
     }
     RETURN_STR(out_buf.s);
 }
@@ -6992,7 +6997,7 @@ static void fastchart_render_to_svg(INTERNAL_FUNCTION_PARAMETERS, int fragment_o
 			(int)self->width, (int)self->height, (int)self->dpi,
 			(int)self->svg_text_mode, fragment_only, "fastchart", id_prefix,
 			dispatch_svg_render, self, Z_OBJCE_P(ZEND_THIS)) != 0) {
-		RETURN_THROWS();
+		FASTCHART_RETURN_FAILED();
     }
     /* Hand the smart_str's zend_string (already NUL-terminated by
      * smart_str_0) to the return slot, transferring refcount=1 ownership. */
@@ -8588,7 +8593,7 @@ static void fastchart_render_to_svg_file(INTERNAL_FUNCTION_PARAMETERS, zend_stri
 			(int)self->width, (int)self->height, (int)self->dpi,
 			(int)self->svg_text_mode, 0, "fastchart", NULL,
 			dispatch_svg_render, self, Z_OBJCE_P(ZEND_THIS)) != 0) {
-		RETURN_THROWS();
+		FASTCHART_RETURN_FAILED();
     }
 
     zend_long written = 0;
@@ -8719,7 +8724,7 @@ ZEND_METHOD(FastChart_Chart, renderToFile)
 	} zend_end_try();
 	if (rc != 0) {
 		fastchart_atomic_file_abort(&file);
-		RETURN_THROWS();
+		FASTCHART_RETURN_FAILED();
 	}
 	zend_long written = 0;
 	if (fastchart_atomic_file_commit(&file, sink.bytes_written,
