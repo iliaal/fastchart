@@ -179,14 +179,15 @@ Per-worker RSS sizing rule of thumb (`max_render_pixels` x 4 +
 `max_image_cache_bytes`, times the worker count under ZTS) lives in
 [`SECURITY.md`](SECURITY.md) ("Resource sizing for operators").
 
-Numeric axis tick labels and numeric category labels follow the C
-library's `LC_NUMERIC` locale: after `setlocale(LC_NUMERIC,
-'de_DE.UTF-8')`, a tick reads `0,5` instead of `0.5`. Under ZTS the
-locale is process-wide, so a `setlocale()` call in one request changes
-the labels that every other thread renders, and in FrankenPHP worker
-mode it persists into later requests on the same worker. In a threaded
-SAPI, leave `LC_NUMERIC` at `C`, or pass category labels as
-strings, which are drawn as given.
+Axis tick labels, `setShowValues()` value labels, and numeric
+category labels follow the C library's `LC_NUMERIC` locale: after
+`setlocale(LC_NUMERIC, 'de_DE.UTF-8')`, a tick reads `0,5` instead of
+`0.5`. On Linux and macOS ZTS builds the locale is process-wide, so a
+`setlocale()` call in one request changes the labels that every other
+thread renders, and in FrankenPHP worker mode it persists into later
+requests on the same worker. Windows ZTS builds keep the locale per
+thread. In a threaded SAPI, leave `LC_NUMERIC` at `C`, or pass
+category labels as strings, which are drawn as given.
 
 Call `renderSvg()` on the same chart object for vector output:
 dashboards, print, anywhere infinite-zoom matters.
