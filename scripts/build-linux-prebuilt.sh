@@ -22,6 +22,11 @@ if [[ $have != "$want" ]]; then
 	echo "::error::build image has PHP $have, expected $want" >&2
 	exit 1
 fi
+# The release assets are NTS. Official php images are ZTS from 8.6 on.
+if [[ $(php -n -r 'echo (int) PHP_ZTS;') != 0 ]]; then
+	echo "::error::build image PHP $have is ZTS; prebuilts must build against NTS" >&2
+	exit 1
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq

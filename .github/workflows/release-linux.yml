@@ -21,12 +21,14 @@ name: Release Linux & macOS binaries
 # load and render an SVG large enough to grow its smart_str on both the
 # oldest and the newest patch (scripts/prebuilt-abi-smoke.sh/.php).
 #
-# 8.6.0 is the only 8.6 release, so its oldest patch is also its newest,
-# and setup-php still serves '8.6' from its nightly channel. The 8.6 slots
-# therefore skip setup-php: Linux smoke-tests in the 8.6.0 image and macOS
-# in the 8.6.0 tarball build. Move PHP86_NEWEST_IMAGE to each new 8.6
-# patch, and return the 8.6 slots to setup-php (setup_php=1) once
-# setup-php ships 8.6 as a stable version.
+# Official php images are ZTS-only from 8.6 on (docker-library/php#1686), so
+# the 8.6 Linux slots build an NTS PHP from the checksum-pinned 8.6.0
+# tarball inside the digest-pinned debian:bookworm-slim base those images
+# use (scripts/build-linux-php.sh), commit it as a local image, and treat it
+# as both the oldest and the newest patch: 8.6.0 is the only 8.6 release.
+# Homebrew's php@8.6 that setup-php installs on macOS is built from a
+# php-src commit behind the php-8.6.0 tag, so the macOS 8.6 slot skips
+# setup-php and smoke-tests on its 8.6.0 tarball build alone.
 #
 # Linux build statically links the four codec deps (freetype, libpng,
 # libjpeg-turbo, libwebp). Otherwise the resulting .so picks up the
@@ -76,6 +78,7 @@ on:
       - 'fastchart*.h'
       - 'vendor/**'
       - 'scripts/build-linux-prebuilt.sh'
+      - 'scripts/build-linux-php.sh'
       - 'scripts/prebuilt-abi-smoke.*'
   release:
     types: [published]
@@ -118,8 +121,7 @@ env:
   PHP85_NEWEST_IMAGE: 'php:8.5.12-cli@sha256:635a4b998025ab269194639a5549c6fdcd9b4f88ec8cd761b092de8653d40663'
   PHP86_OLDEST: '8.6.0'
   PHP86_OLDEST_SHA256: '5f84beaa3d763aee1e4feed99bf54ec692c383b322e25626807b589238c3a087'
-  PHP86_OLDEST_IMAGE: 'php:8.6.0-cli-bookworm@sha256:77741fea2130560b85dd3ac693140ce09424ad9df46da1203a5a896e15b44874'
-  PHP86_NEWEST_IMAGE: 'php:8.6.0-cli@sha256:44b2350e0d53a14a91e37b0635e0255971e9e3963a038ff7db6b86beca9cf556'
+  PHP86_BASE_IMAGE: 'debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc'
 
 jobs:
   build:
@@ -149,10 +151,15 @@ jobs:
           MATRIX_PHP: ${{ matrix.php }}
         run: |
           set -euo pipefail
+          setup_php=1 nts_from_tarball=0
           case "$MATRIX_PHP" in
-            8.4) oldest=$PHP84_OLDEST sha=$PHP84_OLDEST_SHA256 old_img=$PHP84_OLDEST_IMAGE new_img=$PHP84_NEWEST_IMAGE setup_php=1 ;;
-            8.5) oldest=$PHP85_OLDEST sha=$PHP85_OLDEST_SHA256 old_img=$PHP85_OLDEST_IMAGE new_img=$PHP85_NEWEST_IMAGE setup_php=1 ;;
-            8.6) oldest=$PHP86_OLDEST sha=$PHP86_OLDEST_SHA256 old_img=$PHP86_OLDEST_IMAGE new_img=$PHP86_NEWEST_IMAGE setup_php=0 ;;
+            8.4) oldest=$PHP84_OLDEST sha=$PHP84_OLDEST_SHA256 old_img=$PHP84_OLDEST_IMAGE new_img=$PHP84_NEWEST_IMAGE ;;
+            8.5) oldest=$PHP85_OLDEST sha=$PHP85_OLDEST_SHA256 old_img=$PHP85_OLDEST_IMAGE new_img=$PHP85_NEWEST_IMAGE ;;
+            8.6)
+              oldest=$PHP86_OLDEST sha=$PHP86_OLDEST_SHA256 old_img=$PHP86_BASE_IMAGE new_img=$PHP86_BASE_IMAGE
+              nts_from_tarball=1
+              if [[ "$RUNNER_OS" == macOS ]]; then setup_php=0; fi
+              ;;
             *) echo "::error::no oldest-patch pin for PHP $MATRIX_PHP"; exit 1 ;;
           esac
           {
@@ -161,13 +168,15 @@ jobs:
             echo "OLDEST_IMAGE_REF=$old_img"
             echo "NEWEST_IMAGE_REF=$new_img"
             echo "NEWEST_FROM_SETUP_PHP=$setup_php"
+            echo "NTS_FROM_TARBALL=$nts_from_tarball"
           } >> "$GITHUB_ENV"
 
       # The newest patch of the minor. It runs the existing smoke test below;
       # the binary itself is compiled against the oldest patch.
       - name: Setup PHP
         if: env.NEWEST_FROM_SETUP_PHP == '1'
-        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        # setup-php main until a release marks PHP 8.6 stable; return to a tagged release then.
+        uses: shivammathur/setup-php@292f25acb388a711c0c758f382e5c3109a391dd7 # main # zizmor: ignore[stale-action-refs,ref-version-mismatch]
         with:
           php-version: ${{ matrix.php }}
           coverage: none
@@ -181,7 +190,8 @@ jobs:
       # Anonymous pulls from shared runner IPs hit both Docker Hub's and ECR
       # Public's per-IP limits. ghcr.io/iliaal/php and ECR Public mirror the
       # official images under the same digests, so any source yields the
-      # pinned image.
+      # pinned image. The 8.6 debian base has no ghcr.io/iliaal mirror and
+      # comes from ECR Public or Docker Hub.
       - name: Pull the oldest and newest patch images (Linux)
         if: startsWith(matrix.os, 'ubuntu-')
         run: |
@@ -206,6 +216,26 @@ jobs:
           }
           pull OLDEST_IMAGE "$OLDEST_IMAGE_REF"
           pull NEWEST_IMAGE "$NEWEST_IMAGE_REF"
+
+      # The committed image stands in for an official php:<oldest>-cli image:
+      # PHP in /usr/local, PHPIZE_DEPS set, the tag carrying the version that
+      # prebuilt-abi-smoke.sh expects PHP to report.
+      - name: Build NTS PHP from the release tarball in the base image (Linux)
+        if: startsWith(matrix.os, 'ubuntu-') && env.NTS_FROM_TARBALL == '1'
+        env:
+          PHPIZE_DEPS: autoconf dpkg-dev file g++ gcc libc-dev make pkg-config re2c
+        run: |
+          set -euo pipefail
+          image="fastchart-php:$PHP_OLDEST-cli-nts"
+          cid=$(docker create -e PHPIZE_DEPS -v "$PWD/scripts:/scripts:ro" "$OLDEST_IMAGE" \
+            /scripts/build-linux-php.sh "$PHP_OLDEST" "$PHP_OLDEST_SHA256")
+          docker start -a "$cid"
+          docker commit --change "ENV PHPIZE_DEPS=\"$PHPIZE_DEPS\"" --change 'CMD ["php", "-a"]' "$cid" "$image" > /dev/null
+          docker rm "$cid" > /dev/null
+          {
+            echo "OLDEST_IMAGE=$image"
+            echo "NEWEST_IMAGE=$image"
+          } >> "$GITHUB_ENV"
 
       # The codec libs and the extension both build inside the oldest-patch
       # image, so the .so sees that patch's headers and bookworm's glibc.
@@ -353,11 +383,6 @@ jobs:
           PHP
           if [[ "$NEWEST_FROM_SETUP_PHP" == 1 ]]; then
             php -d extension="$SO" "$RUNNER_TEMP/release-smoke.php"
-          elif [[ "$RUNNER_OS" == Linux ]]; then
-            docker run --pull never --rm \
-              -v "$SO:/ext/fastchart.so:ro" \
-              -v "$RUNNER_TEMP/release-smoke.php:/release-smoke.php:ro" \
-              "$NEWEST_IMAGE" php -d extension=/ext/fastchart.so /release-smoke.php
           else
             "$RUNNER_TEMP/php-oldest/bin/php" -d extension="$SO" "$RUNNER_TEMP/release-smoke.php"
           fi

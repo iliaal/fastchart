@@ -22,7 +22,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+      # setup-php main until a release marks PHP 8.6 stable; return to a tagged release then.
+      - uses: shivammathur/setup-php@292f25acb388a711c0c758f382e5c3109a391dd7 # main # zizmor: ignore[stale-action-refs,ref-version-mismatch]
         with:
           php-version: '8.4'
           tools: composer
@@ -40,7 +41,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+      - uses: shivammathur/setup-php@292f25acb388a711c0c758f382e5c3109a391dd7 # main # zizmor: ignore[stale-action-refs,ref-version-mismatch]
         with:
           php-version: '8.4'
           # gen_stub.php parses the stub via the tokenizer extension and
@@ -82,7 +83,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+      - uses: shivammathur/setup-php@292f25acb388a711c0c758f382e5c3109a391dd7 # main # zizmor: ignore[stale-action-refs,ref-version-mismatch]
         with:
           php-version: '8.4'
           extensions: gd
@@ -112,7 +113,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+      - uses: shivammathur/setup-php@292f25acb388a711c0c758f382e5c3109a391dd7 # main # zizmor: ignore[stale-action-refs,ref-version-mismatch]
         with:
           php-version: '8.4'
           tools: phpize, php-config
@@ -202,7 +203,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.1', '8.2', '8.3', '8.4', '8.5']
+        php: ['8.1', '8.2', '8.3', '8.4', '8.5', '8.6']
         cc: ['gcc']
         os: ['ubuntu-latest']
         # Both extra lanes must OVERWRITE an original matrix value to
@@ -249,7 +250,7 @@ jobs:
             clang libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev pkg-config
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        uses: shivammathur/setup-php@292f25acb388a711c0c758f382e5c3109a391dd7 # main # zizmor: ignore[stale-action-refs,ref-version-mismatch]
         with:
           php-version: ${{ matrix.php }}
           extensions: gd
@@ -363,155 +364,17 @@ jobs:
             exit 1
           fi
 
-      - name: 8.5 E_ALL deprecation gate
-        # The matrix covers 8.1 through 8.5 but nothing fails on a new
+      - name: E_ALL deprecation gate (8.5, 8.6)
+        # The matrix covers 8.1 through 8.6 but nothing fails on a new
         # E_DEPRECATED: 8.5 promotes several long-deprecated behaviors
         # (notably imagedestroy() on GdImage; the suite never calls it,
         # see tests/443). Run the representative sweep in
-        # scripts/deprecation-gate.php under E_ALL on the newest lane
-        # and fail on the first deprecation.
-        if: matrix.php == '8.5'
+        # scripts/deprecation-gate.php under E_ALL on the two newest
+        # lanes and fail on the first deprecation.
+        if: matrix.php == '8.5' || matrix.php == '8.6'
         run: |
           php -d error_reporting=E_ALL -d display_errors=1 \
             -d extension=$(pwd)/modules/fastchart.so \
-            scripts/deprecation-gate.php
-
-  linux-php-src:
-    # setup-php does not ship 8.6 as a stable version yet ('8.6' is still
-    # its nightly channel), so the 8.6 lane builds a release-mode
-    # (non-debug) PHP from the checksum-pinned php.net 8.6.0 tarball.
-    # Extension set matches the ASAN lane: the suite declares only gd and
-    # simplexml.
-    name: PHP ${{ matrix.php }} (gcc) - Linux (php.net ${{ matrix.php-release }} tarball)
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - php: '8.6'
-            php-release: '8.6.0'
-            php-release-sha256: '5f84beaa3d763aee1e4feed99bf54ec692c383b322e25626807b589238c3a087'
-    env:
-      PHP_RELEASE: ${{ matrix.php-release }}
-      PHP_RELEASE_SHA256: ${{ matrix.php-release-sha256 }}
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            re2c bison autoconf pkg-config \
-            libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev libgd-dev \
-            libxml2-dev
-
-      - name: Build PHP ${{ matrix.php-release }} from the release tarball
-        run: |
-          set -euo pipefail
-          curl -fsSL --retry 3 -o /tmp/php-src.tar.xz "https://www.php.net/distributions/php-${PHP_RELEASE}.tar.xz"
-          echo "${PHP_RELEASE_SHA256}  /tmp/php-src.tar.xz" | sha256sum -c -
-          mkdir /tmp/php-src
-          tar -xJf /tmp/php-src.tar.xz -C /tmp/php-src --strip-components=1
-          cd /tmp/php-src
-          ./configure \
-            --disable-debug \
-            --disable-zts \
-            --disable-all \
-            --enable-cli \
-            --enable-gd \
-            --with-external-gd \
-            --with-libxml \
-            --enable-simplexml \
-            --prefix=/tmp/php-src-install
-          make -j"$(nproc)"
-          make install
-          /tmp/php-src-install/bin/php -v
-          test "$(/tmp/php-src-install/bin/php -n -r 'echo PHP_VERSION, (int) PHP_ZTS, (int) PHP_DEBUG;')" = "${PHP_RELEASE}00"
-
-      - name: Build extension
-        run: |
-          export PATH="/tmp/php-src-install/bin:$PATH"
-          export CC=gcc
-          phpize
-          ./configure --enable-fastchart --enable-fastchart-dev \
-            --with-php-config=/tmp/php-src-install/bin/php-config
-          set -o pipefail
-          make -j"$(nproc)" 2>&1 | tee /tmp/build.log
-          set +o pipefail
-          WARNINGS=$(grep -c 'warning:' /tmp/build.log || true)
-          if [ "$WARNINGS" -gt 0 ]; then
-            echo "::error::Build produced $WARNINGS warning(s) with gcc on PHP ${PHP_RELEASE}"
-            exit 1
-          fi
-
-      - name: Guard against non-static-linkable runtime symbols
-        run: |
-          if nm modules/fastchart.so | grep -E '__cpu_model|__cpu_indicator_init'; then
-            echo "::error::fastchart.so references libgcc cpu-feature symbols (__builtin_cpu_supports?); breaks static/musl/zig-cc dlopen; use __get_cpuid"
-            exit 1
-          fi
-          echo "symbol audit: no libgcc cpu-feature symbols"
-
-      - name: Verify gd capabilities (guard against silent mass-skips)
-        run: |
-          /tmp/php-src-install/bin/php -r '
-            if (!extension_loaded("gd")) {
-              fwrite(STDERR, "gd not built into PHP; ~91 raster round-trip tests would skip silently\n");
-              exit(1);
-            }
-            $i = gd_info();
-            $need = ["WebP Support", "JPEG Support", "FreeType Support", "PNG Support"];
-            $missing = [];
-            foreach ($need as $k) { if (empty($i[$k])) { $missing[] = $k; } }
-            if ($missing) {
-              fwrite(STDERR, "gd is missing: " . implode(", ", $missing) .
-                "; raster round-trip tests would skip silently\n");
-              exit(1);
-            }
-            echo "gd capabilities OK: " . implode(", ", $need) . "\n";
-          '
-
-      - name: Run tests
-        run: |
-          export TEST_PHP_EXECUTABLE=/tmp/php-src-install/bin/php
-          # gd is compiled in, so -d extension=gd would only add
-          # "Module already loaded" warnings.
-          TEST_PHP_ARGS="-d extension=$PWD/modules/fastchart.so"
-          export TEST_PHP_ARGS
-          export NO_INTERACTION=1
-          set +e
-          "$TEST_PHP_EXECUTABLE" run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt
-          rc=${PIPESTATUS[0]}
-          set -e
-          if [ "$rc" -ne 0 ]; then
-            echo "::error::run-tests.php exited $rc on PHP ${PHP_RELEASE} - Linux (crash / BORK / aborted before summary)"
-            grep -E '^FAIL\b|^FAILED TEST|^BORK' /tmp/test-output.txt || true
-            exit 1
-          fi
-          if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
-            echo "::error::Tests failed on PHP ${PHP_RELEASE} - Linux"
-            grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
-            exit 1
-          fi
-          # Same skip budget as the Linux lane: gd is loaded, no pdfio.
-          SKIPPED=$(grep -oP '^Tests skipped\s*:\s*\K[0-9]+' /tmp/test-output.txt | head -1)
-          SKIPPED=${SKIPPED:-0}
-          echo "Tests skipped: $SKIPPED (ceiling 25)"
-          if [ "$SKIPPED" -gt 25 ]; then
-            echo "::error::Skip count $SKIPPED exceeds ceiling 25 on PHP ${PHP_RELEASE} - Linux: a capability likely vanished (gd/webp/fonts); tests are hiding in the skip counter"
-            grep -E '^SKIP\b' /tmp/test-output.txt || true
-            exit 1
-          fi
-
-      - name: E_ALL deprecation gate
-        # Newest-release counterpart of the 8.5 gate in the Linux lane.
-        run: |
-          /tmp/php-src-install/bin/php -d error_reporting=E_ALL -d display_errors=1 \
-            -d extension="$PWD/modules/fastchart.so" \
             scripts/deprecation-gate.php
 
   pdf:
@@ -522,9 +385,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Oldest + current + newest: the pdfio C API surface the backend
-        # links against must hold across the supported PHP range.
-        php: ['8.1', '8.4', '8.5']
+        # Oldest + current + the two newest: the pdfio C API surface the
+        # backend links against must hold across the supported PHP range.
+        php: ['8.1', '8.4', '8.5', '8.6']
     env:
       # Keep in sync with the `pinned:` in .upstream/pdfio.yml.
       PDFIO_VERSION: '1.6.4'
@@ -558,7 +421,7 @@ jobs:
           sudo make install
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        uses: shivammathur/setup-php@292f25acb388a711c0c758f382e5c3109a391dd7 # main # zizmor: ignore[stale-action-refs,ref-version-mismatch]
         with:
           php-version: ${{ matrix.php }}
           extensions: gd
@@ -875,7 +738,7 @@ jobs:
         run: brew install freetype libpng jpeg-turbo webp pkg-config
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        uses: shivammathur/setup-php@292f25acb388a711c0c758f382e5c3109a391dd7 # main # zizmor: ignore[stale-action-refs,ref-version-mismatch]
         with:
           php-version: ${{ matrix.php }}
           extensions: gd
