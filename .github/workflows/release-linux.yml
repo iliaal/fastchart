@@ -1,17 +1,17 @@
 name: Release Linux & macOS binaries
 
 # Release/manual runs build .so binaries for Linux glibc (x86_64 + arm64)
-# and macOS arm64 at PHP 8.4 and 8.5 (NTS only, ZTS lives in the Windows
-# lane). A path-filtered pull request run exercises one representative
-# Linux/PHP 8.4 static-codec build before the release exists. Release and
+# and macOS arm64 at PHP 8.4, 8.5, and 8.6 (NTS only, ZTS lives in the
+# Windows lane). A path-filtered pull request run exercises one
+# representative Linux/PHP 8.4 static-codec build before the release exists. Release and
 # manual matrix slots package their binaries; only a release event uploads
 # them using PIE's pre-packaged-binary naming convention.
 #
 # Each binary compiles against the OLDEST patch release of its PHP minor
-# (8.4.1, since 8.4.0 was never released, and 8.5.0). PHP promises only that a
-# module built on an older patch loads on a newer one: 8.4.27 and 8.5.12
-# route the inline smart_str_alloc() through the new smart_str_ferealloc()
-# export, so a module compiled against their headers dies with "undefined
+# (8.4.1, since 8.4.0 was never released, 8.5.0, and 8.6.0). PHP promises
+# only that a module built on an older patch loads on a newer one: 8.4.27
+# and 8.5.12 route the inline smart_str_alloc() through the new
+# smart_str_ferealloc() export, so a module compiled against their headers dies with "undefined
 # symbol" on every earlier patch. Linux builds inside the digest-pinned
 # official php:<oldest>-cli-bookworm image, which also holds the glibc floor
 # at bookworm's 2.36; macOS builds PHP from the checksum-pinned php.net
@@ -20,6 +20,13 @@ name: Release Linux & macOS binaries
 # oldest patch's php binary or a library it links, and every binary must
 # load and render an SVG large enough to grow its smart_str on both the
 # oldest and the newest patch (scripts/prebuilt-abi-smoke.sh/.php).
+#
+# 8.6.0 is the only 8.6 release, so its oldest patch is also its newest,
+# and setup-php still serves '8.6' from its nightly channel. The 8.6 slots
+# therefore skip setup-php: Linux smoke-tests in the 8.6.0 image and macOS
+# in the 8.6.0 tarball build. Move PHP86_NEWEST_IMAGE to each new 8.6
+# patch, and return the 8.6 slots to setup-php (setup_php=1) once
+# setup-php ships 8.6 as a stable version.
 #
 # Linux build statically links the four codec deps (freetype, libpng,
 # libjpeg-turbo, libwebp). Otherwise the resulting .so picks up the
@@ -109,6 +116,10 @@ env:
   PHP85_OLDEST_SHA256: '39cb6e4acd679b574d3d3276f148213e935fc25f90403eb84fb1b836a806ef1e'
   PHP85_OLDEST_IMAGE: 'php:8.5.0-cli-bookworm@sha256:4ff93cd1b053c4d5ff468ced40962092a350a8c86798fee96e807bc9b383ec75'
   PHP85_NEWEST_IMAGE: 'php:8.5.12-cli@sha256:635a4b998025ab269194639a5549c6fdcd9b4f88ec8cd761b092de8653d40663'
+  PHP86_OLDEST: '8.6.0'
+  PHP86_OLDEST_SHA256: '5f84beaa3d763aee1e4feed99bf54ec692c383b322e25626807b589238c3a087'
+  PHP86_OLDEST_IMAGE: 'php:8.6.0-cli-bookworm@sha256:77741fea2130560b85dd3ac693140ce09424ad9df46da1203a5a896e15b44874'
+  PHP86_NEWEST_IMAGE: 'php:8.6.0-cli@sha256:44b2350e0d53a14a91e37b0635e0255971e9e3963a038ff7db6b86beca9cf556'
 
 jobs:
   build:
@@ -125,9 +136,9 @@ jobs:
         # avoid silent runner shifts that would change the toolchain /
         # glibc baseline on published release assets without a repo diff.
         # Pull requests run only the representative x86_64/PHP 8.4 slot;
-        # release and manual events retain the full 3x2 matrix.
+        # release and manual events retain the full 3x3 matrix.
         os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-15"]') }}
-        php: ${{ fromJSON(github.event_name == 'pull_request' && '["8.4"]' || '["8.4","8.5"]') }}
+        php: ${{ fromJSON(github.event_name == 'pull_request' && '["8.4"]' || '["8.4","8.5","8.6"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -139,8 +150,9 @@ jobs:
         run: |
           set -euo pipefail
           case "$MATRIX_PHP" in
-            8.4) oldest=$PHP84_OLDEST sha=$PHP84_OLDEST_SHA256 old_img=$PHP84_OLDEST_IMAGE new_img=$PHP84_NEWEST_IMAGE ;;
-            8.5) oldest=$PHP85_OLDEST sha=$PHP85_OLDEST_SHA256 old_img=$PHP85_OLDEST_IMAGE new_img=$PHP85_NEWEST_IMAGE ;;
+            8.4) oldest=$PHP84_OLDEST sha=$PHP84_OLDEST_SHA256 old_img=$PHP84_OLDEST_IMAGE new_img=$PHP84_NEWEST_IMAGE setup_php=1 ;;
+            8.5) oldest=$PHP85_OLDEST sha=$PHP85_OLDEST_SHA256 old_img=$PHP85_OLDEST_IMAGE new_img=$PHP85_NEWEST_IMAGE setup_php=1 ;;
+            8.6) oldest=$PHP86_OLDEST sha=$PHP86_OLDEST_SHA256 old_img=$PHP86_OLDEST_IMAGE new_img=$PHP86_NEWEST_IMAGE setup_php=0 ;;
             *) echo "::error::no oldest-patch pin for PHP $MATRIX_PHP"; exit 1 ;;
           esac
           {
@@ -148,11 +160,13 @@ jobs:
             echo "PHP_OLDEST_SHA256=$sha"
             echo "OLDEST_IMAGE_REF=$old_img"
             echo "NEWEST_IMAGE_REF=$new_img"
+            echo "NEWEST_FROM_SETUP_PHP=$setup_php"
           } >> "$GITHUB_ENV"
 
       # The newest patch of the minor. It runs the existing smoke test below;
       # the binary itself is compiled against the oldest patch.
       - name: Setup PHP
+        if: env.NEWEST_FROM_SETUP_PHP == '1'
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ matrix.php }}
@@ -220,7 +234,8 @@ jobs:
           } >> "$GITHUB_ENV"
 
       # Kept off PATH: phpize and php-config are called by absolute path,
-      # and `php` stays setup-php's newest patch for the smoke test.
+      # and `php` stays setup-php's newest patch for the smoke test where
+      # setup-php provides one.
       - name: Build oldest-patch PHP from the release tarball (macOS)
         if: startsWith(matrix.os, 'macos-')
         env:
@@ -336,7 +351,16 @@ jobs:
           }
           echo "release smoke passed\n";
           PHP
-          php -d extension="$SO" "$RUNNER_TEMP/release-smoke.php"
+          if [[ "$NEWEST_FROM_SETUP_PHP" == 1 ]]; then
+            php -d extension="$SO" "$RUNNER_TEMP/release-smoke.php"
+          elif [[ "$RUNNER_OS" == Linux ]]; then
+            docker run --pull never --rm \
+              -v "$SO:/ext/fastchart.so:ro" \
+              -v "$RUNNER_TEMP/release-smoke.php:/release-smoke.php:ro" \
+              "$NEWEST_IMAGE" php -d extension=/ext/fastchart.so /release-smoke.php
+          else
+            "$RUNNER_TEMP/php-oldest/bin/php" -d extension="$SO" "$RUNNER_TEMP/release-smoke.php"
+          fi
 
       - name: Gate on the oldest and newest patch (Linux)
         if: startsWith(matrix.os, 'ubuntu-')
@@ -346,7 +370,8 @@ jobs:
       # The macOS module uses flat-namespace lookup and the system libraries
       # live in the dyld cache, so nm cannot attribute its imports; loading it
       # into the oldest-patch build PHP and setup-php's newest patch covers
-      # both ends.
+      # both ends. A minor whose only release is its oldest patch has one
+      # end, the oldest-patch build.
       - name: Gate on the oldest and newest patch (macOS)
         if: startsWith(matrix.os, 'macos-')
         run: |
@@ -356,7 +381,11 @@ jobs:
           set -uo pipefail
           module="$PWD/modules/fastchart.so"
           status=0
-          for php_bin in "$RUNNER_TEMP/php-oldest/bin/php" "$(command -v php)"; do
+          php_bins=("$RUNNER_TEMP/php-oldest/bin/php")
+          if [[ "$NEWEST_FROM_SETUP_PHP" == 1 ]]; then
+            php_bins+=("$(command -v php)")
+          fi
+          for php_bin in "${php_bins[@]}"; do
             want=$("$php_bin" -n -r 'echo PHP_VERSION;')
             echo "== load and smoke on $php_bin (PHP $want)"
             out=$("$php_bin" -n -d extension="$module" scripts/prebuilt-abi-smoke.php 2>&1)
@@ -373,7 +402,8 @@ jobs:
               status=1
             fi
           done
-          if [[ "$("$RUNNER_TEMP/php-oldest/bin/php" -n -r 'echo PHP_VERSION;')" == "$(php -n -r 'echo PHP_VERSION;')" ]]; then
+          if [[ "$NEWEST_FROM_SETUP_PHP" == 1 &&
+                "$("$RUNNER_TEMP/php-oldest/bin/php" -n -r 'echo PHP_VERSION;')" == "$(php -n -r 'echo PHP_VERSION;')" ]]; then
             echo "::error::setup-php and the oldest-patch build report the same PHP version"
             status=1
           fi
@@ -388,7 +418,7 @@ jobs:
         run: |
           set -e
           TAG="${RELEASE_TAG:-validation-${GITHUB_SHA::12}}"
-          PHP_MM=$(php-config --version | cut -d. -f1,2)
+          PHP_MM=${PHP_OLDEST%.*}
           case "$MATRIX_OS" in
             ubuntu-24.04) TARGET='x86_64-linux-glibc' ;;
             ubuntu-24.04-arm) TARGET='arm64-linux-glibc' ;;
@@ -428,8 +458,8 @@ jobs:
         run: |
           set -e
           count=$(find release-assets -maxdepth 1 -type f -name '*.zip' | wc -l)
-          if [ "$count" -ne 6 ]; then
-            echo "::error::expected 6 verified release archives, found $count"
+          if [ "$count" -ne 9 ]; then
+            echo "::error::expected 9 verified release archives, found $count"
             find release-assets -maxdepth 1 -type f -print
             exit 1
           fi

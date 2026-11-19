@@ -144,7 +144,7 @@ Before filing, try to reproduce against the latest `master` branch.
 
 For maintainers cutting a new version: run `/release-ext` (or the
 `/release` shim). It reads `.release-config`, runs the build matrix
-(PHP 8.1 through 8.5), tags bare semver, drives the changelog
+(PHP 8.1 through 8.6), tags bare semver, drives the changelog
 date-stamping. CHANGELOG follows Keep-a-Changelog; the
 `PHP_FASTCHART_VERSION` literal in `php_fastchart.h` always holds
 the next-to-tag version (no `-dev` suffix).

@@ -32,7 +32,7 @@ jobs:
         uses: php/php-windows-builder/extension-matrix@29352c0ef9e8ce65264ea9e287881a6f7758a953 # 1.9.0
         with:
           extension-url: ${{ github.event.repository.html_url }}
-          php-version-list: '8.1, 8.2, 8.3, 8.4, 8.5'
+          php-version-list: '8.1, 8.2, 8.3, 8.4, 8.5, 8.6'
 
   windows-build:
     name: Build ${{ matrix.php-version }} ${{ matrix.arch }} ${{ matrix.ts }}
@@ -57,11 +57,12 @@ jobs:
           arch: ${{ matrix.arch }}
           # extension-matrix flags one lane per (os, VS toolset) pair as
           # the VS-cache saver, and the action's input defaults to true,
-          # so forwarding it is what stops all 20 lanes writing the same
+          # so forwarding it is what stops all 24 lanes writing the same
           # cache. Our lanes span two toolsets on windows-2022 (vs16 for
-          # 8.1-8.3, vs17 for 8.4-8.5), giving 2 savers. Inert as long as
-          # the runner ships a toolset in range (14.44 as of run
-          # 30447739686): nothing installs, so nothing caches.
+          # 8.1-8.3, vs17 for 8.4-8.5) and one on windows-2025-vs2026 (vs18
+          # for 8.6), giving 3 savers. Inert as long as the runner ships a
+          # toolset in range (14.44 on windows-2022 as of run 30447739686):
+          # nothing installs, so nothing caches.
           save-vs-cache: ${{ matrix.save-vs-cache }}
           # Tests run in our own step below: the action's test step
           # hardcodes TEST_PHP_ARGS to `-n` + fastchart.dll only, so the

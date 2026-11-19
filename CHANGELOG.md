@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- PHP 8.6 prebuilt binaries: Linux glibc (x86_64, arm64) and macOS arm64
+  builds compiled against 8.6.0, and Windows DLLs (NTS + TS, x64 + x86).
+
 ### Fixed
 
 - ParetoChart, MarimekkoChart, and ViolinPlot honor X-axis visibility for category labels; ParetoChart also honors Y-axis visibility for both scales and their grid lines, without hiding data labels or changing plot geometry.
