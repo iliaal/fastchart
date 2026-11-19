@@ -1,0 +1,171 @@
+name: PHP master (advisory)
+
+# Builds and tests against php-src master (PHP 8.7-dev) as an early-warning
+# signal. continue-on-error keeps an upstream break from failing the run;
+# tests.yml stays the gate.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: php-master-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  php-master:
+    name: PHP 8.7 (master, advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    env:
+      MATRIX_CC: gcc
+      PHP_VERSION: '8.7'
+      RUNNER_LABEL: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            clang libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev pkg-config
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@3c21e10268bafaf84c59e8f4e65b39acacb62ca4 # main # zizmor: ignore[stale-action-refs,ref-version-mismatch]
+        with:
+          php-version: '8.7'
+          extensions: gd
+          tools: phpize, php-config
+
+      - name: Show PHP version
+        run: php -v
+
+      - name: Build extension
+        run: |
+          export CC="${MATRIX_CC}"
+          phpize
+          ./configure --enable-fastchart --enable-fastchart-dev
+          # make must fail the step itself: piping straight into grep
+          # takes grep's exit status, so a failed compile would leave no
+          # .so and every test would SKIP.
+          set -o pipefail
+          make -j"$(nproc)" 2>&1 | tee /tmp/build.log
+          set +o pipefail
+          WARNINGS=$(grep -c 'warning:' /tmp/build.log || true)
+          if [ "$WARNINGS" -gt 0 ]; then
+            echo "::error::Build produced $WARNINGS warning(s) with ${MATRIX_CC} on ${RUNNER_LABEL}"
+            exit 1
+          fi
+
+      - name: Guard against non-static-linkable runtime symbols
+        run: |
+          # __builtin_cpu_supports / __builtin_cpu_init reference libgcc's
+          # __cpu_model and __cpu_indicator_init. On glibc the compiler
+          # bundles them into the .so so it loads here, but they go
+          # unresolved under fully-static / musl / zig-cc links, so the
+          # object fails to dlopen downstream (static-php-cli) with an
+          # undefined-symbol error and `php --ri` exits non-zero. Their
+          # presence in the object at all is the tell, regardless of
+          # compiler. Detect CPU features with __get_cpuid from <cpuid.h>
+          # instead. Reported in iliaal/fastchart#6.
+          if nm modules/fastchart.so | grep -E '__cpu_model|__cpu_indicator_init'; then
+            echo "::error::fastchart.so references libgcc cpu-feature symbols (__builtin_cpu_supports?); breaks static/musl/zig-cc dlopen; use __get_cpuid"
+            exit 1
+          fi
+          echo "symbol audit: no libgcc cpu-feature symbols"
+
+      - name: Guard against assert() in vendored objects
+        run: scripts/check-vendor-ndebug.sh
+
+      - name: Verify gd capabilities (guard against silent mass-skips)
+        # PHPTs declaring `--EXTENSIONS-- gd` round-trip raster
+        # output through imagecreatefromstring / imagecreatefromwebp for
+        # pixel inspection. If gd vanishes, or its build loses WebP /
+        # JPEG / FreeType support, those tests SKIP silently and a "green"
+        # run hides a real regression. Assert the capabilities up front so
+        # the loss fails fast with a clear message instead of hiding in
+        # the skip counter. This lane loads gd via setup-php's
+        # `extensions: gd`.
+        run: |
+          # shellcheck disable=SC2016 # the single-quoted text is PHP source, not shell
+          php -r '
+            if (!extension_loaded("gd")) {
+              fwrite(STDERR, "gd not loaded; ~91 raster round-trip tests would skip silently\n");
+              exit(1);
+            }
+            $i = gd_info();
+            $need = ["WebP Support", "JPEG Support", "FreeType Support", "PNG Support"];
+            $missing = [];
+            foreach ($need as $k) { if (empty($i[$k])) { $missing[] = $k; } }
+            if ($missing) {
+              fwrite(STDERR, "gd is missing: " . implode(", ", $missing) .
+                "; raster round-trip tests would skip silently\n");
+              exit(1);
+            }
+            echo "gd capabilities OK: " . implode(", ", $need) . "\n";
+          '
+
+      - name: Run tests
+        run: |
+          TEST_PHP_EXECUTABLE=$(which php)
+          export TEST_PHP_EXECUTABLE
+          # gd is already loaded by shivammathur/setup-php's extensions: gd
+          # (writes extension=gd to php.ini) and is used by tests for PHP-
+          # side image validation (imagecreatefromstring / imagesx).
+          # Adding -d extension=gd on top makes PHP 8.4+ emit "Module
+          # already loaded" warnings that prepend to every test's stdout
+          # and break --EXPECT-- matching.
+          TEST_PHP_ARGS="-d extension=$(pwd)/modules/fastchart.so"
+          export TEST_PHP_ARGS
+          export NO_INTERACTION=1
+          # Stream output so failure context lands in the log even
+          # when the run aborts before the trailing summary. Tee to
+          # a file so we can assert "Tests failed: N" cleanly.
+          set +e
+          php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::run-tests.php exited $rc on PHP ${PHP_VERSION} - Linux ${RUNNER_LABEL} (crash / BORK / aborted before summary)"
+            grep -E '^FAIL\b|^FAILED TEST|^BORK' /tmp/test-output.txt || true
+            exit 1
+          fi
+          if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
+            echo "::error::Tests failed on PHP ${PHP_VERSION} - Linux ${RUNNER_LABEL}"
+            grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
+            exit 1
+          fi
+          # Skip ceiling. This lane loads gd (so gd round-trip tests RUN)
+          # and is built without --with-pdfio. Eight tests are PDF-gated;
+          # other skips depend on fonts, the comma-decimal locale, and
+          # environment capabilities (open_basedir / non-regular-source).
+          # These gates can overlap. Keep the existing ceiling of 25,
+          # rather than deriving it by adding overlapping gate counts.
+          # A run that skips MORE than this means
+          # a capability quietly vanished and tests are hiding in the skip
+          # counter rather than failing; treat it as a failure. Bump this
+          # only alongside a deliberate new skip-gated test.
+          SKIPPED=$(grep -oP '^Tests skipped\s*:\s*\K[0-9]+' /tmp/test-output.txt | head -1)
+          SKIPPED=${SKIPPED:-0}
+          echo "Tests skipped: $SKIPPED (ceiling 25)"
+          if [ "$SKIPPED" -gt 25 ]; then
+            echo "::error::Skip count $SKIPPED exceeds ceiling 25 on PHP ${PHP_VERSION} - Linux ${RUNNER_LABEL}: a capability likely vanished (gd/webp/fonts); tests are hiding in the skip counter"
+            grep -E '^SKIP\b' /tmp/test-output.txt || true
+            exit 1
+          fi
+
+      - name: E_ALL deprecation gate
+        run: |
+          php -d error_reporting=E_ALL -d display_errors=1 \
+            -d extension="$(pwd)/modules/fastchart.so" \
+            scripts/deprecation-gate.php
