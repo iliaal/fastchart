@@ -7092,7 +7092,7 @@ static int fastchart_chart_render_to_pdf(fastchart_obj *self,
         zend_bailout();
     } zend_end_try();
 
-    if (dispatch_rc != 0 || EG(exception)) {
+    if (dispatch_rc != 0 || EG(exception) || fastchart_oom_pending()) {
         /* Abort, not finish: a failed dispatch leaves a partial page
          * that must not flush into request memory. */
         fastchart_target_pdf_abort(&t);
@@ -7121,7 +7121,7 @@ ZEND_METHOD(FastChart_Chart, renderPdf)
     if (fastchart_chart_render_to_pdf(self, Z_OBJCE_P(ZEND_THIS),
                                       "FastChart\\Chart::renderPdf()",
                                       &out_buf) != 0) {
-        RETURN_THROWS();
+        FASTCHART_RETURN_FAILED();
     }
     RETURN_STR(out_buf.s);
 }
@@ -8614,7 +8614,7 @@ static void fastchart_render_to_pdf_file(INTERNAL_FUNCTION_PARAMETERS, zend_stri
     if (fastchart_chart_render_to_pdf(self, Z_OBJCE_P(ZEND_THIS),
                                       "FastChart\\Chart::renderToFile()",
                                       &buf) != 0) {
-        RETURN_THROWS();
+        FASTCHART_RETURN_FAILED();
     }
     zend_long written = 0;
     if (fastchart_write_zstr_to_file(path, buf.s,
