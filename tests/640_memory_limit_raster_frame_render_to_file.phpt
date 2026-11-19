@@ -1,7 +1,7 @@
 --TEST--
 renderToFile() leaves no temporary file when the raster frame exceeds memory_limit
 --DESCRIPTION--
-On engines that queue memory-limit errors (ZEND_HAS_OOM) the 256 MiB frame
+On PHP builds that defer memory-limit errors (ZEND_HAS_OOM) the 256 MiB frame
 allocation crossed the hard limit and the engine _exit()ed the process,
 stranding the atomic-write temporary file next to the target.
 --EXTENSIONS--

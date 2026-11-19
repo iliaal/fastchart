@@ -1,7 +1,7 @@
 --TEST--
 renderSvg() stops emitting glyph paths once memory_limit is exceeded
 --DESCRIPTION--
-On engines that queue memory-limit errors (ZEND_HAS_OOM), an SVG build that
+On PHP builds that defer memory-limit errors (ZEND_HAS_OOM), an SVG build that
 kept appending after crossing memory_limit reached the hard limit (twice
 memory_limit) and the engine _exit()ed the process. The render must stop so
 the ordinary memory-limit fatal error is reported instead.

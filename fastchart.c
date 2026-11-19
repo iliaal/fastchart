@@ -4939,6 +4939,9 @@ static int fastchart_svg_to_pixels(
 static void fastchart_throw_encode_error(int rc, const char *method_name,
                                           const char *lib_name)
 {
+    if (fastchart_oom_pending()) {
+        return;
+    }
     if (rc == -2) {
         zend_throw_error(NULL,
             "%s(): %s is not compiled in", method_name, lib_name);
@@ -4976,7 +4979,7 @@ ZEND_METHOD(FastChart_Chart, svgToPng)
     if (rc != 0) {
         smart_str_free(&out);
         fastchart_throw_encode_error(rc, "FastChart\\Chart::svgToPng", "libpng");
-        RETURN_THROWS();
+        FASTCHART_RETURN_FAILED();
     }
     smart_str_0(&out);
     RETURN_STR(out.s);
@@ -5048,7 +5051,7 @@ ZEND_METHOD(FastChart_Chart, svgToJpeg)
     if (rc != 0) {
         smart_str_free(&out);
         fastchart_throw_encode_error(rc, "FastChart\\Chart::svgToJpeg", "libjpeg");
-        RETURN_THROWS();
+        FASTCHART_RETURN_FAILED();
     }
     smart_str_0(&out);
     RETURN_STR(out.s);
@@ -5096,7 +5099,7 @@ ZEND_METHOD(FastChart_Chart, svgToWebp)
     if (rc != 0) {
         smart_str_free(&out);
         fastchart_throw_encode_error(rc, "FastChart\\Chart::svgToWebp", "libwebp");
-        RETURN_THROWS();
+        FASTCHART_RETURN_FAILED();
     }
     smart_str_0(&out);
     RETURN_STR(out.s);
@@ -6899,7 +6902,7 @@ static int fastchart_chart_render_to_sink(fastchart_obj *self,
 	fastchart_pixels_release(&pix);
 
 	if (rc != 0 || sink->failed || sink->bytes_written == 0) {
-		if (!EG(exception)) {
+		if (!EG(exception) && !fastchart_oom_pending()) {
 			zend_throw_error(NULL, "FastChart: encoder produced no output");
 		}
 		return -1;

@@ -1,8 +1,8 @@
 --TEST--
 renderPng() refuses a raster frame larger than memory_limit without killing the process
 --DESCRIPTION--
-An 8192x8192 frame is 256 MiB, twice the default memory_limit. On engines
-that queue memory-limit errors (ZEND_HAS_OOM) the infallible allocation
+An 8192x8192 frame is 256 MiB, twice the default memory_limit. On PHP
+builds that defer memory-limit errors (ZEND_HAS_OOM) the infallible allocation
 crossed the hard limit and the engine _exit()ed the process.
 --EXTENSIONS--
 fastchart

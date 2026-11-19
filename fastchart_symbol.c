@@ -302,7 +302,7 @@ static int fastchart_symbol_render_to_sink(fastchart_symbol_obj *self,
 	if (rc != 0 || sink->failed || sink->bytes_written == 0) {
 		/* A codec may have thrown its own specific error (e.g. libpng
 		 * via png_get_error_ptr); keep it instead of overwriting. */
-		if (!EG(exception)) {
+		if (!EG(exception) && !fastchart_oom_pending()) {
 			zend_throw_error(NULL,
 				"FastChart\\Symbol: encoder produced no output");
 		}

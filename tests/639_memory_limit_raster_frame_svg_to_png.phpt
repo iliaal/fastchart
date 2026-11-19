@@ -1,8 +1,8 @@
 --TEST--
 svgToPng() refuses a raster frame larger than memory_limit without killing the process
 --DESCRIPTION--
-A 4096x4096 frame is 64 MiB, four times this memory_limit. On engines that
-queue memory-limit errors (ZEND_HAS_OOM) the infallible allocation crossed
+A 4096x4096 frame is 64 MiB, four times this memory_limit. On PHP builds that
+defer memory-limit errors (ZEND_HAS_OOM) the infallible allocation crossed
 the hard limit and the engine _exit()ed the process.
 --EXTENSIONS--
 fastchart
