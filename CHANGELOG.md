@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- WordCloud SVG renders of 60-256 words take 36-90% less time (Linux
+  x86-64; GCC 12.2/14.2, Clang 18.1) by skipping spiral steps a placed word or
+  the plot edge already rules out. Output is unchanged, budget cut-off included.
+
 - CirclePacking computes each spiral slot's direction once per sibling
   group and resumes each slot's overlap scan at the lowest sibling that
   overlapped that slot for an earlier sibling, instead of rescanning from
