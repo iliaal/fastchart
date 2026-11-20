@@ -44,19 +44,25 @@ around vendored plutovg, and replaced `draw($canvas)` with
 
 ### Via PIE (recommended)
 
-[PIE](https://github.com/php/pie) handles the configure / make /
-install cycle for you against your active PHP install:
+[PIE](https://github.com/php/pie) installs Fastchart for your selected PHP:
 
 ```sh
 pie install iliaal/fastchart
 ```
 
-PIE picks up the latest tagged release from Packagist and respects
-your platform's `pkg-config` for the FreeType / libpng /
-libjpeg-turbo / libwebp probes. After install, enable the
-extension via your distribution's mechanism (e.g.
-`docker-php-ext-enable fastchart` on the official PHP images, or
-add `extension=fastchart` to `php.ini`).
+On Unix, Fastchart's Packagist metadata tells PIE to look for a matching
+prebuilt archive before trying a source build. Source builds use the library
+probes described under [Requirements](#requirements). On Windows, PIE requires
+a matching prebuilt DLL archive instead of building from source.
+
+For example, [release 1.9.0](https://github.com/iliaal/fastchart/releases/tag/1.9.0)
+ships NTS archives for PHP 8.4–8.6 on glibc Linux (x86_64 and arm64) and
+Apple Silicon macOS. Its Windows archives cover PHP 8.1–8.6 (TS/NTS and
+x86/x64). Check the selected release's assets for your PHP and platform.
+
+If PIE did not enable the extension, use your distribution's mechanism
+(e.g. `docker-php-ext-enable fastchart` on the official PHP images, or add
+`extension=fastchart` to `php.ini`).
 
 ### From source
 
