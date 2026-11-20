@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-20
+
 ### Added
 
 - PHP 8.6 prebuilt binaries: Linux glibc (x86_64, arm64) and macOS arm64
@@ -1753,7 +1755,8 @@ JPEG quality). 118 / 118 phpts pass.
 ### Added
 - Initial public release of fastchart.
 
-[Unreleased]: https://github.com/iliaal/fastchart/compare/1.8.1...HEAD
+[Unreleased]: https://github.com/iliaal/fastchart/compare/1.9.0...HEAD
+[1.9.0]: https://github.com/iliaal/fastchart/releases/tag/1.9.0
 [1.8.1]: https://github.com/iliaal/fastchart/releases/tag/1.8.1
 [1.8.0]: https://github.com/iliaal/fastchart/releases/tag/1.8.0
 [1.7.4]: https://github.com/iliaal/fastchart/releases/tag/1.7.4
