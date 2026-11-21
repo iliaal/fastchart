@@ -30,9 +30,9 @@
  * placed largest-first along an Archimedean spiral from the centre,
  * skipping any position whose bounding box collides with an already-
  * placed word. Placement is deterministic (sorted input + fixed spiral).
- * Orientation is selectable (setOrientation): horizontal, vertical, or
- * ORIENT_MIXED, where each word's rotation is chosen deterministically
- * and the collision bounding box is swapped to match the rotated glyphs. */
+ * Orientation is horizontal by default. In ORIENT_MIXED, the renderer
+ * rotates a deterministic subset of words and swaps each rotated word's
+ * collision bounding box to match its glyphs. */
 
 typedef struct { double x0, y0, x1, y1; } wc_box;
 
