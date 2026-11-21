@@ -176,7 +176,7 @@ jobs:
       - name: Setup PHP
         if: env.NEWEST_FROM_SETUP_PHP == '1'
         # setup-php main until a release marks PHP 8.6 stable; return to a tagged release then.
-        uses: shivammathur/setup-php@3c21e10268bafaf84c59e8f4e65b39acacb62ca4 # main # zizmor: ignore[stale-action-refs,ref-version-mismatch]
+        uses: shivammathur/setup-php@2001cd3148dcbaf467b7fa06cd7155ebb6d4cacf # main # zizmor: ignore[stale-action-refs,ref-version-mismatch]
         with:
           php-version: ${{ matrix.php }}
           coverage: none
