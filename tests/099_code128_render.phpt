@@ -3,6 +3,11 @@ Code128: encoder + renderer produce structurally valid bar pattern
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png', 'Jpeg', 'Webp');
+?>
 --FILE--
 <?php
 

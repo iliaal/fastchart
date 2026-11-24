@@ -2,6 +2,11 @@
 AreaChart::setBandMode() fills envelope between upper and lower series
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

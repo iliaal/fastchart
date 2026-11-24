@@ -159,6 +159,28 @@ jobs:
           fi
           php -n -d extension="$SO" scripts/ci-missing-codecs.php
 
+      - name: Run full suite without optional codecs
+        # Tests that need an encoder skip through tests/_codecs.inc; a
+        # failure here is a test that assumes a codec the build lacks.
+        run: |
+          export TEST_PHP_EXECUTABLE=$(which php)
+          export TEST_PHP_ARGS="-d extension=$(pwd)/modules/fastchart.so"
+          export NO_INTERACTION=1
+          set +e
+          php run-tests.php --show-diff -g FAIL,BORK,LEAK,XLEAK tests/ 2>&1 | tee /tmp/test-output.txt
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::run-tests.php exited $rc on the missing-codecs lane (crash / BORK / aborted before summary)"
+            grep -E '^FAIL\b|^FAILED TEST|^BORK' /tmp/test-output.txt || true
+            exit 1
+          fi
+          if grep -qP '^Tests failed\s*:\s*[1-9]' /tmp/test-output.txt; then
+            echo "::error::Tests failed on the missing-codecs lane"
+            grep -E '^FAIL\b|^FAILED TEST' /tmp/test-output.txt || true
+            exit 1
+          fi
+
   musl-smoke:
     name: musl load smoke (Alpine + clang)
     runs-on: ubuntu-latest

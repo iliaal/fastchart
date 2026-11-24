@@ -6,6 +6,11 @@ gd
 --INI--
 asan.detect_leaks=0
 fastchart.max_image_cache_bytes=1048576
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

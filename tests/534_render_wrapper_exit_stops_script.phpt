@@ -2,6 +2,11 @@
 exit() from a stream wrapper during a render-time image load stops the script
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 final class PolicyStream

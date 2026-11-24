@@ -2,6 +2,11 @@
 BubbleChart: setYAxisScale(SCALE_LOG) maps exponential data onto log axis
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

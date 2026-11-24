@@ -4,6 +4,8 @@ An encoder timeout preserves the prior destination and removes its temporary fil
 fastchart
 --SKIPIF--
 <?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
 if (!function_exists('exec') || getenv('TEST_PHP_ARGS') === false) {
     echo "skip needs exec() and the run-tests TEST_PHP_ARGS\n";
 }

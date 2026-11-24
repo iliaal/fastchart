@@ -2,6 +2,11 @@
 renderToFile replace-existing is atomic and leaves no staging temps (portable)
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

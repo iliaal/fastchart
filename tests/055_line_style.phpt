@@ -2,6 +2,11 @@
 setLineStyle: LINE_SOLID / LINE_DASHED / LINE_DOTTED
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

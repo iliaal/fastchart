@@ -4,6 +4,8 @@ renderToFile rejects a substituted atomic temporary path without following it
 fastchart
 --SKIPIF--
 <?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
 if (PHP_OS_FAMILY === 'Windows') die('skip POSIX symlink race');
 if (!function_exists('proc_open')) die('skip proc_open unavailable');
 $module = realpath(__DIR__ . '/../modules/fastchart.so');

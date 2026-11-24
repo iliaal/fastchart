@@ -2,6 +2,11 @@
 svgToPng: an outline with many short edges does not re-decompose once per band
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

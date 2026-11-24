@@ -3,6 +3,11 @@ StockChart phase-2 indicators: MACD / Stochastic / BollingerBands / ParabolicSAR
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 /* 80 OHLCV bars with a mid-period shock so each indicator has

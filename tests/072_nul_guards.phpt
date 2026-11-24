@@ -2,6 +2,11 @@
 String setters reject embedded NUL; getImageMap drops <area> on NUL href and renames empty map names
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

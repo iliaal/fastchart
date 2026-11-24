@@ -3,6 +3,11 @@ setDropShadow paints offset shadow underneath bars / pies / areas / text
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

@@ -4,6 +4,8 @@ Per-render font cache invalidates at draw entry: open_basedir narrowing between 
 fastchart
 --SKIPIF--
 <?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
 /* The test pins to /usr/share fonts because the open_basedir narrowing
  * step needs a path that's reachable before the narrow and outside
  * the narrowed dir afterwards. Windows / macOS hosts don't have

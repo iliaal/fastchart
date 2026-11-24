@@ -2,6 +2,11 @@
 PieChart::setSliceLabelPosition LABEL_LEFT and LABEL_RIGHT route labels to one side
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

@@ -4,6 +4,11 @@ fastchart.max_render_pixels lowers the raster pixel budget
 fastchart
 --INI--
 fastchart.max_render_pixels=1000000
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png', 'Jpeg', 'Webp');
+?>
 --FILE--
 <?php
 

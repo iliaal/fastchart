@@ -2,6 +2,11 @@
 svgToPng: row hints are dropped when a one-row band folds its cells
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 /* A 600-vertex zigzag across a 4096x3 image puts more cells in a row than

@@ -2,6 +2,11 @@
 raster: row-hinted cell lookup keeps coverage, the work budget and tall bands
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

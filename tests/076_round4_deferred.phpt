@@ -2,6 +2,11 @@
 Protocol-relative href, setShadowAlpha range, locale-immune format dispatch
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png', 'Jpeg', 'Webp');
+?>
 --FILE--
 <?php
 

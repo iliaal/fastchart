@@ -2,6 +2,11 @@
 svgToPng: stroke-dash expansion is budgeted per document, not per path
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

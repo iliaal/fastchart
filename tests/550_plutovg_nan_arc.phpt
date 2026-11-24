@@ -3,6 +3,11 @@ svgToPng: an arc whose radii collapse the centre to NaN draws a straight line
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

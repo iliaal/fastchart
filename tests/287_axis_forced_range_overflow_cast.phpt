@@ -2,6 +2,11 @@
 Forced Y-axis range with an overflowing span no longer reaches (int)NaN
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

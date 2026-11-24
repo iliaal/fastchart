@@ -2,6 +2,11 @@
 Symbol renderJpeg() quality has a byte-level effect (q=1 vs q=100)
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Jpeg');
+?>
 --FILE--
 <?php
 

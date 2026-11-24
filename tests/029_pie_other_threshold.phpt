@@ -3,6 +3,11 @@ PieChart::setOtherThreshold aggregates small slices into Other
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

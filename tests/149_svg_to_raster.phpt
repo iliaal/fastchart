@@ -2,6 +2,11 @@
 Chart::svgToPng / svgToJpeg / svgToWebp: SVG bytes -> raster via plutovg
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png', 'Jpeg', 'Webp');
+?>
 --FILE--
 <?php
 

@@ -12,6 +12,11 @@ gd
 UBSAN_OPTIONS=halt_on_error=1:abort_on_error=1:print_stacktrace=1
 --INI--
 asan.detect_leaks=0
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

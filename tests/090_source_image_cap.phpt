@@ -3,6 +3,11 @@ setBackgroundImage / addIconAt skip source files larger than 8 MiB
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 /* Forge an oversized PNG-ish file (the loader rejects it on size

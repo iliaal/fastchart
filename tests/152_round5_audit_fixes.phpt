@@ -2,6 +2,11 @@
 Clone deep-copies config; renderToFile honors setJpegQuality
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Jpeg');
+?>
 --FILE--
 <?php
 

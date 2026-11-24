@@ -3,6 +3,11 @@ Bound indicator periods, heatmap cap, source-image dims, Bollinger range, Funnel
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 /* Synthetic candle data reused across the indicator probes. */

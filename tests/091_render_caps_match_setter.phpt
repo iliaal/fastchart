@@ -2,6 +2,11 @@
 Polar / radar / contour renderers honor the full public setter cap
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 /* Public setter caps are the contract; the prior renderer-local

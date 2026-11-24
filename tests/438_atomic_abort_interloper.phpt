@@ -4,6 +4,11 @@ renderToFile abort preserves a substituted temporary entry
 fastchart
 --SKIPIF--
 <?php
+// 609 runs this block alone under php -n, away from tests/.
+if (extension_loaded('fastchart')) {
+	require_once __DIR__ . '/_codecs.inc';
+	fc_require_codecs('Png');
+}
 if (PHP_OS_FAMILY !== 'Linux') die('skip Linux strace fault injection');
 if (!function_exists('proc_open')) die('skip proc_open unavailable');
 if (!is_readable('/proc/self/maps')) die('skip loaded module path unavailable');

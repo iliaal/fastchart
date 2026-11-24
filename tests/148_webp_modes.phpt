@@ -2,6 +2,11 @@
 Chart::setWebpMode(): WEBP_DRAWING / WEBP_PHOTO / WEBP_LOSSLESS / WEBP_FAST
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Webp');
+?>
 --FILE--
 <?php
 

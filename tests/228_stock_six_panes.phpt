@@ -3,6 +3,11 @@ StockChart: six indicator panes render without overflowing the layout array
 --EXTENSIONS--
 fastchart
 simplexml
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

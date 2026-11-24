@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- The build without libpng, libjpeg-turbo, and libwebp now runs the full
+  phpt suite; tests that need one of those encoders skip there instead of
+  failing.
+
 ## [1.9.0] - 2026-11-20
 
 ### Added

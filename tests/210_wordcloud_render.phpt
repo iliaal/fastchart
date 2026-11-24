@@ -4,6 +4,11 @@ WordCloud: deterministic weighted spiral layout
 fastchart
 simplexml
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

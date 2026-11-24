@@ -2,6 +2,11 @@
 BarChart::setStackMode(STACK_LAYER) layers translucent bars at the same baseline
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

@@ -4,6 +4,8 @@ WebP encoding cancels before committing a file when its deadline expires
 fastchart
 --SKIPIF--
 <?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png', 'Webp');
 if (!function_exists('exec') || getenv('TEST_PHP_ARGS') === false) {
     echo 'skip needs exec() and run-tests TEST_PHP_ARGS';
 }

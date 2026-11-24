@@ -4,6 +4,8 @@ Render-time callbacks cannot free chart data the renderer holds, in any output f
 fastchart
 --SKIPIF--
 <?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png', 'Jpeg', 'Webp');
 require __DIR__ . '/_font_candidates.inc';
 if (fc_pick_font() === '') die("skip no system font available\n");
 ?>

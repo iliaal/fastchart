@@ -5,6 +5,8 @@ fastchart
 gd
 --SKIPIF--
 <?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png', 'Webp');
 if (!function_exists('imagecreatefromstring')) die('skip gd without PNG support');
 ?>
 --FILE--
