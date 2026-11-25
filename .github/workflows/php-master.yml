@@ -41,7 +41,7 @@ jobs:
             clang libfreetype-dev libpng-dev libjpeg-turbo8-dev libwebp-dev pkg-config
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@2001cd3148dcbaf467b7fa06cd7155ebb6d4cacf # main # zizmor: ignore[stale-action-refs,ref-version-mismatch]
+        uses: shivammathur/setup-php@e8d43d139fbfbe401c32ef3a3a32e14075f20122 # main # zizmor: ignore[stale-action-refs,ref-version-mismatch]
         with:
           php-version: '8.7'
           extensions: gd
