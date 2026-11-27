@@ -2,6 +2,11 @@
 ScatterChart::getImageMap returns clickable HTML areas for points with href
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

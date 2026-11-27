@@ -2,6 +2,11 @@
 Symbol renderWebp rejects libwebp's 16383-pixel per-dimension cap up front
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Webp');
+?>
 --FILE--
 <?php
 

@@ -7,6 +7,11 @@ gd
 ; 4096x4096 RGBA = 67 MB; SVG buffer + raster surface + encoded PNG +
 ; GD round-trip all live concurrently. 128 MB default isn't enough.
 memory_limit=256M
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

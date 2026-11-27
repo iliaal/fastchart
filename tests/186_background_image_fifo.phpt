@@ -4,6 +4,8 @@ setBackgroundImage(): writerless FIFO is rejected without blocking
 fastchart
 --SKIPIF--
 <?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
 if (!function_exists('shell_exec') || shell_exec('command -v mkfifo') === null) {
     echo "skip mkfifo not available\n";
 }

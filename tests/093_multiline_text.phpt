@@ -3,6 +3,11 @@ Title and category labels honor "\n": width = max line, height = first + (n-1)*a
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 /* The multi-line path must:

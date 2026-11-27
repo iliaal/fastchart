@@ -3,6 +3,11 @@ setDpi bounds + scaling, JPEG/WebP quality 0, scatter error bars > 2048, format-
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png', 'Jpeg', 'Webp');
+?>
 --FILE--
 <?php
 

@@ -3,6 +3,11 @@ setBackgroundImage composites a source image as canvas background
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png', 'Jpeg');
+?>
 --FILE--
 <?php
 

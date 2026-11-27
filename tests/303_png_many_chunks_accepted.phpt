@@ -4,6 +4,8 @@ Background image: a spec-legal PNG with >1024 IDAT chunks is accepted
 fastchart
 --SKIPIF--
 <?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
 require __DIR__ . '/_font_candidates.inc';
 if (fc_pick_font() === '') die("skip no system font available\n");
 ?>

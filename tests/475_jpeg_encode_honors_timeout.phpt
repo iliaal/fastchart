@@ -4,6 +4,11 @@ JPEG rendering honors max_execution_time after a successful render
 fastchart
 --INI--
 hard_timeout=0
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Jpeg');
+?>
 --FILE--
 <?php
 require __DIR__ . '/_encoder_timeout.inc';

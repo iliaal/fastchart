@@ -2,6 +2,11 @@
 Extreme finite inputs no longer reach undefined float-to-int casts
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

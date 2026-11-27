@@ -3,6 +3,11 @@ StockChart::addRSI / addMomentum / addROC / addOBV emit panes with the right sha
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 /* Synthetic OHLCV: 60 bars of a smooth uptrend with occasional dips,

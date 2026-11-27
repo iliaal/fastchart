@@ -2,6 +2,11 @@
 setTitleFont / setAxisFont / setLabelFont (path + size) overrides
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

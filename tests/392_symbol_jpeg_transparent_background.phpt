@@ -5,6 +5,8 @@ fastchart
 gd
 --SKIPIF--
 <?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Jpeg');
 if (!function_exists('imagecreatefromstring')) echo "skip gd imagecreatefromstring unavailable\n";
 ?>
 --FILE--

@@ -5,6 +5,11 @@ fastchart
 gd
 --INI--
 asan.detect_leaks=0
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

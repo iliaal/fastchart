@@ -3,6 +3,11 @@ setPlotRect bypasses auto-layout; setBorderSides selects which sides draw
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

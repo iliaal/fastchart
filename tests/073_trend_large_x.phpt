@@ -2,6 +2,11 @@
 Polynomial trend stays numerically stable on large-x inputs (timestamps)
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

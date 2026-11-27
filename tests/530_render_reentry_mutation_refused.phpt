@@ -4,6 +4,8 @@ Every mutating chart method refuses while the chart is rendering
 fastchart
 --SKIPIF--
 <?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
 require __DIR__ . '/_font_candidates.inc';
 if (fc_pick_font() === '') die("skip no system font available\n");
 ?>

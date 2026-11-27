@@ -2,6 +2,11 @@
 renderPng / renderJpeg / renderWebp return encoded bytes without ext/gd ceremony
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png', 'Jpeg', 'Webp');
+?>
 --FILE--
 <?php
 

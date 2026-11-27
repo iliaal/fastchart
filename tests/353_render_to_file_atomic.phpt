@@ -2,6 +2,11 @@
 renderToFile writes atomically: no temp droppings, pre-existing file replaced
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

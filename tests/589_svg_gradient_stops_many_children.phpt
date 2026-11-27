@@ -2,6 +2,11 @@
 svgToPng: a gradient with many non-stop children resolves its stops once per paint, not per child
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

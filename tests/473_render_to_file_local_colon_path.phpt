@@ -4,6 +4,8 @@ renderToFile() keeps a local path whose directory component contains a colon
 fastchart
 --SKIPIF--
 <?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
 if (PHP_OS_FAMILY === 'Windows') echo 'skip colon directory names require POSIX';
 ?>
 --FILE--

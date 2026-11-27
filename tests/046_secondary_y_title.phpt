@@ -2,6 +2,11 @@
 setSecondaryYAxisTitle renders a rotated title on the right edge
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

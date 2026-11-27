@@ -4,6 +4,8 @@ Font faces keep their byte snapshot within a render and reload the rewritten fil
 fastchart
 --SKIPIF--
 <?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
 require __DIR__ . '/_font_candidates.inc';
 if (fc_pick_font() === '') echo "skip: no system font present\n";
 ?>

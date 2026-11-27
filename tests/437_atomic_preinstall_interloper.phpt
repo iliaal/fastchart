@@ -4,6 +4,8 @@ renderToFile preserves a destination replaced while rasterizing
 fastchart
 --SKIPIF--
 <?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
 if (PHP_OS_FAMILY !== 'Linux') die('skip Linux process race test');
 if (!function_exists('proc_open')) die('skip proc_open unavailable');
 if (!is_readable('/proc/self/maps')) die('skip loaded module path unavailable');

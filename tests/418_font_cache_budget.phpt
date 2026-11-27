@@ -4,6 +4,8 @@ FreeType face cache evicts past its byte budget within a render and never serves
 fastchart
 --SKIPIF--
 <?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
 require __DIR__ . '/_font_candidates.inc';
 if (fc_pick_font() === '') echo "skip: no system font present\n";
 ?>

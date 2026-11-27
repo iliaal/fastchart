@@ -2,6 +2,11 @@
 StockChart: setOhlcv after addBollingerBands / addParabolicSAR clears stale overlays
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 /* Regression for SS-001: setOhlcv replaced the candle buffer but

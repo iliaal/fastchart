@@ -2,6 +2,11 @@
 ContourChart: marching-squares isolines from a 2D grid
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

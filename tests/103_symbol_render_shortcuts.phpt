@@ -3,6 +3,11 @@ Symbol family: render-shortcut matrix (PNG/JPEG/WebP/toFile) for Code128 + QrCod
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png', 'Jpeg', 'Webp');
+?>
 --FILE--
 <?php
 

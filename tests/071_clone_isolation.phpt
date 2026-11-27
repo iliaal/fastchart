@@ -2,6 +2,11 @@
 clone produces an isolated chart: setters on either side don't disturb the other
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

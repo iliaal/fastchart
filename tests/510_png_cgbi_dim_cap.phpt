@@ -2,6 +2,11 @@
 Source-image dimension cap uses the decoder's IHDR, not bytes inside a leading CgBI chunk
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 /* stb_image skips a leading Apple CgBI chunk and decodes the IHDR that

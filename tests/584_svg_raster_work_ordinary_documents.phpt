@@ -2,6 +2,11 @@
 svgToPng: a heavy ordinary document fits the raster work budget
 --EXTENSIONS--
 fastchart
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

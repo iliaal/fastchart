@@ -3,6 +3,11 @@ setZeroShelf draws a horizontal axis-color line at y=0 when range crosses zero
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 

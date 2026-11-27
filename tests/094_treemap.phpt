@@ -3,6 +3,11 @@ Treemap: squarify lays cells, perturbing one item changes output, non-positive i
 --EXTENSIONS--
 fastchart
 gd
+--SKIPIF--
+<?php
+require_once __DIR__ . '/_codecs.inc';
+fc_require_codecs('Png');
+?>
 --FILE--
 <?php
 /* Baseline: 5 cells, distinct values. */
